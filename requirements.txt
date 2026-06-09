@@ -15,6 +15,9 @@ playwright>=1.40.0
 # HTTP / encoding (stdlib-only, no extra deps needed for core modules)
 # gzip, zlib, urllib — all included in Python stdlib
 
+# Image Extractor: HTTP fetching + HTML parsing
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
 # Optional: faster HTML parsing for large-scale scraping
-# beautifulsoup4>=4.12.0
 # lxml>=5.1.0

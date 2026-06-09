@@ -23,7 +23,7 @@ from core.content_capture import SiteContentCapture
 from core.design_analyzer import DesignAnalyzer
 from core.dynamic_analyzer import DynamicAnalyzer
 from core.frontend_cloner import FrontendCloner
-from core.image_extractor import ImageExtractor
+from utils.image_processor import ImageExtractor
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine, enrich_cms_with_dynamic
 from core.subdomain_scanner import SubdomainScanner
@@ -656,22 +656,13 @@ class MainWindow(QMainWindow):
         grp = SectionGroupBox("Извлечение изображений")
         g = QVBoxLayout()
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("URL:"))
+        row = QHBoxLayout()
+        row.addWidget(QLabel("URL:"))
         self.image_url = QLineEdit()
         self.image_url.setPlaceholderText("https://example.com")
-        row1.addWidget(self.image_url)
-        g.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Папка:"))
-        self.image_dir = QLineEdit(self.settings.get('output_dir', ''))
-        btn_browse = StyledButton("...", style='secondary')
-        btn_browse.setMaximumWidth(40)
-        btn_browse.clicked.connect(lambda: self._browse(self.image_dir))
-        row2.addWidget(self.image_dir)
-        row2.addWidget(btn_browse)
-        g.addLayout(row2)
+        self.image_url.returnPressed.connect(self._run_images)
+        row.addWidget(self.image_url)
+        g.addLayout(row)
 
         btn_ex = StyledButton("Извлечь изображения")
         btn_ex.clicked.connect(self._run_images)
@@ -689,33 +680,35 @@ class MainWindow(QMainWindow):
 
     def _run_images(self):
         url = self.image_url.text().strip()
-        base_out = self.image_dir.text().strip()
-        if not url or not base_out:
-            QMessageBox.warning(self, "Ошибка", "Укажите URL и папку")
+        if not url:
+            QMessageBox.warning(self, "Ошибка", "Укажите URL")
             return
 
         domain = self._domain_slug(url)
-        out_path = Path(base_out) / f"{domain}_{datetime.now().strftime('%Y%m%d')}_images"
+        out_path = LIVE_TEST_OUTPUT / f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_images"
 
         self.image_results.clear()
         self.image_results.append_info(f"Сканирую: {url}")
         self.image_results.append_info(f"Директория: {out_path}")
         self._set_busy(True)
 
-        ex = ImageExtractor()
-        ex.configure(url, str(out_path), profile=self.settings.get('user_agent_profile', 'chrome_windows'))
+        ex = ImageExtractor(profile=self.settings.get('user_agent_profile', 'chrome_windows'))
         ex.set_progress_callback(lambda msg: self.image_results.append_info(msg))
 
         def _on_done(result, _p=out_path, _d=domain):
             self._on_images_done(result, _p, _d)
 
-        self._run_async(ex.run_extraction, _on_done)
+        self._run_async(lambda: ex.extract_images(url, out_path), _on_done)
 
     def _on_images_done(self, result: dict, out_path: Path, domain: str):
         self._set_busy(False)
         found = result.get('found', 0)
         downloaded = result.get('downloaded', 0)
         self.image_results.append_success(f"Найдено: {found} | Загружено: {downloaded}")
+        self.image_results.append_info(
+            f"Отфильтровано — дубликатов: {result.get('duplicates', 0)} | "
+            f"мелких (< 2KB): {result.get('skipped_small', 0)}"
+        )
         self.image_results.append_info(f"Директория: {out_path}")
 
         if out_path.exists():
