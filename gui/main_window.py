@@ -36,6 +36,7 @@ from utils.operation_registry import OperationRegistry
 from utils.data_viewer import DataViewer
 from utils.task_manager import TaskManager
 from utils.exporter import DataExporter
+from utils.endpoint_index import EndpointIndex
 from utils.system_logger import get_last_logs
 
 SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
@@ -277,8 +278,11 @@ class MainWindow(QMainWindow):
         btn_csv.clicked.connect(lambda: self._export_data('csv'))
         btn_json = StyledButton("Export JSON", style='secondary')
         btn_json.clicked.connect(lambda: self._export_data('json'))
+        btn_endpoints = StyledButton("Export Endpoints", style='secondary')
+        btn_endpoints.clicked.connect(self._export_endpoints)
         e.addWidget(btn_csv)
         e.addWidget(btn_json)
+        e.addWidget(btn_endpoints)
         e.addStretch()
         e_grp.setLayout(e)
         layout.addWidget(e_grp)
@@ -338,6 +342,31 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Экспорт", f"Данные сохранены:\n{path}")
         else:
             QMessageBox.warning(self, "Экспорт", "Нет данных для экспорта")
+
+    def _export_endpoints(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Экспорт API-эндпоинтов", "api_endpoints.json",
+            "JSON (*.json);;CSV (*.csv)",
+        )
+        if not path:
+            return
+        suffix = 'csv' if path.lower().endswith('.csv') else 'json'
+        try:
+            ok = DataExporter.export(path, format=suffix, data_type='api_endpoint')
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка экспорта", str(e))
+            return
+        if not ok:
+            QMessageBox.warning(self, "Экспорт", "Нет эндпоинтов для экспорта")
+            return
+        # Дедуплицированная сводка для информативного сообщения.
+        try:
+            s = EndpointIndex(db_path=str(REGISTRY_DB)).get_summary()
+            extra = (f"\n\nЗаписей: {s['total_records']} | "
+                     f"уникальных эндпоинтов: {s['unique_endpoints']}")
+        except Exception:
+            extra = ""
+        QMessageBox.information(self, "Экспорт", f"Эндпоинты сохранены:\n{path}{extra}")
 
     # ------------------------------------------------------------- Dashboard
 
