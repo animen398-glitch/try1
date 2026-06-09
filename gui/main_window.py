@@ -32,9 +32,11 @@ from core.vuln_scanner import VulnScanner
 from gui.dialogs import SettingsDialog
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.file_compression import FileCompressor
+from utils.operation_registry import OperationRegistry
 
 SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
 TARGETS_FILE = Path(__file__).parent.parent / 'configs' / 'targets.json'
+OPERATIONS_DB = Path(__file__).parent.parent / 'data' / 'operations.db'
 
 
 class _Worker(QObject):
@@ -154,6 +156,8 @@ class MainWindow(QMainWindow):
         self._active_subdomain_scanner = None
         self._subdomain_thread: Optional[QThread] = None
         self._active_clone_threads: dict = {}
+        self._history_rows: list = []
+        self._history_loading = False
 
         self._build_menu()
         self._build_central()
@@ -215,7 +219,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_video_tab(),      "Video Downloader")
         self.tabs.addTab(self._build_image_tab(),      "Image Extractor")
         self.tabs.addTab(self._build_design_tab(),     "Design Lab")
+        self.tabs.addTab(self._build_history_tab(),    "История операций")
         layout.addWidget(self.tabs)
+
+        # Lazily load history the first time its tab is opened.
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
     def _build_statusbar(self):
         self.status_bar = QStatusBar()
@@ -225,6 +233,131 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
         self.status_bar.showMessage("Готов")
+
+    # ------------------------------------------------------- Operation History
+
+    HISTORY_COLUMNS = ["ID", "Target", "Phase", "Status", "Started At", "Duration (ms)"]
+
+    def _build_history_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        ctrl = QHBoxLayout()
+        self.history_count = QLabel("Записей: 0")
+        btn_refresh = StyledButton("Обновить", style='secondary')
+        btn_refresh.clicked.connect(self._refresh_history)
+        ctrl.addWidget(self.history_count)
+        ctrl.addStretch()
+        ctrl.addWidget(btn_refresh)
+        layout.addLayout(ctrl)
+
+        table_grp = SectionGroupBox("История операций (data/operations.db)")
+        table_layout = QVBoxLayout()
+        self.history_table = QTableWidget(0, len(self.HISTORY_COLUMNS))
+        self.history_table.setHorizontalHeaderLabels(self.HISTORY_COLUMNS)
+        self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.history_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.setAlternatingRowColors(True)
+        header = self.history_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)  # Target column fills space
+        self.history_table.itemSelectionChanged.connect(self._on_history_row_selected)
+        table_layout.addWidget(self.history_table)
+        table_grp.setLayout(table_layout)
+        layout.addWidget(table_grp, stretch=3)
+
+        meta_grp = SectionGroupBox("Метаданные выбранной операции")
+        meta_layout = QVBoxLayout()
+        self.history_meta = ResultsDisplay()
+        self.history_meta.setMaximumHeight(180)
+        meta_layout.addWidget(self.history_meta)
+        meta_grp.setLayout(meta_layout)
+        layout.addWidget(meta_grp, stretch=1)
+
+        self._history_widget = w
+        return w
+
+    def _on_tab_changed(self, index: int):
+        if self.tabs.widget(index) is getattr(self, '_history_widget', None):
+            if not self._history_rows and not self._history_loading:
+                self._refresh_history()
+
+    def _refresh_history(self):
+        if self._history_loading:
+            return
+        self._history_loading = True
+        self._set_busy(True)
+        self._run_async(self._query_history, self._on_history_loaded)
+
+    @staticmethod
+    def _query_history() -> dict:
+        # Constructed inside the worker thread so the SQLite connection is
+        # opened, used, and closed entirely off the GUI thread.
+        registry = OperationRegistry(db_path=str(OPERATIONS_DB))
+        return {'rows': registry.history(limit=1000)}
+
+    def _on_history_loaded(self, result: dict):
+        self._history_loading = False
+        self._set_busy(False)
+        rows = result.get('rows', [])
+        self._history_rows = rows
+
+        self.history_table.setRowCount(0)
+        for row in rows:
+            r = self.history_table.rowCount()
+            self.history_table.insertRow(r)
+            values = [
+                row.get('id'),
+                row.get('target'),
+                row.get('phase'),
+                row.get('status'),
+                row.get('started_at'),
+                row.get('duration_ms'),
+            ]
+            for col, val in enumerate(values):
+                item = QTableWidgetItem('' if val is None else str(val))
+                if col in (0, 5):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if col == 3:  # Status colouring
+                    status = (row.get('status') or '').lower()
+                    if status == 'success':
+                        item.setForeground(QColor('#2e7d32'))
+                    elif status == 'failed':
+                        item.setForeground(QColor('#d32f2f'))
+                    elif status == 'running':
+                        item.setForeground(QColor('#0078d4'))
+                self.history_table.setItem(r, col, item)
+
+        self.history_count.setText(f"Записей: {len(rows)}")
+        self.history_meta.clear()
+        if not rows:
+            self.history_meta.append_info("История пуста — операции ещё не записаны.")
+
+    def _on_history_row_selected(self):
+        rows = self.history_table.selectionModel().selectedRows()
+        self.history_meta.clear()
+        if not rows:
+            return
+        idx = rows[0].row()
+        if not (0 <= idx < len(self._history_rows)):
+            return
+        record = self._history_rows[idx]
+
+        error = record.get('error')
+        if error:
+            self.history_meta.append_error(error)
+
+        metadata = record.get('metadata')
+        if metadata in (None, '', {}):
+            self.history_meta.append_info("Метаданные отсутствуют.")
+            return
+        try:
+            text = json.dumps(metadata, indent=2, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(metadata)
+        self.history_meta.append(f'<pre style="color:#d4d4d4;margin:0;">{text}</pre>')
 
     # --------------------------------------------------------- API Key Scanner
 
