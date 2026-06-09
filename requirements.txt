@@ -1,23 +1,19 @@
 # Advanced Site Analyzer — Python 3.11+
 # Install: pip install -r requirements.txt
 
-# GUI
+# ── Core (required for the GUI / .exe build) ──────────────────────────────
 PyQt5>=5.15.9
-
-# Web management console
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
-
-# Dynamic traffic interception (headless browser)
-playwright>=1.40.0
-# After install run:  python -m playwright install chromium
-
-# HTTP / encoding (stdlib-only, no extra deps needed for core modules)
-# gzip, zlib, urllib — all included in Python stdlib
-
-# Image Extractor: HTTP fetching + HTML parsing
 requests>=2.31.0
 beautifulsoup4>=4.12.0
+lxml>=5.1.0                  # faster HTML parsing
 
-# Optional: faster HTML parsing for large-scale scraping
-# lxml>=5.1.0
+# ── Optional features ─────────────────────────────────────────────────────
+# Enable only if you use these; they bloat / complicate the PyInstaller build
+# and are NOT bundled into the .exe (external binaries).
+# playwright>=1.40.0         # dynamic traffic analysis; then: python -m playwright install chromium
+# yt-dlp>=2024.1.0           # video downloader (external CLI, called via subprocess)
+# fastapi>=0.110.0           # web console (main_orchestrator --web)
+# uvicorn[standard]>=0.27.0
+
+# ── Packaging (build-time only) ───────────────────────────────────────────
+# pip install pyinstaller     # build: pyinstaller build.spec --clean --noconfirm
