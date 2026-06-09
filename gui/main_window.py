@@ -27,7 +27,7 @@ from core.image_extractor import ImageExtractor
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine, enrich_cms_with_dynamic
 from core.subdomain_scanner import SubdomainScanner
-from core.video_downloader import VideoDownloader
+from utils.video_processor import VideoDownloader
 from core.vuln_scanner import VulnScanner
 from gui.dialogs import SettingsDialog
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
@@ -37,6 +37,7 @@ from utils.operation_registry import OperationRegistry
 SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
 TARGETS_FILE = Path(__file__).parent.parent / 'configs' / 'targets.json'
 OPERATIONS_DB = Path(__file__).parent.parent / 'data' / 'operations.db'
+LIVE_TEST_OUTPUT = Path(__file__).parent.parent / 'live_test_output'
 
 
 class _Worker(QObject):
@@ -591,22 +592,13 @@ class MainWindow(QMainWindow):
         grp = SectionGroupBox("Загрузка видео (yt-dlp)")
         g = QVBoxLayout()
 
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("URL:"))
+        row = QHBoxLayout()
+        row.addWidget(QLabel("URL:"))
         self.video_url = QLineEdit()
         self.video_url.setPlaceholderText("https://youtube.com/watch?v=...")
-        row1.addWidget(self.video_url)
-        g.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Папка:"))
-        self.video_dir = QLineEdit(self.settings.get('output_dir', ''))
-        btn_browse = StyledButton("...", style='secondary')
-        btn_browse.setMaximumWidth(40)
-        btn_browse.clicked.connect(lambda: self._browse(self.video_dir))
-        row2.addWidget(self.video_dir)
-        row2.addWidget(btn_browse)
-        g.addLayout(row2)
+        self.video_url.returnPressed.connect(self._run_video)
+        row.addWidget(self.video_url)
+        g.addLayout(row)
 
         btn_dl = StyledButton("Скачать", style='success')
         btn_dl.clicked.connect(self._run_video)
@@ -624,14 +616,12 @@ class MainWindow(QMainWindow):
 
     def _run_video(self):
         url = self.video_url.text().strip()
-        base_out = self.video_dir.text().strip()
-        if not url or not base_out:
-            QMessageBox.warning(self, "Ошибка", "Укажите URL и папку")
+        if not url:
+            QMessageBox.warning(self, "Ошибка", "Укажите URL")
             return
 
         domain = self._domain_slug(url)
-        out_path = Path(base_out) / f"{domain}_{datetime.now().strftime('%Y%m%d')}_video"
-        out_path.mkdir(parents=True, exist_ok=True)
+        out_path = LIVE_TEST_OUTPUT / f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_video"
 
         self.video_results.clear()
         self.video_results.append_info(f"Загружаю: {url}")
@@ -639,12 +629,11 @@ class MainWindow(QMainWindow):
         self._set_busy(True)
 
         dl = VideoDownloader()
-        dl.configure(str(out_path))
 
         def _on_done(result, _p=out_path, _u=url):
             self._on_video_done(result, _p, _u)
 
-        self._run_async(lambda: dl.download(url), _on_done)
+        self._run_async(lambda: dl.download_video(url, out_path), _on_done)
 
     def _on_video_done(self, result: dict, out_path: Path, url: str):
         self._set_busy(False)
