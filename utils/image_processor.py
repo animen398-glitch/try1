@@ -18,9 +18,11 @@ class ImageExtractor:
     """Извлечение изображений со страницы с дедупликацией и записью в реестр."""
 
     def __init__(self, registry: Optional[OperationRegistry] = None,
+                 data_registry=None,
                  profile: str = 'chrome_windows',
                  min_bytes: int = MIN_IMAGE_BYTES, timeout: int = 20):
         self.registry = registry or OperationRegistry(db_path=DEFAULT_DB)
+        self._data_registry = data_registry
         self.profile = profile
         self.min_bytes = min_bytes
         self.timeout = timeout
@@ -32,6 +34,17 @@ class ImageExtractor:
     def _log(self, msg: str) -> None:
         if self.progress_callback:
             self.progress_callback(msg)
+
+    def _record_data(self, source: str, data_type: str, content: str,
+                     metadata: Optional[Dict] = None) -> None:
+        """Сохранить найденный контент в DataRegistry (не ломая основную операцию)."""
+        try:
+            if self._data_registry is None:
+                from core.registry import DataRegistry
+                self._data_registry = DataRegistry()
+            self._data_registry.add_record(source, data_type, content, metadata)
+        except Exception as e:
+            self._log(f'Не удалось записать в DataRegistry: {e}')
 
     def extract_images(self, target_url: str,
                        output_dir: Union[str, Path]) -> Dict:
@@ -103,6 +116,11 @@ class ImageExtractor:
                 fpath.write_bytes(content)
                 result['downloaded'] += 1
                 result['files'].append(str(fpath))
+                self._record_data(
+                    source=target_url, data_type='image', content=str(fpath),
+                    metadata={'source_url': img_url, 'bytes': len(content),
+                              'sha256': digest},
+                )
 
             self._log(
                 f"Загружено: {result['downloaded']} | "

@@ -14,8 +14,10 @@ class VideoDownloader:
     """Загрузчик видео через yt-dlp с записью операций в OperationRegistry."""
 
     def __init__(self, registry: Optional[OperationRegistry] = None,
+                 data_registry=None,
                  quality: str = 'best', timeout: int = 300):
         self.registry = registry or OperationRegistry(db_path=DEFAULT_DB)
+        self._data_registry = data_registry
         self.quality = quality
         self.timeout = timeout
         self.progress_callback: Optional[Callable] = None
@@ -30,6 +32,17 @@ class VideoDownloader:
     def _log(self, msg: str) -> None:
         if self.progress_callback:
             self.progress_callback(msg)
+
+    def _record_data(self, source: str, data_type: str, content: str,
+                     metadata: Optional[Dict] = None) -> None:
+        """Сохранить найденный контент в DataRegistry (не ломая основную операцию)."""
+        try:
+            if self._data_registry is None:
+                from core.registry import DataRegistry
+                self._data_registry = DataRegistry()
+            self._data_registry.add_record(source, data_type, content, metadata)
+        except Exception as e:
+            self._log(f'Не удалось записать в DataRegistry: {e}')
 
     def download_video(self, url: str, output_dir: Union[str, Path]) -> Dict:
         """Скачать видео в output_dir; начало/итог операции пишутся в реестр."""
@@ -67,6 +80,10 @@ class VideoDownloader:
                 result['status'] = 'Success'
                 result['output'] = process.stdout
                 self.registry.finish(op_id, status='success')
+                self._record_data(
+                    source=url, data_type='video', content=str(out_path),
+                    metadata={'quality': self.quality},
+                )
             else:
                 error = (process.stderr or 'unknown error')[:500]
                 result['status'] = f'Error: {error}'
