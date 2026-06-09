@@ -33,10 +33,12 @@ from gui.dialogs import SettingsDialog
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.file_compression import FileCompressor
 from utils.operation_registry import OperationRegistry
+from utils.data_viewer import DataViewer
 
 SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
 TARGETS_FILE = Path(__file__).parent.parent / 'configs' / 'targets.json'
 OPERATIONS_DB = Path(__file__).parent.parent / 'data' / 'operations.db'
+REGISTRY_DB = Path(__file__).parent.parent / 'data' / 'registry.db'
 LIVE_TEST_OUTPUT = Path(__file__).parent.parent / 'live_test_output'
 
 
@@ -159,6 +161,8 @@ class MainWindow(QMainWindow):
         self._active_clone_threads: dict = {}
         self._history_rows: list = []
         self._history_loading = False
+        self._dashboard_loading = False
+        self._dashboard_loaded = False
 
         self._build_menu()
         self._build_central()
@@ -220,6 +224,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_video_tab(),      "Video Downloader")
         self.tabs.addTab(self._build_image_tab(),      "Image Extractor")
         self.tabs.addTab(self._build_design_tab(),     "Design Lab")
+        self.tabs.addTab(self._build_dashboard_tab(),  "Dashboard")
         self.tabs.addTab(self._build_history_tab(),    "История операций")
         layout.addWidget(self.tabs)
 
@@ -234,6 +239,120 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
         self.status_bar.showMessage("Готов")
+
+    # ------------------------------------------------------------- Dashboard
+
+    DASHBOARD_COLUMNS = ["Data Type", "Source", "Snippet"]
+
+    # (ключ summary/derived -> подпись карточки)
+    DASHBOARD_STATS = [
+        ('subdomains', 'Субдомены'),
+        ('ips',        'IP-адреса'),
+        ('images',     'Изображения'),
+        ('videos',     'Видео'),
+        ('patterns',   'Паттерны'),
+    ]
+
+    def _build_dashboard_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        ctrl = QHBoxLayout()
+        self.dash_status = QLabel("Всего записей: 0")
+        btn_update = StyledButton("Обновить", style='secondary')
+        btn_update.clicked.connect(self._refresh_dashboard)
+        ctrl.addWidget(self.dash_status)
+        ctrl.addStretch()
+        ctrl.addWidget(btn_update)
+        layout.addLayout(ctrl)
+
+        stats_row = QHBoxLayout()
+        self.dash_stats: dict = {}
+        for key, title in self.DASHBOARD_STATS:
+            card, value_label = self._make_stat_card(title)
+            self.dash_stats[key] = value_label
+            stats_row.addWidget(card)
+        layout.addLayout(stats_row)
+
+        table_grp = SectionGroupBox("Последняя активность (data/registry.db)")
+        table_layout = QVBoxLayout()
+        self.dashboard_table = QTableWidget(0, len(self.DASHBOARD_COLUMNS))
+        self.dashboard_table.setHorizontalHeaderLabels(self.DASHBOARD_COLUMNS)
+        self.dashboard_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.dashboard_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.dashboard_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.dashboard_table.verticalHeader().setVisible(False)
+        self.dashboard_table.setAlternatingRowColors(True)
+        header = self.dashboard_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Snippet fills space
+        table_layout.addWidget(self.dashboard_table)
+        table_grp.setLayout(table_layout)
+        layout.addWidget(table_grp, stretch=1)
+
+        self._dashboard_widget = w
+        return w
+
+    def _make_stat_card(self, title: str):
+        card = SectionGroupBox(title)
+        v = QVBoxLayout()
+        value_label = QLabel("0")
+        value_label.setAlignment(Qt.AlignCenter)
+        value_label.setStyleSheet(
+            "font-size: 28px; font-weight: bold; color: #0078d4;"
+        )
+        v.addWidget(value_label)
+        card.setLayout(v)
+        return card, value_label
+
+    def _refresh_dashboard(self):
+        if self._dashboard_loading:
+            return
+        self._dashboard_loading = True
+        self._set_busy(True)
+        self._run_async(self._query_dashboard, self._on_dashboard_loaded)
+
+    @staticmethod
+    def _query_dashboard() -> dict:
+        # Constructed inside the worker thread so the SQLite connection is
+        # opened, used, and closed entirely off the GUI thread. All retrieval
+        # is guarded so a DB error surfaces as data, never an unhandled crash.
+        try:
+            viewer = DataViewer(db_path=str(REGISTRY_DB))
+            summary = viewer.get_summary()
+            patterns = len(viewer.get_by_type('pattern_match'))
+            recent = viewer.get_recent_records(limit=20)
+            return {'summary': summary, 'patterns': patterns, 'recent': recent}
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _on_dashboard_loaded(self, result: dict):
+        self._dashboard_loading = False
+        self._set_busy(False)
+
+        if result.get('error'):
+            self._dashboard_loaded = False  # allow retry on next open/refresh
+            self.dash_status.setText(f"Ошибка загрузки данных: {result['error']}")
+            return
+
+        self._dashboard_loaded = True
+        summary = result.get('summary', {})
+        patterns = result.get('patterns', 0)
+        for key, label in self.dash_stats.items():
+            value = patterns if key == 'patterns' else summary.get(key, 0)
+            label.setText(str(value))
+        self.dash_status.setText(f"Всего записей: {summary.get('total', 0)}")
+
+        recent = result.get('recent', [])
+        self.dashboard_table.setRowCount(0)
+        for rec in recent:
+            r = self.dashboard_table.rowCount()
+            self.dashboard_table.insertRow(r)
+            content = rec.get('content') or ''
+            snippet = content if len(content) <= 80 else content[:77] + '...'
+            values = [rec.get('data_type', ''), rec.get('source', ''), snippet]
+            for col, val in enumerate(values):
+                self.dashboard_table.setItem(r, col, QTableWidgetItem(str(val)))
 
     # ------------------------------------------------------- Operation History
 
@@ -281,9 +400,13 @@ class MainWindow(QMainWindow):
         return w
 
     def _on_tab_changed(self, index: int):
-        if self.tabs.widget(index) is getattr(self, '_history_widget', None):
+        widget = self.tabs.widget(index)
+        if widget is getattr(self, '_history_widget', None):
             if not self._history_rows and not self._history_loading:
                 self._refresh_history()
+        elif widget is getattr(self, '_dashboard_widget', None):
+            if not self._dashboard_loaded and not self._dashboard_loading:
+                self._refresh_dashboard()
 
     def _refresh_history(self):
         if self._history_loading:
