@@ -343,13 +343,14 @@ class MainWindow(QMainWindow):
 
     DASHBOARD_COLUMNS = ["Data Type", "Source", "Snippet"]
 
-    # (ключ summary/derived -> подпись карточки)
+    # (ключ summary -> подпись карточки)
     DASHBOARD_STATS = [
-        ('subdomains', 'Субдомены'),
-        ('ips',        'IP-адреса'),
-        ('images',     'Изображения'),
-        ('videos',     'Видео'),
-        ('patterns',   'Паттерны'),
+        ('subdomains',    'Субдомены'),
+        ('ips',           'IP-адреса'),
+        ('images',        'Изображения'),
+        ('videos',        'Видео'),
+        ('patterns',      'Паттерны'),
+        ('api_endpoints', 'API Endpoints'),
     ]
 
     def _build_dashboard_tab(self) -> QWidget:
@@ -419,9 +420,8 @@ class MainWindow(QMainWindow):
         try:
             viewer = DataViewer(db_path=str(REGISTRY_DB))
             summary = viewer.get_summary()
-            patterns = len(viewer.get_by_type('pattern_match'))
             recent = viewer.get_recent_records(limit=20)
-            return {'summary': summary, 'patterns': patterns, 'recent': recent}
+            return {'summary': summary, 'recent': recent}
         except Exception as e:
             return {'error': str(e)}
 
@@ -436,10 +436,8 @@ class MainWindow(QMainWindow):
 
         self._dashboard_loaded = True
         summary = result.get('summary', {})
-        patterns = result.get('patterns', 0)
         for key, label in self.dash_stats.items():
-            value = patterns if key == 'patterns' else summary.get(key, 0)
-            label.setText(str(value))
+            label.setText(str(summary.get(key, 0)))
         self.dash_status.setText(f"Всего записей: {summary.get('total', 0)}")
 
         recent = result.get('recent', [])

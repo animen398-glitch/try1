@@ -17,6 +17,8 @@ class DataViewer:
         'ips': 'ip_address',
         'images': 'image',
         'videos': 'video',
+        'patterns': 'pattern_match',
+        'api_endpoints': 'api_endpoint',
     }
 
     def __init__(self, registry=None, db_path: Union[str, Path] = DEFAULT_DB):
