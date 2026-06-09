@@ -4,18 +4,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from utils.browser_utils import SessionBuilder
-from utils.pattern_analyser import PatternAnalyser
-
-# Набор паттернов по умолчанию для поиска утечек ключей/токенов в контенте.
-DEFAULT_PATTERNS = {
-    'google_api_key':  r'AIza[0-9A-Za-z\-_]{35}',
-    'aws_access_key':  r'AKIA[0-9A-Z]{16}',
-    'github_token':    r'ghp_[A-Za-z0-9]{36}',
-    'slack_token':     r'xox[baprs]-[A-Za-z0-9\-]+',
-    'bearer_token':    r'[Bb]earer\s+[A-Za-z0-9._\-]{20,}',
-    'generic_secret':  r'(?:api[_\-]?key|apikey|api_token|access_token|secret_key)'
-                       r'["\'\s:=]+[A-Za-z0-9_\-]{16,}',
-}
+from utils.pattern_analyser import PatternAnalyser, DEFAULT_PATTERNS
 
 _SCRIPT_STYLE_RE = re.compile(r'<(script|style)[^>]*>.*?</\1>', re.IGNORECASE | re.DOTALL)
 _SCRIPT_SRC_RE = re.compile(r'<script[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
