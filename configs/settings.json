@@ -1,0 +1,8 @@
+{
+  "output_dir": "~/SiteAnalyzer",
+  "max_pages": 50,
+  "request_delay": 500,
+  "user_agent_profile": "chrome_windows",
+  "auto_compress": false,
+  "compression_format": "zip"
+}

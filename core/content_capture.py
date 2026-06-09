@@ -1,0 +1,124 @@
+import gzip
+import json
+import re
+import time
+import urllib.error
+import zlib
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+from urllib.parse import urljoin, urlparse
+
+from utils.browser_utils import SessionBuilder
+
+
+class SiteContentCapture:
+    """Сканер структуры сайта с сохранением HTML-страниц"""
+
+    def __init__(self):
+        self.base_url: Optional[str] = None
+        self.max_pages: int = 50
+        self.output_dir: Optional[Path] = None
+        self.visited: set = set()
+        self.captured: List[Dict] = []
+        self.progress_callback: Optional[Callable] = None
+        self._profile: str = 'chrome_windows'
+
+    def configure(self, url: str, output_dir: str, max_pages: int = 50, profile: str = 'chrome_windows'):
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        self.base_url = url
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_pages = max_pages
+        self._profile = profile
+        self.visited.clear()
+        self.captured.clear()
+
+    def set_progress_callback(self, cb: Callable):
+        self.progress_callback = cb
+
+    def _fetch(self, url: str) -> Optional[str]:
+        try:
+            session = SessionBuilder(self._profile)
+            req = session.make_request(url)
+            opener = session.build_opener()
+            with opener.open(req, timeout=15) as r:
+                raw = r.read()
+                enc = r.headers.get('Content-Encoding', '').lower().strip()
+                if enc == 'gzip' or (not enc and raw[:2] == b'\x1f\x8b'):
+                    raw = gzip.decompress(raw)
+                elif enc == 'deflate':
+                    try:
+                        raw = zlib.decompress(raw)
+                    except zlib.error:
+                        raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+                return raw.decode('utf-8', errors='ignore')
+        except Exception:
+            return None
+
+    def _extract_links(self, html: str, base: str) -> List[str]:
+        links = re.findall(r'href=["\']([^"\']+)["\']', html)
+        base_domain = urlparse(base).netloc
+        result = []
+        for link in links:
+            full = urljoin(base, link)
+            parsed = urlparse(full)
+            if parsed.netloc == base_domain and parsed.scheme in ('http', 'https'):
+                clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+                if clean not in self.visited:
+                    result.append(clean)
+        return result
+
+    def _save_page(self, url: str, html: str) -> str:
+        parsed = urlparse(url)
+        path = parsed.path.strip('/').replace('/', '_') or 'index'
+        filename = f"{path}.html"
+        filepath = self.output_dir / filename
+        filepath.write_text(html, encoding='utf-8')
+        return str(filepath)
+
+    def run_capture(self) -> Dict:
+        result = {
+            'base_url': self.base_url,
+            'pages_captured': 0,
+            'files': [],
+            'errors': []
+        }
+
+        if not self.base_url:
+            result['error'] = 'No URL set'
+            return result
+
+        queue = [self.base_url]
+
+        while queue and len(self.captured) < self.max_pages:
+            url = queue.pop(0)
+            if url in self.visited:
+                continue
+            self.visited.add(url)
+
+            if self.progress_callback:
+                self.progress_callback(f"Сканирую: {url}")
+
+            html = self._fetch(url)
+            if not html:
+                result['errors'].append(url)
+                continue
+
+            saved = self._save_page(url, html)
+            self.captured.append({'url': url, 'file': saved})
+            result['files'].append(saved)
+
+            new_links = self._extract_links(html, url)
+            queue.extend(new_links[:10])
+            time.sleep(0.5)
+
+        result['pages_captured'] = len(self.captured)
+
+        map_path = self.output_dir / 'site_map.json'
+        map_path.write_text(
+            json.dumps(self.captured, indent=2, ensure_ascii=False),
+            encoding='utf-8'
+        )
+
+        return result

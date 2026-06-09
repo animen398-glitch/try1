@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WebSiteModel",
+  "description": "Schema for captured website structure",
+  "type": "object",
+  "properties": {
+    "url": { "type": "string", "format": "uri" },
+    "captured_at": { "type": "string", "format": "date-time" },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string" },
+          "title": { "type": "string" },
+          "file": { "type": "string" },
+          "links": { "type": "array", "items": { "type": "string" } },
+          "images": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "images": { "type": "array", "items": { "type": "string" } },
+        "videos": { "type": "array", "items": { "type": "string" } },
+        "api_keys": { "type": "object" }
+      }
+    }
+  }
+}

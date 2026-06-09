@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Generated / runtime output
+live_test_output/
+~/
+
+# Secrets & local environment
+.env
+.env.*
+configs/secrets.json
+
+# Local-only Claude Code settings (keep rules/ and skills/ tracked)
+.claude/settings.local.json
+
+# IDE / editor artefacts
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS artefacts
+.DS_Store
+Thumbs.db
