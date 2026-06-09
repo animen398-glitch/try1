@@ -117,10 +117,22 @@ class ReconEngine:
     - PWA manifest extraction: /manifest.json, /site.webmanifest, <link rel="manifest">
     """
 
-    def __init__(self):
+    def __init__(self, data_registry=None):
         self._timeout: int = 10
         self._profile: str = 'chrome_windows'
         self._output_dir: Optional[Path] = None
+        self._data_registry = data_registry
+
+    def _record_discovery(self, source: str, data_type: str, content: str,
+                          metadata: Optional[Dict] = None) -> None:
+        """Сохранить найденный актив в DataRegistry (не ломая процесс разведки)."""
+        try:
+            if self._data_registry is None:
+                from core.registry import DataRegistry
+                self._data_registry = DataRegistry()
+            self._data_registry.add_record(source, data_type, content, metadata)
+        except Exception:
+            pass
 
     def configure(
         self,
@@ -292,6 +304,18 @@ class ReconEngine:
         result['ip'] = ip
         if ip:
             result['geo'] = self._geoip(ip)
+
+        # Persist discovered assets (host + resolved IP) to the DataRegistry
+        if domain:
+            self._record_discovery(
+                source=url, data_type='subdomain', content=domain,
+                metadata={'resolved_ip': ip},
+            )
+        if ip:
+            self._record_discovery(
+                source=url, data_type='ip_address', content=ip,
+                metadata={'domain': domain, 'geo': result['geo']},
+            )
 
         # Fetch main page
         raw, resp_headers = self._fetch_with_headers(url)
