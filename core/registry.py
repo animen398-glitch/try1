@@ -1,50 +1,30 @@
 import json
-import sqlite3
-from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS records (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    source      TEXT    NOT NULL,
-    data_type   TEXT    NOT NULL,
-    content     TEXT,
-    metadata    TEXT,
-    created_at  TEXT    NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_records_data_type ON records (data_type);
-CREATE INDEX IF NOT EXISTS idx_records_source    ON records (source);
-"""
+from utils.sqlite_store import SQLiteStore
 
 
-class DataRegistry:
+class DataRegistry(SQLiteStore):
     """Центральное хранилище записей проекта на SQLite (data/registry.db)."""
 
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS records (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        source      TEXT    NOT NULL,
+        data_type   TEXT    NOT NULL,
+        content     TEXT,
+        metadata    TEXT,
+        created_at  TEXT    NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_records_data_type ON records (data_type);
+    CREATE INDEX IF NOT EXISTS idx_records_source    ON records (source);
+    """
+
     def __init__(self, db_path: Union[str, Path] = 'data/registry.db'):
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
-
-    def _init_schema(self) -> None:
-        with self._connect() as conn:
-            conn.executescript(SCHEMA)
-
-    @contextmanager
-    def _connect(self):
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        super().__init__(db_path)
 
     def add_record(self, source: str, data_type: str, content: Any,
                    metadata: Optional[Dict[str, Any]] = None) -> int:
@@ -91,7 +71,7 @@ class DataRegistry:
             row = conn.execute(
                 'SELECT * FROM records WHERE id = ?', (record_id,),
             ).fetchone()
-            return self._row_to_dict(row) if row else None
+            return self._row_to_dict(row)
 
     def count(self, data_type: Optional[str] = None) -> int:
         with self._connect() as conn:
@@ -103,13 +83,3 @@ class DataRegistry:
                     (data_type,),
                 ).fetchone()
             return row['n']
-
-    @staticmethod
-    def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-        data = dict(row)
-        if data.get('metadata'):
-            try:
-                data['metadata'] = json.loads(data['metadata'])
-            except (ValueError, TypeError):
-                pass
-        return data
