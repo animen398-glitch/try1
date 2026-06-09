@@ -7,6 +7,12 @@ __pycache__/
 live_test_output/
 ~/
 
+# SQLite operation history (runtime DB; keep the data/ dir tracked)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
 # Secrets & local environment
 .env
 .env.*

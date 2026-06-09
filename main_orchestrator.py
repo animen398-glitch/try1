@@ -28,6 +28,8 @@ from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
 from core.vuln_scanner import VulnScanner
 
+from utils import OperationRegistry
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,24 @@ def section(title: str, width: int = 62):
 
 def progress(msg: str):
     print(f'  {msg}')
+
+
+def run_phase(registry: OperationRegistry, url: str, phase: str,
+              base_dir: Path, fn):
+    """Execute a pipeline phase while recording its lifecycle in the registry.
+
+    Logs a 'running' row on entry, marks 'success' on return, and 'failed'
+    (with the exception text) before re-raising so existing control flow is
+    preserved.
+    """
+    op_id = registry.start(target=url, phase=phase, output_dir=str(base_dir))
+    try:
+        result = fn()
+        registry.finish(op_id, status='success')
+        return result
+    except Exception as e:
+        registry.finish(op_id, status='failed', error=str(e))
+        raise
 
 
 # ── Pipeline phases ───────────────────────────────────────────────────────────
@@ -257,33 +277,54 @@ def main():
         'phases':      {},
     }
 
+    # Operation history is persisted to data/operations.db (dir auto-created).
+    registry = OperationRegistry(db_path='data/operations.db')
+
     try:
         # ── 1. Recon (always) ────────────────────────────────────────────
-        pipeline['phases']['recon'] = phase_recon(url, base_dir)
+        pipeline['phases']['recon'] = run_phase(
+            registry, url, 'recon', base_dir,
+            lambda: phase_recon(url, base_dir),
+        )
 
         # ── 2. Paywall bypass (optional) ─────────────────────────────────
         if opts.paywall:
-            pipeline['phases']['paywall'] = phase_paywall(url, base_dir)
+            pipeline['phases']['paywall'] = run_phase(
+                registry, url, 'paywall', base_dir,
+                lambda: phase_paywall(url, base_dir),
+            )
 
         # ── 3. Capture (always) ──────────────────────────────────────────
-        pipeline['phases']['capture'] = phase_capture(url, base_dir, opts.max_pages)
+        pipeline['phases']['capture'] = run_phase(
+            registry, url, 'capture', base_dir,
+            lambda: phase_capture(url, base_dir, opts.max_pages),
+        )
 
         # ── 4. Dynamic analysis (optional) ───────────────────────────────
         if opts.dynamic:
-            pipeline['phases']['dynamic'] = phase_dynamic(url, base_dir)
+            pipeline['phases']['dynamic'] = run_phase(
+                registry, url, 'dynamic', base_dir,
+                lambda: phase_dynamic(url, base_dir),
+            )
 
         # ── 5. Vulnerability scan (optional) ─────────────────────────────
         if opts.vulns:
-            pipeline['phases']['vulns'] = phase_vuln_scan(
-                pipeline['phases'].get('recon', {}),
-                pipeline['phases'].get('dynamic', {}),
+            pipeline['phases']['vulns'] = run_phase(
+                registry, url, 'vulns', base_dir,
+                lambda: phase_vuln_scan(
+                    pipeline['phases'].get('recon', {}),
+                    pipeline['phases'].get('dynamic', {}),
+                ),
             )
 
         # ── 6. API response dump (optional) ──────────────────────────────
         if opts.dump_api:
             dyn = pipeline['phases'].get('dynamic', {})
             if dyn.get('status') == 'Success':
-                pipeline['phases']['api_dump'] = phase_api_dump(dyn, url, base_dir)
+                pipeline['phases']['api_dump'] = run_phase(
+                    registry, url, 'api_dump', base_dir,
+                    lambda: phase_api_dump(dyn, url, base_dir),
+                )
             else:
                 print('  [!] --dump-api requires --dynamic to have succeeded')
 
