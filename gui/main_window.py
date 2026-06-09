@@ -782,8 +782,82 @@ class MainWindow(QMainWindow):
         results_row.addWidget(fonts_grp, 2)
         layout.addLayout(results_row)
 
+        cmp_grp = SectionGroupBox("Сравнение версий (анализ изменений)")
+        cmp_layout = QVBoxLayout()
+
+        rowa = QHBoxLayout()
+        rowa.addWidget(QLabel("Папка A:"))
+        self.design_cmp_a = QLineEdit()
+        self.design_cmp_a.setPlaceholderText("Старая версия (папка с захваченными файлами)")
+        btn_browse_a = StyledButton("...", style='secondary')
+        btn_browse_a.setMaximumWidth(40)
+        btn_browse_a.clicked.connect(lambda: self._browse(self.design_cmp_a))
+        rowa.addWidget(self.design_cmp_a)
+        rowa.addWidget(btn_browse_a)
+        cmp_layout.addLayout(rowa)
+
+        rowb = QHBoxLayout()
+        rowb.addWidget(QLabel("Папка B:"))
+        self.design_cmp_b = QLineEdit()
+        self.design_cmp_b.setPlaceholderText("Новая версия (папка с захваченными файлами)")
+        btn_browse_b = StyledButton("...", style='secondary')
+        btn_browse_b.setMaximumWidth(40)
+        btn_browse_b.clicked.connect(lambda: self._browse(self.design_cmp_b))
+        rowb.addWidget(self.design_cmp_b)
+        rowb.addWidget(btn_browse_b)
+        cmp_layout.addLayout(rowb)
+
+        btn_cmp = StyledButton("Сравнить")
+        btn_cmp.clicked.connect(self._run_design_compare)
+        cmp_layout.addWidget(btn_cmp)
+
+        self.design_diff = ResultsDisplay()
+        cmp_layout.addWidget(self.design_diff)
+
+        cmp_grp.setLayout(cmp_layout)
+        layout.addWidget(cmp_grp)
+
         self._design_show_placeholder()
         return w
+
+    def _run_design_compare(self):
+        path_a = self.design_cmp_a.text().strip()
+        path_b = self.design_cmp_b.text().strip()
+        if not path_a or not path_b:
+            QMessageBox.warning(self, "Ошибка", "Укажите обе папки для сравнения")
+            return
+
+        self.design_diff.clear()
+        self.design_diff.append_info(f"Сравниваю:\n  A: {path_a}\n  B: {path_b}")
+        self._set_busy(True)
+
+        analyzer = DesignAnalyzer()
+        analyzer.set_progress_callback(lambda msg: self.design_diff.append_info(msg))
+        self._run_async(
+            lambda: analyzer.compare_versions(path_a, path_b),
+            self._on_design_compare_done,
+        )
+
+    def _on_design_compare_done(self, result: dict):
+        self._set_busy(False)
+        status = result.get('status', '')
+        if status != 'Success':
+            self.design_diff.append_error(f"Ошибка: {status}")
+            return
+
+        s = result.get('summary', {})
+        self.design_diff.append_success(
+            f"Added: {s.get('added', 0)}  |  "
+            f"Modified: {s.get('modified', 0)}  |  "
+            f"Removed: {s.get('removed', 0)}  |  "
+            f"Unchanged: {s.get('unchanged', 0)}"
+        )
+        for f in result.get('added', [])[:25]:
+            self.design_diff.append(f'<span style="color:#81c784;">[+]</span> {f}')
+        for f in result.get('modified', [])[:25]:
+            self.design_diff.append(f'<span style="color:#ffb74d;">[~]</span> {f}')
+        for f in result.get('removed', [])[:25]:
+            self.design_diff.append(f'<span style="color:#e57373;">[-]</span> {f}')
 
     def _run_design_analysis(self):
         source = self.design_dir.text().strip()

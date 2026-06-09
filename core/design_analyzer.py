@@ -1,7 +1,15 @@
+import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Union
+
+from utils.operation_registry import OperationRegistry
+
+# Operation history shares the orchestrator's database so comparisons appear in
+# the GUI "История операций" tab alongside the other phases.
+DEFAULT_DB = 'data/operations.db'
+COMPARE_EXTENSIONS = ('.html', '.css', '.js')
 
 
 class DesignAnalyzer:
@@ -34,10 +42,11 @@ class DesignAnalyzer:
         'inherit', 'initial', 'unset', 'revert',
     })
 
-    def __init__(self):
+    def __init__(self, registry: Optional[OperationRegistry] = None):
         self.source_dir: Optional[Path] = None
         self.output_file: Optional[Path] = None
         self.progress_callback: Optional[Callable] = None
+        self.registry = registry
 
     def configure(self, source_dir: str, output_file: Optional[str] = None):
         self.source_dir = Path(source_dir)
@@ -175,3 +184,87 @@ class DesignAnalyzer:
             )
         except Exception:
             pass
+
+    # ── Version comparison ──────────────────────────────────────────────────
+
+    def compare_versions(self, path1: Union[str, Path],
+                         path2: Union[str, Path]) -> Dict:
+        """Сравнить две папки с захваченными файлами (HTML/CSS/JS).
+
+        Возвращает списки добавленных/удалённых/изменённых/неизменных файлов.
+        Изменение определяется по SHA-256 содержимого. Операция пишется в реестр.
+        """
+        p1, p2 = Path(path1), Path(path2)
+        result: Dict = {
+            'path1': str(p1), 'path2': str(p2),
+            'status': 'Not started',
+            'added': [], 'removed': [], 'modified': [], 'unchanged': [],
+            'summary': {},
+        }
+
+        registry = self.registry or OperationRegistry(db_path=DEFAULT_DB)
+        op_id = registry.start(
+            target=f'{p1.name} -> {p2.name}', phase='design_comparison',
+            metadata={'path1': str(p1), 'path2': str(p2)},
+        )
+
+        try:
+            if not p1.is_dir() or not p2.is_dir():
+                msg = 'one or both directories not found'
+                result['status'] = f'Error: {msg}'
+                registry.finish(op_id, status='failed', error=msg)
+                return result
+
+            files1 = self._index_files(p1)
+            files2 = self._index_files(p2)
+            keys1, keys2 = set(files1), set(files2)
+
+            result['added'] = sorted(keys2 - keys1)
+            result['removed'] = sorted(keys1 - keys2)
+
+            for rel in sorted(keys1 & keys2):
+                if self._file_hash(files1[rel]) != self._file_hash(files2[rel]):
+                    result['modified'].append(rel)
+                else:
+                    result['unchanged'].append(rel)
+
+            result['summary'] = {
+                'added': len(result['added']),
+                'removed': len(result['removed']),
+                'modified': len(result['modified']),
+                'unchanged': len(result['unchanged']),
+            }
+            result['status'] = 'Success'
+            self._log(
+                f"Added: {result['summary']['added']} | "
+                f"Modified: {result['summary']['modified']} | "
+                f"Removed: {result['summary']['removed']}"
+            )
+            registry.finish(op_id, status='success')
+
+        except Exception as e:
+            result['status'] = f'Error: {e}'
+            registry.finish(op_id, status='failed', error=str(e))
+
+        return result
+
+    @staticmethod
+    def _index_files(root: Path) -> Dict[str, Path]:
+        """Карта relative-path -> Path для сравниваемых типов файлов."""
+        index: Dict[str, Path] = {}
+        for f in root.rglob('*'):
+            if f.is_file() and f.suffix.lower() in COMPARE_EXTENSIONS:
+                rel = f.relative_to(root).as_posix()
+                index[rel] = f
+        return index
+
+    @staticmethod
+    def _file_hash(path: Path) -> str:
+        h = hashlib.sha256()
+        try:
+            with open(path, 'rb') as fh:
+                for chunk in iter(lambda: fh.read(65536), b''):
+                    h.update(chunk)
+        except OSError:
+            return ''
+        return h.hexdigest()
