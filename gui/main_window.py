@@ -34,6 +34,9 @@ from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.file_compression import FileCompressor
 from utils.operation_registry import OperationRegistry
 from utils.data_viewer import DataViewer
+from utils.task_manager import TaskManager
+from utils.exporter import DataExporter
+from utils.system_logger import get_last_logs
 
 SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
 TARGETS_FILE = Path(__file__).parent.parent / 'configs' / 'targets.json'
@@ -163,6 +166,7 @@ class MainWindow(QMainWindow):
         self._history_loading = False
         self._dashboard_loading = False
         self._dashboard_loaded = False
+        self.task_manager = TaskManager()
 
         self._build_menu()
         self._build_central()
@@ -226,6 +230,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_design_tab(),     "Design Lab")
         self.tabs.addTab(self._build_dashboard_tab(),  "Dashboard")
         self.tabs.addTab(self._build_history_tab(),    "История операций")
+        self.tabs.addTab(self._build_system_tab(),     "System")
         layout.addWidget(self.tabs)
 
         # Lazily load history the first time its tab is opened.
@@ -239,6 +244,100 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
         self.status_bar.showMessage("Готов")
+
+    # ---------------------------------------------------------------- System
+
+    def _build_system_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        # ── Task queue ───────────────────────────────────────────────────
+        q_grp = SectionGroupBox("Очередь задач")
+        q = QVBoxLayout()
+        row = QHBoxLayout()
+        row.addWidget(QLabel("URL:"))
+        self.task_url = QLineEdit()
+        self.task_url.setPlaceholderText("https://example.com")
+        self.task_url.returnPressed.connect(self._add_task_to_queue)
+        btn_add = StyledButton("Add to Queue")
+        btn_add.clicked.connect(self._add_task_to_queue)
+        row.addWidget(self.task_url)
+        row.addWidget(btn_add)
+        q.addLayout(row)
+        self.task_queue_label = QLabel("В очереди: 0")
+        self.task_queue_label.setStyleSheet("color:#888; font-size:11px;")
+        q.addWidget(self.task_queue_label)
+        q_grp.setLayout(q)
+        layout.addWidget(q_grp)
+
+        # ── Export ───────────────────────────────────────────────────────
+        e_grp = SectionGroupBox("Экспорт данных (DataRegistry)")
+        e = QHBoxLayout()
+        btn_csv = StyledButton("Export CSV", style='secondary')
+        btn_csv.clicked.connect(lambda: self._export_data('csv'))
+        btn_json = StyledButton("Export JSON", style='secondary')
+        btn_json.clicked.connect(lambda: self._export_data('json'))
+        e.addWidget(btn_csv)
+        e.addWidget(btn_json)
+        e.addStretch()
+        e_grp.setLayout(e)
+        layout.addWidget(e_grp)
+
+        # ── Logs ─────────────────────────────────────────────────────────
+        l_grp = SectionGroupBox("Системные логи (последние 50)")
+        l = QVBoxLayout()
+        self.system_logs = ResultsDisplay()
+        l.addWidget(self.system_logs)
+        btn_refresh = StyledButton("Обновить", style='secondary')
+        btn_refresh.clicked.connect(self._refresh_logs)
+        l.addWidget(btn_refresh)
+        l_grp.setLayout(l)
+        layout.addWidget(l_grp, stretch=1)
+
+        self._refresh_logs()
+        return w
+
+    def _add_task_to_queue(self):
+        url = self.task_url.text().strip()
+        if not url:
+            QMessageBox.warning(self, "Ошибка", "Укажите URL")
+            return
+        try:
+            self.task_manager.add_task(url)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось добавить задачу: {e}")
+            return
+        self.task_url.clear()
+        self.task_queue_label.setText(f"В очереди: {self.task_manager.queue.qsize()}")
+        self.status_bar.showMessage(f"Задача добавлена: {url}")
+        self._refresh_logs()
+
+    def _refresh_logs(self):
+        try:
+            lines = get_last_logs(50)
+        except Exception as e:
+            lines = [f"Ошибка чтения логов: {e}\n"]
+        self.system_logs.setPlainText(''.join(lines))
+        scrollbar = self.system_logs.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+
+    def _export_data(self, fmt: str):
+        suffix = fmt.lower()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить экспорт", f"registry_export.{suffix}",
+            f"{fmt.upper()} (*.{suffix})",
+        )
+        if not path:
+            return
+        try:
+            ok = DataExporter.export(path, format=suffix)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка экспорта", str(e))
+            return
+        if ok:
+            QMessageBox.information(self, "Экспорт", f"Данные сохранены:\n{path}")
+        else:
+            QMessageBox.warning(self, "Экспорт", "Нет данных для экспорта")
 
     # ------------------------------------------------------------- Dashboard
 
