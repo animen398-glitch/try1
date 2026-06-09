@@ -158,8 +158,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Advanced Site Analyzer")
         self.setMinimumSize(900, 650)
         self.settings = self._load_settings()
-        self._thread: Optional[QThread] = None
         self._active_workers: list = []
+        self._active_threads: list = []
         self._last_recon_combined: dict = {}
         self._active_subdomain_scanner = None
         self._subdomain_thread: Optional[QThread] = None
@@ -167,6 +167,8 @@ class MainWindow(QMainWindow):
         self._history_rows: list = []
         self._history_loading = False
         self._dashboard_loading = False
+        self._dashboard_table_loading = False
+        self._dashboard_filter_pending = False
         self._dashboard_loaded = False
         self._endpoint_filter = None  # active endpoint occurrence filter (or None)
         self.task_manager = TaskManager()
@@ -600,6 +602,12 @@ class MainWindow(QMainWindow):
         self._apply_dashboard_filter()
 
     def _apply_dashboard_filter(self, *args):
+        # Never run two table queries at once: remember that the filter
+        # changed and re-run once the in-flight query comes back.
+        if self._dashboard_table_loading:
+            self._dashboard_filter_pending = True
+            return
+        self._dashboard_table_loading = True
         self._set_busy(True)
         data_type = self.dash_filter.currentData()
         endpoint = self._endpoint_filter
@@ -629,7 +637,14 @@ class MainWindow(QMainWindow):
             return {'error': str(e), 'data_type': data_type, 'endpoint': endpoint}
 
     def _on_dashboard_table_loaded(self, result: dict):
+        self._dashboard_table_loading = False
         self._set_busy(False)
+        # A filter change arrived while this query was running: its result is
+        # stale by definition, so just re-run with the current selection.
+        if self._dashboard_filter_pending:
+            self._dashboard_filter_pending = False
+            self._apply_dashboard_filter()
+            return
         # Discard results whose filter no longer matches the current selection.
         if (result.get('data_type') != self.dash_filter.currentData()
                 or result.get('endpoint') != self._endpoint_filter):
@@ -2303,7 +2318,12 @@ class MainWindow(QMainWindow):
     def _run_async(self, fn, on_done):
         thread = QThread()
         worker = _Worker(fn)
+        # Hold strong references until the OS thread actually finishes:
+        # if the only reference is overwritten by the next _run_async call,
+        # Python GC destroys a still-running QThread and the app crashes
+        # ("QThread: Destroyed while thread is still running").
         self._active_workers.append(worker)
+        self._active_threads.append(thread)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(on_done)
@@ -2312,9 +2332,32 @@ class MainWindow(QMainWindow):
         worker.error.connect(lambda e: (self._set_busy(False), QMessageBox.critical(self, "Ошибка", e), self._on_worker_error()))
         worker.error.connect(thread.quit)
         worker.error.connect(lambda _: self._cleanup_worker(worker))
+        # Tear-down only after the thread has really stopped.
+        thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        self._thread = thread
+        thread.finished.connect(lambda: self._cleanup_thread(thread))
         thread.start()
+
+    def _cleanup_thread(self, thread):
+        try:
+            self._active_threads.remove(thread)
+        except ValueError:
+            pass
+
+    def closeEvent(self, event):
+        # Wait for in-flight worker threads so none is destroyed mid-run.
+        threads = list(self._active_threads)
+        threads += list(getattr(self, '_active_capture_threads', {}).values())
+        threads += list(self._active_clone_threads.values())
+        if self._subdomain_thread is not None:
+            threads.append(self._subdomain_thread)
+        for thread in threads:
+            if thread.isRunning():
+                thread.quit()
+        for thread in threads:
+            if thread.isRunning():
+                thread.wait(5000)
+        super().closeEvent(event)
 
     def _set_busy(self, busy: bool):
         self.progress_bar.setVisible(busy)
