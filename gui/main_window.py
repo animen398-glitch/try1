@@ -167,6 +167,7 @@ class MainWindow(QMainWindow):
         self._history_loading = False
         self._dashboard_loading = False
         self._dashboard_loaded = False
+        self._endpoint_filter = None  # active endpoint occurrence filter (or None)
         self.task_manager = TaskManager()
 
         self._build_menu()
@@ -417,6 +418,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(stats_row)
 
         table_grp = SectionGroupBox("Записи реестра (data/registry.db)")
+        self._activity_grp = table_grp
         table_layout = QVBoxLayout()
 
         filter_row = QHBoxLayout()
@@ -425,7 +427,7 @@ class MainWindow(QMainWindow):
         for label, dtype in self.DASHBOARD_FILTERS:
             self.dash_filter.addItem(label, dtype)
         # Подключаем после заполнения, чтобы не сработало во время сборки UI.
-        self.dash_filter.currentIndexChanged.connect(self._apply_dashboard_filter)
+        self.dash_filter.currentIndexChanged.connect(self._on_filter_combo_changed)
         filter_row.addWidget(self.dash_filter)
         filter_row.addStretch()
         table_layout.addLayout(filter_row)
@@ -456,6 +458,7 @@ class MainWindow(QMainWindow):
         ep_header = self.endpoints_table.horizontalHeader()
         ep_header.setSectionResizeMode(QHeaderView.ResizeToContents)
         ep_header.setSectionResizeMode(0, QHeaderView.Stretch)  # Endpoint fills space
+        self.endpoints_table.itemSelectionChanged.connect(self._on_endpoint_row_selected)
         ep_layout.addWidget(self.endpoints_table)
         ep_grp.setLayout(ep_layout)
         layout.addWidget(ep_grp, stretch=1)
@@ -509,6 +512,9 @@ class MainWindow(QMainWindow):
             label.setText(str(summary.get(key, 0)))
         self.dash_status.setText(f"Всего записей: {summary.get('total', 0)}")
 
+        # A full refresh resets any drill-down back to the type-filter view.
+        self._endpoint_filter = None
+        self._update_activity_title()
         self._populate_endpoints_table(result.get('endpoints', []))
 
         # Populate the table according to the currently selected type filter.
@@ -535,37 +541,78 @@ class MainWindow(QMainWindow):
                     item.setToolTip('\n'.join(sources))  # source pages on hover
                 self.endpoints_table.setItem(r, col, item)
 
+    def _on_filter_combo_changed(self, *args):
+        # A manual type change clears any active endpoint drill-down.
+        self._endpoint_filter = None
+        self._update_activity_title()
+        self._apply_dashboard_filter()
+
     def _apply_dashboard_filter(self, *args):
         self._set_busy(True)
         data_type = self.dash_filter.currentData()
+        endpoint = self._endpoint_filter
         self._run_async(
-            lambda dt=data_type: self._query_dashboard_table(dt),
+            lambda dt=data_type, ep=endpoint: self._query_dashboard_table(dt, ep),
             self._on_dashboard_table_loaded,
         )
 
     @staticmethod
-    def _query_dashboard_table(data_type) -> dict:
+    def _query_dashboard_table(data_type, endpoint=None) -> dict:
         # Off-GUI-thread read; guarded so a DB error surfaces as data. The
-        # data_type is echoed back so a stale result can be discarded.
+        # data_type/endpoint are echoed back so a stale result can be discarded.
         try:
             viewer = DataViewer(db_path=str(REGISTRY_DB))
-            if data_type:
+            if endpoint:
+                # Raw occurrences of one normalized endpoint (all its variants).
+                rows = [
+                    r for r in viewer.get_by_type('api_endpoint')
+                    if EndpointIndex.normalize(r.get('content', '')) == endpoint
+                ][:200]
+            elif data_type:
                 rows = viewer.get_by_type(data_type)[:200]
             else:
                 rows = viewer.get_recent_records(limit=20)
-            return {'rows': rows, 'data_type': data_type}
+            return {'rows': rows, 'data_type': data_type, 'endpoint': endpoint}
         except Exception as e:
-            return {'error': str(e), 'data_type': data_type}
+            return {'error': str(e), 'data_type': data_type, 'endpoint': endpoint}
 
     def _on_dashboard_table_loaded(self, result: dict):
         self._set_busy(False)
         # Discard results whose filter no longer matches the current selection.
-        if result.get('data_type') != self.dash_filter.currentData():
+        if (result.get('data_type') != self.dash_filter.currentData()
+                or result.get('endpoint') != self._endpoint_filter):
             return
         if result.get('error'):
             self.dash_status.setText(f"Ошибка загрузки таблицы: {result['error']}")
             return
         self._populate_dashboard_table(result.get('rows', []))
+
+    def _on_endpoint_row_selected(self):
+        rows = self.endpoints_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        item = self.endpoints_table.item(rows[0].row(), 0)
+        if item is None:
+            return
+        self._endpoint_filter = item.text()
+        # Keep the type combo consistent (api_endpoint) without re-firing it.
+        api_idx = next(
+            (i for i, (_, dt) in enumerate(self.DASHBOARD_FILTERS)
+             if dt == 'api_endpoint'),
+            None,
+        )
+        if api_idx is not None and self.dash_filter.currentIndex() != api_idx:
+            self.dash_filter.blockSignals(True)
+            self.dash_filter.setCurrentIndex(api_idx)
+            self.dash_filter.blockSignals(False)
+        self._update_activity_title()
+        self._apply_dashboard_filter()
+
+    def _update_activity_title(self):
+        if self._endpoint_filter:
+            self._activity_grp.setTitle(f"Вхождения эндпоинта: {self._endpoint_filter}")
+        else:
+            self._activity_grp.setTitle("Записи реестра (data/registry.db)")
 
     def _populate_dashboard_table(self, records: list):
         self.dashboard_table.setRowCount(0)
