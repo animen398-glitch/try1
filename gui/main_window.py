@@ -37,6 +37,7 @@ from utils.data_viewer import DataViewer
 from utils.task_manager import TaskManager
 from utils.exporter import DataExporter
 from utils.endpoint_index import EndpointIndex
+from utils.site_extractor import SiteExtractor
 from utils.system_logger import get_last_logs
 
 SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
@@ -409,6 +410,20 @@ class MainWindow(QMainWindow):
         ctrl.addWidget(btn_update)
         layout.addLayout(ctrl)
 
+        # Scan control — runs SiteExtractor on a URL, then refreshes the dashboard.
+        scan_grp = SectionGroupBox("Сканировать страницу")
+        scan_row = QHBoxLayout()
+        scan_row.addWidget(QLabel("URL:"))
+        self.dash_scan_url = QLineEdit()
+        self.dash_scan_url.setPlaceholderText("https://example.com")
+        self.dash_scan_url.returnPressed.connect(self._run_dashboard_scan)
+        self.dash_scan_btn = StyledButton("Run Scan")
+        self.dash_scan_btn.clicked.connect(self._run_dashboard_scan)
+        scan_row.addWidget(self.dash_scan_url)
+        scan_row.addWidget(self.dash_scan_btn)
+        scan_grp.setLayout(scan_row)
+        layout.addWidget(scan_grp)
+
         stats_row = QHBoxLayout()
         self.dash_stats: dict = {}
         for key, title in self.DASHBOARD_STATS:
@@ -477,6 +492,43 @@ class MainWindow(QMainWindow):
         v.addWidget(value_label)
         card.setLayout(v)
         return card, value_label
+
+    def _run_dashboard_scan(self):
+        url = self.dash_scan_url.text().strip()
+        if not url:
+            self.dash_status.setText("Укажите URL для сканирования")
+            return
+        self.dash_scan_btn.setEnabled(False)
+        self._set_busy(True)
+        self.dash_status.setText(f"Сканирование: {url} ...")
+        self._run_async(lambda u=url: self._scan_pipeline(u), self._on_scan_done)
+
+    @staticmethod
+    def _scan_pipeline(url: str) -> dict:
+        # Runs entirely off the GUI thread; SiteExtractor records any findings
+        # (patterns/endpoints) to DataRegistry. Guarded so failures surface as
+        # data rather than an unhandled crash.
+        try:
+            return {'scan': SiteExtractor().fetch_text(url)}
+        except Exception as e:
+            return {'error': str(e)}
+
+    def _on_scan_done(self, result: dict):
+        self.dash_scan_btn.setEnabled(True)
+        if result.get('error'):
+            self._set_busy(False)
+            self.dash_status.setText(f"Ошибка сканирования: {result['error']}")
+            return
+        scan = result.get('scan', {})
+        status = scan.get('status', '')
+        if status != 'Success':
+            self._set_busy(False)
+            self.dash_status.setText(f"Сканирование завершилось: {status}")
+            return
+        # Success → refresh stats + tables so the new data shows immediately.
+        found = scan.get('patterns_found', 0)
+        self.dash_status.setText(f"Сканирование завершено (находок: {found}). Обновляю...")
+        self._refresh_dashboard()
 
     def _refresh_dashboard(self):
         if self._dashboard_loading:
@@ -2243,7 +2295,7 @@ class MainWindow(QMainWindow):
 
     def _on_worker_error(self):
         """Re-enable any action buttons that were disabled before a failed _run_async call."""
-        for attr in ('btn_clone_run',):
+        for attr in ('btn_clone_run', 'dash_scan_btn'):
             btn = getattr(self, attr, None)
             if btn is not None:
                 btn.setEnabled(True)
