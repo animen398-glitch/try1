@@ -1,6 +1,7 @@
 import html as _html
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+from urllib.parse import urljoin
 
 from utils.browser_utils import SessionBuilder
 from utils.pattern_analyser import PatternAnalyser
@@ -17,6 +18,7 @@ DEFAULT_PATTERNS = {
 }
 
 _SCRIPT_STYLE_RE = re.compile(r'<(script|style)[^>]*>.*?</\1>', re.IGNORECASE | re.DOTALL)
+_SCRIPT_SRC_RE = re.compile(r'<script[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
 _TAG_RE = re.compile(r'<[^>]+>')
 _WS_RE = re.compile(r'\s+')
 
@@ -46,6 +48,21 @@ class SiteExtractor:
         text = _html.unescape(text)
         return _WS_RE.sub(' ', text).strip()
 
+    @staticmethod
+    def _extract_script_urls(html: str, base_url: str) -> List[str]:
+        """Собрать абсолютные URL внешних скриптов из <script src="...">."""
+        urls: List[str] = []
+        seen: set = set()
+        for m in _SCRIPT_SRC_RE.finditer(html):
+            src = m.group(1).strip()
+            if not src:
+                continue
+            absolute = urljoin(base_url, src)  # корректно разрешает относительные пути
+            if absolute not in seen:
+                seen.add(absolute)
+                urls.append(absolute)
+        return urls
+
     def fetch_text(self, url: str) -> Dict[str, Any]:
         """Загрузить страницу, проанализировать паттерны, вернуть чистый текст.
 
@@ -74,6 +91,23 @@ class SiteExtractor:
             result['text'] = self.strip_html(raw_html)
             # Анализируем сырой HTML — токены обычно живут в <script>.
             result['findings'] = self.analyser.analyze(raw_html, source=url)
+
+            # Обнаружение и анализ внешних JS-скриптов.
+            script_urls = self._extract_script_urls(raw_html, url)
+            result['scripts_found'] = len(script_urls)
+            analyzed = 0
+            for js_url in script_urls:
+                try:
+                    jr = session.get(js_url, timeout=self.timeout)
+                    jr.raise_for_status()
+                    js_content = jr.text
+                except Exception:
+                    # Сбой загрузки одного скрипта не должен ломать процесс.
+                    continue
+                result['findings'].extend(self.analyser.analyze(js_content, url))
+                analyzed += 1
+            result['scripts_analyzed'] = analyzed
+
             result['patterns_found'] = len(result['findings'])
             result['status'] = 'Success'
         except requests.exceptions.RequestException as e:
