@@ -72,12 +72,24 @@ class SubdomainScanner:
     2. Active:    DNS brute-force against a built-in wordlist
     """
 
-    def __init__(self):
+    def __init__(self, data_registry=None):
         self._cancel = threading.Event()
+        self._data_registry = data_registry
 
     def cancel(self):
         """Signal the scanner to stop at the next checkpoint."""
         self._cancel.set()
+
+    def _record_discovery(self, source: str, data_type: str, content: str,
+                          metadata: Optional[Dict] = None) -> None:
+        """Сохранить найденный субдомен в DataRegistry (не ломая процесс сканирования)."""
+        try:
+            if self._data_registry is None:
+                from core.registry import DataRegistry
+                self._data_registry = DataRegistry()
+            self._data_registry.add_record(source, data_type, content, metadata)
+        except Exception:
+            pass
 
     def scan(
         self,
@@ -114,6 +126,11 @@ class SubdomainScanner:
                 'source': source,
             }
             found[subdomain] = entry
+            self._record_discovery(
+                source=domain, data_type='subdomain', content=subdomain,
+                metadata={'ip': ip or '', 'discovery_source': source,
+                          'live': bool(ip)},
+            )
             if on_found:
                 on_found(entry)
 
