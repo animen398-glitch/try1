@@ -393,6 +393,8 @@ class MainWindow(QMainWindow):
         ('API Endpoints',        'api_endpoint'),
     ]
 
+    ENDPOINTS_COLUMNS = ["Endpoint", "Count", "Sources", "Patterns"]
+
     def _build_dashboard_tab(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -442,6 +444,22 @@ class MainWindow(QMainWindow):
         table_grp.setLayout(table_layout)
         layout.addWidget(table_grp, stretch=1)
 
+        ep_grp = SectionGroupBox("Уникальные API-эндпоинты (дедуплицировано)")
+        ep_layout = QVBoxLayout()
+        self.endpoints_table = QTableWidget(0, len(self.ENDPOINTS_COLUMNS))
+        self.endpoints_table.setHorizontalHeaderLabels(self.ENDPOINTS_COLUMNS)
+        self.endpoints_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.endpoints_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.endpoints_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.endpoints_table.verticalHeader().setVisible(False)
+        self.endpoints_table.setAlternatingRowColors(True)
+        ep_header = self.endpoints_table.horizontalHeader()
+        ep_header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        ep_header.setSectionResizeMode(0, QHeaderView.Stretch)  # Endpoint fills space
+        ep_layout.addWidget(self.endpoints_table)
+        ep_grp.setLayout(ep_layout)
+        layout.addWidget(ep_grp, stretch=1)
+
         self._dashboard_widget = w
         return w
 
@@ -471,7 +489,8 @@ class MainWindow(QMainWindow):
         # is guarded so a DB error surfaces as data, never an unhandled crash.
         try:
             viewer = DataViewer(db_path=str(REGISTRY_DB))
-            return {'summary': viewer.get_summary()}
+            endpoints = EndpointIndex(db_path=str(REGISTRY_DB)).get_unique_endpoints()
+            return {'summary': viewer.get_summary(), 'endpoints': endpoints}
         except Exception as e:
             return {'error': str(e)}
 
@@ -490,8 +509,31 @@ class MainWindow(QMainWindow):
             label.setText(str(summary.get(key, 0)))
         self.dash_status.setText(f"Всего записей: {summary.get('total', 0)}")
 
+        self._populate_endpoints_table(result.get('endpoints', []))
+
         # Populate the table according to the currently selected type filter.
         self._apply_dashboard_filter()
+
+    def _populate_endpoints_table(self, endpoints: list):
+        self.endpoints_table.setRowCount(0)
+        for ep in endpoints[:200]:
+            r = self.endpoints_table.rowCount()
+            self.endpoints_table.insertRow(r)
+            sources = ep.get('sources', [])
+            patterns = ep.get('patterns', [])
+            values = [
+                ep.get('endpoint', ''),
+                ep.get('count', 0),
+                ep.get('source_count', 0),
+                ', '.join(patterns),
+            ]
+            for col, val in enumerate(values):
+                item = QTableWidgetItem(str(val))
+                if col in (1, 2):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if col == 2 and sources:
+                    item.setToolTip('\n'.join(sources))  # source pages on hover
+                self.endpoints_table.setItem(r, col, item)
 
     def _apply_dashboard_filter(self, *args):
         self._set_busy(True)
