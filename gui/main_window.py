@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QAction, QCheckBox, QFileDialog,
+    QAbstractItemView, QAction, QCheckBox, QComboBox, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow,
     QMenuBar, QMessageBox, QProgressBar, QStatusBar,
     QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
@@ -353,6 +353,17 @@ class MainWindow(QMainWindow):
         ('api_endpoints', 'API Endpoints'),
     ]
 
+    # (подпись фильтра -> data_type; None = последние записи всех типов)
+    DASHBOARD_FILTERS = [
+        ('Последние (все типы)', None),
+        ('Субдомены',            'subdomain'),
+        ('IP-адреса',            'ip_address'),
+        ('Изображения',          'image'),
+        ('Видео',                'video'),
+        ('Паттерны',             'pattern_match'),
+        ('API Endpoints',        'api_endpoint'),
+    ]
+
     def _build_dashboard_tab(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -374,8 +385,20 @@ class MainWindow(QMainWindow):
             stats_row.addWidget(card)
         layout.addLayout(stats_row)
 
-        table_grp = SectionGroupBox("Последняя активность (data/registry.db)")
+        table_grp = SectionGroupBox("Записи реестра (data/registry.db)")
         table_layout = QVBoxLayout()
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Фильтр по типу:"))
+        self.dash_filter = QComboBox()
+        for label, dtype in self.DASHBOARD_FILTERS:
+            self.dash_filter.addItem(label, dtype)
+        # Подключаем после заполнения, чтобы не сработало во время сборки UI.
+        self.dash_filter.currentIndexChanged.connect(self._apply_dashboard_filter)
+        filter_row.addWidget(self.dash_filter)
+        filter_row.addStretch()
+        table_layout.addLayout(filter_row)
+
         self.dashboard_table = QTableWidget(0, len(self.DASHBOARD_COLUMNS))
         self.dashboard_table.setHorizontalHeaderLabels(self.DASHBOARD_COLUMNS)
         self.dashboard_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -419,9 +442,7 @@ class MainWindow(QMainWindow):
         # is guarded so a DB error surfaces as data, never an unhandled crash.
         try:
             viewer = DataViewer(db_path=str(REGISTRY_DB))
-            summary = viewer.get_summary()
-            recent = viewer.get_recent_records(limit=20)
-            return {'summary': summary, 'recent': recent}
+            return {'summary': viewer.get_summary()}
         except Exception as e:
             return {'error': str(e)}
 
@@ -440,16 +461,56 @@ class MainWindow(QMainWindow):
             label.setText(str(summary.get(key, 0)))
         self.dash_status.setText(f"Всего записей: {summary.get('total', 0)}")
 
-        recent = result.get('recent', [])
+        # Populate the table according to the currently selected type filter.
+        self._apply_dashboard_filter()
+
+    def _apply_dashboard_filter(self, *args):
+        self._set_busy(True)
+        data_type = self.dash_filter.currentData()
+        self._run_async(
+            lambda dt=data_type: self._query_dashboard_table(dt),
+            self._on_dashboard_table_loaded,
+        )
+
+    @staticmethod
+    def _query_dashboard_table(data_type) -> dict:
+        # Off-GUI-thread read; guarded so a DB error surfaces as data. The
+        # data_type is echoed back so a stale result can be discarded.
+        try:
+            viewer = DataViewer(db_path=str(REGISTRY_DB))
+            if data_type:
+                rows = viewer.get_by_type(data_type)[:200]
+            else:
+                rows = viewer.get_recent_records(limit=20)
+            return {'rows': rows, 'data_type': data_type}
+        except Exception as e:
+            return {'error': str(e), 'data_type': data_type}
+
+    def _on_dashboard_table_loaded(self, result: dict):
+        self._set_busy(False)
+        # Discard results whose filter no longer matches the current selection.
+        if result.get('data_type') != self.dash_filter.currentData():
+            return
+        if result.get('error'):
+            self.dash_status.setText(f"Ошибка загрузки таблицы: {result['error']}")
+            return
+        self._populate_dashboard_table(result.get('rows', []))
+
+    def _populate_dashboard_table(self, records: list):
         self.dashboard_table.setRowCount(0)
-        for rec in recent:
+        for rec in records:
             r = self.dashboard_table.rowCount()
             self.dashboard_table.insertRow(r)
             content = rec.get('content') or ''
             snippet = content if len(content) <= 80 else content[:77] + '...'
             values = [rec.get('data_type', ''), rec.get('source', ''), snippet]
+            meta = rec.get('metadata')
+            context = meta.get('context') if isinstance(meta, dict) else None
             for col, val in enumerate(values):
-                self.dashboard_table.setItem(r, col, QTableWidgetItem(str(val)))
+                item = QTableWidgetItem(str(val))
+                if col == 2 and context:
+                    item.setToolTip(str(context))  # full context on hover
+                self.dashboard_table.setItem(r, col, item)
 
     # ------------------------------------------------------- Operation History
 
