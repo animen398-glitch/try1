@@ -129,7 +129,9 @@ CLI / прочее:
     Secure → High; слабые куки → Medium) и summarize() с severity-счётом и
     risk_score. CollectionRunner получил фазы Cookie Audit + Vuln Scan
     (security/cookies.json, security/vulns.json + карточки в report.html).
-    Остаётся: больше правил, экспорт отдельного vuln-отчёта.
+    + правила CSP-слабости (unsafe-inline/eval/wildcard) и HSTS-слабости
+    (короткий max-age / без includeSubDomains).
+    Остаётся: экспорт отдельного vuln-отчёта, ещё правила.
   • [СДЕЛАНО] Углубление paywall-bypass: extract() расширен с 3 до 6
     стратегий (googlebot_spoof, js_strip, amp, referer_spoof, google_cache,
     wayback_machine) + reader_view (lightweight readability) в результате.
@@ -175,7 +177,9 @@ CLI / прочее:
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта. + README.md,
     requirements-dev.txt, pytest.ini.
-  • Настроить CI (линт + тесты + сборка .exe).
+  • [СДЕЛАНО] CI: .github/workflows/ci.yml — pytest на push/PR (Python
+    3.11/3.12, headless-PyQt5, offscreen). requirements-dev тянет fastapi+
+    httpx для web-эндпоинт-тестов. Остаётся: линт и сборка .exe в CI.
   • Привести зависимости к актуальным версиям и зафиксировать опциональные
     feature-флаги (playwright/yt-dlp/fastapi).
   • Написать README и пользовательскую документацию (сейчас отсутствуют).
