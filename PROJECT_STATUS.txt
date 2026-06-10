@@ -130,7 +130,9 @@ CLI / прочее:
     risk_score. CollectionRunner получил фазы Cookie Audit + Vuln Scan
     (security/cookies.json, security/vulns.json + карточки в report.html).
     Остаётся: больше правил, экспорт отдельного vuln-отчёта.
-  • Углубить paywall-bypass: добавить стратегии (reader-mode, AMP, кэш Google).
+  • [СДЕЛАНО] Углубление paywall-bypass: extract() расширен с 3 до 6
+    стратегий (googlebot_spoof, js_strip, amp, referer_spoof, google_cache,
+    wayback_machine) + reader_view (lightweight readability) в результате.
   • [СДЕЛАНО] Активные проверки субдоменов: core/subdomain_active.py
     (ActiveSubdomainChecker) — CNAME-резолв (stdlib), HTTP/HTTPS-liveness и
     детект takeover (CNAME известного сервиса + fingerprint незаявленного
