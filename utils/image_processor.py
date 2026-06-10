@@ -13,7 +13,8 @@ from utils.operation_registry import OperationRegistry
 
 # Operation history shares the orchestrator's database so extractions appear in
 # the GUI "История операций" tab alongside the other phases.
-DEFAULT_DB = 'data/operations.db'
+from core.config import OPERATIONS_DB
+DEFAULT_DB = str(OPERATIONS_DB)
 MIN_IMAGE_BYTES = 2048  # пропускаем иконки/мелкие изображения < 2KB
 
 # Query params that CDNs use to downscale / watermark images. Stripping them

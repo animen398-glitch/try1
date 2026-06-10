@@ -1,7 +1,8 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-DEFAULT_DB = 'data/registry.db'
+from core.config import REGISTRY_DB
+DEFAULT_DB = str(REGISTRY_DB)
 
 
 class DataViewer:

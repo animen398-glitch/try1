@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.api_dumper import ApiDumper
+from core.config import OPERATIONS_DB
 from core.content_capture import SiteContentCapture
 from core.dynamic_analyzer import DynamicAnalyzer
 from core.paywall_bypass import PaywallBypass
@@ -277,8 +278,8 @@ def main():
         'phases':      {},
     }
 
-    # Operation history is persisted to data/operations.db (dir auto-created).
-    registry = OperationRegistry(db_path='data/operations.db')
+    # Operation history is persisted to the canonical operations DB.
+    registry = OperationRegistry(db_path=str(OPERATIONS_DB))
 
     try:
         # ── 1. Recon (always) ────────────────────────────────────────────

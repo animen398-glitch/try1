@@ -1,15 +1,11 @@
-import json
-from pathlib import Path
-
 from PyQt5.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
 )
 
+from core import config
 from gui.ui_components import SectionGroupBox, StyledButton
-
-SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
 
 
 class SettingsDialog(QDialog):
@@ -19,31 +15,11 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
         self.setMinimumSize(500, 380)
-        self.settings = self._load_settings()
+        self.settings = config.load_settings()
         self._build_ui()
 
-    def _load_settings(self) -> dict:
-        try:
-            if SETTINGS_FILE.exists():
-                return json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
-        except Exception:
-            pass
-        return {
-            'output_dir': str(Path.home() / 'SiteAnalyzer'),
-            'max_pages': 50,
-            'request_delay': 500,
-            'auto_compress': False,
-        }
-
     def _save_settings(self):
-        try:
-            SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            SETTINGS_FILE.write_text(
-                json.dumps(self.settings, indent=2, ensure_ascii=False),
-                encoding='utf-8'
-            )
-        except Exception:
-            pass
+        config.save_settings(self.settings)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)

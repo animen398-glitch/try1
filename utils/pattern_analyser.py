@@ -1,7 +1,8 @@
 import re
 from typing import Any, Dict, List, Optional, Pattern, Union
 
-DEFAULT_DB = 'data/registry.db'
+from core.config import REGISTRY_DB
+DEFAULT_DB = str(REGISTRY_DB)
 CONTEXT_CHARS = 40  # символов контекста с каждой стороны от совпадения
 
 # Канонический набор паттернов по умолчанию: секреты/токены + API-эндпоинты.

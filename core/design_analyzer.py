@@ -8,7 +8,8 @@ from utils.operation_registry import OperationRegistry
 
 # Operation history shares the orchestrator's database so comparisons appear in
 # the GUI "История операций" tab alongside the other phases.
-DEFAULT_DB = 'data/operations.db'
+from core.config import OPERATIONS_DB
+DEFAULT_DB = str(OPERATIONS_DB)
 COMPARE_EXTENSIONS = ('.html', '.css', '.js')
 
 

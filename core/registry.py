@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from core.config import REGISTRY_DB
 from utils.sqlite_store import SQLiteStore
 
 
@@ -23,8 +24,8 @@ class DataRegistry(SQLiteStore):
     CREATE INDEX IF NOT EXISTS idx_records_source    ON records (source);
     """
 
-    def __init__(self, db_path: Union[str, Path] = 'data/registry.db'):
-        super().__init__(db_path)
+    def __init__(self, db_path: Union[str, Path] = None):
+        super().__init__(db_path or str(REGISTRY_DB))
 
     def add_record(self, source: str, data_type: str, content: Any,
                    metadata: Optional[Dict[str, Any]] = None) -> int:

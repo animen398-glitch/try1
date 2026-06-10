@@ -1,5 +1,3 @@
-import json
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -12,9 +10,10 @@ from PyQt5.QtWidgets import (
     QProgressBar, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
 )
 
+from core import config
 from gui.dialogs import SettingsDialog
 from gui.workers import _TaskHandle, _Worker
-from gui.constants import PLUGINS_DIR, SETTINGS_FILE, TARGETS_FILE
+from gui.constants import PLUGINS_DIR
 from gui.plugin_manager import default_manager
 from gui.tab_system import SystemTabMixin
 from gui.tab_api import ApiTabMixin
@@ -74,23 +73,7 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
     # ------------------------------------------------------------------ setup
 
     def _load_settings(self) -> dict:
-        try:
-            if SETTINGS_FILE.exists():
-                data = json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
-                data['output_dir'] = os.path.expanduser(
-                    data.get('output_dir', '~/SiteAnalyzer')
-                )
-                return data
-        except Exception:
-            pass
-        return {
-            'output_dir': os.path.join(os.path.expanduser('~'), 'SiteAnalyzer'),
-            'max_pages': 50,
-            'request_delay': 500,
-            'user_agent_profile': 'chrome_windows',
-            'auto_compress': False,
-            'compression_format': 'zip',
-        }
+        return config.load_settings()
 
     def _build_menu(self):
         menu = self.menuBar()
@@ -332,14 +315,4 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         )
 
     def _save_target(self, url: str):
-        try:
-            TARGETS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            targets = []
-            if TARGETS_FILE.exists():
-                targets = json.loads(TARGETS_FILE.read_text(encoding='utf-8'))
-            if url not in targets:
-                targets.insert(0, url)
-                targets = targets[:100]
-            TARGETS_FILE.write_text(json.dumps(targets, indent=2), encoding='utf-8')
-        except Exception:
-            pass
+        config.save_target(url)

@@ -7,7 +7,8 @@ from utils.operation_registry import OperationRegistry
 
 # Operation history shares the orchestrator's database so downloads appear in
 # the GUI "История операций" tab alongside the other pipeline phases.
-DEFAULT_DB = 'data/operations.db'
+from core.config import OPERATIONS_DB
+DEFAULT_DB = str(OPERATIONS_DB)
 
 # Quality preset -> yt-dlp --format expression.
 # The "<=" presets cap resolution and merge the best video+audio streams,
