@@ -158,8 +158,10 @@ CLI / прочее:
      единый реестр self._tasks, унифицирован безопасный teardown. Устранён
      баг single-slot _subdomain_thread (перезапуск скана терял ссылку на
      живой поток). Concurrency-стресс на 5 задачах проходит.
-     [ОСТАЁТСЯ] Кнопки Stop/Cancel для capture/clone; индикатор активных
-     задач в статус-баре; ревизия per-tab сериализации.
+     [СДЕЛАНО — хвосты] Кооперативная отмена (threading.Event) в
+     SiteContentCapture и FrontendCloner + кнопки Stop на вкладках Capture
+     и Clone; индикатор «Активных задач: N» в статус-баре от self._tasks.
+     ПРИОРИТЕТ №1 ЗАКРЫТ.
   2. Вкладка "Final Report & Collection" с "Run Full Collection" —
      последовательный прогон всех модулей в единую директорию + автогенерация
      итогового HTML/JSON отчёта (фича [A]).
