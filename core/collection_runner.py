@@ -27,8 +27,10 @@ from urllib.parse import urlparse
 
 from core.api_key_extractor import ApiKeyExtractor
 from core.content_capture import SiteContentCapture
+from core.cookie_auditor import CookieAuditor
 from core.frontend_cloner import FrontendCloner
 from core.recon_engine import ReconEngine
+from core.vuln_scanner import VulnScanner
 from utils.image_processor import ImageExtractor
 
 
@@ -116,6 +118,12 @@ class CollectionRunner:
         # 5. Images (media)
         if not self._cancelled(report):
             report['phases']['images'] = self._phase_images(url, project_dir)
+        # 6. Cookie security audit
+        if not self._cancelled(report):
+            report['phases']['cookies'] = self._phase_cookies(url, project_dir)
+        # 7. Vulnerability scan (aggregates recon + cookie findings)
+        if not self._cancelled(report):
+            report['phases']['vulns'] = self._phase_vulns(report, project_dir)
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
@@ -137,7 +145,7 @@ class CollectionRunner:
     # ── phases ───────────────────────────────────────────────────────────────
 
     def _phase_recon(self, url: str, project_dir: Path) -> Dict:
-        self._log('[1/5] Recon…')
+        self._log('[1/7] Recon…')
         try:
             engine = ReconEngine()
             engine.configure(profile=self.profile)
@@ -154,7 +162,7 @@ class CollectionRunner:
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_api(self, url: str, project_dir: Path) -> Dict:
-        self._log('[2/5] API key scan…')
+        self._log('[2/7] API key scan…')
         try:
             extractor = ApiKeyExtractor()
             extractor.set_target_url(url)
@@ -172,7 +180,7 @@ class CollectionRunner:
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_capture(self, url: str, capture_dir: Path) -> Dict:
-        self._log('[3/5] Capture (frontend)…')
+        self._log('[3/7] Capture (frontend)…')
         try:
             cap = SiteContentCapture()
             cap.configure(url, str(capture_dir), self.max_pages, profile=self.profile)
@@ -187,9 +195,9 @@ class CollectionRunner:
                      capture_phase: Dict) -> Dict:
         pages = capture_phase.get('data', {}).get('pages_captured', 0)
         if pages == 0:
-            self._log('[4/5] Clone — пропущено (нет захваченных страниц)')
+            self._log('[4/7] Clone — пропущено (нет захваченных страниц)')
             return {'status': 'Skipped', 'reason': 'no captured pages'}
-        self._log('[4/5] Clone (frontend)…')
+        self._log('[4/7] Clone (frontend)…')
         try:
             clone_dir = project_dir / 'clone'
             cloner = FrontendCloner()
@@ -202,7 +210,7 @@ class CollectionRunner:
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_images(self, url: str, project_dir: Path) -> Dict:
-        self._log('[5/5] Images (media)…')
+        self._log('[5/7] Images (media)…')
         try:
             images_dir = project_dir / 'images'
             ex = ImageExtractor(profile=self.profile, cookies=self.cookies)
@@ -211,6 +219,42 @@ class CollectionRunner:
             return {'status': 'Success', 'data': data}
         except Exception as e:
             self._log(f'  Images failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_cookies(self, url: str, project_dir: Path) -> Dict:
+        self._log('[6/7] Cookie security audit…')
+        try:
+            data = CookieAuditor(profile=self.profile).audit(url)
+            out = project_dir / 'security'
+            out.mkdir(exist_ok=True)
+            (out / 'cookies.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Cookie audit failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_vulns(self, report: Dict, project_dir: Path) -> Dict:
+        self._log('[7/7] Vulnerability scan…')
+        try:
+            recon = report['phases'].get('recon', {}).get('data', {})
+            cookies = report['phases'].get('cookies', {}).get('data', {})
+            findings = VulnScanner().scan(recon, {}, cookies)
+            summary = VulnScanner.summarize(findings)
+            out = project_dir / 'security'
+            out.mkdir(exist_ok=True)
+            (out / 'vulns.json').write_text(
+                json.dumps({'summary': summary, 'findings': findings},
+                           indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            self._log(f"  Findings: {summary['high']} High / "
+                      f"{summary['medium']} Medium / {summary['info']} Info")
+            return {'status': 'Success', 'findings': findings, 'summary': summary}
+        except Exception as e:
+            self._log(f'  Vuln scan failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     # ── HTML report ──────────────────────────────────────────────────────────
@@ -298,6 +342,33 @@ class CollectionRunner:
             f'дубликатов: {e(str(imd.get("duplicates", 0)))}</p>',
             img.get('status', '—'),
         ))
+
+        # Cookie security
+        ck = phases.get('cookies', {})
+        ckd = ck.get('data', {})
+        body_parts.append(card(
+            'Cookie Security',
+            f'<p style="font-size:13px;">Куки: {e(str(ckd.get("total", 0)))}, '
+            f'слабых: <b>{e(str(ckd.get("weak", 0)))}</b></p>',
+            ck.get('status', '—'),
+        ))
+
+        # Vulnerabilities
+        vuln = phases.get('vulns', {})
+        vs = vuln.get('summary', {})
+        findings = vuln.get('findings', [])
+        items = ''.join(
+            f'<li style="margin:2px 0;"><b>[{e(f.get("severity",""))}]</b> '
+            f'{e(f.get("title",""))}</li>'
+            for f in findings[:15]
+        )
+        vuln_body = (
+            f'<p style="font-size:13px;">High: <b>{e(str(vs.get("high", 0)))}</b> · '
+            f'Medium: {e(str(vs.get("medium", 0)))} · Info: {e(str(vs.get("info", 0)))} · '
+            f'risk score: <b>{e(str(vs.get("risk_score", 0)))}</b></p>'
+            f'<ul style="font-size:12px;color:#444;margin:6px 0;">{items}</ul>'
+        )
+        body_parts.append(card('Vulnerabilities', vuln_body, vuln.get('status', '—')))
 
         return f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">

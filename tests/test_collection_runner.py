@@ -46,6 +46,25 @@ def test_render_html_contains_phase_sections():
     assert "[Success]" in html and "[Skipped]" in html and "[Error]" in html
 
 
+def test_render_html_includes_security_sections():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {
+            "cookies": {"status": "Success", "data": {"total": 3, "weak": 1}},
+            "vulns": {"status": "Success",
+                      "summary": {"high": 1, "medium": 2, "info": 0, "risk_score": 9},
+                      "findings": [{"severity": "High", "title": "Weak cookie sid"}]},
+        },
+    }
+    html = r._render_html(report)
+    assert "Cookie Security" in html
+    assert "Vulnerabilities" in html
+    assert "risk score" in html
+    assert "Weak cookie sid" in html
+
+
 def test_render_html_escapes_values():
     r = CollectionRunner()
     report = {

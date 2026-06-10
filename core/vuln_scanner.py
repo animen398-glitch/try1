@@ -1,12 +1,15 @@
 """
-VulnScanner — static analysis of recon + dynamic results.
+VulnScanner — static analysis of recon + dynamic (+ optional cookie) results.
 Produces findings with severity: High / Medium / Info.
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 SEVERITY_HIGH   = 'High'
 SEVERITY_MEDIUM = 'Medium'
 SEVERITY_INFO   = 'Info'
+
+# Weights used by summarize() to turn a finding list into a single risk score.
+_SEVERITY_WEIGHTS = {SEVERITY_HIGH: 5, SEVERITY_MEDIUM: 2, SEVERITY_INFO: 1}
 
 _EXPECTED_SECURITY_HEADERS = [
     'strict-transport-security',
@@ -28,7 +31,8 @@ _SENSITIVE_PATH_PATTERNS = [
 class VulnScanner:
     """Analyses recon + dynamic results and returns a list of finding dicts."""
 
-    def scan(self, recon_result: Dict, dynamic_result: Dict) -> List[Dict]:
+    def scan(self, recon_result: Dict, dynamic_result: Dict,
+             cookie_result: Optional[Dict] = None) -> List[Dict]:
         findings: List[Dict] = []
         self._check_https(recon_result, findings)
         self._check_secrets(dynamic_result, findings)
@@ -36,10 +40,32 @@ class VulnScanner:
         self._check_security_headers(recon_result, findings)
         self._check_server_disclosure(recon_result, findings)
         self._check_sensitive_paths(dynamic_result, findings)
+        self._check_cookies(cookie_result, findings)
         self._check_cms_info(recon_result, findings)
         self._check_pwa(recon_result, findings)
         self._check_runtime_globals(dynamic_result, findings)
         return findings
+
+    @staticmethod
+    def summarize(findings: List[Dict]) -> Dict:
+        """Aggregate findings into severity counts plus a weighted risk score.
+
+        Risk score = sum of per-finding severity weights (High=5, Medium=2,
+        Info=1); 0 means no findings. Handy for report headers and sorting.
+        """
+        counts = {SEVERITY_HIGH: 0, SEVERITY_MEDIUM: 0, SEVERITY_INFO: 0}
+        for f in findings:
+            sev = f.get('severity')
+            if sev in counts:
+                counts[sev] += 1
+        score = sum(_SEVERITY_WEIGHTS[s] * n for s, n in counts.items())
+        return {
+            'high': counts[SEVERITY_HIGH],
+            'medium': counts[SEVERITY_MEDIUM],
+            'info': counts[SEVERITY_INFO],
+            'total': sum(counts.values()),
+            'risk_score': score,
+        }
 
     # ---------------------------------------------------------------- High
 
@@ -91,6 +117,26 @@ class VulnScanner:
                     'severity': SEVERITY_MEDIUM,
                     'title': f"Server technology disclosed via {k} header",
                     'detail': v[:120],
+                })
+
+    def _check_cookies(self, cookie_result: Optional[Dict], findings: List[Dict]):
+        """Flag insecure cookies from a CookieAuditor result (if provided)."""
+        if not cookie_result or cookie_result.get('status') != 'Success':
+            return
+        for c in cookie_result.get('cookies', []):
+            ss = str(c.get('samesite', '')).strip().lower()
+            # SameSite=None without Secure is the clearest cookie-level risk.
+            if ss == 'none' and not c.get('secure'):
+                findings.append({
+                    'severity': SEVERITY_HIGH,
+                    'title': f"Cookie '{c.get('name', '')}' SameSite=None without Secure",
+                    'detail': 'Rejected by modern browsers and exposed cross-site.',
+                })
+            elif c.get('verdict') == 'Weak':
+                findings.append({
+                    'severity': SEVERITY_MEDIUM,
+                    'title': f"Weakly protected cookie: {c.get('name', '')}",
+                    'detail': '; '.join(c.get('issues', [])) or 'missing security flags',
                 })
 
     def _check_sensitive_paths(self, dynamic: Dict, findings: List[Dict]):
