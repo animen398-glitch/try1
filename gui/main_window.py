@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView, QAction, QCheckBox, QComboBox, QFileDialog,
@@ -31,6 +31,9 @@ from utils.video_processor import VideoDownloader
 from core.vuln_scanner import VulnScanner
 from gui.dialogs import SettingsDialog
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.workers import (
+    _CaptureWorker, _CloneWorker, _SubdomainWorker, _TaskHandle, _Worker,
+)
 from utils.file_compression import FileCompressor
 from utils.operation_registry import OperationRegistry
 from utils.data_viewer import DataViewer
@@ -45,123 +48,6 @@ TARGETS_FILE = Path(__file__).parent.parent / 'configs' / 'targets.json'
 OPERATIONS_DB = Path(__file__).parent.parent / 'data' / 'operations.db'
 REGISTRY_DB = Path(__file__).parent.parent / 'data' / 'registry.db'
 LIVE_TEST_OUTPUT = Path(__file__).parent.parent / 'live_test_output'
-
-
-class _Worker(QObject):
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
-
-    def __init__(self, fn, *args, **kwargs):
-        super().__init__()
-        self._fn = fn
-        self._args = args
-        self._kwargs = kwargs
-
-    def run(self):
-        try:
-            result = self._fn(*self._args, **self._kwargs)
-            self.finished.emit(result if isinstance(result, dict) else {'result': result})
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-class _SubdomainWorker(QObject):
-    row_found = pyqtSignal(dict)
-    progress  = pyqtSignal(int, int)
-    finished  = pyqtSignal(dict)
-    error     = pyqtSignal(str)
-
-    def __init__(self, scanner, domain: str, passive: bool, brute: bool):
-        super().__init__()
-        self._scanner = scanner
-        self._domain  = domain
-        self._passive = passive
-        self._brute   = brute
-
-    def run(self):
-        try:
-            result = self._scanner.scan(
-                self._domain,
-                on_found=lambda entry: self.row_found.emit(entry),
-                on_progress=lambda cur, tot: self.progress.emit(cur, tot),
-                passive=self._passive,
-                brute=self._brute,
-            )
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-class _CloneWorker(QObject):
-    """Thread worker for FrontendCloner with real-time log + page progress."""
-    log_message = pyqtSignal(str)
-    progress    = pyqtSignal(int, int)   # (current_page, total_pages)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
-
-    def __init__(self, cloner):
-        super().__init__()
-        self._cloner  = cloner
-        self._total   = 0
-        self._current = 0
-
-    def run(self):
-        try:
-            self._cloner.set_progress_callback(self._on_msg)
-            result = self._cloner.clone()
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-    def _on_msg(self, msg: str):
-        self.log_message.emit(msg)
-        if 'HTML файлов для обработки:' in msg:
-            try:
-                self._total = int(msg.split(':')[-1].strip())
-                self._current = 0
-                self.progress.emit(0, self._total)
-            except ValueError:
-                pass
-        elif 'Локализую:' in msg:
-            self._current += 1
-            self.progress.emit(self._current, self._total)
-
-
-class _CaptureWorker(QObject):
-    """Thread worker for SiteContentCapture with thread-safe log routing."""
-    log_message = pyqtSignal(str)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
-
-    def __init__(self, capturer):
-        super().__init__()
-        self._capturer = capturer
-
-    def run(self):
-        try:
-            self._capturer.set_progress_callback(lambda msg: self.log_message.emit(msg))
-            result = self._capturer.run_capture()
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-class _TaskHandle:
-    """Strong-reference holder for one (worker, thread) pair.
-
-    Every background task lives entirely inside one of these. Keeping both the
-    QThread *and* its worker referenced here — and releasing them only after
-    the OS thread has actually finished (``thread.finished`` → ``deleteLater``)
-    — is what prevents the "QThread: Destroyed while thread is still running"
-    crash. Each task gets its own handle, so any number can run concurrently
-    without one overwriting another's reference.
-    """
-    __slots__ = ('id', 'worker', 'thread')
-
-    def __init__(self, task_id: int, worker: QObject, thread: QThread):
-        self.id = task_id
-        self.worker = worker
-        self.thread = thread
 
 
 class MainWindow(QMainWindow):
