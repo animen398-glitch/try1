@@ -142,7 +142,12 @@ CLI / прочее:
     «Active checks», апдейт строк и красную ⚠-подсветку takeover-кандидатов.
   • Полноценный экспорт результатов: единый отчёт (HTML/PDF/JSON) по проекту
     (пересекается с фичей [A]).
-  • Развить web-консоль (remote/web_app.py) до паритета с GUI-функциями.
+  • [ЧАСТИЧНО] Web-консоль (remote/web_app.py) к паритету с GUI: задачи
+    вынесены в единый реестр JOBS (один runner на фичу), добавлены
+    Subdomains (active/takeover), API Keys, Cookie Audit, Full Collection
+    рядом с Recon/Capture/Paywall. Generic POST /run/{name}, GET /jobs;
+    дэшборд строит кнопки из /jobs (UI и бэкенд не расходятся). Остаётся:
+    медиа/дизайн-вкладки, просмотр истории/реестра, открытие отчётов.
 
 Рефакторинг / архитектура:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
