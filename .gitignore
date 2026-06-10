@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# Test / tooling caches
+.pytest_cache/
+
 # PyInstaller build artefacts
 build/
 dist/

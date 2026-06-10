@@ -1,0 +1,6 @@
+# Development / test dependencies.
+# Install: pip install -r requirements.txt -r requirements-dev.txt
+# Run tests: pytest
+
+pytest>=8.0
+# PyQt5 (from requirements.txt) is needed — the GUI tests build widgets headless.
