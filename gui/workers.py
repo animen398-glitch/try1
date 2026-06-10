@@ -29,17 +29,20 @@ class _Worker(QObject):
 
 
 class _SubdomainWorker(QObject):
-    row_found = pyqtSignal(dict)
-    progress  = pyqtSignal(int, int)
-    finished  = pyqtSignal(dict)
-    error     = pyqtSignal(str)
+    row_found   = pyqtSignal(dict)
+    row_updated = pyqtSignal(dict)   # active-check enrichment for an existing row
+    progress    = pyqtSignal(int, int)
+    finished    = pyqtSignal(dict)
+    error       = pyqtSignal(str)
 
-    def __init__(self, scanner, domain: str, passive: bool, brute: bool):
+    def __init__(self, scanner, domain: str, passive: bool, brute: bool,
+                 active: bool = False):
         super().__init__()
         self._scanner = scanner
         self._domain  = domain
         self._passive = passive
         self._brute   = brute
+        self._active  = active
 
     def run(self):
         try:
@@ -47,8 +50,10 @@ class _SubdomainWorker(QObject):
                 self._domain,
                 on_found=lambda entry: self.row_found.emit(entry),
                 on_progress=lambda cur, tot: self.progress.emit(cur, tot),
+                on_update=lambda entry: self.row_updated.emit(entry),
                 passive=self._passive,
                 brute=self._brute,
+                active=self._active,
             )
             self.finished.emit(result)
         except Exception as e:

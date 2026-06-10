@@ -50,6 +50,11 @@ class SubdomainTabMixin:
             "Resolves ~200 common subdomain names via DNS.\n"
             "Uses 40 concurrent threads for speed."
         )
+        self.subdomain_chk_active = QCheckBox("Active checks (liveness + takeover)")
+        self.subdomain_chk_active.setToolTip(
+            "After enumeration: HTTP/HTTPS liveness probe and subdomain-takeover\n"
+            "detection (CNAME → known service + unclaimed-resource fingerprint)."
+        )
         self.btn_subdomain_scan = StyledButton("Start Scanning")
         self.btn_subdomain_scan.clicked.connect(self._run_subdomain_scan)
         self.btn_subdomain_stop = StyledButton("Stop", style='danger')
@@ -58,6 +63,8 @@ class SubdomainTabMixin:
         row_opts.addWidget(self.subdomain_chk_passive)
         row_opts.addSpacing(14)
         row_opts.addWidget(self.subdomain_chk_brute)
+        row_opts.addSpacing(14)
+        row_opts.addWidget(self.subdomain_chk_active)
         row_opts.addStretch()
         row_opts.addWidget(self.btn_subdomain_stop)
         row_opts.addSpacing(8)
@@ -148,6 +155,7 @@ class SubdomainTabMixin:
 
         self.subdomain_table.setSortingEnabled(False)
         self.subdomain_table.setRowCount(0)
+        self._subdomain_rows = {}            # subdomain -> table row index
         self.subdomain_status_lbl.setText("Starting…")
         self.subdomain_progress.setRange(0, 0)
         self.subdomain_progress.setVisible(True)
@@ -157,18 +165,20 @@ class SubdomainTabMixin:
 
         passive = self.subdomain_chk_passive.isChecked()
         brute   = self.subdomain_chk_brute.isChecked()
+        active  = self.subdomain_chk_active.isChecked()
 
         scanner = SubdomainScanner()
         self._active_subdomain_scanner = scanner
 
-        worker = _SubdomainWorker(scanner, domain, passive, brute)
+        worker = _SubdomainWorker(scanner, domain, passive, brute, active)
         self._start_task(
             worker,
             on_finished=self._on_subdomain_done,
             on_error=self._on_subdomain_error,
             signals=[
-                (worker.row_found, self._on_subdomain_row_found),
-                (worker.progress,  self._on_subdomain_progress),
+                (worker.row_found,   self._on_subdomain_row_found),
+                (worker.row_updated, self._on_subdomain_row_updated),
+                (worker.progress,    self._on_subdomain_progress),
             ],
         )
 
@@ -180,6 +190,7 @@ class SubdomainTabMixin:
     def _on_subdomain_row_found(self, entry: dict):
         row = self.subdomain_table.rowCount()
         self.subdomain_table.insertRow(row)
+        self._subdomain_rows[entry.get('subdomain', '')] = row
 
         col_data = [
             entry.get('subdomain', ''),
@@ -205,6 +216,29 @@ class SubdomainTabMixin:
         count = self.subdomain_table.rowCount()
         self.subdomain_status_lbl.setText(f"Found: {count} subdomain(s)")
 
+    def _on_subdomain_row_updated(self, entry: dict):
+        """Active-check enrichment: refresh the Status cell of an existing row."""
+        row = self._subdomain_rows.get(entry.get('subdomain', ''))
+        if row is None:
+            return
+        status = entry.get('status', '')
+        item = self.subdomain_table.item(row, 2)
+        if item is None:
+            item = QTableWidgetItem()
+            self.subdomain_table.setItem(row, 2, item)
+        item.setText(status)
+        if entry.get('takeover'):
+            # Highlight the whole row red for a takeover candidate.
+            item.setText(f"⚠ {status}")
+            for col in range(self.subdomain_table.columnCount()):
+                cell = self.subdomain_table.item(row, col)
+                if cell is not None:
+                    cell.setForeground(QColor('#ff5252'))
+        elif entry.get('alive'):
+            item.setForeground(QColor('#81c784'))
+        else:
+            item.setForeground(QColor('#888888'))
+
     def _on_subdomain_progress(self, current: int, total: int):
         if total == 0:
             self.subdomain_progress.setRange(0, 0)
@@ -220,8 +254,13 @@ class SubdomainTabMixin:
         total   = result.get('total', 0)
         elapsed = result.get('elapsed', 0)
         status  = result.get('status', 'Done')
+        takeovers = result.get('takeover_candidates', [])
+        live = result.get('live_count')
+        extra = f", {live} live" if live is not None else ""
+        if takeovers:
+            extra += f"  ⚠ {len(takeovers)} TAKEOVER candidate(s): {', '.join(takeovers[:5])}"
         self.subdomain_status_lbl.setText(
-            f"{status} — {total} subdomain(s) found  ({elapsed}s)"
+            f"{status} — {total} subdomain(s) found{extra}  ({elapsed}s)"
         )
         if total:
             self.btn_subdomain_export.setEnabled(True)

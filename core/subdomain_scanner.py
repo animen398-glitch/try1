@@ -10,6 +10,8 @@ import time
 import urllib.request
 from typing import Callable, Dict, List, Optional
 
+from core.subdomain_active import ActiveSubdomainChecker
+
 
 _CRTSH_URL        = 'https://crt.sh/?q=%.{domain}&output=json'
 _HACKERTARGET_URL = 'https://api.hackertarget.com/hostsearch/?q={domain}'
@@ -75,10 +77,13 @@ class SubdomainScanner:
     def __init__(self, data_registry=None):
         self._cancel = threading.Event()
         self._data_registry = data_registry
+        self._active_checker: Optional[ActiveSubdomainChecker] = None
 
     def cancel(self):
         """Signal the scanner to stop at the next checkpoint."""
         self._cancel.set()
+        if self._active_checker is not None:
+            self._active_checker.cancel()
 
     def _record_discovery(self, source: str, data_type: str, content: str,
                           metadata: Optional[Dict] = None) -> None:
@@ -98,13 +103,19 @@ class SubdomainScanner:
         on_progress: Optional[Callable[[int, int], None]] = None,
         passive: bool = True,
         brute: bool = True,
+        active: bool = False,
+        on_update: Optional[Callable[[Dict], None]] = None,
         max_workers: int = 40,
     ) -> Dict:
         """
-        Run passive + brute-force enumeration.
-        on_found(entry)           called for each new result
-        on_progress(current, total) called during brute-force phase
-        Returns summary dict: {status, domain, total, results, elapsed}
+        Run passive + brute-force enumeration, optionally followed by active
+        checks (HTTP liveness + subdomain-takeover detection).
+
+        on_found(entry)            called for each newly discovered subdomain
+        on_progress(current, total) progress during brute-force / active phase
+        on_update(entry)           called when an entry is enriched by active checks
+        Returns summary dict: {status, domain, total, results, elapsed,
+                               live_count, takeover_candidates}
         """
         self._cancel.clear()
         domain = (
@@ -208,12 +219,64 @@ class SubdomainScanner:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
                 list(pool.map(_probe, _WORDLIST))
 
+        # ── Phase 4: Active checks (HTTP liveness + takeover) ─────────────
+        if active and found and not self._cancel.is_set():
+            self._run_active(found, on_progress, on_update, max_workers)
+
         elapsed = round(time.time() - t_start, 2)
         results = list(found.values())
+        takeover_candidates = [
+            e['subdomain'] for e in results if e.get('takeover')
+        ]
         return {
             'status': 'Cancelled' if self._cancel.is_set() else 'Success',
             'domain': domain,
             'total': len(results),
             'results': results,
             'elapsed': elapsed,
+            'live_count': sum(1 for e in results if e.get('alive')),
+            'takeover_candidates': takeover_candidates,
         }
+
+    def _run_active(self, found: Dict[str, Dict],
+                    on_progress: Optional[Callable[[int, int], None]],
+                    on_update: Optional[Callable[[Dict], None]],
+                    max_workers: int) -> None:
+        """Enrich discovered entries with HTTP liveness + takeover verdicts."""
+        checker = ActiveSubdomainChecker()
+        self._active_checker = checker
+
+        def _on_res(res: Dict):
+            entry = found.get(res['host'])
+            if entry is None:
+                return
+            entry['alive'] = res['alive']
+            entry['http_status'] = res['http_status']
+            entry['server'] = res['server']
+            entry['title'] = res['title']
+            entry['cname'] = res['cname']
+            entry['service'] = res['service']
+            entry['takeover'] = res['takeover']
+            if res['takeover']:
+                entry['status'] = f"TAKEOVER? ({res['service']})"
+            elif res['alive']:
+                entry['status'] = (
+                    f"HTTP {res['http_status']}" if res['http_status'] else 'Live'
+                )
+            else:
+                entry['status'] = 'Dead'
+            if res['takeover']:
+                self._record_discovery(
+                    source=entry.get('subdomain', ''), data_type='takeover',
+                    content=entry.get('subdomain', ''),
+                    metadata={'service': res['service'], 'cname': res['cname']},
+                )
+            if on_update:
+                on_update(entry)
+
+        checker.check_many(
+            list(found.keys()),
+            on_result=_on_res,
+            on_progress=on_progress,
+            max_workers=min(max_workers, 20),
+        )

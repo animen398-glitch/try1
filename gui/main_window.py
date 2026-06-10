@@ -52,6 +52,7 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         self._next_task_id: int = 0
         self._last_recon_combined: dict = {}
         self._active_subdomain_scanner = None
+        self._subdomain_rows: dict = {}
         self._active_capturer = None
         self._active_cloner = None
         self._active_collector = None
