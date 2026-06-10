@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 from gui.dialogs import SettingsDialog
 from gui.workers import _TaskHandle, _Worker
 from gui.constants import SETTINGS_FILE, TARGETS_FILE
+from gui.plugin_manager import default_manager
 from gui.tab_system import SystemTabMixin
 from gui.tab_api import ApiTabMixin
 from gui.tab_capture import CaptureTabMixin
@@ -115,19 +116,10 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         layout.setContentsMargins(8, 8, 8, 8)
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_recon_tab(),      "Recon & Intel")
-        self.tabs.addTab(self._build_subdomain_tab(),  "Subdomain Scanner")
-        self.tabs.addTab(self._build_api_tab(),        "API Key Scanner")
-        self.tabs.addTab(self._build_capture_tab(),    "Site Capture")
-        self.tabs.addTab(self._build_clone_tab(),      "Clone Frontend")
-        self.tabs.addTab(self._build_video_tab(),      "Video Downloader")
-        self.tabs.addTab(self._build_image_tab(),      "Image Extractor")
-        self.tabs.addTab(self._build_design_tab(),     "Design Lab")
-        self.tabs.addTab(self._build_cookie_tab(),     "Cookie Security Audit")
-        self.tabs.addTab(self._build_collection_tab(), "Final Report & Collection")
-        self.tabs.addTab(self._build_dashboard_tab(),  "Dashboard")
-        self.tabs.addTab(self._build_history_tab(),    "История операций")
-        self.tabs.addTab(self._build_system_tab(),     "System")
+        # Tabs are built from the plugin registry (single source of truth for
+        # the tab bar), not a hard-coded addTab() list. See gui/plugin_manager.
+        self.plugins = default_manager()
+        self.plugins.build_into(self, self.tabs)
         layout.addWidget(self.tabs)
 
         # Lazily load history the first time its tab is opened.
