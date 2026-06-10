@@ -1,0 +1,318 @@
+"""collection_runner.py
+Runs the analysis modules back-to-back into one structured project directory
+and emits an aggregated HTML + JSON report.
+
+Pipeline (each phase is guarded — a failure is recorded and the run continues):
+    Recon  ->  API key scan  ->  Capture (frontend)  ->  Clone (frontend)
+           ->  Image collection (media)
+
+Layout produced under <base>/<domain>_<timestamp>/:
+    recon/recon.json
+    api/api_keys.json
+    capture/…              (saved HTML pages + site_map.json)
+    clone/…                (self-contained offline copy)
+    images/…               (downloaded images)
+    report.json            (full aggregated result)
+    report.html            (human-readable summary)
+"""
+
+import html
+import json
+import re
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Callable, Dict, Optional
+from urllib.parse import urlparse
+
+from core.api_key_extractor import ApiKeyExtractor
+from core.content_capture import SiteContentCapture
+from core.frontend_cloner import FrontendCloner
+from core.recon_engine import ReconEngine
+from utils.image_processor import ImageExtractor
+
+
+def _domain_slug(url: str) -> str:
+    netloc = urlparse(url).netloc or url.split('/')[0]
+    slug = re.sub(r'^www\.', '', netloc)
+    return re.sub(r'[^\w.-]', '_', slug) or 'site'
+
+
+class CollectionRunner:
+    """Sequentially drives every collection module into one project folder."""
+
+    def __init__(self, profile: str = 'chrome_windows', max_pages: int = 20,
+                 cookies: Optional[str] = None):
+        self.profile = profile
+        self.max_pages = max_pages
+        self.cookies = cookies
+        self.progress_callback: Optional[Callable] = None
+        self._cancel = threading.Event()
+
+    def configure(self, profile: Optional[str] = None,
+                  max_pages: Optional[int] = None,
+                  cookies: Optional[str] = None):
+        if profile:
+            self.profile = profile
+        if max_pages is not None:
+            self.max_pages = max_pages
+        if cookies is not None:
+            self.cookies = cookies
+
+    def set_progress_callback(self, cb: Callable):
+        self.progress_callback = cb
+
+    def cancel(self):
+        """Signal the runner to stop at the next phase boundary."""
+        self._cancel.set()
+
+    def _log(self, msg: str):
+        if self.progress_callback:
+            self.progress_callback(msg)
+
+    def _cancelled(self, report: Dict) -> bool:
+        if self._cancel.is_set():
+            report['cancelled'] = True
+            self._log('Сбор отменён пользователем')
+            return True
+        return False
+
+    # ── pipeline ─────────────────────────────────────────────────────────────
+
+    def run(self, url: str, output_base: str) -> Dict:
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        self._cancel.clear()
+
+        domain = _domain_slug(url)
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        project_dir = Path(output_base).expanduser() / f'{domain}_{stamp}'
+        project_dir.mkdir(parents=True, exist_ok=True)
+
+        report: Dict = {
+            'url': url,
+            'domain': domain,
+            'started_at': datetime.now().isoformat(timespec='seconds'),
+            'project_dir': str(project_dir),
+            'phases': {},
+        }
+
+        self._log(f'Проект: {project_dir}')
+
+        # 1. Recon
+        if not self._cancelled(report):
+            report['phases']['recon'] = self._phase_recon(url, project_dir)
+        # 2. API key scan
+        if not self._cancelled(report):
+            report['phases']['api'] = self._phase_api(url, project_dir)
+        # 3. Capture (frontend)
+        capture_dir = project_dir / 'capture'
+        if not self._cancelled(report):
+            report['phases']['capture'] = self._phase_capture(url, capture_dir)
+        # 4. Clone (frontend) — only if capture produced pages
+        if not self._cancelled(report):
+            report['phases']['clone'] = self._phase_clone(capture_dir, project_dir,
+                                                          report['phases'].get('capture', {}))
+        # 5. Images (media)
+        if not self._cancelled(report):
+            report['phases']['images'] = self._phase_images(url, project_dir)
+
+        report['finished_at'] = datetime.now().isoformat(timespec='seconds')
+
+        # Reports
+        json_path = project_dir / 'report.json'
+        json_path.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False, default=str),
+            encoding='utf-8',
+        )
+        html_path = project_dir / 'report.html'
+        html_path.write_text(self._render_html(report), encoding='utf-8')
+
+        report['report_json'] = str(json_path)
+        report['report_html'] = str(html_path)
+        report['status'] = 'Cancelled' if report.get('cancelled') else 'Success'
+        self._log(f'Отчёт: {html_path}')
+        return report
+
+    # ── phases ───────────────────────────────────────────────────────────────
+
+    def _phase_recon(self, url: str, project_dir: Path) -> Dict:
+        self._log('[1/5] Recon…')
+        try:
+            engine = ReconEngine()
+            engine.configure(profile=self.profile)
+            data = engine.run_recon(url)
+            out = project_dir / 'recon'
+            out.mkdir(exist_ok=True)
+            (out / 'recon.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Recon failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_api(self, url: str, project_dir: Path) -> Dict:
+        self._log('[2/5] API key scan…')
+        try:
+            extractor = ApiKeyExtractor()
+            extractor.set_target_url(url)
+            extractor.set_profile(self.profile)
+            data = extractor.run_extraction()
+            out = project_dir / 'api'
+            out.mkdir(exist_ok=True)
+            (out / 'api_keys.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  API scan failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_capture(self, url: str, capture_dir: Path) -> Dict:
+        self._log('[3/5] Capture (frontend)…')
+        try:
+            cap = SiteContentCapture()
+            cap.configure(url, str(capture_dir), self.max_pages, profile=self.profile)
+            cap.set_progress_callback(self._log)
+            data = cap.run_capture()
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Capture failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_clone(self, capture_dir: Path, project_dir: Path,
+                     capture_phase: Dict) -> Dict:
+        pages = capture_phase.get('data', {}).get('pages_captured', 0)
+        if pages == 0:
+            self._log('[4/5] Clone — пропущено (нет захваченных страниц)')
+            return {'status': 'Skipped', 'reason': 'no captured pages'}
+        self._log('[4/5] Clone (frontend)…')
+        try:
+            clone_dir = project_dir / 'clone'
+            cloner = FrontendCloner()
+            cloner.configure(str(capture_dir), str(clone_dir), profile=self.profile)
+            cloner.set_progress_callback(self._log)
+            data = cloner.clone()
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Clone failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_images(self, url: str, project_dir: Path) -> Dict:
+        self._log('[5/5] Images (media)…')
+        try:
+            images_dir = project_dir / 'images'
+            ex = ImageExtractor(profile=self.profile, cookies=self.cookies)
+            ex.set_progress_callback(self._log)
+            data = ex.extract_images(url, str(images_dir))
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Images failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    # ── HTML report ──────────────────────────────────────────────────────────
+
+    def _render_html(self, report: Dict) -> str:
+        e = html.escape
+        phases = report.get('phases', {})
+
+        def card(title: str, body: str, status: str) -> str:
+            colour = {'Success': '#2e7d32', 'Error': '#c62828',
+                      'Skipped': '#f9a825'}.get(status, '#555')
+            return (
+                f'<section style="border:1px solid #ddd;border-left:5px solid {colour};'
+                f'border-radius:6px;margin:12px 0;padding:12px 16px;">'
+                f'<h2 style="margin:0 0 8px;font-size:16px;">{e(title)} '
+                f'<span style="color:{colour};font-size:13px;">[{e(status)}]</span></h2>'
+                f'{body}</section>'
+            )
+
+        def kv(d: Dict, keys) -> str:
+            rows = []
+            for k in keys:
+                if k in d and d[k] not in (None, '', [], {}):
+                    rows.append(
+                        f'<tr><td style="color:#666;padding:2px 12px 2px 0;">{e(str(k))}</td>'
+                        f'<td>{e(str(d[k]))}</td></tr>'
+                    )
+            return f'<table style="font-size:13px;">{"".join(rows)}</table>' if rows else ''
+
+        body_parts = []
+
+        # Recon
+        recon = phases.get('recon', {})
+        rd = recon.get('data', {})
+        body_parts.append(card(
+            'Recon & Intel',
+            kv(rd, ['ip', 'status']) + (
+                f'<p style="font-size:13px;">CMS / Stack: '
+                f'{e(", ".join(rd.get("cms", [])) or "—")}<br>'
+                f'Favicons: {len(rd.get("favicons", []))}</p>'
+            ),
+            recon.get('status', '—'),
+        ))
+
+        # API
+        api = phases.get('api', {})
+        ad = api.get('data', {})
+        body_parts.append(card(
+            'API Key Scan',
+            f'<p style="font-size:13px;">Найдено ключей: '
+            f'<b>{e(str(ad.get("keys_found", 0)))}</b></p>',
+            api.get('status', '—'),
+        ))
+
+        # Capture
+        cap = phases.get('capture', {})
+        cd = cap.get('data', {})
+        body_parts.append(card(
+            'Capture (Frontend)',
+            f'<p style="font-size:13px;">Страниц захвачено: '
+            f'<b>{e(str(cd.get("pages_captured", 0)))}</b>, '
+            f'ошибок: {len(cd.get("errors", []))}</p>',
+            cap.get('status', '—'),
+        ))
+
+        # Clone
+        clone = phases.get('clone', {})
+        cl = clone.get('data', {})
+        clone_body = (
+            f'<p style="font-size:13px;">Страниц: '
+            f'<b>{e(str(cl.get("pages_processed", 0)))}</b>, '
+            f'ассетов: {e(str(cl.get("assets_downloaded", 0)))}</p>'
+            if cl else f'<p style="font-size:13px;color:#999;">'
+                       f'{e(clone.get("reason", "—"))}</p>'
+        )
+        body_parts.append(card('Clone (Frontend)', clone_body, clone.get('status', '—')))
+
+        # Images
+        img = phases.get('images', {})
+        imd = img.get('data', {})
+        body_parts.append(card(
+            'Images (Media)',
+            f'<p style="font-size:13px;">Найдено: {e(str(imd.get("found", 0)))}, '
+            f'загружено: <b>{e(str(imd.get("downloaded", 0)))}</b>, '
+            f'дубликатов: {e(str(imd.get("duplicates", 0)))}</p>',
+            img.get('status', '—'),
+        ))
+
+        return f"""<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>Collection Report — {e(report.get('domain', ''))}</title></head>
+<body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+max-width:860px;margin:24px auto;padding:0 16px;color:#222;">
+<h1 style="font-size:22px;margin-bottom:4px;">Collection Report</h1>
+<p style="color:#666;font-size:13px;margin-top:0;">
+  <b>{e(report.get('url', ''))}</b><br>
+  Начато: {e(report.get('started_at', ''))} ·
+  Завершено: {e(report.get('finished_at', ''))}<br>
+  Директория: {e(report.get('project_dir', ''))}
+</p>
+{''.join(body_parts)}
+<p style="color:#aaa;font-size:11px;margin-top:24px;">
+  Advanced Site Analyzer · Full Collection
+</p>
+</body></html>"""

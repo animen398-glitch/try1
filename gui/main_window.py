@@ -23,6 +23,7 @@ from gui.tab_media import ImageTabMixin, VideoTabMixin
 from gui.tab_recon import ReconTabMixin
 from gui.tab_subdomain import SubdomainTabMixin
 from gui.tab_clone import CloneTabMixin
+from gui.tab_collection import FinalReportTabMixin
 from gui.tab_cookie import CookieAuditTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_history import HistoryTabMixin
@@ -33,8 +34,8 @@ from utils.task_manager import TaskManager
 class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
                  VideoTabMixin, ImageTabMixin, CaptureTabMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
-                 CloneTabMixin, CookieAuditTabMixin, DashboardTabMixin,
-                 HistoryTabMixin):
+                 CloneTabMixin, CookieAuditTabMixin, FinalReportTabMixin,
+                 DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer"""
 
     def __init__(self):
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         self._active_subdomain_scanner = None
         self._active_capturer = None
         self._active_cloner = None
+        self._active_collector = None
         self._history_rows: list = []
         self._history_loading = False
         self._dashboard_loading = False
@@ -122,6 +124,7 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         self.tabs.addTab(self._build_image_tab(),      "Image Extractor")
         self.tabs.addTab(self._build_design_tab(),     "Design Lab")
         self.tabs.addTab(self._build_cookie_tab(),     "Cookie Security Audit")
+        self.tabs.addTab(self._build_collection_tab(), "Final Report & Collection")
         self.tabs.addTab(self._build_dashboard_tab(),  "Dashboard")
         self.tabs.addTab(self._build_history_tab(),    "История операций")
         self.tabs.addTab(self._build_system_tab(),     "System")

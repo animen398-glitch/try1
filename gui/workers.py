@@ -109,6 +109,27 @@ class _CaptureWorker(QObject):
             self.error.emit(str(e))
 
 
+class _CollectionWorker(QObject):
+    """Thread worker for CollectionRunner (Full Collection) with log routing."""
+    log_message = pyqtSignal(str)
+    finished    = pyqtSignal(dict)
+    error       = pyqtSignal(str)
+
+    def __init__(self, runner, url: str, output_base: str):
+        super().__init__()
+        self._runner = runner
+        self._url = url
+        self._output_base = output_base
+
+    def run(self):
+        try:
+            self._runner.set_progress_callback(lambda msg: self.log_message.emit(msg))
+            result = self._runner.run(self._url, self._output_base)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class _TaskHandle:
     """Strong-reference holder for one (worker, thread) pair.
 
