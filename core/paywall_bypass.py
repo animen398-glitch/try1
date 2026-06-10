@@ -3,8 +3,8 @@ import json
 import re
 import urllib.request
 import zlib
-from typing import Dict, Optional
-from urllib.parse import quote, urlparse
+from typing import Dict, List, Optional
+from urllib.parse import quote, urljoin, urlparse, urlunparse
 
 from utils.browser_utils import SessionBuilder
 
@@ -13,6 +13,9 @@ _GOOGLEBOT_UA = (
     'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
 )
 _WAYBACK_API = 'https://archive.org/wayback/available?url={encoded}'
+_GOOGLE_CACHE = 'https://webcache.googleusercontent.com/search?q=cache:{encoded}'
+# Many metered paywalls exempt visitors arriving from search/social.
+_SEARCH_REFERER = 'https://www.google.com/'
 
 # Patterns that indicate active paywall enforcement in HTML or scripts
 _PAYWALL_RE = re.compile(
@@ -67,17 +70,29 @@ class PaywallBypass:
 
     # ---------------------------------------------------------------- internal
 
-    def _fetch_raw(self, url: str, ua: Optional[str] = None) -> Optional[bytes]:
+    def _fetch_raw(self, url: str, ua: Optional[str] = None,
+                   referer: Optional[str] = None) -> Optional[bytes]:
         try:
             headers = SessionBuilder('chrome_windows').get_headers()
             if ua:
                 headers['User-Agent'] = ua
+            if referer:
+                headers['Referer'] = referer
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=self._timeout) as r:
                 raw = r.read()
                 return _decompress(raw, r.headers)
         except Exception:
             return None
+
+    def _fetch_clean(self, url: str, ua: Optional[str] = None,
+                     referer: Optional[str] = None) -> Optional[str]:
+        """Fetch a URL and return its HTML only if it is not paywalled."""
+        raw = self._fetch_raw(url, ua=ua, referer=referer)
+        if not raw:
+            return None
+        html = self._decode(raw)
+        return html if not self._is_paywalled(html) else None
 
     @staticmethod
     def _decode(raw: bytes) -> str:
@@ -123,6 +138,76 @@ class PaywallBypass:
         )
         return html
 
+    @staticmethod
+    def _discover_amp(html: str, base_url: str) -> Optional[str]:
+        """Return the absolute AMP URL from <link rel="amphtml">, if present."""
+        m = re.search(r'<link\b[^>]*\bamphtml\b[^>]*>', html, re.IGNORECASE)
+        if not m:
+            return None
+        href = re.search(r'href=["\']([^"\']+)["\']', m.group(0), re.IGNORECASE)
+        return urljoin(base_url, href.group(1)) if href else None
+
+    @staticmethod
+    def _amp_candidates(url: str) -> List[str]:
+        """Common AMP URL variants to try when no amphtml link is declared."""
+        parsed = urlparse(url)
+        path = parsed.path.rstrip('/')
+        candidates = [
+            urlunparse(parsed._replace(path=f'{path}/amp')),
+            urlunparse(parsed._replace(path=f'{path}.amp')),
+            urlunparse(parsed._replace(
+                query=(parsed.query + '&' if parsed.query else '') + 'outputType=amp')),
+            urlunparse(parsed._replace(
+                query=(parsed.query + '&' if parsed.query else '') + 'amp=1')),
+        ]
+        # De-dupe while preserving order.
+        seen: set = set()
+        return [c for c in candidates if not (c in seen or seen.add(c))]
+
+    @staticmethod
+    def _google_cache_url(url: str) -> str:
+        return _GOOGLE_CACHE.format(encoded=quote(url, safe=''))
+
+    @staticmethod
+    def _reader_view(html: str) -> str:
+        """Produce a simplified, reader-mode HTML view of an article.
+
+        Lightweight readability: prefer the <article>/<main> region, drop
+        chrome (scripts, nav, asides, …) and keep headings and paragraphs.
+        """
+        region = html
+        for tag in ('article', 'main'):
+            m = re.search(rf'<{tag}\b[^>]*>(.*?)</{tag}>', html,
+                          re.IGNORECASE | re.DOTALL)
+            if m:
+                region = m.group(1)
+                break
+
+        for tag in ('script', 'style', 'nav', 'header', 'footer', 'aside',
+                    'form', 'noscript', 'svg', 'figure'):
+            region = re.sub(rf'<{tag}\b[^>]*>.*?</{tag}>', ' ', region,
+                            flags=re.IGNORECASE | re.DOTALL)
+
+        tm = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+        title = re.sub(r'\s+', ' ', tm.group(1)).strip() if tm else ''
+
+        parts: List[str] = []
+        for tag, inner in re.findall(r'<(h[1-3]|p)\b[^>]*>(.*?)</\1>', region,
+                                     re.IGNORECASE | re.DOTALL):
+            text = re.sub(r'<[^>]+>', '', inner)
+            text = re.sub(r'\s+', ' ', text).strip()
+            if text:
+                t = tag.lower()
+                parts.append(f'<{t}>{text}</{t}>' if t.startswith('h')
+                             else f'<p>{text}</p>')
+
+        body = '\n'.join(parts)
+        return (
+            '<!DOCTYPE html><html><head><meta charset="utf-8">'
+            f'<title>{title}</title></head><body><article>'
+            f'<h1>{title}</h1>{body}</article></body></html>'
+        )
+
     def _wayback_fetch(self, url: str) -> Optional[str]:
         api_url = _WAYBACK_API.format(encoded=quote(url, safe=''))
         raw = self._fetch_raw(api_url)
@@ -146,18 +231,27 @@ class PaywallBypass:
 
     # ---------------------------------------------------------------- public
 
+    def _win(self, result: Dict, strategy: str, html: str) -> Dict:
+        """Finalize a successful extraction: set html, strategy and reader view."""
+        result.update({
+            'strategy_used': strategy,
+            'html': html,
+            'reader_view': self._reader_view(html),
+            'status': 'Success',
+        })
+        return result
+
     def extract(self, url: str) -> Dict:
         """
-        Run all 3 strategies in order, return on first success.
+        Run the strategies in order, returning on the first success:
+          1. googlebot_spoof   — Googlebot User-Agent
+          2. js_strip          — remove paywall scripts from the response
+          3. amp               — AMP version (declared amphtml link or variants)
+          4. referer_spoof     — arrive "from Google" (metered-paywall exemption)
+          5. google_cache      — Google's cached copy
+          6. wayback_machine   — archive.org snapshot
 
-        Returns:
-            {
-                url: str,
-                strategy_used: str | None,
-                html: str | None,       # decoded HTML text, UTF-8
-                paywalled: bool,        # True if original response showed a paywall
-                status: 'Success' | 'Failed',
-            }
+        Returns a dict: {url, strategy_used, html, reader_view, paywalled, status}.
         """
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
@@ -166,41 +260,47 @@ class PaywallBypass:
             'url': url,
             'strategy_used': None,
             'html': None,
+            'reader_view': None,
             'paywalled': False,
             'status': 'Failed',
         }
 
+        base_html: Optional[str] = None
+
         # ── Strategy 1: Googlebot spoofing ───────────────────────────────
         raw = self._fetch_raw(url, ua=_GOOGLEBOT_UA)
         if raw:
-            html = self._decode(raw)
-            if not self._is_paywalled(html):
-                result.update({
-                    'strategy_used': 'googlebot_spoof',
-                    'html': html,
-                    'status': 'Success',
-                })
-                return result
+            base_html = self._decode(raw)
+            if not self._is_paywalled(base_html):
+                return self._win(result, 'googlebot_spoof', base_html)
             result['paywalled'] = True
 
             # ── Strategy 2: strip paywall JS from the googlebot response ──
-            stripped = self._strip_paywall_js(html)
-            if stripped != html:
-                result.update({
-                    'strategy_used': 'js_strip',
-                    'html': stripped,
-                    'status': 'Success',
-                })
-                return result
+            stripped = self._strip_paywall_js(base_html)
+            if stripped != base_html:
+                return self._win(result, 'js_strip', stripped)
 
-        # ── Strategy 3: Wayback Machine archival snapshot ────────────────
+        # ── Strategy 3: AMP version ──────────────────────────────────────
+        amp_url = self._discover_amp(base_html, url) if base_html else None
+        amp_targets = ([amp_url] if amp_url else []) + self._amp_candidates(url)
+        for target in amp_targets:
+            amp_html = self._fetch_clean(target)
+            if amp_html:
+                return self._win(result, 'amp', amp_html)
+
+        # ── Strategy 4: referrer spoofing (arrive from search) ───────────
+        ref_html = self._fetch_clean(url, referer=_SEARCH_REFERER)
+        if ref_html:
+            return self._win(result, 'referer_spoof', ref_html)
+
+        # ── Strategy 5: Google cache ─────────────────────────────────────
+        cache_html = self._fetch_clean(self._google_cache_url(url))
+        if cache_html:
+            return self._win(result, 'google_cache', cache_html)
+
+        # ── Strategy 6: Wayback Machine archival snapshot ────────────────
         archived = self._wayback_fetch(url)
         if archived:
-            result.update({
-                'strategy_used': 'wayback_machine',
-                'html': archived,
-                'status': 'Success',
-            })
-            return result
+            return self._win(result, 'wayback_machine', archived)
 
         return result
