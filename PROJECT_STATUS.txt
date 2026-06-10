@@ -135,9 +135,13 @@ CLI / прочее:
 Рефакторинг / архитектура:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
     gui/tab_*.py (recon, subdomain, api, capture, clone, media, design,
-    dashboard, history, system) + gui/workers.py + gui/constants.py.
-    main_window.py ужат с ~2480 до ~320 строк (только каркас окна, раннер
-    задач _start_task и общие helpers).
+    cookie, collection, dashboard, history, system) + gui/workers.py +
+    gui/constants.py. main_window.py ужат с ~2480 до ~280 строк (только
+    каркас окна, раннер задач _start_task и общие helpers).
+  • [СДЕЛАНО] gui/plugin_manager.py — реестр вкладок-«плагинов»: список
+    вкладок (TabPlugin: id/title/factory) больше не захардкожен в
+    _build_central, а собирается из PluginManager (единый источник правды
+    для таб-бара; точка расширения для внешних/опциональных вкладок).
   • Унести бизнес-логику из GUI-воркеров в core/ (тонкий UI-слой).
   • Унифицировать конфигурацию (configs/settings.json, targets.json) и
     управление путями к БД.
