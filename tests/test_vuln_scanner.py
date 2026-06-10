@@ -73,3 +73,51 @@ def test_summarize_counts_and_score():
 def test_summarize_empty():
     s = VulnScanner.summarize([])
     assert s == {"high": 0, "medium": 0, "info": 0, "total": 0, "risk_score": 0}
+
+
+def _recon_with_headers(**security):
+    return {"url": "https://x", "security_headers": security}
+
+
+def test_csp_unsafe_inline_flagged():
+    recon = _recon_with_headers(**{
+        "content-security-policy": "default-src 'self'; script-src 'unsafe-inline'"
+    })
+    findings = VulnScanner().scan(recon, {})
+    csp = [f for f in findings if f["title"] == "Weak Content-Security-Policy"]
+    assert csp and csp[0]["severity"] == SEVERITY_MEDIUM
+    assert "unsafe-inline" in csp[0]["detail"]
+
+
+def test_csp_wildcard_source_flagged():
+    recon = _recon_with_headers(**{"content-security-policy": "default-src *"})
+    findings = VulnScanner().scan(recon, {})
+    assert any(f["title"] == "Weak Content-Security-Policy" for f in findings)
+
+
+def test_csp_strict_not_flagged():
+    recon = _recon_with_headers(**{"content-security-policy": "default-src 'self'"})
+    findings = VulnScanner().scan(recon, {})
+    assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
+
+
+def test_hsts_short_max_age_flagged():
+    recon = _recon_with_headers(**{"strict-transport-security": "max-age=3600"})
+    findings = VulnScanner().scan(recon, {})
+    hsts = [f for f in findings if f["title"] == "HSTS max-age too short"]
+    assert hsts and hsts[0]["severity"] == SEVERITY_MEDIUM
+
+
+def test_hsts_missing_include_subdomains_is_info():
+    recon = _recon_with_headers(**{"strict-transport-security": "max-age=31536000"})
+    findings = VulnScanner().scan(recon, {})
+    assert any(f["title"] == "HSTS without includeSubDomains"
+               and f["severity"] == SEVERITY_INFO for f in findings)
+
+
+def test_hsts_strong_not_flagged():
+    recon = _recon_with_headers(**{
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload"
+    })
+    findings = VulnScanner().scan(recon, {})
+    assert not any("HSTS" in f["title"] for f in findings)

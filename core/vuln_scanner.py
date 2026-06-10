@@ -2,7 +2,11 @@
 VulnScanner — static analysis of recon + dynamic (+ optional cookie) results.
 Produces findings with severity: High / Medium / Info.
 """
+import re
 from typing import Dict, List, Optional
+
+# HSTS shorter than ~6 months is considered weak.
+_HSTS_MIN_MAX_AGE = 15768000
 
 SEVERITY_HIGH   = 'High'
 SEVERITY_MEDIUM = 'Medium'
@@ -38,6 +42,8 @@ class VulnScanner:
         self._check_secrets(dynamic_result, findings)
         self._check_auth_headers(dynamic_result, findings)
         self._check_security_headers(recon_result, findings)
+        self._check_csp_weakness(recon_result, findings)
+        self._check_hsts_weakness(recon_result, findings)
         self._check_server_disclosure(recon_result, findings)
         self._check_sensitive_paths(dynamic_result, findings)
         self._check_cookies(cookie_result, findings)
@@ -108,6 +114,41 @@ class VulnScanner:
                 'severity': SEVERITY_MEDIUM,
                 'title': f"Missing security headers ({len(missing)})",
                 'detail': ', '.join(missing),
+            })
+
+    def _check_csp_weakness(self, recon: Dict, findings: List[Dict]):
+        csp = recon.get('security_headers', {}).get('content-security-policy', '')
+        if not csp:
+            return  # absence is covered by _check_security_headers
+        low = csp.lower()
+        weak = [t for t in ('unsafe-inline', 'unsafe-eval') if t in low]
+        if '*' in re.split(r'[;\s]+', low):   # a bare wildcard source
+            weak.append('wildcard source (*)')
+        if weak:
+            findings.append({
+                'severity': SEVERITY_MEDIUM,
+                'title': 'Weak Content-Security-Policy',
+                'detail': ', '.join(weak),
+            })
+
+    def _check_hsts_weakness(self, recon: Dict, findings: List[Dict]):
+        hsts = recon.get('security_headers', {}).get('strict-transport-security', '')
+        if not hsts:
+            return  # absence is covered by _check_security_headers
+        low = hsts.lower()
+        m = re.search(r'max-age\s*=\s*(\d+)', low)
+        max_age = int(m.group(1)) if m else 0
+        if max_age < _HSTS_MIN_MAX_AGE:
+            findings.append({
+                'severity': SEVERITY_MEDIUM,
+                'title': 'HSTS max-age too short',
+                'detail': f'max-age={max_age} (< {_HSTS_MIN_MAX_AGE} ≈ 6 months)',
+            })
+        elif 'includesubdomains' not in low:
+            findings.append({
+                'severity': SEVERITY_INFO,
+                'title': 'HSTS without includeSubDomains',
+                'detail': hsts[:120],
             })
 
     def _check_server_disclosure(self, recon: Dict, findings: List[Dict]):
