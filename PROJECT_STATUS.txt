@@ -131,7 +131,13 @@ CLI / прочее:
     (security/cookies.json, security/vulns.json + карточки в report.html).
     Остаётся: больше правил, экспорт отдельного vuln-отчёта.
   • Углубить paywall-bypass: добавить стратегии (reader-mode, AMP, кэш Google).
-  • Активные проверки субдоменов (резолв, проверка живости, takeover-детект).
+  • [СДЕЛАНО] Активные проверки субдоменов: core/subdomain_active.py
+    (ActiveSubdomainChecker) — CNAME-резолв (stdlib), HTTP/HTTPS-liveness и
+    детект takeover (CNAME известного сервиса + fingerprint незаявленного
+    ресурса: GitHub Pages, Heroku, S3, Azure, Fastly, Shopify, …).
+    SubdomainScanner.scan(active=True) обогащает записи (alive/http_status/
+    takeover/service) + summary.takeover_candidates; вкладка получила чекбокс
+    «Active checks», апдейт строк и красную ⚠-подсветку takeover-кандидатов.
   • Полноценный экспорт результатов: единый отчёт (HTML/PDF/JSON) по проекту
     (пересекается с фичей [A]).
   • Развить web-консоль (remote/web_app.py) до паритета с GUI-функциями.
