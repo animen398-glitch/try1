@@ -14,7 +14,7 @@ Advanced Site Analyzer — десктопный инструмент (Python 3.1
 дизайн-системы (палитра, типографика).
 
 Сценарии запуска:
-  • GUI       — main.py (основной режим, PyQt5, 11 вкладок).
+  • GUI       — main.py (основной режим, PyQt5, 13 вкладок).
   • CLI       — main_orchestrator.py (единый pipeline из 6 фаз).
   • Web/LAN   — remote/web_app.py (консоль управления на FastAPI, порт 5000).
 
@@ -44,10 +44,11 @@ Advanced Site Analyzer — десктопный инструмент (Python 3.1
   • anti_detect_engine.py  — сессия с ротацией UA, cookie, retry-backoff.
   • cloudflare_bypass.py   — обход базовых проверок Cloudflare.
 
-GUI (gui/main_window.py, ~102 KB):
-  • 11 вкладок: Recon & Intel, Subdomain Scanner, API Key Scanner, Site
+GUI (gui/main_window.py — каркас ~280 строк + per-tab модули gui/tab_*.py):
+  • 13 вкладок: Recon & Intel, Subdomain Scanner, API Key Scanner, Site
     Capture, Clone Frontend, Video Downloader, Image Extractor, Design Lab,
-    Dashboard, История операций, System.
+    Cookie Security Audit, Final Report & Collection, Dashboard,
+    История операций, System.
   • Многопоточность через QThread/QObject-воркеры (Worker, SubdomainWorker,
     CloneWorker, CaptureWorker) — UI не блокируется во время сканов.
   • [НОВОЕ] Единый раннер задач _start_task() (паттерн Signals/Slots): вся
@@ -97,24 +98,25 @@ CLI / прочее:
 ------------------------------------------------------------------------------
 НОВЫЕ ФИЧИ (запланировано, в работе):
 
-  [A] Вкладка "Final Report & Collection" (Dashboard/Export):
-      • Новая вкладка в GUI с кнопкой "Run Full Collection".
-      • Кнопка инициирует последовательный прогон всех модулей
-        (API -> Frontend -> Recon -> Media) в едином сценарии.
-      • Все результаты собираются в единую структурированную директорию
-        проекта (<домен>_<timestamp>/ с под-папками по модулям).
-      • По завершении сбора — автогенерация итогового отчёта в HTML и JSON.
+  [A] [СДЕЛАНО] Вкладка "Final Report & Collection":
+      • core/collection_runner.py + gui/tab_collection.py. Кнопка "Run Full
+        Collection" последовательно прогоняет Recon -> API -> Capture ->
+        Clone -> Images в единую директорию <домен>_<timestamp>/ с под-
+        папками; автогенерация report.json и report.html. Фазы guarded
+        (сбой не рушит пайплайн), есть Stop/отмена и "Открыть отчёт".
 
-  [B] Вкладка "Cookie Security Audit" (анализ безопасности куки):
-      • Новая вкладка в GUI для аудита cookie целевого сайта.
-      • Сканирование и таблица: имя куки + наличие флагов HttpOnly,
-        Secure, SameSite -> оценка уровня защиты каждой куки.
+  [B] [СДЕЛАНО] Вкладка "Cookie Security Audit":
+      • core/cookie_auditor.py + gui/tab_cookie.py. Парсинг сырых Set-Cookie,
+        флаги HttpOnly/Secure/SameSite, скоринг 0–3 и вердикт
+        Strong/Moderate/Weak с подсказками по проблемам в таблице.
 
-  [C] Апгрейд медиа-загрузчика (video_downloader / image_extractor):
-      • Видео в 4K через yt-dlp + ffmpeg (merge видео/аудио-потоков).
-      • Изображения без водяных знаков, включая Instagram.
-      • Использование сессионных cookies для авторизованного скачивания
-        закрытого/приватного контента.
+  [C] [СДЕЛАНО] Апгрейд медиа-загрузчика (utils/video_processor,
+      utils/image_processor):
+      • Видео: пресеты 4k/1440p/1080p/720p/best/audio, merge через ffmpeg
+        с прогрессивным fallback; --cookies/--cookies-from-browser.
+      • Изображения: оригинальное разрешение (срез resize/watermark-
+        параметров + макс. srcset), Netscape cookies, Instagram/соцсети
+        через yt-dlp (оригинал без водяных знаков).
 
   [D] Стабилизация многопоточности (КРИТИЧНО, см. п.5):
       • Полная развязка GUI и фоновых воркеров через паттерн Signals/Slots.
@@ -165,20 +167,18 @@ CLI / прочее:
      SiteContentCapture и FrontendCloner + кнопки Stop на вкладках Capture
      и Clone; индикатор «Активных задач: N» в статус-баре от self._tasks.
      ПРИОРИТЕТ №1 ЗАКРЫТ.
-  2. Вкладка "Final Report & Collection" с "Run Full Collection" —
-     последовательный прогон всех модулей в единую директорию + автогенерация
-     итогового HTML/JSON отчёта (фича [A]).
-  3. Вкладка "Cookie Security Audit" — сканирование куки с флагами HttpOnly /
-     Secure / SameSite и оценкой уровня защиты (фича [B]).
-  4. Апгрейд медиа-загрузчика — 4K через yt-dlp+ffmpeg, изображения без
-     водяных знаков (вкл. Instagram), сессионные cookies (фича [C]).
+  2. [СДЕЛАНО] Вкладка "Final Report & Collection" (фича [A]).
+  3. [СДЕЛАНО] Вкладка "Cookie Security Audit" (фича [B]).
+  4. [СДЕЛАНО] Апгрейд медиа-загрузчика (фича [C]).
   5. [СДЕЛАНО] Декомпозиция gui/main_window.py — монолит разбит на
      per-tab mixin-модули gui/tab_*.py (+ workers.py, constants.py);
-     main_window.py ужат с ~2480 до ~320 строк. Новые вкладки [A]/[B]
-     теперь добавляются отдельными модулями, не раздувая каркас.
+     main_window.py ужат с ~2480 до ~280 строк.
 
-Бэклог (следующая волна): автотесты + CI; единый экспорт-отчёт (поглощается
-фичей [A]); README и документация запуска/сборки.
+  ВСЕ ПЯТЬ ПРИОРИТЕТОВ ЗАКРЫТЫ. GUI: 13 вкладок.
+
+Бэклог (следующая волна): автотесты + CI; ffmpeg в комплект поставки для 4K;
+проверка медиа-апгрейда вживую (yt-dlp/ffmpeg/Instagram cookies); README и
+документация запуска/сборки.
 
 ------------------------------------------------------------------------------
 6. ИЗВЕСТНЫЕ БАГИ И ТЕХНИЧЕСКИЙ ДОЛГ
