@@ -16,8 +16,10 @@ mixin ``_build_*_tab`` methods; an external/optional tab is added by calling
 ``manager.register(TabPlugin(...))`` before the window builds its tabs.
 """
 
+import importlib.util
 from dataclasses import dataclass
-from typing import Callable, Iterator, List
+from pathlib import Path
+from typing import Callable, Iterator, List, Optional, Union
 
 from PyQt5.QtWidgets import QWidget
 
@@ -61,6 +63,64 @@ class PluginManager:
         """Construct every registered tab into ``tab_widget``, in order."""
         for plugin in self._plugins:
             tab_widget.addTab(plugin.factory(window), plugin.title)
+
+    def discover(self, directory: Union[str, Path],
+                 on_error: Optional[Callable[[str, Exception], None]] = None
+                 ) -> List[str]:
+        """Import external tab plugins from ``directory`` and register them.
+
+        Every top-level ``*.py`` file (excluding names starting with ``_``) is
+        imported in filename order. A plugin module registers tabs by exposing
+        one of, in priority order:
+
+          • ``register(manager)``  — called with this PluginManager;
+          • ``TAB_PLUGINS``        — an iterable of TabPlugin;
+          • ``TAB_PLUGIN``         — a single TabPlugin.
+
+        A module that raises (or registers nothing valid) is skipped and
+        reported via ``on_error(filename, exception)`` — a broken plugin never
+        crashes the host. Returns the ids of newly registered tabs.
+        """
+        directory = Path(directory)
+        newly: List[str] = []
+        if not directory.is_dir():
+            return newly
+
+        for path in sorted(directory.glob('*.py')):
+            if path.name.startswith('_'):
+                continue
+            before = len(self._plugins)
+            try:
+                module = self._load_module(path)
+                if hasattr(module, 'register') and callable(module.register):
+                    module.register(self)
+                elif hasattr(module, 'TAB_PLUGINS'):
+                    for plugin in module.TAB_PLUGINS:
+                        self.register(plugin)
+                elif hasattr(module, 'TAB_PLUGIN'):
+                    self.register(module.TAB_PLUGIN)
+                else:
+                    raise AttributeError(
+                        "plugin must define register(manager), TAB_PLUGIN or "
+                        "TAB_PLUGINS"
+                    )
+            except Exception as e:  # noqa: BLE001 — isolate untrusted plugin code
+                # Roll back any partial registration from this module.
+                del self._plugins[before:]
+                if on_error is not None:
+                    on_error(path.name, e)
+                continue
+            newly.extend(self.ids()[before:])
+        return newly
+
+    @staticmethod
+    def _load_module(path: Path):
+        spec = importlib.util.spec_from_file_location(f"saa_plugin_{path.stem}", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load plugin spec from {path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
 
 def _mixin_factory(build_method: str) -> Callable[[object], QWidget]:

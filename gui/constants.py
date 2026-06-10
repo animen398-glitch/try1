@@ -13,3 +13,4 @@ TARGETS_FILE = _ROOT / 'configs' / 'targets.json'
 OPERATIONS_DB = _ROOT / 'data' / 'operations.db'
 REGISTRY_DB = _ROOT / 'data' / 'registry.db'
 LIVE_TEST_OUTPUT = _ROOT / 'live_test_output'
+PLUGINS_DIR = _ROOT / 'plugins'  # external tab plugins auto-discovered at startup

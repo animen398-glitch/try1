@@ -1,0 +1,36 @@
+"""Example external tab plugin.
+
+Copy this file to ``plugins/example_tab.py`` (drop the ``.example`` suffix) and
+restart the app — an "Example Plugin" tab appears after the built-in tabs.
+
+It demonstrates the plugin contract: a ``register(manager)`` hook and a tab
+factory that receives the MainWindow (so it can reuse shared helpers).
+"""
+
+from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+
+from gui.plugin_manager import TabPlugin
+
+
+def _build(window) -> QWidget:
+    w = QWidget()
+    layout = QVBoxLayout(w)
+    layout.addWidget(QLabel("Hello from an external plugin tab! 🎉"))
+
+    url = QLineEdit()
+    url.setPlaceholderText("https://example.com")
+    layout.addWidget(url)
+
+    btn = QPushButton("Show current output dir (from MainWindow.settings)")
+    btn.clicked.connect(
+        lambda: window.status_bar.showMessage(
+            f"output_dir = {window.settings.get('output_dir', '?')}", 5000
+        )
+    )
+    layout.addWidget(btn)
+    layout.addStretch()
+    return w
+
+
+def register(manager) -> None:
+    manager.register(TabPlugin("example_hello", "Example Plugin", _build))

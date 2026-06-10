@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 
 from gui.dialogs import SettingsDialog
 from gui.workers import _TaskHandle, _Worker
-from gui.constants import SETTINGS_FILE, TARGETS_FILE
+from gui.constants import PLUGINS_DIR, SETTINGS_FILE, TARGETS_FILE
 from gui.plugin_manager import default_manager
 from gui.tab_system import SystemTabMixin
 from gui.tab_api import ApiTabMixin
@@ -68,6 +68,7 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         self._build_central()
         self._build_statusbar()
         self._check_dependencies()
+        self._report_plugin_errors()
 
     # ------------------------------------------------------------------ setup
 
@@ -117,8 +118,15 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
 
         self.tabs = QTabWidget()
         # Tabs are built from the plugin registry (single source of truth for
-        # the tab bar), not a hard-coded addTab() list. See gui/plugin_manager.
+        # the tab bar), not a hard-coded addTab() list. Built-in tabs first,
+        # then any external tab plugins dropped into PLUGINS_DIR. See
+        # gui/plugin_manager.
         self.plugins = default_manager()
+        self._plugin_errors: list = []
+        self.plugins.discover(
+            PLUGINS_DIR,
+            on_error=lambda name, exc: self._plugin_errors.append((name, exc)),
+        )
         self.plugins.build_into(self, self.tabs)
         layout.addWidget(self.tabs)
 
@@ -141,6 +149,16 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         """Reflect the number of live background tasks in the status bar."""
         n = len(self._tasks)
         self.task_indicator.setText(f"⚙ Активных задач: {n}" if n else "")
+
+    def _report_plugin_errors(self):
+        """Surface any external plugin that failed to load (non-fatal)."""
+        errors = getattr(self, '_plugin_errors', [])
+        if not errors:
+            return
+        names = ', '.join(name for name, _ in errors)
+        self.status_bar.showMessage(
+            f"Плагины не загружены: {names} (см. подробности в логах)", 10000
+        )
 
     # ---------------------------------------------------------------- helpers
 
