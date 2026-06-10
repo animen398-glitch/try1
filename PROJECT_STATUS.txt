@@ -156,8 +156,12 @@ CLI / прочее:
     изолируется, не роняя приложение) — вкладки добавляются без правки ядра.
     См. plugins/README.md и example_tab.py.example.
   • Унести бизнес-логику из GUI-воркеров в core/ (тонкий UI-слой).
-  • Унифицировать конфигурацию (configs/settings.json, targets.json) и
-    управление путями к БД.
+  • [СДЕЛАНО] Унификация конфигурации: core/config.py — единый источник
+    путей, дефолтов и load/save для settings.json и targets.json. Заменены
+    3 расходящихся загрузчика настроек (main_window, dialogs) и относительные
+    хардкоды data/*.db (video/image/design/data_viewer/endpoint_index/
+    pattern_analyser/registry/orchestrator) на пути от корня проекта.
+    gui/constants.py теперь реэкспортит из core.config.
 
 Качество / инфраструктура:
   • [СДЕЛАНО] pytest-набор tests/ (41 тест, сетенезависимый, Qt headless):
