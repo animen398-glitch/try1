@@ -11,7 +11,8 @@ lxml>=5.1.0                  # faster HTML parsing
 # Enable only if you use these; they bloat / complicate the PyInstaller build
 # and are NOT bundled into the .exe (external binaries).
 # playwright>=1.40.0         # dynamic traffic analysis; then: python -m playwright install chromium
-# yt-dlp>=2024.1.0           # video downloader (external CLI, called via subprocess)
+# yt-dlp>=2024.1.0           # video downloader + Instagram/social media (external CLI)
+# ffmpeg                     # external binary; required to merge 4K/1080p video+audio
 # fastapi>=0.110.0           # web console (main_orchestrator --web)
 # uvicorn[standard]>=0.27.0
 

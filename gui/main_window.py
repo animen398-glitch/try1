@@ -296,6 +296,11 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         if path:
             line_edit.setText(path)
 
+    def _browse_file(self, line_edit: QLineEdit):
+        path, _ = QFileDialog.getOpenFileName(self, "Выберите файл", line_edit.text())
+        if path:
+            line_edit.setText(path)
+
     def _open_settings(self):
         dialog = SettingsDialog(self)
         if dialog.exec_():
