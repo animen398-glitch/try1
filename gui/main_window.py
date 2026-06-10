@@ -99,20 +99,16 @@ class _CloneWorker(QObject):
     finished    = pyqtSignal(dict)
     error       = pyqtSignal(str)
 
-    def __init__(self, src: str, out: str, profile: str):
+    def __init__(self, cloner):
         super().__init__()
-        self._src     = src
-        self._out     = out
-        self._profile = profile
+        self._cloner  = cloner
         self._total   = 0
         self._current = 0
 
     def run(self):
         try:
-            cloner = FrontendCloner()
-            cloner.configure(self._src, self._out, profile=self._profile)
-            cloner.set_progress_callback(self._on_msg)
-            result = cloner.clone()
+            self._cloner.set_progress_callback(self._on_msg)
+            result = self._cloner.clone()
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -184,6 +180,8 @@ class MainWindow(QMainWindow):
         self._next_task_id: int = 0
         self._last_recon_combined: dict = {}
         self._active_subdomain_scanner = None
+        self._active_capturer = None
+        self._active_cloner = None
         self._history_rows: list = []
         self._history_loading = False
         self._dashboard_loading = False
@@ -264,11 +262,19 @@ class MainWindow(QMainWindow):
     def _build_statusbar(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        self.task_indicator = QLabel("")
+        self.task_indicator.setStyleSheet("color: #4fc3f7; padding-right: 8px;")
+        self.status_bar.addPermanentWidget(self.task_indicator)
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumWidth(200)
         self.progress_bar.setVisible(False)
         self.status_bar.addPermanentWidget(self.progress_bar)
         self.status_bar.showMessage("Готов")
+
+    def _update_task_indicator(self):
+        """Reflect the number of live background tasks in the status bar."""
+        n = len(self._tasks)
+        self.task_indicator.setText(f"⚙ Активных задач: {n}" if n else "")
 
     # ---------------------------------------------------------------- System
 
@@ -930,9 +936,15 @@ class MainWindow(QMainWindow):
         row2.addWidget(btn_browse)
         g.addLayout(row2)
 
-        btn_start = StyledButton("Начать захват")
-        btn_start.clicked.connect(self._run_capture)
-        g.addWidget(btn_start)
+        btn_row = QHBoxLayout()
+        self.btn_capture_start = StyledButton("Начать захват")
+        self.btn_capture_start.clicked.connect(self._run_capture)
+        self.btn_capture_stop = StyledButton("Остановить", style='secondary')
+        self.btn_capture_stop.setEnabled(False)
+        self.btn_capture_stop.clicked.connect(self._stop_capture)
+        btn_row.addWidget(self.btn_capture_start)
+        btn_row.addWidget(self.btn_capture_stop)
+        g.addLayout(btn_row)
         grp.setLayout(g)
         layout.addWidget(grp)
 
@@ -965,17 +977,35 @@ class MainWindow(QMainWindow):
             self.settings.get('max_pages', 50),
             profile=self.settings.get('user_agent_profile', 'chrome_windows'),
         )
+        self._active_capturer = capturer
+        self.btn_capture_start.setEnabled(False)
+        self.btn_capture_stop.setEnabled(True)
 
         worker = _CaptureWorker(capturer)
         self._start_task(
             worker,
             on_finished=lambda r, _p=out_path, _d=domain: self._on_capture_done(r, _p, _d),
-            on_error=lambda e: (self._set_busy(False),
+            on_error=lambda e: (self._reset_capture_buttons(),
+                                self._set_busy(False),
                                 QMessageBox.critical(self, "Ошибка захвата", e)),
             signals=[(worker.log_message, self.capture_log.append_info)],
         )
 
+    def _stop_capture(self):
+        if getattr(self, '_active_capturer', None):
+            self._active_capturer.cancel()
+            self.capture_log.append_warning("Останавливаю захват…")
+        self.btn_capture_stop.setEnabled(False)
+
+    def _reset_capture_buttons(self):
+        self._active_capturer = None
+        self.btn_capture_start.setEnabled(True)
+        self.btn_capture_stop.setEnabled(False)
+
     def _on_capture_done(self, result: dict, out_path: Path, domain: str):
+        self._reset_capture_buttons()
+        if result.get('cancelled'):
+            self.capture_log.append_warning("Захват отменён пользователем")
         self._set_busy(False)
         self.capture_log.append_success(
             f"Захвачено страниц: {result.get('pages_captured', 0)}"
@@ -2031,7 +2061,11 @@ class MainWindow(QMainWindow):
         row_act.addStretch()
         self.btn_clone_run = StyledButton("Clone Frontend")
         self.btn_clone_run.clicked.connect(self._run_clone)
+        self.btn_clone_stop = StyledButton("Stop", style='secondary')
+        self.btn_clone_stop.setEnabled(False)
+        self.btn_clone_stop.clicked.connect(self._stop_clone)
         row_act.addWidget(self.btn_clone_run)
+        row_act.addWidget(self.btn_clone_stop)
         g.addLayout(row_act)
 
         grp.setLayout(g)
@@ -2098,23 +2132,39 @@ class MainWindow(QMainWindow):
         self.clone_progress.setRange(0, 0)
         self.clone_progress.setVisible(True)
         self.btn_clone_run.setEnabled(False)
+        self.btn_clone_stop.setEnabled(True)
         self.btn_clone_open.setEnabled(False)
         self._set_busy(True)
 
-        worker = _CloneWorker(src, out, profile)
+        cloner = FrontendCloner()
+        cloner.configure(src, out, profile=profile)
+        self._active_cloner = cloner
+
+        worker = _CloneWorker(cloner)
         self._start_task(
             worker,
             on_finished=self._on_clone_done,
-            on_error=lambda e: (self._set_busy(False),
+            on_error=lambda e: (self._reset_clone_buttons(),
+                                self._set_busy(False),
                                 self.clone_progress.setVisible(False),
                                 self.clone_status_lbl.setText("Error"),
-                                self.btn_clone_run.setEnabled(True),
                                 QMessageBox.critical(self, "Clone Error", e)),
             signals=[
                 (worker.log_message, self._on_clone_log),
                 (worker.progress,    self._on_clone_progress),
             ],
         )
+
+    def _stop_clone(self):
+        if getattr(self, '_active_cloner', None):
+            self._active_cloner.cancel()
+            self.clone_log.append_warning("Stopping clone…")
+        self.btn_clone_stop.setEnabled(False)
+
+    def _reset_clone_buttons(self):
+        self._active_cloner = None
+        self.btn_clone_run.setEnabled(True)
+        self.btn_clone_stop.setEnabled(False)
 
     def _on_clone_log(self, msg: str):
         m = msg.strip()
@@ -2139,7 +2189,7 @@ class MainWindow(QMainWindow):
 
     def _on_clone_done(self, result: dict):
         self._set_busy(False)
-        self.btn_clone_run.setEnabled(True)
+        self._reset_clone_buttons()
         self.clone_progress.setVisible(False)
         status = result.get('status', '')
         pages  = result.get('pages_processed', 0)
@@ -2147,7 +2197,15 @@ class MainWindow(QMainWindow):
         failed = result.get('failed', [])
         out    = result.get('output_dir', '')
 
-        if 'Success' in status or pages > 0:
+        if result.get('cancelled'):
+            self.clone_status_lbl.setText(f"Cancelled — {pages} page(s) done")
+            self.clone_log.append_warning(
+                f"Clone cancelled — {pages} page(s), {assets} asset(s) saved"
+            )
+            if out:
+                self._clone_output_dir = out
+                self.btn_clone_open.setEnabled(True)
+        elif 'Success' in status or pages > 0:
             self.clone_status_lbl.setText(f"Done — {pages} page(s), {assets} asset(s)")
             self.clone_log.append_success(
                 f"Done — {pages} page(s), {assets} asset(s) downloaded"
@@ -2327,6 +2385,7 @@ class MainWindow(QMainWindow):
         task_id = self._next_task_id
         self._next_task_id += 1
         self._tasks[task_id] = _TaskHandle(task_id, worker, thread)
+        self._update_task_indicator()
 
         thread.started.connect(worker.run)
 
@@ -2344,7 +2403,10 @@ class MainWindow(QMainWindow):
         # … then tear everything down only after the OS thread has stopped.
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda tid=task_id: self._tasks.pop(tid, None))
+        thread.finished.connect(
+            lambda tid=task_id: (self._tasks.pop(tid, None),
+                                 self._update_task_indicator())
+        )
 
         thread.start()
         return task_id

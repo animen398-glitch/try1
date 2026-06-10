@@ -1,6 +1,7 @@
 import gzip
 import json
 import re
+import threading
 import time
 import urllib.error
 import zlib
@@ -22,6 +23,11 @@ class SiteContentCapture:
         self.captured: List[Dict] = []
         self.progress_callback: Optional[Callable] = None
         self._profile: str = 'chrome_windows'
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        """Signal the capture loop to stop at the next page boundary."""
+        self._cancel.set()
 
     def configure(self, url: str, output_dir: str, max_pages: int = 50, profile: str = 'chrome_windows'):
         if not url.startswith(('http://', 'https://')):
@@ -33,6 +39,7 @@ class SiteContentCapture:
         self._profile = profile
         self.visited.clear()
         self.captured.clear()
+        self._cancel.clear()
 
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
@@ -92,6 +99,11 @@ class SiteContentCapture:
         queue = [self.base_url]
 
         while queue and len(self.captured) < self.max_pages:
+            if self._cancel.is_set():
+                result['cancelled'] = True
+                if self.progress_callback:
+                    self.progress_callback("Отменено пользователем")
+                break
             url = queue.pop(0)
             if url in self.visited:
                 continue

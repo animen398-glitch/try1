@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
@@ -51,6 +52,11 @@ class FrontendCloner:
         self._session = AntiDetectSession()
         self._cache: Dict[str, str] = {}   # original_url -> relative_local_path
         self._failed: List[str] = []
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        """Signal the clone loop to stop at the next page boundary."""
+        self._cancel.set()
 
     def configure(
         self,
@@ -64,6 +70,7 @@ class FrontendCloner:
         self._session.configure(profile=profile, rotate_ua=rotate_ua, retry_count=3)
         self._cache = {}
         self._failed = []
+        self._cancel.clear()
 
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
@@ -251,6 +258,10 @@ class FrontendCloner:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         for html_file in html_files:
+            if self._cancel.is_set():
+                result['cancelled'] = True
+                self._log("Отменено пользователем")
+                break
             page_url = url_map.get(html_file.name, '')
             if not page_url:
                 self._log(f"Пропускаю (нет URL в site_map): {html_file.name}")
@@ -269,7 +280,10 @@ class FrontendCloner:
 
         result['assets_downloaded'] = len(self._cache)
         result['failed'].extend(self._failed)
-        result['status'] = 'Success' if result['pages_processed'] > 0 else 'Warning: no pages processed'
+        if result.get('cancelled'):
+            result['status'] = 'Cancelled'
+        else:
+            result['status'] = 'Success' if result['pages_processed'] > 0 else 'Warning: no pages processed'
         self._log(
             f"Готово: {result['pages_processed']} стр., "
             f"{result['assets_downloaded']} ассетов, "
