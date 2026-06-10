@@ -45,7 +45,10 @@ def test_dashboard_is_registry_driven():
 # ── Optional: exercise the live endpoints if a test client is available ──────
 
 def test_endpoints_with_testclient():
+    pytest.importorskip("fastapi")
     pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
     from fastapi.testclient import TestClient
     client = TestClient(wa.app)
 
