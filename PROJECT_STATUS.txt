@@ -141,7 +141,10 @@ CLI / прочее:
   • [СДЕЛАНО] gui/plugin_manager.py — реестр вкладок-«плагинов»: список
     вкладок (TabPlugin: id/title/factory) больше не захардкожен в
     _build_central, а собирается из PluginManager (единый источник правды
-    для таб-бара; точка расширения для внешних/опциональных вкладок).
+    для таб-бара). PluginManager.discover() авто-загружает внешние вкладки
+    из plugins/*.py (контракт register/TAB_PLUGIN/TAB_PLUGINS; битый плагин
+    изолируется, не роняя приложение) — вкладки добавляются без правки ядра.
+    См. plugins/README.md и example_tab.py.example.
   • Унести бизнес-логику из GUI-воркеров в core/ (тонкий UI-слой).
   • Унифицировать конфигурацию (configs/settings.json, targets.json) и
     управление путями к БД.
