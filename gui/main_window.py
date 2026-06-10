@@ -150,6 +150,24 @@ class _CaptureWorker(QObject):
             self.error.emit(str(e))
 
 
+class _TaskHandle:
+    """Strong-reference holder for one (worker, thread) pair.
+
+    Every background task lives entirely inside one of these. Keeping both the
+    QThread *and* its worker referenced here — and releasing them only after
+    the OS thread has actually finished (``thread.finished`` → ``deleteLater``)
+    — is what prevents the "QThread: Destroyed while thread is still running"
+    crash. Each task gets its own handle, so any number can run concurrently
+    without one overwriting another's reference.
+    """
+    __slots__ = ('id', 'worker', 'thread')
+
+    def __init__(self, task_id: int, worker: QObject, thread: QThread):
+        self.id = task_id
+        self.worker = worker
+        self.thread = thread
+
+
 class MainWindow(QMainWindow):
     """Основное окно Advanced Site Analyzer"""
 
@@ -158,12 +176,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Advanced Site Analyzer")
         self.setMinimumSize(900, 650)
         self.settings = self._load_settings()
-        self._active_workers: list = []
-        self._active_threads: list = []
+        # Single source of truth for every running background task.
+        # Maps task_id -> _TaskHandle; entries are added in _start_task and
+        # removed only after the OS thread has fully exited. All concurrency
+        # safety (no GC of a live QThread) flows through this one dict.
+        self._tasks: dict = {}
+        self._next_task_id: int = 0
         self._last_recon_combined: dict = {}
         self._active_subdomain_scanner = None
-        self._subdomain_thread: Optional[QThread] = None
-        self._active_clone_threads: dict = {}
         self._history_rows: list = []
         self._history_loading = False
         self._dashboard_loading = False
@@ -947,24 +967,13 @@ class MainWindow(QMainWindow):
         )
 
         worker = _CaptureWorker(capturer)
-        thread = QThread()
-        wid = id(worker)
-        self._active_workers.append(worker)
-        if not hasattr(self, '_active_capture_threads'):
-            self._active_capture_threads: dict = {}
-        self._active_capture_threads[wid] = thread
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.log_message.connect(self.capture_log.append_info)
-        worker.finished.connect(lambda r, _p=out_path, _d=domain: self._on_capture_done(r, _p, _d))
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(lambda _: self._cleanup_worker(worker))
-        worker.error.connect(lambda e: (self._set_busy(False), QMessageBox.critical(self, "Ошибка захвата", e)))
-        worker.error.connect(thread.quit)
-        worker.error.connect(lambda _: self._cleanup_worker(worker))
-        thread.finished.connect(lambda k=wid: self._active_capture_threads.pop(k, None))
-        thread.finished.connect(thread.deleteLater)
-        thread.start()
+        self._start_task(
+            worker,
+            on_finished=lambda r, _p=out_path, _d=domain: self._on_capture_done(r, _p, _d),
+            on_error=lambda e: (self._set_busy(False),
+                                QMessageBox.critical(self, "Ошибка захвата", e)),
+            signals=[(worker.log_message, self.capture_log.append_info)],
+        )
 
     def _on_capture_done(self, result: dict, out_path: Path, domain: str):
         self._set_busy(False)
@@ -1882,21 +1891,15 @@ class MainWindow(QMainWindow):
         self._active_subdomain_scanner = scanner
 
         worker = _SubdomainWorker(scanner, domain, passive, brute)
-        thread = QThread()
-        self._active_workers.append(worker)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.row_found.connect(self._on_subdomain_row_found)
-        worker.progress.connect(self._on_subdomain_progress)
-        worker.finished.connect(self._on_subdomain_done)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(lambda _: self._cleanup_worker(worker))
-        worker.error.connect(self._on_subdomain_error)
-        worker.error.connect(thread.quit)
-        worker.error.connect(lambda _: self._cleanup_worker(worker))
-        thread.finished.connect(thread.deleteLater)
-        self._subdomain_thread = thread
-        thread.start()
+        self._start_task(
+            worker,
+            on_finished=self._on_subdomain_done,
+            on_error=self._on_subdomain_error,
+            signals=[
+                (worker.row_found, self._on_subdomain_row_found),
+                (worker.progress,  self._on_subdomain_progress),
+            ],
+        )
 
     def _stop_subdomain_scan(self):
         if self._active_subdomain_scanner:
@@ -2099,27 +2102,19 @@ class MainWindow(QMainWindow):
         self._set_busy(True)
 
         worker = _CloneWorker(src, out, profile)
-        thread = QThread()
-        wid = id(worker)
-        self._active_workers.append(worker)
-        self._active_clone_threads[wid] = thread   # keep thread alive until OS thread exits
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.log_message.connect(self._on_clone_log)
-        worker.progress.connect(self._on_clone_progress)
-        # worker done (success path)
-        worker.finished.connect(self._on_clone_done)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(lambda _: self._cleanup_worker(worker))
-        # worker done (error path)
-        worker.error.connect(lambda e: (self._set_busy(False), self.clone_progress.setVisible(False), self.clone_status_lbl.setText("Error"), self.btn_clone_run.setEnabled(True), QMessageBox.critical(self, "Clone Error", e)))
-        worker.error.connect(thread.quit)
-        worker.error.connect(lambda _: self._cleanup_worker(worker))
-        # thread.finished fires only after the OS thread has fully exited —
-        # pop the tracking dict here so Python never GCs the thread while it is still live
-        thread.finished.connect(lambda k=wid: self._active_clone_threads.pop(k, None))
-        thread.finished.connect(thread.deleteLater)
-        thread.start()
+        self._start_task(
+            worker,
+            on_finished=self._on_clone_done,
+            on_error=lambda e: (self._set_busy(False),
+                                self.clone_progress.setVisible(False),
+                                self.clone_status_lbl.setText("Error"),
+                                self.btn_clone_run.setEnabled(True),
+                                QMessageBox.critical(self, "Clone Error", e)),
+            signals=[
+                (worker.log_message, self._on_clone_log),
+                (worker.progress,    self._on_clone_progress),
+            ],
+        )
 
     def _on_clone_log(self, msg: str):
         m = msg.strip()
@@ -2302,55 +2297,80 @@ class MainWindow(QMainWindow):
                 10000,
             )
 
-    def _cleanup_worker(self, worker):
-        try:
-            self._active_workers.remove(worker)
-        except ValueError:
-            pass
+    # ───────────────────────────── task runner ──────────────────────────────
+    #
+    # Every background job — generic _Worker, capture, subdomain, clone — is
+    # launched through _start_task. It owns the full QThread lifecycle and the
+    # Signals/Slots wiring that decouples the GUI from the worker, so call
+    # sites only describe *what* to run and *how* to react, never the plumbing.
+
+    def _start_task(self, worker, *, on_finished=None, on_error=None,
+                    signals=None) -> int:
+        """Run ``worker`` on its own QThread with safe, centralised teardown.
+
+        ``worker`` must expose a ``run()`` slot plus ``finished`` and ``error``
+        signals. Cross-thread coupling is pure Signals/Slots:
+
+          • ``on_finished(payload)`` — slot for the worker's ``finished`` signal.
+          • ``on_error(message)``    — slot for the worker's ``error`` signal.
+          • ``signals``              — iterable of ``(signal, slot)`` pairs for
+                                       any extra worker signals (log, progress,
+                                       row_found, …).
+
+        The (worker, thread) pair is held in ``self._tasks`` until the OS thread
+        has genuinely exited, then both are ``deleteLater``-d and the handle is
+        dropped. Returns the task id.
+        """
+        thread = QThread()
+        worker.moveToThread(thread)
+
+        task_id = self._next_task_id
+        self._next_task_id += 1
+        self._tasks[task_id] = _TaskHandle(task_id, worker, thread)
+
+        thread.started.connect(worker.run)
+
+        # Caller-supplied reactions (queued across the thread boundary).
+        if on_finished is not None:
+            worker.finished.connect(on_finished)
+        if on_error is not None:
+            worker.error.connect(on_error)
+        for sig, slot in (signals or ()):
+            sig.connect(slot)
+
+        # Stop the event loop on either terminal signal …
+        worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
+        # … then tear everything down only after the OS thread has stopped.
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda tid=task_id: self._tasks.pop(tid, None))
+
+        thread.start()
+        return task_id
 
     def _on_worker_error(self):
-        """Re-enable any action buttons that were disabled before a failed _run_async call."""
+        """Re-enable any action buttons that were disabled before a failed task."""
         for attr in ('btn_clone_run', 'dash_scan_btn'):
             btn = getattr(self, attr, None)
             if btn is not None:
                 btn.setEnabled(True)
 
     def _run_async(self, fn, on_done):
-        thread = QThread()
-        worker = _Worker(fn)
-        # Hold strong references until the OS thread actually finishes:
-        # if the only reference is overwritten by the next _run_async call,
-        # Python GC destroys a still-running QThread and the app crashes
-        # ("QThread: Destroyed while thread is still running").
-        self._active_workers.append(worker)
-        self._active_threads.append(thread)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(on_done)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(lambda _: self._cleanup_worker(worker))
-        worker.error.connect(lambda e: (self._set_busy(False), QMessageBox.critical(self, "Ошибка", e), self._on_worker_error()))
-        worker.error.connect(thread.quit)
-        worker.error.connect(lambda _: self._cleanup_worker(worker))
-        # Tear-down only after the thread has really stopped.
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._cleanup_thread(thread))
-        thread.start()
-
-    def _cleanup_thread(self, thread):
-        try:
-            self._active_threads.remove(thread)
-        except ValueError:
-            pass
+        """Convenience wrapper: run ``fn()`` off-thread and deliver its result."""
+        self._start_task(
+            _Worker(fn),
+            on_finished=on_done,
+            on_error=lambda e: (
+                self._set_busy(False),
+                QMessageBox.critical(self, "Ошибка", e),
+                self._on_worker_error(),
+            ),
+        )
 
     def closeEvent(self, event):
         # Wait for in-flight worker threads so none is destroyed mid-run.
-        threads = list(self._active_threads)
-        threads += list(getattr(self, '_active_capture_threads', {}).values())
-        threads += list(self._active_clone_threads.values())
-        if self._subdomain_thread is not None:
-            threads.append(self._subdomain_thread)
+        threads = [h.thread for h in list(self._tasks.values())]
         for thread in threads:
             if thread.isRunning():
                 thread.quit()
