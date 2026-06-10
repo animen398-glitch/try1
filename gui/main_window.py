@@ -38,6 +38,8 @@ from gui.constants import (
     LIVE_TEST_OUTPUT, OPERATIONS_DB, REGISTRY_DB, SETTINGS_FILE, TARGETS_FILE,
 )
 from gui.tab_system import SystemTabMixin
+from gui.tab_api import ApiTabMixin
+from gui.tab_media import ImageTabMixin, VideoTabMixin
 from utils.file_compression import FileCompressor
 from utils.operation_registry import OperationRegistry
 from utils.data_viewer import DataViewer
@@ -47,7 +49,8 @@ from utils.endpoint_index import EndpointIndex
 from utils.site_extractor import SiteExtractor
 from utils.system_logger import get_last_logs
 
-class MainWindow(QMainWindow, SystemTabMixin):
+class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
+                 VideoTabMixin, ImageTabMixin):
     """Основное окно Advanced Site Analyzer"""
 
     def __init__(self):
@@ -613,64 +616,6 @@ class MainWindow(QMainWindow, SystemTabMixin):
             text = str(metadata)
         self.history_meta.append(f'<pre style="color:#d4d4d4;margin:0;">{text}</pre>')
 
-    # --------------------------------------------------------- API Key Scanner
-
-    def _build_api_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-
-        grp = SectionGroupBox("Целевой URL")
-        row = QHBoxLayout()
-        self.api_url = QLineEdit()
-        self.api_url.setPlaceholderText("https://example.com")
-        self.api_url.returnPressed.connect(self._run_api_scan)
-        btn = StyledButton("Сканировать")
-        btn.clicked.connect(self._run_api_scan)
-        row.addWidget(self.api_url)
-        row.addWidget(btn)
-        grp.setLayout(row)
-        layout.addWidget(grp)
-
-        res_grp = SectionGroupBox("Результаты")
-        res_layout = QVBoxLayout()
-        self.api_results = ResultsDisplay()
-        res_layout.addWidget(self.api_results)
-        res_grp.setLayout(res_layout)
-        layout.addWidget(res_grp)
-        return w
-
-    def _run_api_scan(self):
-        url = self.api_url.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Ошибка", "Введите URL")
-            return
-        self.api_results.clear()
-        self.api_results.append_info(f"Начинаю сканирование: {url}")
-        self._set_busy(True)
-
-        extractor = ApiKeyExtractor()
-        extractor.set_target_url(url)
-        extractor.set_profile(self.settings.get('user_agent_profile', 'chrome_windows'))
-        self._run_async(extractor.run_extraction, self._on_api_done)
-
-    def _on_api_done(self, result: dict):
-        self._set_busy(False)
-        status = result.get('status', '')
-        if status == 'Success':
-            found = result.get('keys_found', 0)
-            self.api_results.append_success(f"Статус: {status} | Найдено: {found}")
-            details = result.get('details', {})
-            if details:
-                for key_type, keys in details.items():
-                    self.api_results.append_warning(f"[{key_type}]:")
-                    for k in keys:
-                        self.api_results.append(f"  • {k}")
-            else:
-                self.api_results.append_info("Утечек не обнаружено")
-        else:
-            self.api_results.append_error(f"Ошибка: {status}")
-        self._save_target(self.api_url.text().strip())
-
     # ----------------------------------------------------------- Site Capture
 
     def _build_capture_tab(self) -> QWidget:
@@ -848,151 +793,6 @@ class MainWindow(QMainWindow, SystemTabMixin):
                     seen_paths.add(hit)
                     hidden_paths += 1
         return {'key_leaks': key_leaks, 'comments': comments, 'hidden_paths': hidden_paths}
-
-    # --------------------------------------------------------- Video Download
-
-    def _build_video_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-
-        grp = SectionGroupBox("Загрузка видео (yt-dlp)")
-        g = QVBoxLayout()
-
-        row = QHBoxLayout()
-        row.addWidget(QLabel("URL:"))
-        self.video_url = QLineEdit()
-        self.video_url.setPlaceholderText("https://youtube.com/watch?v=...")
-        self.video_url.returnPressed.connect(self._run_video)
-        row.addWidget(self.video_url)
-        g.addLayout(row)
-
-        btn_dl = StyledButton("Скачать", style='success')
-        btn_dl.clicked.connect(self._run_video)
-        g.addWidget(btn_dl)
-        grp.setLayout(g)
-        layout.addWidget(grp)
-
-        res_grp = SectionGroupBox("Статус")
-        res_layout = QVBoxLayout()
-        self.video_results = ResultsDisplay()
-        res_layout.addWidget(self.video_results)
-        res_grp.setLayout(res_layout)
-        layout.addWidget(res_grp)
-        return w
-
-    def _run_video(self):
-        url = self.video_url.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Ошибка", "Укажите URL")
-            return
-
-        domain = self._domain_slug(url)
-        out_path = LIVE_TEST_OUTPUT / f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_video"
-
-        self.video_results.clear()
-        self.video_results.append_info(f"Загружаю: {url}")
-        self.video_results.append_info(f"Директория: {out_path}")
-        self._set_busy(True)
-
-        dl = VideoDownloader()
-
-        def _on_done(result, _p=out_path, _u=url):
-            self._on_video_done(result, _p, _u)
-
-        self._run_async(lambda: dl.download_video(url, out_path), _on_done)
-
-    def _on_video_done(self, result: dict, out_path: Path, url: str):
-        self._set_busy(False)
-        status = result.get('status', '')
-        if status == 'Success':
-            self.video_results.append_success("Загрузка завершена")
-            self.video_results.append_info(f"Директория: {out_path}")
-            if 'output' in result:
-                self.video_results.append(result['output'][:500])
-        else:
-            self.video_results.append_error(f"Ошибка: {status}")
-        self._save_video_log(out_path, url, status)
-
-    # -------------------------------------------------------- Image Extractor
-
-    def _build_image_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-
-        grp = SectionGroupBox("Извлечение изображений")
-        g = QVBoxLayout()
-
-        row = QHBoxLayout()
-        row.addWidget(QLabel("URL:"))
-        self.image_url = QLineEdit()
-        self.image_url.setPlaceholderText("https://example.com")
-        self.image_url.returnPressed.connect(self._run_images)
-        row.addWidget(self.image_url)
-        g.addLayout(row)
-
-        btn_ex = StyledButton("Извлечь изображения")
-        btn_ex.clicked.connect(self._run_images)
-        g.addWidget(btn_ex)
-        grp.setLayout(g)
-        layout.addWidget(grp)
-
-        res_grp = SectionGroupBox("Найденные изображения")
-        res_layout = QVBoxLayout()
-        self.image_results = ResultsDisplay()
-        res_layout.addWidget(self.image_results)
-        res_grp.setLayout(res_layout)
-        layout.addWidget(res_grp)
-        return w
-
-    def _run_images(self):
-        url = self.image_url.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Ошибка", "Укажите URL")
-            return
-
-        domain = self._domain_slug(url)
-        out_path = LIVE_TEST_OUTPUT / f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_images"
-
-        self.image_results.clear()
-        self.image_results.append_info(f"Сканирую: {url}")
-        self.image_results.append_info(f"Директория: {out_path}")
-        self._set_busy(True)
-
-        ex = ImageExtractor(profile=self.settings.get('user_agent_profile', 'chrome_windows'))
-        ex.set_progress_callback(lambda msg: self.image_results.append_info(msg))
-
-        def _on_done(result, _p=out_path, _d=domain):
-            self._on_images_done(result, _p, _d)
-
-        self._run_async(lambda: ex.extract_images(url, out_path), _on_done)
-
-    def _on_images_done(self, result: dict, out_path: Path, domain: str):
-        self._set_busy(False)
-        found = result.get('found', 0)
-        downloaded = result.get('downloaded', 0)
-        self.image_results.append_success(f"Найдено: {found} | Загружено: {downloaded}")
-        self.image_results.append_info(
-            f"Отфильтровано — дубликатов: {result.get('duplicates', 0)} | "
-            f"мелких (< 2KB): {result.get('skipped_small', 0)}"
-        )
-        self.image_results.append_info(f"Директория: {out_path}")
-
-        if out_path.exists():
-            size = self._folder_size(out_path)
-            self.image_results.append_info(f"Объём данных: {self._fmt_size(size)}")
-
-        if result.get('failed'):
-            self.image_results.append_warning(
-                f"Не удалось загрузить: {len(result['failed'])} файл(а)"
-            )
-            for f in result['failed'][:5]:
-                self.image_results.append_error(f"  {f}")
-
-        archive = self._make_archive(out_path, domain, 'images')
-        if archive:
-            self.image_results.append_success(f"Архив создан: {Path(archive).name}")
-        else:
-            self.image_results.append_warning("Архивация пропущена — нет скачанных файлов")
 
     # ------------------------------------------------------------ Design Lab
 
