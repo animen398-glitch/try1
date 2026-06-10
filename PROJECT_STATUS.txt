@@ -125,7 +125,11 @@ CLI / прочее:
         и вылетов.
 
 Функциональность (ранее запланированное):
-  • Расширить VulnScanner: больше правил, severity-скоринг, экспорт отчёта.
+  • [ЧАСТИЧНО] VulnScanner: добавлены cookie-findings (SameSite=None без
+    Secure → High; слабые куки → Medium) и summarize() с severity-счётом и
+    risk_score. CollectionRunner получил фазы Cookie Audit + Vuln Scan
+    (security/cookies.json, security/vulns.json + карточки в report.html).
+    Остаётся: больше правил, экспорт отдельного vuln-отчёта.
   • Углубить paywall-bypass: добавить стратегии (reader-mode, AMP, кэш Google).
   • Активные проверки субдоменов (резолв, проверка живости, takeover-детект).
   • Полноценный экспорт результатов: единый отчёт (HTML/PDF/JSON) по проекту
@@ -150,7 +154,10 @@ CLI / прочее:
     управление путями к БД.
 
 Качество / инфраструктура:
-  • Добавить автотесты (сейчас только examples/test_cases.py и run_live_test.py).
+  • [СДЕЛАНО] pytest-набор tests/ (41 тест, сетенезависимый, Qt headless):
+    cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
+    кооперативная отмена, VulnScanner, рендер отчёта. + README.md,
+    requirements-dev.txt, pytest.ini.
   • Настроить CI (линт + тесты + сборка .exe).
   • Привести зависимости к актуальным версиям и зафиксировать опциональные
     feature-флаги (playwright/yt-dlp/fastapi).
