@@ -44,6 +44,8 @@ class VulnScanner:
         self._check_security_headers(recon_result, findings)
         self._check_csp_weakness(recon_result, findings)
         self._check_hsts_weakness(recon_result, findings)
+        self._check_referrer_policy(recon_result, findings)
+        self._check_frame_options(recon_result, findings)
         self._check_server_disclosure(recon_result, findings)
         self._check_sensitive_paths(dynamic_result, findings)
         self._check_cookies(cookie_result, findings)
@@ -149,6 +151,25 @@ class VulnScanner:
                 'severity': SEVERITY_INFO,
                 'title': 'HSTS without includeSubDomains',
                 'detail': hsts[:120],
+            })
+
+    def _check_referrer_policy(self, recon: Dict, findings: List[Dict]):
+        rp = recon.get('security_headers', {}).get('referrer-policy', '').strip().lower()
+        if rp and rp in ('unsafe-url', 'no-referrer-when-downgrade'):
+            findings.append({
+                'severity': SEVERITY_INFO,
+                'title': 'Weak Referrer-Policy',
+                'detail': f'{rp} — may leak full URLs to third parties.',
+            })
+
+    def _check_frame_options(self, recon: Dict, findings: List[Dict]):
+        xfo = recon.get('security_headers', {}).get('x-frame-options', '').strip().upper()
+        # Absence is covered by _check_security_headers; flag weak/legacy values.
+        if xfo and xfo not in ('DENY', 'SAMEORIGIN'):
+            findings.append({
+                'severity': SEVERITY_MEDIUM,
+                'title': 'Weak X-Frame-Options (clickjacking risk)',
+                'detail': f'{xfo} — only DENY/SAMEORIGIN reliably prevent framing.',
             })
 
     def _check_server_disclosure(self, recon: Dict, findings: List[Dict]):

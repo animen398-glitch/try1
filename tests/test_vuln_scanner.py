@@ -121,3 +121,29 @@ def test_hsts_strong_not_flagged():
     })
     findings = VulnScanner().scan(recon, {})
     assert not any("HSTS" in f["title"] for f in findings)
+
+
+def test_weak_referrer_policy_flagged():
+    recon = _recon_with_headers(**{"referrer-policy": "unsafe-url"})
+    findings = VulnScanner().scan(recon, {})
+    rp = [f for f in findings if f["title"] == "Weak Referrer-Policy"]
+    assert rp and rp[0]["severity"] == SEVERITY_INFO
+
+
+def test_strict_referrer_policy_not_flagged():
+    recon = _recon_with_headers(**{"referrer-policy": "no-referrer"})
+    findings = VulnScanner().scan(recon, {})
+    assert not any(f["title"] == "Weak Referrer-Policy" for f in findings)
+
+
+def test_weak_frame_options_flagged():
+    recon = _recon_with_headers(**{"x-frame-options": "ALLOW-FROM https://x"})
+    findings = VulnScanner().scan(recon, {})
+    xfo = [f for f in findings if "X-Frame-Options" in f["title"]]
+    assert xfo and xfo[0]["severity"] == SEVERITY_MEDIUM
+
+
+def test_sameorigin_frame_options_not_flagged():
+    recon = _recon_with_headers(**{"x-frame-options": "SAMEORIGIN"})
+    findings = VulnScanner().scan(recon, {})
+    assert not any("X-Frame-Options" in f["title"] for f in findings)
