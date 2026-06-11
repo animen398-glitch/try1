@@ -140,6 +140,7 @@ BUILTIN_TABS = [
     ("image",      "Image Extractor",           "_build_image_tab"),
     ("design",     "Design Lab",                "_build_design_tab"),
     ("cookie",     "Cookie Security Audit",     "_build_cookie_tab"),
+    ("security",   "Security Audit",            "_build_security_tab"),
     ("collection", "Final Report & Collection", "_build_collection_tab"),
     ("dashboard",  "Dashboard",                 "_build_dashboard_tab"),
     ("history",    "История операций",          "_build_history_tab"),

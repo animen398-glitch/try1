@@ -14,6 +14,7 @@ from gui.tab_subdomain import SubdomainTabMixin
 from gui.tab_clone import CloneTabMixin
 from gui.tab_collection import FinalReportTabMixin
 from gui.tab_cookie import CookieAuditTabMixin
+from gui.tab_security import SecurityAuditTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_history import HistoryTabMixin
 from utils.task_manager import TaskManager
@@ -23,8 +24,8 @@ class MainWindow(QMainWindow, TaskRunnerMixin, WindowChromeMixin,
                  WindowHelpersMixin, SystemTabMixin, ApiTabMixin,
                  VideoTabMixin, ImageTabMixin, CaptureTabMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
-                 CloneTabMixin, CookieAuditTabMixin, FinalReportTabMixin,
-                 DashboardTabMixin, HistoryTabMixin):
+                 CloneTabMixin, CookieAuditTabMixin, SecurityAuditTabMixin,
+                 FinalReportTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.
 
     Тонкий контейнер: инициализирует состояние и собирает окно из mixin'ов —

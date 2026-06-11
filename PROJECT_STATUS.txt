@@ -14,7 +14,7 @@ Advanced Site Analyzer — десктопный инструмент (Python 3.1
 дизайн-системы (палитра, типографика).
 
 Сценарии запуска:
-  • GUI       — main.py (основной режим, PyQt5, 13 вкладок).
+  • GUI       — main.py (основной режим, PyQt5, 14 вкладок).
   • CLI       — main_orchestrator.py (единый pipeline из 6 фаз).
   • Web/LAN   — remote/web_app.py (консоль управления на FastAPI, порт 5000).
 
@@ -45,10 +45,10 @@ Advanced Site Analyzer — десктопный инструмент (Python 3.1
   • cloudflare_bypass.py   — обход базовых проверок Cloudflare.
 
 GUI (gui/main_window.py — каркас ~280 строк + per-tab модули gui/tab_*.py):
-  • 13 вкладок: Recon & Intel, Subdomain Scanner, API Key Scanner, Site
+  • 14 вкладок: Recon & Intel, Subdomain Scanner, API Key Scanner, Site
     Capture, Clone Frontend, Video Downloader, Image Extractor, Design Lab,
-    Cookie Security Audit, Final Report & Collection, Dashboard,
-    История операций, System.
+    Cookie Security Audit, Security Audit, Final Report & Collection,
+    Dashboard, История операций, System.
   • Многопоточность через QThread/QObject-воркеры (Worker, SubdomainWorker,
     CloneWorker, CaptureWorker) — UI не блокируется во время сканов.
   • [НОВОЕ] Единый раннер задач _start_task() (паттерн Signals/Slots): вся
@@ -145,10 +145,20 @@ CLI / прочее:
     идут в secrets_found. Всё в существующем worker-потоке (ThreadPoolExecutor),
     GUI не блокируется. Без новых зависимостей (stdlib). Покрыто
     tests/test_secret_scanner.py, test_source_map_parser.py,
-    test_dynamic_js_urls.py (19 тестов). ОСТАЁТСЯ: GUI-вкладка 'Security Audit'
-    (TabPlugin: secret_scanner+source_map_parser через window._start_task) и
-    Scrapy-плагин (подпроцессом — Twisted несовместим с Qt-циклом; добавит
-    scrapy в requirements). tuitube/WebRecon — исключены (нет выигрыша/кода).
+    test_dynamic_js_urls.py (19 тестов). [СДЕЛАНО — вкладка 'Security Audit',
+    14-я]: core/security_auditor.py (SecurityAuditor) — оркестратор: тянет
+    страницу + её JS (inline и внешние, bounded max_scripts), гонит
+    SecretScanner по всему, extract_js_urls собирает эндпоинты, находит и
+    парсит .js.map (scan_for_secrets по sourcesContent с указанием утечки);
+    gzip/deflate-декод, кооперативная отмена (threading.Event), graceful на
+    сбоях. Тонкая gui/tab_security.py (SecurityAuditTabMixin): URL→Run Audit,
+    таблицы Leaked Secrets + Exposed Source Maps, статус-сводка; вся сеть в
+    воркере через _run_async (GUI не блокируется). Зарегистрирована в
+    BUILTIN_TABS (после Cookie); окно строится headless с 14 вкладками.
+    Без новых зависимостей. Покрыто tests/test_security_auditor.py (offline
+    через стаб _fetch). ОСТАЁТСЯ: Scrapy-плагин (подпроцессом — Twisted
+    несовместим с Qt-циклом; добавит scrapy в requirements). tuitube/WebRecon
+    — исключены (нет выигрыша/кода).
   • [СДЕЛАНО] VulnScanner: cookie-findings (SameSite=None без Secure → High;
     слабые куки → Medium) и summarize() с severity-счётом и risk_score.
     CollectionRunner получил фазы Cookie Audit + Vuln Scan (security/
@@ -326,7 +336,7 @@ CLI / прочее:
      per-tab mixin-модули gui/tab_*.py (+ workers.py, constants.py);
      main_window.py ужат с ~2480 до ~280 строк.
 
-  ВСЕ ПЯТЬ ПРИОРИТЕТОВ ЗАКРЫТЫ. GUI: 13 вкладок.
+  ВСЕ ПЯТЬ ПРИОРИТЕТОВ ЗАКРЫТЫ. GUI: 14 вкладок.
 
 Бэклог: [ПРОВЕРЕНО ВЖИВУЮ] yt-dlp 2026.06.09 — наш format-string для 1080p
 резолвится на реальном YouTube в раздельные потоки (399 1080p + 258 audio),
