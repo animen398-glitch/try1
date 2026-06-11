@@ -6,14 +6,16 @@ _domain_slug, _save_target) and _last_recon_combined.
 """
 
 import os
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QVBoxLayout, QWidget,
 )
 
+from core import vuln_report
 from core.api_dumper import ApiDumper
 from core.dynamic_analyzer import DynamicAnalyzer
 from core.paywall_bypass import PaywallBypass
@@ -60,10 +62,19 @@ class ReconTabMixin:
         )
         self.btn_dump_api.setEnabled(False)
         self.btn_dump_api.clicked.connect(self._run_dump_api)
+        self.btn_export_vulns = StyledButton("Export Vuln Report", style='secondary')
+        self.btn_export_vulns.setToolTip(
+            "Сохраняет отчёт об уязвимостях (HTML + JSON) на диск.\n"
+            "Доступно после завершения разведки."
+        )
+        self.btn_export_vulns.setEnabled(False)
+        self.btn_export_vulns.clicked.connect(self._export_vuln_report)
         row_opts.addWidget(self.chk_dynamic)
         row_opts.addSpacing(12)
         row_opts.addWidget(self.chk_paywall)
         row_opts.addStretch()
+        row_opts.addWidget(self.btn_export_vulns)
+        row_opts.addSpacing(8)
         row_opts.addWidget(self.btn_dump_api)
         row_opts.addSpacing(8)
         row_opts.addWidget(btn_run)
@@ -336,10 +347,36 @@ class ReconTabMixin:
         self.btn_dump_api.setEnabled(
             result.get('dynamic', {}).get('status') == 'Success'
         )
+        self.btn_export_vulns.setEnabled(bool(result.get('vulns')))
 
         self.recon_results.append_info(D)
         self.recon_results.append_success("Разведка завершена")
         self._save_target(self.recon_url.text().strip())
+
+    def _export_vuln_report(self):
+        findings = self._last_recon_combined.get('vulns', [])
+        if not findings:
+            QMessageBox.information(self, "Vuln Report", "Нет данных об уязвимостях.")
+            return
+        url = self._last_recon_combined.get('url', '')
+        domain = self._domain_slug(url)
+        default = f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M')}_vulns.html"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Экспорт vuln-отчёта", default, "HTML (*.html)"
+        )
+        if not path:
+            return
+        try:
+            paths = vuln_report.export(path, url, findings)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка экспорта", str(e))
+            return
+        self.recon_results.append_success(f"Vuln-отчёт сохранён: {paths['html']}")
+        if QMessageBox.question(
+            self, "Vuln Report",
+            f"Отчёт сохранён:\n{paths['html']}\n\nОткрыть в браузере?",
+        ) == QMessageBox.Yes:
+            webbrowser.open(Path(paths['html']).as_uri())
 
     # --------------------------------------------------- API dump handlers
 
