@@ -14,6 +14,7 @@ import urllib.request
 from typing import Callable, Dict, List, Optional, Tuple
 
 from core.subdomain_active import ActiveSubdomainChecker
+from utils.http_retry import urlopen_retry
 from utils.scan_cache import TTLCache
 
 
@@ -269,8 +270,8 @@ class SubdomainScanner:
             _CRTSH_URL.format(domain=domain),
             headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
         )
-        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
         raw_names: set = set()
         for entry in data:
             for name in entry.get('name_value', '').splitlines():
@@ -286,8 +287,8 @@ class SubdomainScanner:
             _HACKERTARGET_URL.format(domain=domain),
             headers={'User-Agent': 'Mozilla/5.0'},
         )
-        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-            text = r.read().decode('utf-8', errors='ignore')
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        text = body.decode('utf-8', errors='ignore')
         pairs: List[Tuple[str, str]] = []
         for line in text.splitlines():
             if ',' not in line or 'API count' in line:
@@ -335,8 +336,8 @@ class SubdomainScanner:
             _ALIENVAULT_URL.format(domain=domain),
             headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
         )
-        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
         records = data.get('passive_dns', []) if isinstance(data, dict) else []
         return cls._names_in_domain(
             (rec.get('hostname') for rec in records if isinstance(rec, dict)), domain)
@@ -348,8 +349,8 @@ class SubdomainScanner:
             _ANUBIS_URL.format(domain=domain),
             headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
         )
-        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
         return cls._names_in_domain(data if isinstance(data, list) else [], domain)
 
     def _run_active(self, found: Dict[str, Dict],

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from utils.browser_utils import SessionBuilder
+from utils.http_retry import urlopen_retry
 from utils.scan_cache import TTLCache
 
 
@@ -157,8 +158,8 @@ class ReconEngine:
         try:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                return _decompress(r.read(), r.headers)
+            raw, resp_headers = urlopen_retry(req, self._timeout)
+            return _decompress(raw, resp_headers)
         except Exception:
             return None
 
@@ -166,9 +167,8 @@ class ReconEngine:
         try:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                raw = _decompress(r.read(), r.headers)
-                return raw, dict(r.headers)
+            raw, resp_headers = urlopen_retry(req, self._timeout)
+            return _decompress(raw, resp_headers), dict(resp_headers)
         except Exception:
             return None, {}
 

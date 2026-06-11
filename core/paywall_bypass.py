@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from urllib.parse import quote, urljoin, urlparse, urlunparse
 
 from utils.browser_utils import SessionBuilder
+from utils.http_retry import urlopen_retry
 
 
 _GOOGLEBOT_UA = (
@@ -79,9 +80,8 @@ class PaywallBypass:
             if referer:
                 headers['Referer'] = referer
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                raw = r.read()
-                return _decompress(raw, r.headers)
+            raw, resp_headers = urlopen_retry(req, self._timeout)
+            return _decompress(raw, resp_headers)
         except Exception:
             return None
 
