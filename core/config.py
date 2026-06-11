@@ -21,15 +21,22 @@ from core.paths import (  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 
-CONFIG_DIR = ROOT / 'configs'
-DATA_DIR = ROOT / 'data'
+# Writable user data (settings, targets, DBs, live-test output) and read-only
+# bundled resources (plugins) resolve through the process-default PathManager,
+# so a frozen .exe writes under %APPDATA% instead of the ephemeral _MEIPASS
+# extraction dir. In development data_root and resource_root both equal the
+# project root, so every path below is byte-for-byte unchanged.
+_PM = get_path_manager()
+
+CONFIG_DIR = _PM.data_root / 'configs'
+DATA_DIR = _PM.data_root / 'data'
 
 SETTINGS_FILE = CONFIG_DIR / 'settings.json'
 TARGETS_FILE = CONFIG_DIR / 'targets.json'
 OPERATIONS_DB = DATA_DIR / 'operations.db'
 REGISTRY_DB = DATA_DIR / 'registry.db'
-LIVE_TEST_OUTPUT = ROOT / 'live_test_output'
-PLUGINS_DIR = ROOT / 'plugins'
+LIVE_TEST_OUTPUT = _PM.data_root / 'live_test_output'
+PLUGINS_DIR = _PM.resource_root / 'plugins'
 
 DEFAULT_SETTINGS = {
     'output_dir': str(Path.home() / 'SiteAnalyzer'),

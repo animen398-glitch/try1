@@ -38,6 +38,9 @@ class MainWindow(QMainWindow, TaskRunnerMixin, WindowChromeMixin,
         super().__init__()
         self.setWindowTitle("Advanced Site Analyzer")
         self.setMinimumSize(900, 650)
+        # Process-default PathManager (frozen-build aware); plugins/tabs reach
+        # it via window.paths for workspace/temp/db locations.
+        self.paths = config.get_path_manager()
         self.settings = config.load_settings()
         # Single source of truth for every running background task.
         # Maps task_id -> _TaskHandle; entries are added in _start_task and

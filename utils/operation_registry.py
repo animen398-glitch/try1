@@ -28,7 +28,13 @@ class OperationRegistry(SQLiteStore):
     CREATE INDEX IF NOT EXISTS idx_operations_status ON operations (status);
     """
 
-    def __init__(self, db_path: Union[str, Path] = 'operations.db'):
+    def __init__(self, db_path: Union[str, Path] = None):
+        # Default through PathManager (via core.config) instead of a CWD-relative
+        # 'operations.db', mirroring DataRegistry -> REGISTRY_DB, so a frozen .exe
+        # resolves the DB under %APPDATA% even when no path is passed explicitly.
+        if db_path is None:
+            from core.config import OPERATIONS_DB
+            db_path = str(OPERATIONS_DB)
         super().__init__(db_path)
 
     def start(self, target: str, phase: str,

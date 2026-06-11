@@ -25,6 +25,25 @@ A `TabPlugin` is `TabPlugin(id, title, factory)` where:
   `MainWindow`, so the tab can reuse shared helpers such as `window._run_async`,
   `window._start_task`, `window._set_busy` and `window.settings`.
 
+### Resolving file paths (`window.paths`)
+
+For any file location — a database, a per-domain workspace, a report, scratch
+space — use the injected `PathManager` at **`window.paths`** instead of building
+paths from the current directory. It keeps a frozen `.exe` writing to a stable,
+user-writable location (`%APPDATA%`) rather than next to the executable:
+
+```python
+db   = window.paths.get_db_path("my_plugin.db")         # under data/
+work = window.paths.get_workspace_path("https://x.com")  # per-domain output dir
+rpt  = window.paths.get_reports_path("my_plugin.html")   # under reports/
+tmp  = window.paths.get_temp_path()                      # scratch dir
+res  = window.paths.get_resource_path("templates/x")     # bundled, read-only
+```
+
+Each writable-path helper creates the directory for you. The same instance backs
+the built-in tabs and the background task runner, so paths stay consistent across
+the whole app.
+
 A plugin that raises while loading is skipped (never crashes the app); the
 failing filename is shown briefly in the status bar.
 

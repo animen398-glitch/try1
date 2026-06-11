@@ -21,6 +21,13 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Establish the process-wide PathManager before anything imports core.config,
+# so a frozen build resolves its writable data dir (%APPDATA%) rather than the
+# ephemeral PyInstaller _MEIPASS extraction dir. Mirrors main.py (the GUI entry).
+from core.paths import init_path_manager
+
+init_path_manager()
+
 from core.api_dumper import ApiDumper
 from core.config import OPERATIONS_DB
 from core.content_capture import SiteContentCapture

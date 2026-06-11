@@ -4,7 +4,8 @@ Copy this file to ``plugins/example_tab.py`` (drop the ``.example`` suffix) and
 restart the app — an "Example Plugin" tab appears after the built-in tabs.
 
 It demonstrates the plugin contract: a ``register(manager)`` hook and a tab
-factory that receives the MainWindow (so it can reuse shared helpers).
+factory that receives the MainWindow (so it can reuse shared helpers such as
+``window.settings`` and the frozen-build-aware ``window.paths`` PathManager).
 """
 
 from PyQt5.QtWidgets import QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
@@ -28,6 +29,17 @@ def _build(window) -> QWidget:
         )
     )
     layout.addWidget(btn)
+
+    # window.paths is the injected, frozen-build-aware PathManager. Use it for
+    # any file location instead of CWD-relative paths, so the plugin behaves
+    # correctly under a packaged .exe (writes under %APPDATA%).
+    paths_btn = QPushButton("Show this plugin's data path (from window.paths)")
+    paths_btn.clicked.connect(
+        lambda: window.status_bar.showMessage(
+            f"db path = {window.paths.get_db_path('example_plugin.db')}", 5000
+        )
+    )
+    layout.addWidget(paths_btn)
     layout.addStretch()
     return w
 
