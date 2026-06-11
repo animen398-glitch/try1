@@ -15,7 +15,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Optional
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -540,7 +540,7 @@ def get_local_ip() -> str:
 
 def print_access_url(port: int = 5000):
     ip = get_local_ip()
-    print(f'\n  Advanced Site Analyzer — Web Console')
+    print('\n  Advanced Site Analyzer — Web Console')
     print(f'  Local   : http://localhost:{port}')
     print(f'  Network : http://{ip}:{port}  (phone / tablet on same Wi-Fi)')
     print()

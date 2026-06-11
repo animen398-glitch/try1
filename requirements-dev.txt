@@ -3,6 +3,7 @@
 # Run tests: pytest
 
 pytest>=8.0
+ruff>=0.5            # lint gate (pyflakes rules)
 
 # Optional — enable the web-console endpoint tests (otherwise skipped):
 fastapi>=0.110.0

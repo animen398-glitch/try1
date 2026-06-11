@@ -3,7 +3,6 @@ import json
 import re
 import threading
 import time
-import urllib.error
 import zlib
 from pathlib import Path
 from typing import Callable, Dict, List, Optional

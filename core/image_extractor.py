@@ -1,6 +1,5 @@
 import gzip
 import re
-import urllib.error
 import zlib
 from pathlib import Path
 from typing import Callable, Dict, List, Optional

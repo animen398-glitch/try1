@@ -8,7 +8,7 @@ import socket
 import threading
 import time
 import urllib.request
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Optional
 
 from core.subdomain_active import ActiveSubdomainChecker
 
