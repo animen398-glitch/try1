@@ -130,8 +130,9 @@ CLI / прочее:
     risk_score. CollectionRunner получил фазы Cookie Audit + Vuln Scan
     (security/cookies.json, security/vulns.json + карточки в report.html).
     + правила CSP-слабости (unsafe-inline/eval/wildcard) и HSTS-слабости
-    (короткий max-age / без includeSubDomains).
-    Остаётся: экспорт отдельного vuln-отчёта, ещё правила.
+    (короткий max-age / без includeSubDomains). + core/vuln_report.py —
+    экспорт отдельного отчёта (HTML+JSON) с кнопкой в recon-вкладке.
+    Остаётся: ещё правила, PDF-экспорт.
   • [СДЕЛАНО] Углубление paywall-bypass: extract() расширен с 3 до 6
     стратегий (googlebot_spoof, js_strip, amp, referer_spoof, google_cache,
     wayback_machine) + reader_view (lightweight readability) в результате.
@@ -148,8 +149,10 @@ CLI / прочее:
     вынесены в единый реестр JOBS (один runner на фичу), добавлены
     Subdomains (active/takeover), API Keys, Cookie Audit, Full Collection
     рядом с Recon/Capture/Paywall. Generic POST /run/{name}, GET /jobs;
-    дэшборд строит кнопки из /jobs (UI и бэкенд не расходятся). Остаётся:
-    медиа/дизайн-вкладки, просмотр истории/реестра, открытие отчётов.
+    дэшборд строит кнопки из /jobs (UI и бэкенд не расходятся). + job Images,
+    GET /history (просмотр операций) и безопасный GET /report (отдача отчётов
+    из дерева SiteAnalyzer, защита от path traversal). Остаётся:
+    дизайн-вкладка, просмотр реестра данных (DataViewer).
 
 Рефакторинг / архитектура:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
@@ -177,9 +180,10 @@ CLI / прочее:
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта. + README.md,
     requirements-dev.txt, pytest.ini.
-  • [СДЕЛАНО] CI: .github/workflows/ci.yml — pytest на push/PR (Python
-    3.11/3.12, headless-PyQt5, offscreen). requirements-dev тянет fastapi+
-    httpx для web-эндпоинт-тестов. Остаётся: линт и сборка .exe в CI.
+  • [СДЕЛАНО] CI: .github/workflows/ci.yml — джобы lint (ruff, правила
+    pyflakes; см. ruff.toml), test (pytest, Python 3.11/3.12, headless-PyQt5,
+    offscreen) и build-windows (PyInstaller → артефакт dist/). requirements-dev
+    тянет ruff/fastapi/httpx.
   • Привести зависимости к актуальным версиям и зафиксировать опциональные
     feature-флаги (playwright/yt-dlp/fastapi).
   • Написать README и пользовательскую документацию (сейчас отсутствуют).
