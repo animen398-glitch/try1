@@ -42,6 +42,12 @@ def has_lxml() -> bool:
     return _has_module('lxml')
 
 
+def has_scrapy() -> bool:
+    # find_spec only — never import scrapy in the GUI process (it pulls in the
+    # Twisted reactor); the actual crawl runs in a child process.
+    return _has_module('scrapy')
+
+
 # Optional feature -> (what it enables, detector).
 OPTIONAL_FEATURES = {
     'playwright': ('Dynamic API Sniffing (headless Chromium)', has_playwright),
@@ -49,6 +55,7 @@ OPTIONAL_FEATURES = {
     'ffmpeg':     ('4K/1080p video merge',                     has_ffmpeg),
     'fastapi':    ('Web console (LAN)',                        has_fastapi),
     'lxml':       ('Faster HTML parsing',                      has_lxml),
+    'scrapy':     ('Deep site crawl (subprocess)',             has_scrapy),
 }
 
 

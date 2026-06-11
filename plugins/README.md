@@ -51,3 +51,12 @@ failing filename is shown briefly in the status bar.
 
 Copy `example_tab.py.example` to `example_tab.py` and restart the app — a new
 **"Example Plugin"** tab appears.
+
+## Real example: `scrapy_tab.py`
+
+`scrapy_tab.py` is a shipped, working plugin — the **Deep Crawl (Scrapy)** tab.
+It shows the pattern for a heavy, optional third-party tool: a `register()` hook,
+a standalone `QWidget` that drives a core backend through `window._run_async`,
+and graceful degradation (the module imports even when Scrapy is absent — the
+crawl runs in a child process, so nothing here imports `scrapy` directly). It is
+auto-discovered at startup like any plugin here.

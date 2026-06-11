@@ -125,7 +125,7 @@ CLI / прочее:
         и вылетов.
 
 Функциональность (ранее запланированное):
-  • [В РАБОТЕ — Интеграция vendor-инструментов, Native-Python подход] Вместо
+  • [СДЕЛАНО — Интеграция vendor-инструментов, Native-Python подход] Вместо
     импорта чужого кода (4 из 6 vendor/-инструментов не Python: gitleaks=Go,
     JSMap=HTML, tuitube=TS, WebRecon=только README) выбран перенос полезной
     логики в чистый Python, вписанный в recon-домен. [СДЕЛАНО — бэкенд
@@ -156,9 +156,25 @@ CLI / прочее:
     воркере через _run_async (GUI не блокируется). Зарегистрирована в
     BUILTIN_TABS (после Cookie); окно строится headless с 14 вкладками.
     Без новых зависимостей. Покрыто tests/test_security_auditor.py (offline
-    через стаб _fetch). ОСТАЁТСЯ: Scrapy-плагин (подпроцессом — Twisted
-    несовместим с Qt-циклом; добавит scrapy в requirements). tuitube/WebRecon
-    — исключены (нет выигрыша/кода).
+    через стаб _fetch). [СДЕЛАНО — Scrapy deep-crawl, ВНЕШНИЙ ПЛАГИН]:
+    Scrapy встраивает Twisted-reactor (несовместим с Qt, не перезапускается
+    в процессе) → каждый кролл в ОТДЕЛЬНОМ subprocess. GUI-процесс scrapy
+    вообще не импортирует: core/scrapy_crawler.py (ScrapyCrawler) детектит
+    через features.has_scrapy()/find_spec и спавнит дочерний процесс,
+    core/_scrapy_spider.py (импорт scrapy только в ребёнке) — bounded
+    CrawlSpider (CLOSESPIDER_PAGECOUNT/DEPTH_LIMIT, JSON-Lines feed), родитель
+    парсит фид, чистит temp (PathManager.get_temp_path), graceful на
+    timeout/ненулевом коде (партиал-результаты). Реализован как РЕАЛЬНЫЙ
+    внешний плагин plugins/scrapy_tab.py (register()/TabPlugin + standalone
+    _ScrapyTab(QWidget); сеть в воркере через window._run_async) — авто-
+    дискаверится PluginManager'ом (демонстрация plugin-ready архитектуры).
+    Импортируется чисто и без scrapy → вкладка видна всегда (если scrapy нет
+    — кнопка disabled + подсказка). features.py: has_scrapy в OPTIONAL_FEATURES
+    (System-вкладка). requirements.txt: scrapy>=2.11,<3 (опционально, закомм.).
+    Покрыто tests/test_scrapy_crawler.py (offline: subprocess+scrapy
+    застаблены). Окно строится headless с 15 вкладками (14 builtin + плагин).
+    tuitube/WebRecon — исключены (нет выигрыша/кода). ИТОГ: интеграция vendor-
+    инструментов закрыта.
   • [СДЕЛАНО] VulnScanner: cookie-findings (SameSite=None без Secure → High;
     слабые куки → Medium) и summarize() с severity-счётом и risk_score.
     CollectionRunner получил фазы Cookie Audit + Vuln Scan (security/

@@ -20,6 +20,7 @@ lxml>=5.1.0,<7.0            # faster HTML parsing (5.x/6.x are compatible)
 # fastapi>=0.110.0,<1.0      # web console (main_orchestrator --web); 0.x ZeroVer
 # uvicorn[standard]>=0.27.0,<1.0
 # fpdf2>=2.7,<3.0            # PDF export of the vulnerability report
+# scrapy>=2.11,<3.0          # Deep Crawl (Scrapy) plugin; runs in a child process (Twisted reactor)
 
 # ── Packaging (build-time only) ───────────────────────────────────────────
 # pip install pyinstaller     # build: pyinstaller build.spec --clean --noconfirm
