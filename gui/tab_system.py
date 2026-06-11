@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from core import features
 from gui.constants import REGISTRY_DB
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.endpoint_index import EndpointIndex
@@ -57,6 +58,21 @@ class SystemTabMixin:
         e.addStretch()
         e_grp.setLayout(e)
         layout.addWidget(e_grp)
+
+        # ── Optional capabilities ────────────────────────────────────────
+        cap_grp = SectionGroupBox("Возможности (опциональные зависимости)")
+        cap = QVBoxLayout()
+        for name, info in features.summary().items():
+            ok = info['available']
+            row = QLabel(
+                f"{'✓' if ok else '✗'}  {name} — {info['enables']}"
+            )
+            row.setStyleSheet(
+                f"color:{'#81c784' if ok else '#e57373'}; font-size:11px;"
+            )
+            cap.addWidget(row)
+        cap_grp.setLayout(cap)
+        layout.addWidget(cap_grp)
 
         # ── Logs ─────────────────────────────────────────────────────────
         l_grp = SectionGroupBox("Системные логи (последние 50)")
