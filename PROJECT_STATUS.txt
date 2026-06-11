@@ -313,7 +313,7 @@ CLI / прочее:
     system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (131 тест, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (~180 тестов, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
     субдоменов, paywall, web_app, config, features. + README.md,
@@ -383,15 +383,25 @@ CLI / прочее:
   • Многопоточность: [ЗАКРЫТО] краш разрушения QThread и риск гонок устранены
     единым раннером _start_task() + реестром self._tasks; добавлены отмена
     длительных capture/clone задач и индикатор активных задач.
-  • Хрупкость внешних зависимостей: gui импортирует Playwright/yt-dlp/FastAPI
-    напрямую — при их отсутствии часть вкладок может падать (web_app.py уже
-    защищён стабом, остальные модули — не везде).
-  • Зависимость от внешних сервисов: recon/субдомены завязаны на ip-api.com,
-    crt.sh, HackerTarget, archive.org — нет обработки rate-limit/недоступности.
-  • Тесты: нет полноценного покрытия (только examples/test_cases.py и
-    ручной run_live_test.py).
-  • Документация: отсутствует корневой README; часть логики описана только в
-    docstring'ах модулей.
+  • Хрупкость внешних зависимостей: [СНИЖЕНО] gui больше не импортирует
+    Playwright/yt-dlp/FastAPI напрямую — всё за core-модулями с guard'ами
+    (dynamic_analyzer ловит отсутствие playwright и отдаёт error-dict; tab_media
+    чекает has_ffmpeg(); web_app — стаб). Детект централизован в core/features.py;
+    window_chrome показывает features.missing() в статус-баре, System-вкладка —
+    панель «Возможности». Остаточно: точечный аудит каждой вкладки на дружелюбное
+    сообщение (полировка, не баг).
+  • Зависимость от внешних сервисов: [ЗАКРЫТО] recon/субдомены/paywall
+    (ip-api.com, crt.sh, HackerTarget, AlienVault, Anubis, archive.org, Google
+    cache) обёрнуты в utils/http_retry.py — экспоненциальный backoff + jitter,
+    учёт Retry-After (с потолком), retry на 429/5xx/URLError/timeout и fail-fast
+    на permanent (404/parse). Сбой после ретраев деградирует мягко (None/[]).
+    + TTL-кэш пассивных источников. Покрыто tests/test_http_retry.py.
+  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~180 тестов, сетенезависимый,
+    Qt headless) + CI (.github/workflows/ci.yml). Legacy examples/test_cases.py
+    и ручной run_live_test.py остаются как smoke-сценарии.
+  • Документация: [ЗАКРЫТО] есть корневой README.md (обзор/установка/запуск/
+    архитектура/плагины/тесты/сборка) + plugins/README.md; модули документированы
+    docstring'ами.
   • Дублирование: [ЗАКРЫТО] устаревшие core/image_extractor.py и
     core/video_downloader.py (простые regex/urllib-версии без реестра, дедупа,
     ffmpeg/cookies) удалены — нигде не использовались, кроме реэкспорта в
@@ -399,7 +409,8 @@ CLI / прочее:
     (utils.image_processor.ImageExtractor, utils.video_processor.VideoDownloader);
     весь прикладной код (gui/tab_media, remote/web_app, collection_runner,
     тесты) уже импортирует именно их.
-  • Конфигурация путей к БД и каталогам разнесена между GUI и CLI — стоит
-    централизовать.
+  • Конфигурация путей к БД и каталогам: [ЗАКРЫТО] централизована в core/config.py
+    поверх core/paths.py (PathManager, frozen-aware) — единый источник путей для
+    GUI и CLI; см. «Data Path Context» в разделе 4.
 
 ==============================================================================
