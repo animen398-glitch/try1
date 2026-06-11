@@ -13,11 +13,13 @@ logic is unit-tested deterministically without real delays or network — the sa
 pattern as utils.rate_limiter.
 """
 
+import gzip
 import random
 import socket
 import time
 import urllib.error
 import urllib.request
+import zlib
 from typing import Callable, Optional, Tuple
 
 # Statuses worth retrying: rate-limit + transient upstream/server errors.
@@ -90,3 +92,40 @@ def urlopen_retry(req, timeout: float, **kw) -> Tuple[bytes, object]:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read(), r.headers
     return retry(_once, **kw)
+
+
+def decompress(raw: bytes, headers) -> bytes:
+    """Decompress a response body per its Content-Encoding (gzip/deflate).
+
+    urllib never auto-decompresses, so any caller that sends
+    ``Accept-Encoding: gzip`` (e.g. SessionBuilder) MUST run the body through
+    this or it will try to parse compressed bytes. Falls back to the magic
+    number when the header is missing, and returns ``raw`` unchanged on any
+    failure or unknown encoding.
+    """
+    try:
+        enc = (headers.get('Content-Encoding') or '').lower().strip()
+    except Exception:
+        enc = ''
+    try:
+        if enc == 'gzip' or raw[:2] == b'\x1f\x8b':
+            return gzip.decompress(raw)
+        if enc == 'deflate':
+            try:
+                return zlib.decompress(raw)
+            except zlib.error:
+                return zlib.decompress(raw, -zlib.MAX_WBITS)
+    except Exception:
+        pass
+    return raw
+
+
+def urlopen_text(req, timeout: float, *, encoding: str = 'utf-8',
+                 errors: str = 'ignore', **kw) -> str:
+    """GET ``req`` with retry, decompress, and decode to text.
+
+    The gzip-aware convenience used by callers that build requests via
+    SessionBuilder (which advertises gzip). Extra kwargs pass to :func:`retry`.
+    """
+    raw, headers = urlopen_retry(req, timeout, **kw)
+    return decompress(raw, headers).decode(encoding, errors)

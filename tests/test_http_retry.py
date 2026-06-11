@@ -1,13 +1,17 @@
 """Tests for utils.http_retry — deterministic (injected sleep/rng, no network)."""
 
+import gzip
 import socket
 import urllib.error
+import zlib
 from email.message import Message
 
 import pytest
 
 import utils.http_retry as hr
-from utils.http_retry import is_transient, retry, urlopen_retry
+from utils.http_retry import (
+    decompress, is_transient, retry, urlopen_retry, urlopen_text,
+)
 
 
 def _http_error(code, retry_after=None):
@@ -150,3 +154,30 @@ def test_urlopen_retry_retries_then_succeeds(monkeypatch):
     body, _ = urlopen_retry('req', 5, sleep=slept.append, rng=lambda: 0.5)
     assert body == b'ok'
     assert len(calls) == 2 and len(slept) == 1
+
+
+# --------------------------------------------------------------- decompress
+
+def test_decompress_gzip_deflate_and_plain():
+    assert decompress(gzip.compress(b'hello'), {'Content-Encoding': 'gzip'}) == b'hello'
+    assert decompress(zlib.compress(b'hi'), {'Content-Encoding': 'deflate'}) == b'hi'
+    assert decompress(b'plain', {}) == b'plain'          # no encoding -> as-is
+
+
+def test_decompress_falls_back_to_magic_number():
+    # Header missing but body is gzip — detected by the 1f 8b magic number.
+    assert decompress(gzip.compress(b'magic'), {}) == b'magic'
+
+
+def test_decompress_returns_raw_on_bad_data():
+    # Claims gzip but isn't — must not raise, just return the bytes.
+    assert decompress(b'not gzip', {'Content-Encoding': 'gzip'}) == b'not gzip'
+
+
+def test_urlopen_text_decompresses_and_decodes(monkeypatch):
+    headers = Message()
+    headers['Content-Encoding'] = 'gzip'
+    body = gzip.compress('héllo'.encode('utf-8'))
+    monkeypatch.setattr(hr.urllib.request, 'urlopen',
+                        lambda req, timeout: _FakeResp(body, headers))
+    assert urlopen_text('req', 5) == 'héllo'
