@@ -161,8 +161,17 @@ CLI / прочее:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
     gui/tab_*.py (recon, subdomain, api, capture, clone, media, design,
     cookie, collection, dashboard, history, system) + gui/workers.py +
-    gui/constants.py. main_window.py ужат с ~2480 до ~280 строк (только
-    каркас окна, раннер задач _start_task и общие helpers).
+    gui/constants.py. main_window.py ужат с ~2480 до ~280 строк.
+  • [СДЕЛАНО, шаг 1 декомпозиции каркаса] Раннер фоновых задач вынесен из
+    main_window.py в gui/task_runner.py (TaskRunnerMixin): _start_task,
+    _run_async, _update_task_indicator, _on_worker_error и слив потоков при
+    закрытии (_await_running_tasks). MainWindow подмешивает mixin и держит
+    лишь тонкий closeEvent-override, делегирующий в _await_running_tasks.
+    main_window.py: 327 → 242 строки. Контракт self._start_task/_run_async
+    для вкладок не изменился (резолвится через mixin). Окно строится
+    headless, 118 тестов зелёные. Дальше (по желанию): вынести оконный
+    chrome (_build_menu/_central/_statusbar) и общие helpers (_fmt_size/
+    _make_archive/_browse/…) в отдельные модули.
   • Декомпозиция вкладок — выбран mixin-паттерн (gui/tab_*.py, плоско),
     НЕ gui/tabs/ + базовый класс. Причина: mixin'ы вплетены в MainWindow,
     поэтому self._start_task / self.settings доступны напрямую — отдельный

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from PyQt5.QtCore import QThread
 from PyQt5.QtWidgets import (
     QAction, QFileDialog, QLabel, QLineEdit, QMainWindow, QMessageBox,
     QProgressBar, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
@@ -12,9 +11,9 @@ from PyQt5.QtWidgets import (
 
 from core import config, features
 from gui.dialogs import SettingsDialog
-from gui.workers import _TaskHandle, _Worker
 from gui.constants import PLUGINS_DIR
 from gui.plugin_manager import default_manager
+from gui.task_runner import TaskRunnerMixin
 from gui.tab_system import SystemTabMixin
 from gui.tab_api import ApiTabMixin
 from gui.tab_capture import CaptureTabMixin
@@ -31,7 +30,7 @@ from utils.file_compression import FileCompressor
 from utils.task_manager import TaskManager
 
 
-class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
+class MainWindow(QMainWindow, TaskRunnerMixin, SystemTabMixin, ApiTabMixin,
                  VideoTabMixin, ImageTabMixin, CaptureTabMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
                  CloneTabMixin, CookieAuditTabMixin, FinalReportTabMixin,
@@ -130,11 +129,6 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         self.status_bar.addPermanentWidget(self.progress_bar)
         self.status_bar.showMessage("Готов")
 
-    def _update_task_indicator(self):
-        """Reflect the number of live background tasks in the status bar."""
-        n = len(self._tasks)
-        self.task_indicator.setText(f"⚙ Активных задач: {n}" if n else "")
-
     def _report_plugin_errors(self):
         """Surface any external plugin that failed to load (non-fatal)."""
         errors = getattr(self, '_plugin_errors', [])
@@ -201,90 +195,12 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
                 + " (см. README по установке)", 10000,
             )
 
-    # ───────────────────────────── task runner ──────────────────────────────
-    #
-    # Every background job — generic _Worker, capture, subdomain, clone — is
-    # launched through _start_task. It owns the full QThread lifecycle and the
-    # Signals/Slots wiring that decouples the GUI from the worker, so call
-    # sites only describe *what* to run and *how* to react, never the plumbing.
-
-    def _start_task(self, worker, *, on_finished=None, on_error=None,
-                    signals=None) -> int:
-        """Run ``worker`` on its own QThread with safe, centralised teardown.
-
-        ``worker`` must expose a ``run()`` slot plus ``finished`` and ``error``
-        signals. Cross-thread coupling is pure Signals/Slots:
-
-          • ``on_finished(payload)`` — slot for the worker's ``finished`` signal.
-          • ``on_error(message)``    — slot for the worker's ``error`` signal.
-          • ``signals``              — iterable of ``(signal, slot)`` pairs for
-                                       any extra worker signals (log, progress,
-                                       row_found, …).
-
-        The (worker, thread) pair is held in ``self._tasks`` until the OS thread
-        has genuinely exited, then both are ``deleteLater``-d and the handle is
-        dropped. Returns the task id.
-        """
-        thread = QThread()
-        worker.moveToThread(thread)
-
-        task_id = self._next_task_id
-        self._next_task_id += 1
-        self._tasks[task_id] = _TaskHandle(task_id, worker, thread)
-        self._update_task_indicator()
-
-        thread.started.connect(worker.run)
-
-        # Caller-supplied reactions (queued across the thread boundary).
-        if on_finished is not None:
-            worker.finished.connect(on_finished)
-        if on_error is not None:
-            worker.error.connect(on_error)
-        for sig, slot in (signals or ()):
-            sig.connect(slot)
-
-        # Stop the event loop on either terminal signal …
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        # … then tear everything down only after the OS thread has stopped.
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda tid=task_id: (self._tasks.pop(tid, None),
-                                 self._update_task_indicator())
-        )
-
-        thread.start()
-        return task_id
-
-    def _on_worker_error(self):
-        """Re-enable any action buttons that were disabled before a failed task."""
-        for attr in ('btn_clone_run', 'dash_scan_btn'):
-            btn = getattr(self, attr, None)
-            if btn is not None:
-                btn.setEnabled(True)
-
-    def _run_async(self, fn, on_done):
-        """Convenience wrapper: run ``fn()`` off-thread and deliver its result."""
-        self._start_task(
-            _Worker(fn),
-            on_finished=on_done,
-            on_error=lambda e: (
-                self._set_busy(False),
-                QMessageBox.critical(self, "Ошибка", e),
-                self._on_worker_error(),
-            ),
-        )
+    # The background-task runner (_start_task / _run_async / lifecycle) lives in
+    # gui/task_runner.py:TaskRunnerMixin. closeEvent stays here as the Qt
+    # override and just delegates to the mixin's thread-drain helper.
 
     def closeEvent(self, event):
-        # Wait for in-flight worker threads so none is destroyed mid-run.
-        threads = [h.thread for h in list(self._tasks.values())]
-        for thread in threads:
-            if thread.isRunning():
-                thread.quit()
-        for thread in threads:
-            if thread.isRunning():
-                thread.wait(5000)
+        self._await_running_tasks()
         super().closeEvent(event)
 
     def _set_busy(self, busy: bool):
