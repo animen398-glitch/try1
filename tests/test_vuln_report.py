@@ -51,3 +51,29 @@ def test_export_strips_given_extension(tmp_path):
     export(str(tmp_path / "r.html"), "t", _FINDINGS)
     assert (tmp_path / "r.html").exists()
     assert (tmp_path / "r.json").exists()
+
+
+def test_pdf_safe_transliterates_unicode():
+    from core.vuln_report import _pdf_safe
+    assert _pdf_safe("a — b → c ≈ d") == "a - b -> c ~ d"
+    # Cyrillic falls back to latin-1 replacement (no crash).
+    assert isinstance(_pdf_safe("куки"), str)
+
+
+def test_export_pdf_when_available(tmp_path):
+    import pytest
+    pytest.importorskip("fpdf")
+    from core.vuln_report import export_pdf
+    out = export_pdf(tmp_path / "r.pdf", "https://example.com", _FINDINGS)
+    assert out is not None
+    data = (tmp_path / "r.pdf").read_bytes()
+    assert data[:4] == b"%PDF"
+
+
+def test_export_includes_pdf_when_available(tmp_path):
+    import importlib.util
+    paths = export(str(tmp_path / "report"), "https://example.com", _FINDINGS)
+    if importlib.util.find_spec("fpdf"):
+        assert "pdf" in paths and (tmp_path / "report.pdf").exists()
+    else:
+        assert "pdf" not in paths

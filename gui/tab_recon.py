@@ -371,7 +371,10 @@ class ReconTabMixin:
         except Exception as e:
             QMessageBox.critical(self, "Ошибка экспорта", str(e))
             return
-        self.recon_results.append_success(f"Vuln-отчёт сохранён: {paths['html']}")
+        formats = ', '.join(sorted(paths)).upper()
+        self.recon_results.append_success(
+            f"Vuln-отчёт сохранён ({formats}): {paths['html']}"
+        )
         if QMessageBox.question(
             self, "Vuln Report",
             f"Отчёт сохранён:\n{paths['html']}\n\nОткрыть в браузере?",

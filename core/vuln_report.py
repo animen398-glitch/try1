@@ -14,6 +14,19 @@ from core.vuln_scanner import (
     SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM, VulnScanner,
 )
 
+try:
+    import fpdf  # noqa: F401  (optional — enables PDF export)
+    _HAS_FPDF = True
+except ImportError:
+    _HAS_FPDF = False
+
+# Map characters the PDF core fonts (latin-1) can't render to ASCII.
+_PDF_REPL = {
+    '—': '-', '–': '-', '→': '->', '≈': '~',
+    '…': '...', '‘': "'", '’': "'", '“': '"',
+    '”': '"', '•': '*',
+}
+
 _SEVERITY_ORDER = [SEVERITY_HIGH, SEVERITY_MEDIUM, SEVERITY_INFO]
 _SEVERITY_COLOR = {
     SEVERITY_HIGH: '#c62828',
@@ -82,12 +95,68 @@ max-width:820px;margin:24px auto;padding:0 16px;color:#222;">
 </body></html>"""
 
 
+def _pdf_safe(text) -> str:
+    s = str(text)
+    for bad, good in _PDF_REPL.items():
+        s = s.replace(bad, good)
+    return s.encode('latin-1', 'replace').decode('latin-1')
+
+
+def export_pdf(path, target: str, findings: List[Dict],
+               summary: Optional[Dict] = None) -> Optional[str]:
+    """Write a PDF vulnerability report; returns its path, or None if fpdf2
+    is not installed."""
+    if not _HAS_FPDF:
+        return None
+    from fpdf import FPDF
+
+    summary = summary or VulnScanner.summarize(findings)
+    pdf = FPDF()
+    pdf.set_auto_page_break(True, margin=15)
+    pdf.add_page()
+
+    def line(text, height=5):
+        # new_x/new_y keep the cursor at the left margin on the next row,
+        # otherwise fpdf2 leaves x at the right margin → zero-width cells.
+        pdf.multi_cell(0, height, _pdf_safe(text),
+                       new_x='LMARGIN', new_y='NEXT')
+
+    pdf.set_font('Helvetica', 'B', 16)
+    line('Vulnerability Report', 9)
+    pdf.set_font('Helvetica', '', 10)
+    line(target, 6)
+    line(f"High {summary.get('high', 0)} / Medium {summary.get('medium', 0)} / "
+         f"Info {summary.get('info', 0)} - risk score {summary.get('risk_score', 0)}", 6)
+    pdf.ln(3)
+
+    for sev in _SEVERITY_ORDER:
+        group = [f for f in findings if f.get('severity') == sev]
+        if not group:
+            continue
+        pdf.set_font('Helvetica', 'B', 12)
+        line(f'{sev} ({len(group)})', 8)
+        pdf.set_font('Helvetica', '', 10)
+        for f in group:
+            line(f"- {f.get('title', '')}")
+            if f.get('detail'):
+                pdf.set_text_color(110, 110, 110)
+                line(f"    {f['detail']}")
+                pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
+
+    pdf.output(str(path))
+    return str(path)
+
+
 def export(path: str, target: str, findings: List[Dict],
            summary: Optional[Dict] = None) -> Dict[str, str]:
-    """Write <path>.html and <path>.json; return the written file paths."""
+    """Write <path>.html, .json (and .pdf if fpdf2 is available).
+
+    Returns a dict of the written file paths keyed by format.
+    """
     summary = summary or VulnScanner.summarize(findings)
     base = Path(path)
-    if base.suffix.lower() in ('.html', '.json'):
+    if base.suffix.lower() in ('.html', '.json', '.pdf'):
         base = base.with_suffix('')
     base.parent.mkdir(parents=True, exist_ok=True)
 
@@ -99,4 +168,9 @@ def export(path: str, target: str, findings: List[Dict],
                    indent=2, ensure_ascii=False, default=str),
         encoding='utf-8',
     )
-    return {'html': str(html_path), 'json': str(json_path)}
+    written = {'html': str(html_path), 'json': str(json_path)}
+
+    pdf_path = export_pdf(base.with_suffix('.pdf'), target, findings, summary)
+    if pdf_path:
+        written['pdf'] = pdf_path
+    return written
