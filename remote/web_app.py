@@ -34,12 +34,13 @@ except ImportError:
 
 from core.api_key_extractor import ApiKeyExtractor
 from core.collection_runner import CollectionRunner
-from core.config import OPERATIONS_DB
+from core.config import OPERATIONS_DB, REGISTRY_DB
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
 from core.subdomain_scanner import SubdomainScanner
+from utils.data_viewer import DataViewer
 from utils.image_processor import ImageExtractor
 from utils.operation_registry import OperationRegistry
 
@@ -200,6 +201,16 @@ def _recent_history(limit: int = 100) -> list:
         return []
 
 
+def _registry_data(limit: int = 50) -> dict:
+    """Read-only DataRegistry summary + recent records for the console."""
+    try:
+        viewer = DataViewer(db_path=str(REGISTRY_DB))
+        return {'summary': viewer.get_summary(),
+                'records': viewer.get_recent_records(limit=limit)}
+    except Exception as e:
+        return {'summary': {}, 'records': [], 'error': str(e)}
+
+
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
 
 _DASHBOARD = """\
@@ -278,6 +289,7 @@ margin-right:5px;vertical-align:middle}
     <div class="btns" id="jobbtns">
       <button class="btn er" id="b-clr" onclick="clr()">Clear</button>
       <button class="btn sec" onclick="showHistory()">History</button>
+      <button class="btn sec" onclick="showData()">Data</button>
     </div>
   </div>
 
@@ -409,6 +421,19 @@ async function showHistory(){
   }catch(ex){log('History failed: '+ex.message,'er');}
 }
 
+async function showData(){
+  try{
+    const r=await fetch('/data'); const d=await r.json();
+    const s=d.summary||{};
+    log('Registry: '+(s.total||0)+' records · '+(s.subdomains||0)+' subdomains · '
+        +(s.api_endpoints||0)+' endpoints · '+(s.images||0)+' images','data');
+    (d.records||[]).slice(0,20).forEach(rec=>{
+      const c=(rec.content||'').slice(0,80);
+      log('['+(rec.data_type||'')+'] '+c,'info');
+    });
+  }catch(ex){log('Data failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -509,6 +534,10 @@ if _FASTAPI_OK:
     @app.get('/history')
     async def history():
         return JSONResponse(_recent_history(100))
+
+    @app.get('/data')
+    async def data():
+        return JSONResponse(_registry_data(50))
 
     @app.get('/report')
     async def report(file: str):

@@ -46,6 +46,13 @@ def test_recent_history_returns_list():
     assert isinstance(wa._recent_history(5), list)
 
 
+def test_registry_data_returns_summary_and_records():
+    d = wa._registry_data(5)
+    assert isinstance(d, dict)
+    assert "summary" in d and "records" in d
+    assert isinstance(d["records"], list)
+
+
 def test_strip_heavy_drops_large_payloads():
     out = wa._strip_heavy({"html": "x" * 50, "reader_view": "y", "body": "z",
                            "status": "Success", "n": 3})
@@ -79,6 +86,7 @@ def test_dashboard_has_history_and_report():
     html = wa._DASHBOARD
     assert "showHistory()" in html and "/history" in html
     assert "/report?file=" in html
+    assert "showData()" in html and "/data" in html
 
 
 # ── Optional: exercise the live endpoints if a test client is available ──────
