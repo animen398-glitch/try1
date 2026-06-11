@@ -57,6 +57,7 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
         self._active_collector = None
         self._history_rows: list = []
         self._history_loading = False
+        self._history_view_cleared = False
         self._dashboard_loading = False
         self._dashboard_table_loading = False
         self._dashboard_filter_pending = False

@@ -29,10 +29,16 @@ class HistoryTabMixin:
 
         ctrl = QHBoxLayout()
         self.history_count = QLabel("Записей: 0")
+        btn_clear = StyledButton("Сбросить историю", style='secondary')
+        btn_clear.setToolTip("Очищает только таблицу в интерфейсе.\n"
+                             "Файлы и operations.db не затрагиваются — "
+                             "«Обновить» вернёт записи.")
+        btn_clear.clicked.connect(self._clear_history_view)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_history)
         ctrl.addWidget(self.history_count)
         ctrl.addStretch()
+        ctrl.addWidget(btn_clear)
         ctrl.addWidget(btn_refresh)
         layout.addLayout(ctrl)
 
@@ -64,10 +70,24 @@ class HistoryTabMixin:
         self._history_widget = w
         return w
 
+    def _clear_history_view(self):
+        """Очистить только GUI-таблицу истории.
+
+        Файлы и data/operations.db НЕ затрагиваются — это сброс представления.
+        Флаг _history_view_cleared не даёт lazy-load перезагрузить таблицу при
+        возврате на вкладку; «Обновить» сбрасывает флаг и тянет данные заново.
+        """
+        self._history_rows = []
+        self._history_view_cleared = True
+        self.history_table.setRowCount(0)
+        self.history_meta.clear()
+        self.history_count.setText("Записей: 0 (вид очищен — БД не затронута)")
+
     def _on_tab_changed(self, index: int):
         widget = self.tabs.widget(index)
         if widget is getattr(self, '_history_widget', None):
-            if not self._history_rows and not self._history_loading:
+            if (not self._history_rows and not self._history_loading
+                    and not getattr(self, '_history_view_cleared', False)):
                 self._refresh_history()
         elif widget is getattr(self, '_dashboard_widget', None):
             if not self._dashboard_loaded and not self._dashboard_loading:
@@ -76,6 +96,7 @@ class HistoryTabMixin:
     def _refresh_history(self):
         if self._history_loading:
             return
+        self._history_view_cleared = False   # explicit refresh re-enables loading
         self._history_loading = True
         self._set_busy(True)
         self._run_async(self._query_history, self._on_history_loaded)
