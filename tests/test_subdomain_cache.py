@@ -9,8 +9,13 @@ from core.subdomain_scanner import SubdomainScanner
 
 
 def _no_dns(monkeypatch):
-    # Keep scans fully offline: every name "resolves" to a fixed IP.
+    # Keep scans fully offline: every name "resolves" to a fixed IP, and the
+    # extra passive sources stay silent unless a test stubs them with data.
     monkeypatch.setattr(ss.socket, "gethostbyname", lambda host: "1.2.3.4")
+    monkeypatch.setattr(SubdomainScanner, "_fetch_alienvault",
+                        classmethod(lambda cls, d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_anubis",
+                        classmethod(lambda cls, d: []))
 
 
 def _passive_only(scanner, domain, **kw):
@@ -61,6 +66,39 @@ def test_use_cache_false_refetches(monkeypatch):
     _passive_only(scanner, "example.com", use_cache=False)
 
     assert crt_calls == ["example.com", "example.com"]   # cache bypassed
+
+
+def test_extra_passive_sources_recorded_and_cached(monkeypatch):
+    ss._PASSIVE_CACHE.clear()
+    _no_dns(monkeypatch)
+    monkeypatch.setattr(SubdomainScanner, "_fetch_crtsh",
+                        staticmethod(lambda d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_hackertarget",
+                        staticmethod(lambda d: []))
+    av_calls, an_calls = [], []
+    monkeypatch.setattr(SubdomainScanner, "_fetch_alienvault",
+                        classmethod(lambda cls, d: av_calls.append(d) or ["av.example.com"]))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_anubis",
+                        classmethod(lambda cls, d: an_calls.append(d) or ["an.example.com", "example.com"]))
+
+    scanner = SubdomainScanner()
+    res = _passive_only(scanner, "example.com")
+    subs = {e["subdomain"] for e in res["results"]}
+    sources = {e["subdomain"]: e["source"] for e in res["results"]}
+    assert {"av.example.com", "an.example.com", "example.com"} <= subs
+    assert sources["av.example.com"] == "alienvault"
+    assert sources["an.example.com"] == "anubis"
+
+    _passive_only(scanner, "example.com")          # second scan hits the cache
+    assert av_calls == ["example.com"]
+    assert an_calls == ["example.com"]
+
+
+def test_extra_source_out_of_domain_names_filtered():
+    # The fetch helpers keep only names within the queried domain.
+    names = ["a.example.com", "EVIL.com", "x.other.org", "*.b.example.com", "example.com"]
+    assert SubdomainScanner._names_in_domain(names, "example.com") == [
+        "a.example.com", "b.example.com", "example.com"]
 
 
 def test_fetch_failure_is_swallowed_and_not_cached(monkeypatch):

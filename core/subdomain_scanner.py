@@ -1,6 +1,9 @@
 """
-SubdomainScanner — passive enumeration (crt.sh, HackerTarget) +
-active DNS brute-force with concurrent resolution.
+SubdomainScanner — passive enumeration (crt.sh, HackerTarget, AlienVault OTX,
+Anubis/jldc) + active DNS brute-force with concurrent resolution.
+
+All passive sources are keyless and free; the keyed/heavyweight backends from
+dedicated tools (subfinder/amass) are intentionally not reimplemented.
 """
 import concurrent.futures
 import json
@@ -16,6 +19,8 @@ from utils.scan_cache import TTLCache
 
 _CRTSH_URL        = 'https://crt.sh/?q=%.{domain}&output=json'
 _HACKERTARGET_URL = 'https://api.hackertarget.com/hostsearch/?q={domain}'
+_ALIENVAULT_URL   = 'https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns'
+_ANUBIS_URL       = 'https://jldc.me/anubis/subdomains/{domain}'
 _FETCH_TIMEOUT    = 10
 _DNS_TIMEOUT      = 3
 
@@ -76,7 +81,8 @@ _WORDLIST: tuple = (
 class SubdomainScanner:
     """
     Enumerates subdomains via:
-    1. Passive:   crt.sh certificate transparency + HackerTarget
+    1. Passive:   crt.sh certificate transparency + HackerTarget +
+                  AlienVault OTX + Anubis (all keyless, free, cached)
     2. Active:    DNS brute-force against a built-in wordlist
     """
 
@@ -180,6 +186,20 @@ class SubdomainScanner:
                     break
                 _record(sub, ip, 'hackertarget')
 
+        # ── Phase 2b: AlienVault OTX passive DNS ─────────────────────────
+        if passive and not self._cancel.is_set():
+            for name in self._passive_alienvault(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'alienvault')
+
+        # ── Phase 2c: Anubis (jldc.me) ───────────────────────────────────
+        if passive and not self._cancel.is_set():
+            for name in self._passive_anubis(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'anubis')
+
         # ── Phase 3: DNS brute-force ──────────────────────────────────────
         if brute and not self._cancel.is_set():
             total = len(_WORDLIST)
@@ -277,6 +297,60 @@ class SubdomainScanner:
             if sub.endswith(f'.{domain}') or sub == domain:
                 pairs.append((sub, ip))
         return pairs
+
+    def _passive_alienvault(self, domain: str, use_cache: bool) -> List[str]:
+        """Return AlienVault OTX passive-DNS names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('alienvault', domain), lambda: self._fetch_alienvault(domain))
+            return self._fetch_alienvault(domain)
+        except Exception:
+            return []
+
+    def _passive_anubis(self, domain: str, use_cache: bool) -> List[str]:
+        """Return Anubis (jldc.me) subdomain names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('anubis', domain), lambda: self._fetch_anubis(domain))
+            return self._fetch_anubis(domain)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _names_in_domain(names, domain: str) -> List[str]:
+        """Normalise + keep only names within ``domain``."""
+        out: set = set()
+        for name in names:
+            name = str(name or '').strip().lstrip('*.').lower()
+            if name.endswith(f'.{domain}') or name == domain:
+                out.add(name)
+        return sorted(out)
+
+    @classmethod
+    def _fetch_alienvault(cls, domain: str) -> List[str]:
+        """Fetch + parse AlienVault OTX passive DNS (network, keyless)."""
+        req = urllib.request.Request(
+            _ALIENVAULT_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
+            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        records = data.get('passive_dns', []) if isinstance(data, dict) else []
+        return cls._names_in_domain(
+            (rec.get('hostname') for rec in records if isinstance(rec, dict)), domain)
+
+    @classmethod
+    def _fetch_anubis(cls, domain: str) -> List[str]:
+        """Fetch + parse the Anubis (jldc.me) subdomain JSON list (network, keyless)."""
+        req = urllib.request.Request(
+            _ANUBIS_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
+            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        return cls._names_in_domain(data if isinstance(data, list) else [], domain)
 
     def _run_active(self, found: Dict[str, Dict],
                     on_progress: Optional[Callable[[int, int], None]],
