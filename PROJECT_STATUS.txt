@@ -175,6 +175,20 @@ CLI / прочее:
     застаблены). Окно строится headless с 15 вкладками (14 builtin + плагин).
     tuitube/WebRecon — исключены (нет выигрыша/кода). ИТОГ: интеграция vendor-
     инструментов закрыта.
+  • [СДЕЛАНО — выборочный harvest из tools/] tools/ (SecretFinder, subfinder,
+    amass, katana, nuclei) проектом не использовались (0 ссылок). Решение: НЕ
+    переписывать целиком (katana/SecretFinder уже покрыты нативно; subfinder/
+    amass/nuclei ценны охватом/экосистемой — нативный порт был бы хуже и тянул
+    бы долг). Сняты только дешёвые точечные выигрыши: (1) уникальные
+    высокоточные secret-regex'ы из SecretFinder → secret_scanner.RULES
+    (Google OAuth ya29., AWS MWS, Stripe rk_live, PayPal/Braintree, Square
+    oauth+access, Twilio Account SID, GitHub-URL-creds, Authorization Basic;
+    шумные — reCAPTCHA/Heroku-UUID/Facebook — отброшены); (2) два бесключевых
+    бесплатных пассивных источника субдоменов (AlienVault OTX, Anubis/jldc) в
+    subdomain_scanner рядом с crt.sh/HackerTarget (тот же TTL-кэш, фильтр по
+    домену, сбой не отравляет кэш). katana/amass/nuclei нативно не трогаем —
+    если понадобятся, только как опц. внешние бинари. Без новых зависимостей;
+    покрыто тестами (test_secret_scanner, test_subdomain_cache).
   • [СДЕЛАНО] VulnScanner: cookie-findings (SameSite=None без Secure → High;
     слабые куки → Medium) и summarize() с severity-счётом и risk_score.
     CollectionRunner получил фазы Cookie Audit + Vuln Scan (security/
