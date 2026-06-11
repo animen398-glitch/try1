@@ -49,6 +49,24 @@ def test_preview_is_truncated_for_long_values():
     assert f["preview"].endswith("…") and len(f["preview"]) <= 25
 
 
+def test_detects_harvested_secretfinder_formats():
+    text = (
+        "g='ya29.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789';"
+        "stripe='rk_live_abcdefghijklmnopqrstuvwx';"
+        "sq='sq0csp-" + "a" * 43 + "';"
+        "pb='access_token$production$0123456789abcdef$0123456789abcdef0123456789abcdef';"
+        "tw='AC0123456789abcdef0123456789abcdef';"
+        "gh='https://user:p4ssword@github.com/x';"
+    )
+    types = _types(scan_text(text))
+    assert "Google OAuth Token" in types
+    assert "Stripe Restricted Key" in types
+    assert "Square OAuth Secret" in types
+    assert "PayPal/Braintree Token" in types
+    assert "Twilio Account SID" in types
+    assert "GitHub URL Credentials" in types
+
+
 def test_clean_text_yields_nothing():
     assert scan_text("just some perfectly ordinary prose, nothing secret here") == []
     assert SecretScanner().scan_text("") == []

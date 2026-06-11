@@ -51,6 +51,18 @@ RULES: List[SecretRule] = [
     SecretRule('Mailgun Key',      re.compile(r'\bkey-[0-9a-zA-Z]{32}\b')),
     SecretRule('SendGrid Key',     re.compile(r'\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b')),
     SecretRule('npm Token',        re.compile(r'\bnpm_[A-Za-z0-9]{36}\b')),
+    SecretRule('Stripe Restricted Key', re.compile(r'\brk_live_[0-9a-zA-Z]{24,}\b')),
+    SecretRule('Google OAuth Token', re.compile(r'\bya29\.[0-9A-Za-z_\-]{20,}')),
+    SecretRule('AWS MWS Token',    re.compile(
+        r'\bamzn\.mws\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b')),
+    SecretRule('PayPal/Braintree Token', re.compile(
+        r'access_token\$production\$[0-9a-z]{16}\$[0-9a-f]{32}')),
+    SecretRule('Square OAuth Secret', re.compile(r'\bsq0csp-[0-9A-Za-z_\-]{43}\b')),
+    SecretRule('Square Access Token', re.compile(r'\bsqOatp-[0-9A-Za-z_\-]{22}\b')),
+    SecretRule('Twilio Account SID', re.compile(r'\bAC[0-9a-f]{32}\b')),
+    SecretRule('GitHub URL Credentials', re.compile(
+        r'[a-zA-Z0-9_\-]+:[a-zA-Z0-9_\-]+@github\.com')),
+    SecretRule('Authorization Basic', re.compile(r'\bBasic\s+[A-Za-z0-9+/]{16,}={0,2}')),
     SecretRule('Bearer Token',     re.compile(r'\bBearer\s+([A-Za-z0-9._~+/=\-]{20,})'), group=1),
     SecretRule('Private Key Block', re.compile(
         r'-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----')),
