@@ -8,15 +8,21 @@ import socket
 import threading
 import time
 import urllib.request
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from core.subdomain_active import ActiveSubdomainChecker
+from utils.scan_cache import TTLCache
 
 
 _CRTSH_URL        = 'https://crt.sh/?q=%.{domain}&output=json'
 _HACKERTARGET_URL = 'https://api.hackertarget.com/hostsearch/?q={domain}'
 _FETCH_TIMEOUT    = 10
 _DNS_TIMEOUT      = 3
+
+# Passive enumeration is idempotent within a session, so cache the parsed
+# crt.sh / HackerTarget results per domain (1h TTL) to avoid re-hitting those
+# services on repeat scans. DNS resolution still runs fresh — IPs can change.
+_PASSIVE_CACHE = TTLCache(ttl_seconds=3600)
 
 _WORDLIST: tuple = (
     'www', 'www2', 'www3', 'mail', 'mail1', 'mail2', 'smtp', 'smtp1', 'smtp2',
@@ -107,6 +113,7 @@ class SubdomainScanner:
         on_update: Optional[Callable[[Dict], None]] = None,
         max_workers: int = 40,
         active_rate_per_sec: float = 0,
+        use_cache: bool = True,
     ) -> Dict:
         """
         Run passive + brute-force enumeration, optionally followed by active
@@ -115,6 +122,8 @@ class SubdomainScanner:
         on_found(entry)            called for each newly discovered subdomain
         on_progress(current, total) progress during brute-force / active phase
         on_update(entry)           called when an entry is enriched by active checks
+        use_cache                  reuse cached passive (crt.sh/HackerTarget)
+                                   results for this domain within the TTL window
         Returns summary dict: {status, domain, total, results, elapsed,
                                live_count, takeover_candidates}
         """
@@ -158,49 +167,18 @@ class SubdomainScanner:
         if passive and not self._cancel.is_set():
             if on_progress:
                 on_progress(0, 0)  # indeterminate
-            try:
-                req = urllib.request.Request(
-                    _CRTSH_URL.format(domain=domain),
-                    headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
-                )
-                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-                    data = json.loads(r.read().decode('utf-8', errors='ignore'))
-                raw_names: set = set()
-                for entry in data:
-                    for name in entry.get('name_value', '').splitlines():
-                        name = name.strip().lstrip('*.').lower()
-                        if name.endswith(f'.{domain}'):
-                            raw_names.add(name)
-                        elif name == domain:
-                            raw_names.add(name)
-                for name in sorted(raw_names):
-                    if self._cancel.is_set():
-                        break
-                    ip = _resolve(name)
-                    _record(name, ip or '', 'crt.sh')
-            except Exception:
-                pass
+            for name in self._passive_crtsh(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                ip = _resolve(name)
+                _record(name, ip or '', 'crt.sh')
 
         # ── Phase 2: HackerTarget passive API ────────────────────────────
         if passive and not self._cancel.is_set():
-            try:
-                req = urllib.request.Request(
-                    _HACKERTARGET_URL.format(domain=domain),
-                    headers={'User-Agent': 'Mozilla/5.0'},
-                )
-                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-                    text = r.read().decode('utf-8', errors='ignore')
-                for line in text.splitlines():
-                    if self._cancel.is_set():
-                        break
-                    if ',' not in line or 'API count' in line:
-                        continue
-                    parts = line.split(',', 1)
-                    sub, ip = parts[0].strip().lower(), parts[1].strip()
-                    if sub.endswith(f'.{domain}') or sub == domain:
-                        _record(sub, ip, 'hackertarget')
-            except Exception:
-                pass
+            for sub, ip in self._passive_hackertarget(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(sub, ip, 'hackertarget')
 
         # ── Phase 3: DNS brute-force ──────────────────────────────────────
         if brute and not self._cancel.is_set():
@@ -239,6 +217,66 @@ class SubdomainScanner:
             'live_count': sum(1 for e in results if e.get('alive')),
             'takeover_candidates': takeover_candidates,
         }
+
+    # ── Passive sources (cached) ─────────────────────────────────────────
+
+    def _passive_crtsh(self, domain: str, use_cache: bool) -> List[str]:
+        """Return crt.sh-discovered names for ``domain`` (cached, network-safe)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('crtsh', domain), lambda: self._fetch_crtsh(domain))
+            return self._fetch_crtsh(domain)
+        except Exception:
+            return []
+
+    def _passive_hackertarget(self, domain: str,
+                              use_cache: bool) -> List[Tuple[str, str]]:
+        """Return HackerTarget (subdomain, ip) pairs for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('hackertarget', domain),
+                    lambda: self._fetch_hackertarget(domain))
+            return self._fetch_hackertarget(domain)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _fetch_crtsh(domain: str) -> List[str]:
+        """Fetch + parse crt.sh certificate-transparency names (network)."""
+        req = urllib.request.Request(
+            _CRTSH_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
+            data = json.loads(r.read().decode('utf-8', errors='ignore'))
+        raw_names: set = set()
+        for entry in data:
+            for name in entry.get('name_value', '').splitlines():
+                name = name.strip().lstrip('*.').lower()
+                if name.endswith(f'.{domain}') or name == domain:
+                    raw_names.add(name)
+        return sorted(raw_names)
+
+    @staticmethod
+    def _fetch_hackertarget(domain: str) -> List[Tuple[str, str]]:
+        """Fetch + parse the HackerTarget hostsearch CSV (network)."""
+        req = urllib.request.Request(
+            _HACKERTARGET_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0'},
+        )
+        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
+            text = r.read().decode('utf-8', errors='ignore')
+        pairs: List[Tuple[str, str]] = []
+        for line in text.splitlines():
+            if ',' not in line or 'API count' in line:
+                continue
+            sub, ip = line.split(',', 1)
+            sub, ip = sub.strip().lower(), ip.strip()
+            if sub.endswith(f'.{domain}') or sub == domain:
+                pairs.append((sub, ip))
+        return pairs
 
     def _run_active(self, found: Dict[str, Dict],
                     on_progress: Optional[Callable[[int, int], None]],

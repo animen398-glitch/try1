@@ -1,6 +1,6 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-10
+  Дата отчёта: 2026-06-11
 ==============================================================================
 
 ------------------------------------------------------------------------------
@@ -125,14 +125,17 @@ CLI / прочее:
         и вылетов.
 
 Функциональность (ранее запланированное):
-  • [ЧАСТИЧНО] VulnScanner: добавлены cookie-findings (SameSite=None без
-    Secure → High; слабые куки → Medium) и summarize() с severity-счётом и
-    risk_score. CollectionRunner получил фазы Cookie Audit + Vuln Scan
-    (security/cookies.json, security/vulns.json + карточки в report.html).
-    + правила CSP-слабости (unsafe-inline/eval/wildcard) и HSTS-слабости
-    (короткий max-age / без includeSubDomains). + core/vuln_report.py —
-    экспорт отдельного отчёта (HTML+JSON) с кнопкой в recon-вкладке.
-    Остаётся: ещё правила, PDF-экспорт.
+  • [СДЕЛАНО] VulnScanner: cookie-findings (SameSite=None без Secure → High;
+    слабые куки → Medium) и summarize() с severity-счётом и risk_score.
+    CollectionRunner получил фазы Cookie Audit + Vuln Scan (security/
+    cookies.json, security/vulns.json + карточки в report.html). Правила:
+    CSP-слабость (unsafe-inline/eval/wildcard), HSTS-слабость (короткий
+    max-age / без includeSubDomains), слабая Referrer-Policy, слабый/легаси
+    X-Frame-Options (clickjacking), раскрытие технологий через Server/
+    X-Powered-By/X-Generator, чувствительные пути (.env/.git/admin/swagger/…),
+    CMS-фингерпринт, PWA-манифест, JS-фреймворк-глобалы. + core/vuln_report.py
+    — экспорт отдельного отчёта в HTML+JSON и PDF (export_pdf через
+    опциональный fpdf2; latin-1-санитайзер) с кнопкой в recon-вкладке.
   • [СДЕЛАНО] Углубление paywall-bypass: extract() расширен с 3 до 6
     стратегий (googlebot_spoof, js_strip, amp, referer_spoof, google_cache,
     wayback_machine) + reader_view (lightweight readability) в результате.
@@ -145,14 +148,14 @@ CLI / прочее:
     «Active checks», апдейт строк и красную ⚠-подсветку takeover-кандидатов.
   • Полноценный экспорт результатов: единый отчёт (HTML/PDF/JSON) по проекту
     (пересекается с фичей [A]).
-  • [ЧАСТИЧНО] Web-консоль (remote/web_app.py) к паритету с GUI: задачи
+  • [СДЕЛАНО] Web-консоль (remote/web_app.py) к паритету с GUI: задачи
     вынесены в единый реестр JOBS (один runner на фичу), добавлены
     Subdomains (active/takeover), API Keys, Cookie Audit, Full Collection
     рядом с Recon/Capture/Paywall. Generic POST /run/{name}, GET /jobs;
     дэшборд строит кнопки из /jobs (UI и бэкенд не расходятся). + job Images,
-    GET /history (просмотр операций), безопасный GET /report (отдача отчётов
-    из дерева SiteAnalyzer, защита от path traversal) и GET /data (просмотр
-    реестра DataViewer). Остаётся: дизайн-вкладка.
+    Design Lab (capture + палитра/типографика), GET /history (просмотр
+    операций), безопасный GET /report (отдача отчётов из дерева SiteAnalyzer,
+    защита от path traversal) и GET /data (просмотр реестра DataViewer).
 
 Рефакторинг / архитектура:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
@@ -188,9 +191,10 @@ CLI / прочее:
     gui/constants.py теперь реэкспортит из core.config.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (41 тест, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (116 тестов, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
-    кооперативная отмена, VulnScanner, рендер отчёта. + README.md,
+    кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
+    субдоменов, paywall, web_app, config, features. + README.md,
     requirements-dev.txt, pytest.ini.
   • [СДЕЛАНО] CI: .github/workflows/ci.yml — джобы lint (ruff, правила
     pyflakes; см. ruff.toml), test (pytest, Python 3.11/3.12, headless-PyQt5,
@@ -208,8 +212,11 @@ CLI / прочее:
     (token-interval, инъекция часов для тестов); opt-in троттлинг в активном
     чекере субдоменов (параллелизм + вежливость), scan(active_rate_per_sec=).
   • [СДЕЛАНО] utils/scan_cache.py — TTL-кэш; применён к GeoIP-запросам recon
-    (1ч), чтобы не дёргать ip-api при повторных сканах того же хоста.
-    Остаётся: расширить кэш на другие idempotent-запросы (opt-in).
+    (1ч) и к пассивному перечислению субдоменов — crt.sh + HackerTarget
+    (_PASSIVE_CACHE, 1ч, ключ (источник, домен); fetch/parse вынесены в
+    _fetch_crtsh/_fetch_hackertarget, DNS-резолв остаётся «свежим», сбойный
+    fetch не отравляет кэш). SubdomainScanner.scan(use_cache=) — повторные
+    сканы того же домена не дёргают сеть. Покрыто tests/test_subdomain_cache.
 
 ------------------------------------------------------------------------------
 5. ПРИОРИТЕТНЫЕ ЗАДАЧИ (ближайшая очередь)
