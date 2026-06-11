@@ -150,9 +150,9 @@ CLI / прочее:
     Subdomains (active/takeover), API Keys, Cookie Audit, Full Collection
     рядом с Recon/Capture/Paywall. Generic POST /run/{name}, GET /jobs;
     дэшборд строит кнопки из /jobs (UI и бэкенд не расходятся). + job Images,
-    GET /history (просмотр операций) и безопасный GET /report (отдача отчётов
-    из дерева SiteAnalyzer, защита от path traversal). Остаётся:
-    дизайн-вкладка, просмотр реестра данных (DataViewer).
+    GET /history (просмотр операций), безопасный GET /report (отдача отчётов
+    из дерева SiteAnalyzer, защита от path traversal) и GET /data (просмотр
+    реестра DataViewer). Остаётся: дизайн-вкладка.
 
 Рефакторинг / архитектура:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
@@ -184,9 +184,12 @@ CLI / прочее:
     pyflakes; см. ruff.toml), test (pytest, Python 3.11/3.12, headless-PyQt5,
     offscreen) и build-windows (PyInstaller → артефакт dist/). requirements-dev
     тянет ruff/fastapi/httpx.
-  • Привести зависимости к актуальным версиям и зафиксировать опциональные
-    feature-флаги (playwright/yt-dlp/fastapi).
-  • Написать README и пользовательскую документацию (сейчас отсутствуют).
+  • [СДЕЛАНО] Опциональные feature-флаги: core/features.py — единый детект
+    playwright/yt-dlp/ffmpeg/fastapi/lxml; main_window показывает недоступные
+    в статус-баре, System-вкладка — панель «Возможности» с ✓/✗.
+    Остаётся: пин версий зависимостей.
+  • [СДЕЛАНО] README.md (обзор, установка, запуск GUI/CLI/web, архитектура,
+    плагины, тесты, сборка .exe).
 
 Оптимизация:
   • Параллелить сетевые операции (recon, clone, capture) с rate-limiting.
