@@ -9,9 +9,14 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from utils.browser_utils import SessionBuilder
+from utils.scan_cache import TTLCache
 
 
 _GEOIP_API = 'http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,as'
+
+# GeoIP for a given IP is stable for a long time — cache it for an hour to
+# avoid hammering ip-api.com when scanning the same host repeatedly.
+_GEO_CACHE = TTLCache(ttl_seconds=3600)
 
 _SECURITY_HEADER_NAMES = frozenset({
     'strict-transport-security',
@@ -176,12 +181,16 @@ class ReconEngine:
             return None
 
     def _geoip(self, ip: str) -> Dict:
+        cached = _GEO_CACHE.get(ip)
+        if cached is not None:
+            return cached
         try:
             raw = self._fetch(_GEOIP_API.format(ip=ip))
             if raw:
                 data = json.loads(raw.decode('utf-8', errors='ignore'))
                 if data.get('status') == 'success':
                     data.pop('status', None)
+                    _GEO_CACHE.set(ip, data)   # cache only successful lookups
                     return data
         except Exception:
             pass
