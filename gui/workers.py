@@ -61,7 +61,8 @@ class _SubdomainWorker(QObject):
 
 
 class _CloneWorker(QObject):
-    """Thread worker for FrontendCloner with real-time log + page progress."""
+    """Thread worker for FrontendCloner: forwards log text + structured
+    page progress straight from the engine's callbacks to Qt signals."""
     log_message = pyqtSignal(str)
     progress    = pyqtSignal(int, int)   # (current_page, total_pages)
     finished    = pyqtSignal(dict)
@@ -69,30 +70,16 @@ class _CloneWorker(QObject):
 
     def __init__(self, cloner):
         super().__init__()
-        self._cloner  = cloner
-        self._total   = 0
-        self._current = 0
+        self._cloner = cloner
 
     def run(self):
         try:
-            self._cloner.set_progress_callback(self._on_msg)
+            self._cloner.set_progress_callback(self.log_message.emit)
+            self._cloner.set_page_progress_callback(self.progress.emit)
             result = self._cloner.clone()
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
-
-    def _on_msg(self, msg: str):
-        self.log_message.emit(msg)
-        if 'HTML файлов для обработки:' in msg:
-            try:
-                self._total = int(msg.split(':')[-1].strip())
-                self._current = 0
-                self.progress.emit(0, self._total)
-            except ValueError:
-                pass
-        elif 'Локализую:' in msg:
-            self._current += 1
-            self.progress.emit(self._current, self._total)
 
 
 class _CaptureWorker(QObject):

@@ -182,7 +182,14 @@ CLI / прочее:
     из plugins/*.py (контракт register/TAB_PLUGIN/TAB_PLUGINS; битый плагин
     изолируется, не роняя приложение) — вкладки добавляются без правки ядра.
     См. plugins/README.md и example_tab.py.example.
-  • Унести бизнес-логику из GUI-воркеров в core/ (тонкий UI-слой).
+  • [СДЕЛАНО] Вынос бизнес-логики из GUI-воркеров в core/ (тонкий UI-слой):
+    _CloneWorker больше не парсит русские лог-строки ('HTML файлов для
+    обработки:'/'Локализую:') для вычисления прогресса страниц. FrontendCloner
+    отдаёт структурный прогресс через set_page_progress_callback(current,
+    total) — эмиссия (0,total) при старте и (n,total) на каждой границе
+    страницы (включая пропущенные). Воркер стал тонким форвардером (колбэки →
+    Qt-сигналы), убраны _on_msg и состояние _total/_current. Контракт сигнала
+    progress(int,int) не изменился. Покрыто tests/test_clone_progress.py.
   • [СДЕЛАНО] Унификация конфигурации: core/config.py — единый источник
     путей, дефолтов и load/save для settings.json и targets.json. Заменены
     3 расходящихся загрузчика настроек (main_window, dialogs) и относительные
@@ -191,7 +198,7 @@ CLI / прочее:
     gui/constants.py теперь реэкспортит из core.config.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (116 тестов, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (118 тестов, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
     субдоменов, paywall, web_app, config, features. + README.md,

@@ -49,6 +49,7 @@ class FrontendCloner:
         self.source_dir: Optional[Path] = None
         self.output_dir: Optional[Path] = None
         self.progress_callback: Optional[Callable] = None
+        self.page_progress_callback: Optional[Callable] = None
         self._session = AntiDetectSession()
         self._cache: Dict[str, str] = {}   # original_url -> relative_local_path
         self._failed: List[str] = []
@@ -75,9 +76,22 @@ class FrontendCloner:
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
 
+    def set_page_progress_callback(self, cb: Callable):
+        """Register cb(current, total) for structured per-page progress.
+
+        Emitted with (0, total) once the page count is known and (n, total)
+        after each page boundary. Keeps progress reporting independent of the
+        human-readable log wording, so the UI never has to parse log strings.
+        """
+        self.page_progress_callback = cb
+
     def _log(self, msg: str):
         if self.progress_callback:
             self.progress_callback(msg)
+
+    def _emit_page_progress(self, current: int, total: int):
+        if self.page_progress_callback:
+            self.page_progress_callback(current, total)
 
     # ---------------------------------------------------------------- helpers
 
@@ -254,10 +268,12 @@ class FrontendCloner:
             result['status'] = 'Warning: no HTML files found in source directory'
             return result
 
-        self._log(f"HTML файлов для обработки: {len(html_files)}")
+        total = len(html_files)
+        self._log(f"HTML файлов для обработки: {total}")
+        self._emit_page_progress(0, total)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        for html_file in html_files:
+        for idx, html_file in enumerate(html_files):
             if self._cancel.is_set():
                 result['cancelled'] = True
                 self._log("Отменено пользователем")
@@ -265,6 +281,7 @@ class FrontendCloner:
             page_url = url_map.get(html_file.name, '')
             if not page_url:
                 self._log(f"Пропускаю (нет URL в site_map): {html_file.name}")
+                self._emit_page_progress(idx + 1, total)
                 continue
 
             self._log(f"Локализую: {html_file.name}")
@@ -277,6 +294,7 @@ class FrontendCloner:
             except Exception as e:
                 self._log(f"  Ошибка при обработке {html_file.name}: {e}")
                 result['failed'].append(html_file.name)
+            self._emit_page_progress(idx + 1, total)
 
         result['assets_downloaded'] = len(self._cache)
         result['failed'].extend(self._failed)
