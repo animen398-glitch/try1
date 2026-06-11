@@ -160,6 +160,18 @@ CLI / прочее:
     cookie, collection, dashboard, history, system) + gui/workers.py +
     gui/constants.py. main_window.py ужат с ~2480 до ~280 строк (только
     каркас окна, раннер задач _start_task и общие helpers).
+  • Декомпозиция вкладок — выбран mixin-паттерн (gui/tab_*.py, плоско),
+    НЕ gui/tabs/ + базовый класс. Причина: mixin'ы вплетены в MainWindow,
+    поэтому self._start_task / self.settings доступны напрямую — отдельный
+    «безопасный мост» к раннеру не нужен. Альтернатива на будущее (если
+    понадобится строгая изоляция): standalone-вкладки gui/tabs/<name>.py с
+    base.py:BaseTab(QWidget), хранящим ссылку на окно и проксирующим
+    start_task()/run_async()/settings; plugin_manager уже принимает
+    factory(window)->QWidget, так что миграция не требует правок ядра.
+  • [СДЕЛАНО] Хвост GUI: кнопка «Сбросить историю» в History-вкладке —
+    очищает только таблицу (self._history_rows + QTableWidget), БД
+    operations.db не трогает; флаг _history_view_cleared не даёт lazy-load
+    перезагрузить вид при возврате на вкладку («Обновить» сбрасывает флаг).
   • [СДЕЛАНО] gui/plugin_manager.py — реестр вкладок-«плагинов»: список
     вкладок (TabPlugin: id/title/factory) больше не захардкожен в
     _build_central, а собирается из PluginManager (единый источник правды
