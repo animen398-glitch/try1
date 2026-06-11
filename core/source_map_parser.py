@@ -136,12 +136,11 @@ class SourceMapParser:
         or ``ok=False`` on any network error.
         """
         from utils.browser_utils import SessionBuilder
+        from utils.http_retry import urlopen_text
         try:
-            session = SessionBuilder(profile)
-            req = session.make_request(url)
-            opener = session.build_opener()
-            with opener.open(req, timeout=timeout) as resp:
-                content = resp.read().decode('utf-8', errors='ignore')
+            req = SessionBuilder(profile).make_request(url)
+            # gzip-aware (SessionBuilder advertises gzip) + retry on transient.
+            content = urlopen_text(req, timeout)
         except Exception as e:  # noqa: BLE001 — network failure must not crash a scan
             return {'ok': False, 'error': f'fetch failed: {e}', 'url': url,
                     'sources': []}

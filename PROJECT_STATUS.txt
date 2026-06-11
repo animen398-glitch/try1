@@ -396,7 +396,15 @@ CLI / прочее:
     учёт Retry-After (с потолком), retry на 429/5xx/URLError/timeout и fail-fast
     на permanent (404/parse). Сбой после ретраев деградирует мягко (None/[]).
     + TTL-кэш пассивных источников. Покрыто tests/test_http_retry.py.
-  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~180 тестов, сетенезависимый,
+  • gzip-баг сканера ключей: [ЗАКРЫТО] api_key_extractor читал ответ без
+    распаковки, хотя SessionBuilder шлёт Accept-Encoding: gzip → на сжатых
+    сайтах (большинство) тело было мусором и утечки не находились. Введён общий
+    gzip-aware фетч utils.http_retry.decompress()/urlopen_text(); на него
+    переведены ApiKeyExtractor и source_map_parser.fetch_and_parse. Отчёт
+    сканера теперь пишется в PathManager reports/ (per-host), а не в ~/. Мёртвый
+    SimpleSiteDownloader (тот же баг, нигде не использовался) удалён. Покрыто
+    tests/test_api_key_extractor.py (gzip-регрессия) + test_http_retry.py.
+  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~190 тестов, сетенезависимый,
     Qt headless) + CI (.github/workflows/ci.yml). Legacy examples/test_cases.py
     и ручной run_live_test.py остаются как smoke-сценарии.
   • Документация: [ЗАКРЫТО] есть корневой README.md (обзор/установка/запуск/
