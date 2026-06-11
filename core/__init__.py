@@ -6,12 +6,15 @@ from core.content_capture import SiteContentCapture
 from core.design_analyzer import DesignAnalyzer
 from core.dynamic_analyzer import DynamicAnalyzer
 from core.frontend_cloner import FrontendCloner
-from core.image_extractor import ImageExtractor
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
 from core.subdomain_scanner import SubdomainScanner
-from core.video_downloader import VideoDownloader
 from core.vuln_scanner import VulnScanner
+
+# Media extraction/downloading lives in utils/ (the upgraded, registry-aware
+# implementations): utils.image_processor.ImageExtractor and
+# utils.video_processor.VideoDownloader. The earlier core.* copies were
+# superseded and removed to kill the duplication.
 
 __all__ = [
     'AntiDetectSession',
@@ -23,10 +26,8 @@ __all__ = [
     'DesignAnalyzer',
     'DynamicAnalyzer',
     'FrontendCloner',
-    'ImageExtractor',
     'PaywallBypass',
     'ReconEngine',
     'SubdomainScanner',
-    'VideoDownloader',
     'VulnScanner',
 ]

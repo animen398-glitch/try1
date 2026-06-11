@@ -272,9 +272,13 @@ CLI / прочее:
     ручной run_live_test.py).
   • Документация: отсутствует корневой README; часть логики описана только в
     docstring'ах модулей.
-  • Дублирование: ImageExtractor/VideoDownloader присутствуют и в core/, и в
-    utils/ (utils.image_processor / utils.video_processor) — требует ревизии
-    на предмет дубля кода.
+  • Дублирование: [ЗАКРЫТО] устаревшие core/image_extractor.py и
+    core/video_downloader.py (простые regex/urllib-версии без реестра, дедупа,
+    ffmpeg/cookies) удалены — нигде не использовались, кроме реэкспорта в
+    core/__init__.py. Канонические апгрейженные реализации остаются в utils/
+    (utils.image_processor.ImageExtractor, utils.video_processor.VideoDownloader);
+    весь прикладной код (gui/tab_media, remote/web_app, collection_runner,
+    тесты) уже импортирует именно их.
   • Конфигурация путей к БД и каталогам разнесена между GUI и CLI — стоит
     централизовать.
 
