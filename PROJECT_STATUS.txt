@@ -219,9 +219,20 @@ CLI / прочее:
     хардкоды data/*.db (video/image/design/data_viewer/endpoint_index/
     pattern_analyser/registry/orchestrator) на пути от корня проекта.
     gui/constants.py теперь реэкспортит из core.config.
+  • [В РАБОТЕ — Data Path Context, шаг 1/2] core/paths.py — PathManager:
+    frozen-aware (PyInstaller) выбор путей. Два корня: resource_root
+    (sys._MEIPASS в .exe, иначе корень проекта — read-only бандл) и data_root
+    (записываемые данные: %APPDATA%/<app> в .exe с фолбэками XDG/~/.<app>,
+    иначе корень проекта — сохраняет текущую раскладку data/ в dev). Методы:
+    get_resource_path, get_db_path (создаёт data/), get_workspace_path(domain)
+    (слаг+mkdir), get_reports_path, get_temp_path; синглтон init_path_manager/
+    get_path_manager (инициализация один раз в main.py). Реэкспорт из
+    core.config. Покрыто tests/test_paths.py (13 тестов). Остаётся (шаг 2):
+    инъекция PathManager в PluginManager/TaskRunner и перевод SqliteStore/
+    ImageExtractor/VideoDownloader/orchestrator с хардкодов на PathManager.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (118 тестов, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (131 тест, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
     субдоменов, paywall, web_app, config, features. + README.md,

@@ -12,6 +12,13 @@ import os
 from pathlib import Path
 from typing import List
 
+# PathManager is the frozen-build-aware authority for writable data vs bundled
+# resource locations; re-exported here so config stays the one place to reach
+# for filesystem locations. See core/paths.py.
+from core.paths import (  # noqa: F401
+    APP_NAME, PathManager, get_path_manager, init_path_manager,
+)
+
 ROOT = Path(__file__).resolve().parent.parent
 
 CONFIG_DIR = ROOT / 'configs'
