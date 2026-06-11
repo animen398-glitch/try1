@@ -37,6 +37,7 @@ from core.collection_runner import CollectionRunner
 from core.config import OPERATIONS_DB, REGISTRY_DB
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
+from core.design_analyzer import DesignAnalyzer
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
 from core.subdomain_scanner import SubdomainScanner
@@ -134,6 +135,18 @@ def _run_images(url: str, push: Callable) -> dict:
     return result
 
 
+def _run_design(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'design')
+    cap = SiteContentCapture()
+    cap.configure(url, str(out), max_pages=10)
+    cap.set_progress_callback(lambda m: push(m))
+    cap.run_capture()
+    analyzer = DesignAnalyzer()
+    analyzer.configure(str(out))
+    analyzer.set_progress_callback(lambda m: push(m))
+    return analyzer.analyze()
+
+
 def _run_collection(url: str, push: Callable) -> dict:
     runner = CollectionRunner(max_pages=20)
     runner.set_progress_callback(lambda m: push(m))
@@ -155,6 +168,7 @@ JOBS: Dict[str, dict] = {
     'paywall':    {'label': 'Bypass Paywall',  'fn': _run_paywall},
     'cookies':    {'label': 'Cookie Audit',    'fn': _run_cookies},
     'images':     {'label': 'Images',          'fn': _run_images},
+    'design':     {'label': 'Design Lab',      'fn': _run_design},
     'collection': {'label': 'Full Collection', 'fn': _run_collection},
 }
 
@@ -368,6 +382,8 @@ function metrics(data){
   if(data.live_count!==undefined) rows.push(['Live',data.live_count]);
   if(data.weak!==undefined) rows.push(['Weak cookies',data.weak]);
   if(data.takeover_candidates&&data.takeover_candidates.length) rows.push(['Takeovers',data.takeover_candidates.length]);
+  if(data.stats&&data.stats.total_colors!==undefined) rows.push(['Colors',data.stats.total_colors]);
+  if(data.stats&&data.stats.total_fonts!==undefined) rows.push(['Fonts',data.stats.total_fonts]);
   if(data.report_html) rows.push(['Report',data.report_html]);
   rows.forEach(([l,v])=>{
     const val=(l==='Report')

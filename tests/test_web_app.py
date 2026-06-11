@@ -7,7 +7,7 @@ import remote.web_app as wa
 
 def test_job_registry_covers_gui_features():
     expected = {"recon", "subdomain", "apikeys", "capture",
-                "paywall", "cookies", "images", "collection"}
+                "paywall", "cookies", "images", "design", "collection"}
     assert expected.issubset(set(wa.JOBS))
     for spec in wa.JOBS.values():
         assert spec["label"] and callable(spec["fn"])
