@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QProgressBar, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from core import config
+from core import config, features
 from gui.dialogs import SettingsDialog
 from gui.workers import _TaskHandle, _Worker
 from gui.constants import PLUGINS_DIR
@@ -191,6 +191,13 @@ class MainWindow(QMainWindow, SystemTabMixin, ApiTabMixin,
             self.status_bar.showMessage(
                 "Внимание: WinRAR/rar не найден в PATH — архивация автоматически переключена на ZIP",
                 10000,
+            )
+            return
+        missing = features.missing()
+        if missing:
+            self.status_bar.showMessage(
+                "Опциональные возможности недоступны: " + ", ".join(missing)
+                + " (см. README по установке)", 10000,
             )
 
     # ───────────────────────────── task runner ──────────────────────────────
