@@ -106,6 +106,7 @@ class SubdomainScanner:
         active: bool = False,
         on_update: Optional[Callable[[Dict], None]] = None,
         max_workers: int = 40,
+        active_rate_per_sec: float = 0,
     ) -> Dict:
         """
         Run passive + brute-force enumeration, optionally followed by active
@@ -118,6 +119,7 @@ class SubdomainScanner:
                                live_count, takeover_candidates}
         """
         self._cancel.clear()
+        self._active_rate = active_rate_per_sec
         domain = (
             domain.strip().lower()
             .replace('https://', '').replace('http://', '')
@@ -243,7 +245,7 @@ class SubdomainScanner:
                     on_update: Optional[Callable[[Dict], None]],
                     max_workers: int) -> None:
         """Enrich discovered entries with HTTP liveness + takeover verdicts."""
-        checker = ActiveSubdomainChecker()
+        checker = ActiveSubdomainChecker(rate_per_sec=self._active_rate)
         self._active_checker = checker
 
         def _on_res(res: Dict):

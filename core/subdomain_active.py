@@ -19,6 +19,8 @@ import urllib.error
 import urllib.request
 from typing import Callable, Dict, List, Optional
 
+from utils.rate_limiter import RateLimiter
+
 
 # Each signature: a third-party service, the CNAME suffixes that point at it,
 # and body fingerprints shown when the backing resource is unclaimed/dangling.
@@ -89,9 +91,11 @@ def classify(cname_chain: List[str], body: str) -> Dict:
 class ActiveSubdomainChecker:
     """Runs liveness + takeover checks over a set of hostnames."""
 
-    def __init__(self, timeout: int = 6):
+    def __init__(self, timeout: int = 6, rate_per_sec: float = 0):
         self.timeout = timeout
         self._cancel = threading.Event()
+        # Shared across the worker threads → polite, rate-limited parallelism.
+        self._limiter = RateLimiter(rate_per_sec)
 
     def cancel(self):
         self._cancel.set()
@@ -141,6 +145,7 @@ class ActiveSubdomainChecker:
 
     def check(self, host: str) -> Dict:
         """Full active check for one host: CNAME + liveness + takeover verdict."""
+        self._limiter.acquire()   # throttle across threads when rate-limited
         cname_chain = self._cname_chain(host)
         probe = self._http_probe(host)
         verdict = classify(cname_chain, probe.get('body', ''))

@@ -1,6 +1,11 @@
 """Tests for the active subdomain takeover classifier (network-free)."""
 
-from core.subdomain_active import TAKEOVER_SIGNATURES, classify
+from core.subdomain_active import ActiveSubdomainChecker, TAKEOVER_SIGNATURES, classify
+
+
+def test_checker_rate_limit_opt_in():
+    assert ActiveSubdomainChecker()._limiter.enabled is False
+    assert ActiveSubdomainChecker(rate_per_sec=5)._limiter.enabled is True
 
 
 def test_takeover_flagged_when_cname_and_fingerprint_match():
