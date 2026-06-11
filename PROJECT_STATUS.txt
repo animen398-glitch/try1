@@ -313,7 +313,7 @@ CLI / прочее:
     system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (~180 тестов, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (~190 тестов, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
     субдоменов, paywall, web_app, config, features. + README.md,
