@@ -24,7 +24,9 @@ try:
     import uvicorn
     from fastapi import BackgroundTasks, FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+    from fastapi.responses import (
+        FileResponse, HTMLResponse, JSONResponse, StreamingResponse,
+    )
     from pydantic import BaseModel
     _FASTAPI_OK = True
 except ImportError:
@@ -32,11 +34,17 @@ except ImportError:
 
 from core.api_key_extractor import ApiKeyExtractor
 from core.collection_runner import CollectionRunner
+from core.config import OPERATIONS_DB
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
 from core.subdomain_scanner import SubdomainScanner
+from utils.image_processor import ImageExtractor
+from utils.operation_registry import OperationRegistry
+
+# Reports/output live under here; report serving is restricted to this tree.
+_REPORT_BASE = (Path.home() / 'SiteAnalyzer').resolve()
 
 # ── Global state ──────────────────────────────────────────────────────────────
 _log_queue: asyncio.Queue = asyncio.Queue()
@@ -116,6 +124,15 @@ def _run_cookies(url: str, push: Callable) -> dict:
     return CookieAuditor().audit(url)
 
 
+def _run_images(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'images')
+    ex = ImageExtractor()
+    ex.set_progress_callback(lambda m: push(m))
+    result = ex.extract_images(url, str(out))
+    result['output_dir'] = str(out)
+    return result
+
+
 def _run_collection(url: str, push: Callable) -> dict:
     runner = CollectionRunner(max_pages=20)
     runner.set_progress_callback(lambda m: push(m))
@@ -136,6 +153,7 @@ JOBS: Dict[str, dict] = {
     'capture':    {'label': 'Capture',         'fn': _run_capture},
     'paywall':    {'label': 'Bypass Paywall',  'fn': _run_paywall},
     'cookies':    {'label': 'Cookie Audit',    'fn': _run_cookies},
+    'images':     {'label': 'Images',          'fn': _run_images},
     'collection': {'label': 'Full Collection', 'fn': _run_collection},
 }
 
@@ -150,6 +168,36 @@ def _strip_heavy(result) -> dict:
     if isinstance(result.get('html'), str):
         out['html_size'] = len(result['html'])
     return out
+
+
+def _safe_report_path(file: str) -> Optional[Path]:
+    """Resolve a report path, but only inside the SiteAnalyzer tree.
+
+    Guards against path traversal: returns the Path only if it stays under
+    _REPORT_BASE, exists, and is an .html file; otherwise None.
+    """
+    if not file:
+        return None
+    try:
+        candidate = (_REPORT_BASE / file).resolve() if not Path(file).is_absolute() \
+            else Path(file).resolve()
+    except Exception:
+        return None
+    try:
+        candidate.relative_to(_REPORT_BASE)
+    except ValueError:
+        return None
+    if candidate.is_file() and candidate.suffix.lower() == '.html':
+        return candidate
+    return None
+
+
+def _recent_history(limit: int = 100) -> list:
+    """Read-only recent operations from the operations registry."""
+    try:
+        return OperationRegistry(db_path=str(OPERATIONS_DB)).history(limit=limit)
+    except Exception:
+        return []
 
 
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
@@ -229,6 +277,7 @@ margin-right:5px;vertical-align:middle}
     </div>
     <div class="btns" id="jobbtns">
       <button class="btn er" id="b-clr" onclick="clr()">Clear</button>
+      <button class="btn sec" onclick="showHistory()">History</button>
     </div>
   </div>
 
@@ -309,7 +358,10 @@ function metrics(data){
   if(data.takeover_candidates&&data.takeover_candidates.length) rows.push(['Takeovers',data.takeover_candidates.length]);
   if(data.report_html) rows.push(['Report',data.report_html]);
   rows.forEach(([l,v])=>{
-    mg.innerHTML+=`<div class="met"><div class="mlb">${l}</div><div class="mvl">${v}</div></div>`;
+    const val=(l==='Report')
+      ? `<a href="/report?file=${encodeURIComponent(v)}" target="_blank" style="color:var(--ac)">open report</a>`
+      : v;
+    mg.innerHTML+=`<div class="met"><div class="mlb">${l}</div><div class="mvl">${val}</div></div>`;
   });
   (data.cms||[]).forEach(c=>ba.innerHTML+=`<span class="bdg bcms">${c}</span>`);
   if(data.geo?.as) ba.innerHTML+=`<span class="bdg bgeo">${data.geo.as}</span>`;
@@ -344,6 +396,17 @@ async function go(name){
     else log('Job started: '+d.job_id,'ok');
   }catch(ex){log('Request failed: '+ex.message,'er');}
   setTimeout(()=>setBusy(false),1500);
+}
+
+async function showHistory(){
+  try{
+    const r=await fetch('/history'); const rows=await r.json();
+    log('History: '+rows.length+' operation(s)','data');
+    rows.slice(0,20).forEach(o=>{
+      log('#'+o.id+' '+o.phase+' ['+o.status+'] '+(o.target||''),
+          o.status==='failed'?'er':(o.status==='success'?'ok':'info'));
+    });
+  }catch(ex){log('History failed: '+ex.message,'er');}
 }
 
 loadJobs();
@@ -442,6 +505,17 @@ if _FASTAPI_OK:
     @app.get('/results')
     async def results():
         return JSONResponse(_job_results)
+
+    @app.get('/history')
+    async def history():
+        return JSONResponse(_recent_history(100))
+
+    @app.get('/report')
+    async def report(file: str):
+        path = _safe_report_path(file)
+        if path is None:
+            return JSONResponse({'error': 'report not found'}, status_code=404)
+        return FileResponse(str(path), media_type='text/html')
 
 else:
     # Stub so import never crashes even without fastapi installed

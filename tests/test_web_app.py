@@ -7,10 +7,43 @@ import remote.web_app as wa
 
 def test_job_registry_covers_gui_features():
     expected = {"recon", "subdomain", "apikeys", "capture",
-                "paywall", "cookies", "collection"}
+                "paywall", "cookies", "images", "collection"}
     assert expected.issubset(set(wa.JOBS))
     for spec in wa.JOBS.values():
         assert spec["label"] and callable(spec["fn"])
+
+
+def test_safe_report_path_allows_html_inside_base(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, "_REPORT_BASE", tmp_path.resolve())
+    report = tmp_path / "proj" / "report.html"
+    report.parent.mkdir(parents=True)
+    report.write_text("<html></html>", encoding="utf-8")
+    assert wa._safe_report_path(str(report)) == report.resolve()
+    # relative-to-base form also works
+    assert wa._safe_report_path("proj/report.html") == report.resolve()
+
+
+def test_safe_report_path_blocks_traversal(tmp_path, monkeypatch):
+    base = tmp_path / "base"
+    base.mkdir()
+    monkeypatch.setattr(wa, "_REPORT_BASE", base.resolve())
+    secret = tmp_path / "secret.html"
+    secret.write_text("<html>secret</html>", encoding="utf-8")
+    assert wa._safe_report_path(str(secret)) is None          # outside base
+    assert wa._safe_report_path("../secret.html") is None       # traversal
+    assert wa._safe_report_path("") is None
+
+
+def test_safe_report_path_rejects_non_html(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, "_REPORT_BASE", tmp_path.resolve())
+    j = tmp_path / "report.json"
+    j.write_text("{}", encoding="utf-8")
+    assert wa._safe_report_path(str(j)) is None
+    assert wa._safe_report_path(str(tmp_path / "missing.html")) is None
+
+
+def test_recent_history_returns_list():
+    assert isinstance(wa._recent_history(5), list)
 
 
 def test_strip_heavy_drops_large_payloads():
@@ -40,6 +73,12 @@ def test_dashboard_is_registry_driven():
     assert "/jobs" in html and "loadJobs()" in html and "/run/" in html
     # The old hard-coded per-job endpoints are gone.
     assert "go('/scan'" not in html
+
+
+def test_dashboard_has_history_and_report():
+    html = wa._DASHBOARD
+    assert "showHistory()" in html and "/history" in html
+    assert "/report?file=" in html
 
 
 # ── Optional: exercise the live endpoints if a test client is available ──────
