@@ -173,12 +173,19 @@ CLI / прочее:
     main_window.py в gui/window_chrome.py (WindowChromeMixin): _build_menu,
     _build_central (сборка таб-бара из PluginManager), _build_statusbar,
     _report_plugin_errors, _check_dependencies + меню-диалоги _open_settings/
-    _show_about. main_window.py: 242 → 145 строк. Окно строится headless
-    (13 вкладок, 2 меню, статус-бар/индикатор задач/прогресс-бар на месте),
-    118 тестов зелёные. Остаётся (по желанию): вынести общие helpers
-    (_domain_slug/_folder_size/_fmt_size/_make_archive/_save_video_log/
-    _browse/_browse_file/_set_busy) в gui/window_helpers.py — после этого
-    MainWindow станет чистой сборкой mixin'ов + __init__/closeEvent.
+    _show_about. main_window.py: 242 → 145 строк.
+  • [СДЕЛАНО, шаг 3 — ФИНАЛ декомпозиции каркаса] Общие helpers вынесены из
+    main_window.py в gui/window_helpers.py (WindowHelpersMixin): _domain_slug,
+    _folder_size, _fmt_size, _make_archive, _save_video_log, _browse,
+    _browse_file, _set_busy + _save_target; _load_settings заинлайнен в
+    __init__ (config.load_settings). ИТОГ: MainWindow — чистый контейнер
+    (75 строк), на самом классе определён только closeEvent; всё остальное
+    приходит из mixin'ов (TaskRunnerMixin + WindowChromeMixin +
+    WindowHelpersMixin + 12 per-tab mixin'ов). Раскладка каркаса:
+    main_window 75 / task_runner 115 / window_chrome 126 / window_helpers 86
+    строк. Окно строится headless (13 вкладок), 118 тестов зелёные, ruff чист.
+    Контракты self._start_task/_run_async/_set_busy/_browse/… для вкладок не
+    изменились (резолвятся через mixin'ы). Полный путь: ~2480 → 75 строк.
   • Декомпозиция вкладок — выбран mixin-паттерн (gui/tab_*.py, плоско),
     НЕ gui/tabs/ + базовый класс. Причина: mixin'ы вплетены в MainWindow,
     поэтому self._start_task / self.settings доступны напрямую — отдельный
