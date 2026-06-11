@@ -26,10 +26,8 @@ def test_api_key_patterns():
     var awsKey = 'AKIAIOSFODNN7EXAMPLE';
     """
     found = {}
-    for key_type, pattern in extractor.KEY_PATTERNS.items():
-        matches = re.findall(pattern, test_html, re.IGNORECASE)
-        if matches:
-            found[key_type] = matches
+    for finding in extractor._scanner.scan_text(test_html):
+        found.setdefault(finding['type'], []).append(finding['match'])
 
     print(f"[PASS] API patterns — найдено типов: {len(found)}")
     for k, v in found.items():

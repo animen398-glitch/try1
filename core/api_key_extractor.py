@@ -3,6 +3,7 @@ import urllib.error
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from core.secret_scanner import SecretScanner
 from utils.browser_utils import SessionBuilder
 
 
@@ -10,17 +11,13 @@ class ApiKeyExtractor:
     """
     Безопасный инструмент для поиска забытых API-ключей и токенов
     в открытом исходном коде страниц (HTML/JS).
+
+    Детектирование делегировано общему core.secret_scanner.SecretScanner —
+    единому набору правил для всего приложения.
     """
 
-    KEY_PATTERNS = {
-        'Generic API Key': r'api[_-]?key\s*[:=]\s*["\']([a-zA-Z0-9_\-]{16,})["\']',
-        'Firebase API Key': r'apiKey\s*:\s*["\']([a-zA-Z0-9_\-]{35,})["\']',
-        'Google Cloud / Maps': r'AIzaSy[a-zA-Z0-9_\-]{33}',
-        'AWS Access Key ID': r'AKIA[0-9A-Z]{16}',
-        'Slack Token': r'xox[bapr]-[0-9]{12}-[0-9]{12}-[a-zA-Z0-9]{24}',
-    }
-
     def __init__(self):
+        self._scanner = SecretScanner()
         self.target_url: Optional[str] = None
         self.extracted_keys: Dict[str, List[str]] = {}
         self._profile: str = 'chrome_windows'
@@ -53,12 +50,11 @@ class ApiKeyExtractor:
                 content = response.read().decode('utf-8', errors='ignore')
 
             total_found = 0
-            for key_type, pattern in self.KEY_PATTERNS.items():
-                matches = re.findall(pattern, content, re.IGNORECASE)
-                if matches:
-                    unique_matches = list(set(matches))
-                    self.extracted_keys[key_type] = unique_matches
-                    total_found += len(unique_matches)
+            for finding in self._scanner.scan_text(content, self.target_url):
+                bucket = self.extracted_keys.setdefault(finding['type'], [])
+                if finding['match'] not in bucket:
+                    bucket.append(finding['match'])
+                    total_found += 1
 
             result['status'] = 'Success'
             result['keys_found'] = total_found

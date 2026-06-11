@@ -2,7 +2,9 @@ import asyncio
 import concurrent.futures
 import re
 from typing import Callable, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
+
+from core.secret_scanner import SecretScanner
 
 try:
     from playwright.async_api import async_playwright
@@ -17,21 +19,48 @@ _AUTH_HEADER_NAMES = frozenset({
     'x-session-token', 'x-user-token', 'x-app-token',
 })
 
-# High-precision patterns for known secret formats
-_SECRET_PATTERNS: List[tuple] = [
-    ('JWT',         re.compile(r'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+')),
-    ('AWS Key ID',  re.compile(r'\bAKIA[0-9A-Z]{16}\b')),
-    ('Google API',  re.compile(r'\bAIza[0-9A-Za-z_\-]{35}\b')),
-    ('Stripe sk',   re.compile(r'\bsk_live_[0-9a-zA-Z]{24,}\b')),
-    ('Stripe pk',   re.compile(r'\bpk_live_[0-9a-zA-Z]{24,}\b')),
-    ('GitHub PAT',  re.compile(r'\bgh[pousr]_[A-Za-z0-9_]{36,}\b')),
-    ('Slack Token', re.compile(r'\bxox[baprs]-[0-9A-Za-z\-]{10,}\b')),
-    ('Bearer',      re.compile(r'\bBearer\s+([A-Za-z0-9._~+/=\-]{20,})')),
-    ('Firebase',    re.compile(r'\bAIza[0-9A-Za-z_-]{35}\b')),
-    ('Twilio',      re.compile(r'\bSK[0-9a-fA-F]{32}\b')),
-    ('Mailgun',     re.compile(r'\bkey-[0-9a-zA-Z]{32}\b')),
-    ('SendGrid',    re.compile(r'\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b')),
-]
+# Credential detection is delegated to the shared scanner (core/secret_scanner)
+# so JSON bodies, static JS and the Security Audit tab all use one rule set.
+_SCANNER = SecretScanner()
+
+# URL strings hiding inside JS bundles: absolute URLs, plus quoted root-relative
+# paths that look like API endpoints (resolved against the page later).
+_ABS_URL_RE = re.compile(r'''https?://[^\s"'`<>()\\]{4,}''')
+_API_PATH_RE = re.compile(
+    r'''["'`](/(?:api|v\d+|graphql|gql|rest|auth|oauth|internal)[A-Za-z0-9_\-/.]*)["'`]''')
+# Trailing characters that regularly cling to a URL match but are not part of it.
+_URL_TRAILING = '",\');:`>}]'
+
+
+def extract_js_urls(text: str, base_url: str = '', limit: int = 200) -> List[str]:
+    """Pull endpoint-looking URL strings out of a JS file body.
+
+    Returns de-duplicated absolute URLs found verbatim plus API-shaped relative
+    paths resolved against ``base_url``. Pure and bounded (``limit``) so it is
+    cheap to run inline while intercepting traffic in a worker thread.
+    """
+    if not text:
+        return []
+    found: List[str] = []
+    seen: set = set()
+
+    def add(u: str):
+        u = u.strip().rstrip(_URL_TRAILING)
+        if u and u not in seen:
+            seen.add(u)
+            found.append(u)
+
+    for m in _ABS_URL_RE.finditer(text):
+        add(m.group(0))
+        if len(found) >= limit:
+            return found
+    for m in _API_PATH_RE.finditer(text):
+        path = m.group(1)
+        add(urljoin(base_url, path) if base_url else path)
+        if len(found) >= limit:
+            break
+    return found
+
 
 # JSON key names that semantically indicate a credential
 _SECRET_KEY_NAMES = frozenset({
@@ -67,19 +96,17 @@ def _scan_json_for_secrets(body: object, source_url: str) -> List[Dict]:
         if isinstance(val, str):
             if val in seen_values or len(val) < 8:
                 return
-            # 1. Pattern-based (high precision)
-            for pat_name, pattern in _SECRET_PATTERNS:
-                m = pattern.search(val)
-                if m:
-                    matched = m.group(0)
-                    seen_values.add(val)
-                    found.append({
-                        'key': key,
-                        'type': pat_name,
-                        'preview': matched[:24] + '...' if len(matched) > 24 else matched,
-                        'source_url': source_url,
-                    })
-                    return
+            # 1. Pattern-based (high precision) — shared rule set.
+            hits = _SCANNER.scan_text(val)
+            if hits:
+                seen_values.add(val)
+                found.append({
+                    'key': key,
+                    'type': hits[0]['type'],
+                    'preview': hits[0]['preview'],
+                    'source_url': source_url,
+                })
+                return
             # 2. Semantic key name + secret-looking value (lower precision)
             key_norm = key.lower().replace('-', '_').replace(' ', '_')
             if key_norm in _SECRET_KEY_NAMES and _looks_like_secret(val):
@@ -147,7 +174,9 @@ class DynamicAnalyzer:
         endpoints: List[Dict] = []
         auth_headers: List[Dict] = []
         json_structures: List[Dict] = []
+        static_secrets: List[Dict] = []
         seen: set = set()
+        js_seen: set = set()
 
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(
@@ -164,10 +193,47 @@ class DynamicAnalyzer:
             )
             page = await ctx.new_page()
 
-            async def on_response(response):
+            async def scan_js_body(response, js_url):
+                """Mine a static JS bundle for endpoint URLs + leaked secrets."""
                 if len(endpoints) >= self.max_responses:
                     return
+                try:
+                    text = await response.text()
+                except Exception:
+                    return
+                for hit in _SCANNER.scan_text(text, js_url):
+                    static_secrets.append({
+                        'key': '(static-js)',
+                        'type': hit['type'],
+                        'preview': hit['preview'],
+                        'source_url': js_url,
+                    })
+                for u in extract_js_urls(text, base_url=js_url):
+                    if u in seen or len(endpoints) >= self.max_responses:
+                        continue
+                    seen.add(u)
+                    parsed = urlparse(u)
+                    endpoints.append({
+                        'url': u,
+                        'method': 'JS-REF',     # referenced in code, not requested
+                        'status': None,
+                        'host': parsed.netloc,
+                        'path': parsed.path,
+                        'query': parsed.query[:120] if parsed.query else '',
+                        'source': 'static-js',
+                        'found_in': js_url,
+                    })
+
+            async def on_response(response):
                 req = response.request
+                # Static JS bundles: mine the body for endpoint URLs and any
+                # leaked secrets, then register the URLs as discovered endpoints.
+                if req.resource_type == 'script' and req.url not in js_seen:
+                    js_seen.add(req.url)
+                    await scan_js_body(response, req.url)
+                    return
+                if len(endpoints) >= self.max_responses:
+                    return
                 if req.resource_type not in ('xhr', 'fetch'):
                     return
                 req_url = req.url
@@ -267,10 +333,15 @@ class DynamicAnalyzer:
             await browser.close()
 
         all_secrets = [s for js in json_structures for s in js.get('secrets_found', [])]
+        all_secrets.extend(static_secrets)
+        # JS-REF endpoints are discovered in code, not observed calls — count
+        # them separately so total_api_calls stays "what the page actually hit".
+        observed = [e for e in endpoints if e.get('method') != 'JS-REF']
         return {
             'status': 'Success',
             'url': url,
-            'total_api_calls': len(endpoints),
+            'total_api_calls': len(observed),
+            'discovered_endpoints': len(endpoints) - len(observed),
             'unique_hosts': len({urlparse(e['url']).netloc for e in endpoints}),
             'endpoints': endpoints,
             'auth_headers': auth_headers,

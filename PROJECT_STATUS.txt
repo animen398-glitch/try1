@@ -1,6 +1,6 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-11
+  Дата отчёта: 2026-06-11 (Data Path Context — шаг 2/2 завершён)
 ==============================================================================
 
 ------------------------------------------------------------------------------
@@ -125,6 +125,30 @@ CLI / прочее:
         и вылетов.
 
 Функциональность (ранее запланированное):
+  • [В РАБОТЕ — Интеграция vendor-инструментов, Native-Python подход] Вместо
+    импорта чужого кода (4 из 6 vendor/-инструментов не Python: gitleaks=Go,
+    JSMap=HTML, tuitube=TS, WebRecon=только README) выбран перенос полезной
+    логики в чистый Python, вписанный в recon-домен. [СДЕЛАНО — бэкенд
+    Security Audit]: core/secret_scanner.py — единый, прецизионный набор
+    secret-правил (SecretScanner/RULES), заменивший 2 разошедшихся набора
+    (api_key_extractor.KEY_PATTERNS и dynamic_analyzer._SECRET_PATTERNS);
+    api_key_extractor и dynamic_analyzer теперь используют его (один источник
+    правды). core/source_map_parser.py — headless-аналог JSMap-Inspector:
+    parse(.js.map), extract_sources/extract_sources_content, find_map_urls
+    (//# sourceMappingURL=, относит./data-URI), scan_for_secrets по
+    sourcesContent (указывает оригинальный путь утечки); чистый парсинг,
+    сеть опциональна (fetch_and_parse — только из воркера). dynamic_analyzer:
+    при перехвате static-JS тянет тело, extract_js_urls() достаёт URL-строки
+    (абсолютные + api-подобные относительные → urljoin) и регистрирует их в
+    endpoints как method='JS-REF'/source='static-js' (total_api_calls считает
+    только реальные вызовы, discovered_endpoints — отдельно); секреты из JS
+    идут в secrets_found. Всё в существующем worker-потоке (ThreadPoolExecutor),
+    GUI не блокируется. Без новых зависимостей (stdlib). Покрыто
+    tests/test_secret_scanner.py, test_source_map_parser.py,
+    test_dynamic_js_urls.py (19 тестов). ОСТАЁТСЯ: GUI-вкладка 'Security Audit'
+    (TabPlugin: secret_scanner+source_map_parser через window._start_task) и
+    Scrapy-плагин (подпроцессом — Twisted несовместим с Qt-циклом; добавит
+    scrapy в requirements). tuitube/WebRecon — исключены (нет выигрыша/кода).
   • [СДЕЛАНО] VulnScanner: cookie-findings (SameSite=None без Secure → High;
     слабые куки → Medium) и summarize() с severity-счётом и risk_score.
     CollectionRunner получил фазы Cookie Audit + Vuln Scan (security/
@@ -219,7 +243,7 @@ CLI / прочее:
     хардкоды data/*.db (video/image/design/data_viewer/endpoint_index/
     pattern_analyser/registry/orchestrator) на пути от корня проекта.
     gui/constants.py теперь реэкспортит из core.config.
-  • [В РАБОТЕ — Data Path Context, шаг 1/2] core/paths.py — PathManager:
+  • [СДЕЛАНО — Data Path Context, шаг 1/2] core/paths.py — PathManager:
     frozen-aware (PyInstaller) выбор путей. Два корня: resource_root
     (sys._MEIPASS в .exe, иначе корень проекта — read-only бандл) и data_root
     (записываемые данные: %APPDATA%/<app> в .exe с фолбэками XDG/~/.<app>,
@@ -227,9 +251,26 @@ CLI / прочее:
     get_resource_path, get_db_path (создаёт data/), get_workspace_path(domain)
     (слаг+mkdir), get_reports_path, get_temp_path; синглтон init_path_manager/
     get_path_manager (инициализация один раз в main.py). Реэкспорт из
-    core.config. Покрыто tests/test_paths.py (13 тестов). Остаётся (шаг 2):
-    инъекция PathManager в PluginManager/TaskRunner и перевод SqliteStore/
-    ImageExtractor/VideoDownloader/orchestrator с хардкодов на PathManager.
+    core.config. Покрыто tests/test_paths.py (13 тестов).
+  • [СДЕЛАНО — Data Path Context, шаг 2/2 — ФИНАЛ] PathManager стал единым
+    источником путей для всех потребителей. config.py — чокпойнт: CONFIG_DIR/
+    DATA_DIR/OPERATIONS_DB/REGISTRY_DB/SETTINGS_FILE/TARGETS_FILE/
+    LIVE_TEST_OUTPUT берут data_root, PLUGINS_DIR — resource_root, поэтому
+    ImageExtractor/VideoDownloader/SqliteStore-наследники (OperationRegistry,
+    DataRegistry) и orchestrator мигрируют транзитивно через импорт из config
+    (в dev пути байт-в-байт прежние). Точечно добиты реальные хардкоды:
+    (1) utils/system_logger.py — 'data/system.log' (писал в CWD, ломался во
+    frozen) → лениво через get_path_manager().get_db_path('system.log');
+    (2) utils/operation_registry.py — дефолт 'operations.db' (фолбэк в CWD) →
+    None→OPERATIONS_DB, симметрично DataRegistry→REGISTRY_DB; (3) main.py и
+    main_orchestrator.py зовут init_path_manager() до импорта core.config (GUI
+    и CLI-входы единообразны). Инъекция в GUI: MainWindow.__init__ ставит
+    self.paths = get_path_manager() ДО _build_central, поэтому раннер задач
+    (TaskRunnerMixin, mixin на окне) и плагины/вкладки (factory(window))
+    достают PathManager через window.paths — задокументировано в
+    plugins/README.md и продемонстрировано в example_tab.py.example. Покрыто
+    tests/test_config.py (paths-derive-from-PM, registry-default-uses-PM,
+    system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
 
 Качество / инфраструктура:
   • [СДЕЛАНО] pytest-набор tests/ (131 тест, сетенезависимый, Qt headless):
