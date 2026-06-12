@@ -1,0 +1,243 @@
+"""core/executive_summary.py
+Deterministic, offline executive summary over a Full Collection report.
+
+Given the aggregated ``report`` dict that ``CollectionRunner`` builds (its
+``phases`` — recon / api / capture / cookies / vulns …), this derives a single
+risk verdict, the key findings and concrete recommendations — entirely from
+data the pipeline already produced. No model, no network, no new dependency
+(architectural invariants I1/I2/I5): the same inputs always yield the same
+summary, so it is trivially unit-testable.
+
+This is the deterministic core of the "AI Executive Summary" candidate minus
+the LLM — it covers the bulk of the value (risk overview + recommendations)
+without the nondeterminism or runtime surface of a local model.
+"""
+
+import html
+import json
+from pathlib import Path
+from typing import Dict, List, Optional
+
+# Risk verdict -> banner colour (shared palette with the vuln/site-map reports).
+RISK_COLORS = {
+    'Critical': '#b71c1c',
+    'High':     '#c62828',
+    'Medium':   '#f9a825',
+    'Low':      '#2e7d32',
+    'Clean':    '#2e7d32',
+}
+RISK_ORDER = ['Critical', 'High', 'Medium', 'Low', 'Clean']
+
+
+def _phase_data(report: Dict, name: str) -> Dict:
+    phase = report.get('phases', {}).get(name, {})
+    data = phase.get('data', {}) if isinstance(phase, dict) else {}
+    return data if isinstance(data, dict) else {}
+
+
+def _int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _risk_level(score: int, high: int, secrets: int) -> str:
+    """Map weighted signals to a verdict. Thresholds are intentionally simple
+    and fixed so the verdict is reproducible and easy to reason about."""
+    if secrets > 0 or high >= 3 or score >= 20:
+        return 'Critical'
+    if high >= 1 or score >= 10:
+        return 'High'
+    if score >= 4:
+        return 'Medium'
+    if score >= 1:
+        return 'Low'
+    return 'Clean'
+
+
+def build_summary(report: Dict) -> Dict:
+    """Derive a structured executive summary from a collection ``report``.
+
+    Tolerant of missing/partial phases — every phase is optional, so a report
+    that only ran Recon still produces a coherent (low-signal) summary.
+    """
+    recon = _phase_data(report, 'recon')
+    api = _phase_data(report, 'api')
+    capture = _phase_data(report, 'capture')
+    cookies = _phase_data(report, 'cookies')
+
+    vulns = report.get('phases', {}).get('vulns', {})
+    vsum = vulns.get('summary', {}) if isinstance(vulns, dict) else {}
+    findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
+
+    high = _int(vsum.get('high'))
+    medium = _int(vsum.get('medium'))
+    info = _int(vsum.get('info'))
+    vuln_score = _int(vsum.get('risk_score'))
+    secrets = _int(api.get('keys_found'))
+    weak_cookies = _int(cookies.get('weak'))
+
+    status_summary = capture.get('status_summary', {}) or {}
+    non_ok = (_int(status_summary.get('4xx')) + _int(status_summary.get('5xx'))
+              + _int(status_summary.get('err')))
+    pages = _int(capture.get('pages_captured'))
+
+    # Leaked secrets and weak cookies are first-class signals on top of the
+    # vuln-weighted score (secrets weigh heaviest — client-side key exposure).
+    score = vuln_score + secrets * 5 + weak_cookies * 2
+    level = _risk_level(score, high, secrets)
+
+    metrics = {
+        'high': high, 'medium': medium, 'info': info,
+        'secrets': secrets, 'weak_cookies': weak_cookies,
+        'non_ok_pages': non_ok, 'pages': pages,
+        'cms': recon.get('cms') or [],
+    }
+
+    key_findings: List[str] = []
+    if secrets:
+        key_findings.append(f'Утечки секретов/ключей: {secrets}')
+    if high:
+        key_findings.append(f'Высокосерьёзных уязвимостей: {high}')
+    if medium:
+        key_findings.append(f'Средних замечаний: {medium}')
+    if weak_cookies:
+        key_findings.append(f'Слабых cookie: {weak_cookies}')
+    if non_ok:
+        key_findings.append(f'Страниц с не-2xx статусом: {non_ok}')
+
+    # The most severe finding titles, in severity order, for quick context.
+    top_findings = [
+        f.get('title', '') for sev in ('High', 'Medium')
+        for f in findings if f.get('severity') == sev
+    ][:5]
+
+    recommendations: List[str] = []
+    if secrets:
+        recommendations.append(
+            f'Отозвать и заменить {secrets} утёкших ключ(а/ей); '
+            f'убрать секреты из клиентского кода.')
+    if high:
+        recommendations.append(
+            f'Устранить {high} высокосерьёзных замечани(я/й) '
+            f'(см. раздел Vulnerabilities).')
+    if weak_cookies:
+        recommendations.append(
+            f'Усилить {weak_cookies} cookie: выставить Secure, HttpOnly, SameSite.')
+    if non_ok:
+        recommendations.append(
+            f'Проверить {non_ok} страниц(ы) с не-2xx статусом (см. Site Map).')
+    if medium and not high:
+        recommendations.append(
+            f'Рассмотреть {medium} средни(х) замечани(й).')
+    if not recommendations:
+        recommendations.append(
+            'Существенных рисков не выявлено; повторить скан после изменений.')
+
+    return {
+        'risk_level': level,
+        'risk_score': score,
+        'metrics': metrics,
+        'key_findings': key_findings,
+        'top_findings': top_findings,
+        'recommendations': recommendations,
+    }
+
+
+def load_latest_summary(search_dirs: List) -> Optional[Dict]:
+    """Find the newest ``report.json`` under ``search_dirs`` and return its
+    executive summary (building one on the fly for older reports that predate
+    the field). Read-only; returns ``None`` if nothing usable is found.
+
+    Lets the Dashboard reuse the last Full Collection verdict without re-running
+    any scan — a pure aggregation over data already on disk.
+    """
+    candidates: List[Path] = []
+    for d in search_dirs:
+        if not d:
+            continue
+        base = Path(d).expanduser()
+        if not base.is_dir():
+            continue
+        # Collection reports live at <base>/<domain>_<ts>/report.json (one level
+        # deep). Bounded patterns avoid an unbounded '**' walk of a large
+        # output tree (a Dashboard refresh must stay cheap).
+        for pattern in ('report.json', '*/report.json'):
+            candidates.extend(base.glob(pattern))
+    if not candidates:
+        return None
+    for path in sorted(candidates, key=lambda f: f.stat().st_mtime, reverse=True):
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+        except Exception:
+            continue
+        summary = report.get('executive_summary') or build_summary(report)
+        summary['_source'] = str(path)
+        return summary
+    return None
+
+
+def display_cards(sec: Optional[Dict]) -> Dict:
+    """Flatten a summary into display-ready strings for the Dashboard cards.
+
+    ``None`` → an empty-state payload. Keeps formatting/routing in core so the
+    GUI method stays a thin setter (architectural invariant I4) and the logic
+    is testable without Qt.
+    """
+    if not sec:
+        return {'available': False, 'risk_level': '—', 'risk_color': '#888',
+                'risk_score': '0', 'secrets': '0', 'high': '0', 'medium': '0',
+                'source': ''}
+    metrics = sec.get('metrics', {})
+    level = sec.get('risk_level', '—')
+    return {
+        'available': True,
+        'risk_level': level,
+        'risk_color': RISK_COLORS.get(level, '#888'),
+        'risk_score': str(sec.get('risk_score', 0)),
+        'secrets': str(metrics.get('secrets', 0)),
+        'high': str(metrics.get('high', 0)),
+        'medium': str(metrics.get('medium', 0)),
+        'source': sec.get('_source', ''),
+    }
+
+
+def render_html(summary: Dict) -> str:
+    """Render the executive summary as a self-contained inline-CSS fragment."""
+    e = html.escape
+    level = summary.get('risk_level', 'Clean')
+    color = RISK_COLORS.get(level, '#555')
+    score = summary.get('risk_score', 0)
+
+    banner = (
+        f'<div style="background:{color};color:#fff;border-radius:6px;'
+        f'padding:12px 16px;margin:8px 0;">'
+        f'<span style="font-size:13px;opacity:.85;">Общий риск</span><br>'
+        f'<span style="font-size:22px;font-weight:bold;">{e(level)}</span>'
+        f'<span style="font-size:14px;opacity:.9;"> · risk score '
+        f'{e(str(score))}</span></div>'
+    )
+
+    def bullets(items, empty_note=''):
+        if not items:
+            return (f'<p style="font-size:13px;color:#2e7d32;">{e(empty_note)}</p>'
+                    if empty_note else '')
+        lis = ''.join(f'<li style="margin:3px 0;">{e(str(i))}</li>' for i in items)
+        return f'<ul style="font-size:13px;margin:6px 0;padding-left:20px;">{lis}</ul>'
+
+    findings = bullets(summary.get('key_findings', []),
+                       'Значимых находок не зафиксировано.')
+    recs = bullets(summary.get('recommendations', []))
+
+    top = summary.get('top_findings', [])
+    top_html = (
+        f'<p style="font-size:12px;color:#666;margin:6px 0 0;">Ключевые: '
+        f'{e("; ".join(t for t in top if t))}</p>' if any(top) else ''
+    )
+
+    return (
+        f'{banner}'
+        f'<h3 style="font-size:14px;margin:10px 0 2px;">Находки</h3>{findings}{top_html}'
+        f'<h3 style="font-size:14px;margin:12px 0 2px;">Рекомендации</h3>{recs}'
+    )

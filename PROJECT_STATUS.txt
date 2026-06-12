@@ -1,6 +1,7 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-12 (Hardening: 8 багов + 4 «мёртвых» настройки; тесты ~269)
+  Дата отчёта: 2026-06-12 (Next-Gen HIGH VALUE H1–H4: Site Map / Executive
+  Summary / Dashboard Security Overview / Reporting 2.0; тесты ~303)
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -481,5 +482,226 @@ CLI / прочее:
     test_capture_analysis, test_results_display + новая база-характеризация
     EndpointIndex/PatternAnalyser/DesignAnalyzer. Параллельно: фикс устаревшей
     подписи/тултипа passive-recon в subdomain-вкладке (+ AlienVault/Anubis).
+
+==============================================================================
+  [NEW ROADMAP — NEXT GENERATION FEATURES]
+  Архитектурный аудит 2026-06-12. Решения приняты как Senior Software Architect:
+  не «реализовать список фич», а определить, что вписывается в архитектуру, а
+  что создаст технический долг.
+==============================================================================
+
+------------------------------------------------------------------------------
+N1. АРХИТЕКТУРНЫЕ ИНВАРИАНТЫ (рамки, через которые оценивались кандидаты)
+------------------------------------------------------------------------------
+Эти свойства уже зацементированы в проекте; любая новая фича обязана их
+сохранить, иначе она — технический долг по определению:
+
+  (I1) Stdlib-first / тонкие зависимости. Ядро держится на stdlib + requests/
+       bs4/lxml. Тяжёлое (Playwright/yt-dlp/ffmpeg/fastapi/scrapy) — ОПЦИОНАЛЬНО,
+       детектится в core/features.py, деградирует мягко и НЕ бандлится в .exe.
+  (I2) Оффлайн-самодостаточность отчётов. report.html и vuln-отчёт — один файл
+       с inline-CSS, без CDN/JS-зависимостей, открывается без сети. Это
+       контракт с пользователем (см. README, vuln_report, collection_runner).
+  (I3) Единый источник правды. Секреты → core/secret_scanner; пути → core/
+       config+paths; вкладки → gui/plugin_manager; эндпоинты → utils/
+       endpoint_index. Новая фича не плодит второй параллельный механизм.
+  (I4) GUI = тонкий слой. Вся сетевая/тяжёлая работа в core/utils, вызывается
+       из воркера через window._start_task/_run_async. В tab_*.py — только UI.
+  (I5) Тестируемость без сети. Чистые функции + застабленный fetch. Любая
+       новая фича должна иметь сетенезависимый pytest.
+
+------------------------------------------------------------------------------
+N2. ЧТО УЖЕ ЧАСТИЧНО РЕАЛИЗОВАНО (аудит существующего функционала)
+------------------------------------------------------------------------------
+  • risk_score / severity-счёт — УЖЕ есть (vuln_scanner.summarize: high/medium/
+    info + risk_score). Кандидаты «Enhanced Dashboard»/«Reporting 2.0» в части
+    «risk score/findings summary» — это ПЕРЕИСПОЛЬЗОВАНИЕ, а не новая логика.
+  • site_map.json — УЖЕ пишется (content_capture.run_capture): плоский список
+    {url,file}. «Visual Site Map» (#2) — это надстройка над уже собранными
+    данными, а НЕ новый краулер. Не хватает лишь: (a) HTTP-статуса страницы
+    (сейчас _fetch глотает код, 4xx/5xx уходят в errors[] без различия),
+    (b) древовидной агрегации по путям, (c) рендера.
+  • Дедуп эндпоинтов + drill-down — УЖЕ есть на Dashboard (EndpointIndex).
+  • Секреты/source-map оверви — УЖЕ есть (Security Audit tab + collection
+    security/*.json). «secrets overview» в Dashboard — переиспользование.
+  • Плагин-архитектура — УЖЕ есть (PluginManager + discover() plugins/*.py,
+    контракт factory(window)->QWidget). Это UI-tab-плагины.
+  • Внешние инструменты — РЕШЕНИЕ УЖЕ ПРИНЯТО ранее (см. §4): не портировать
+    nuclei/amass/subfinder, при необходимости — только опц. внешние бинари по
+    паттерну scrapy_crawler (subprocess + features-детект).
+
+------------------------------------------------------------------------------
+N3. ДУБЛИРОВАНИЕ / РИСК ВТОРОГО МЕХАНИЗМА (что НЕ надо строить заново)
+------------------------------------------------------------------------------
+  • «Enhanced Dashboard charts» через matplotlib/QtCharts → ДУБЛЬ рендера +
+    нарушение I1 (bloat .exe). Метрики уже считаются; нужен лишь их показ.
+  • «Plugin SDK» (analyzer-плагин run(results)) → ВТОРОЙ extension-point рядом
+    с UI-PluginManager. Без реального спроса — спекулятивный долг (нарушает I3).
+  • «AI Executive Summary» через облако → прямое нарушение I1/I2 (сеть, ключи).
+    Локальный детерминированный summary над уже агрегированными фазами —
+    наоборот, чистое переиспользование (см. N5).
+  • «Attack Surface Graph» через CDN-JS (vis.js/d3) → нарушение I2 (оффлайн).
+
+------------------------------------------------------------------------------
+N4. ВЕРДИКТ ПО КАЖДОМУ КАНДИДАТУ (с обоснованием)
+------------------------------------------------------------------------------
+  #2  Visual Site Map .............. HIGH   — данные уже собраны (site_map.json
+        + crawl), нужен лишь статус-код + дерево + рендер. Pure stdlib, оффлайн,
+        идеально ложится в collection report. Лучший fit. → РЕАЛИЗУЕТСЯ ПЕРВЫМ.
+  #8  Enhanced Dashboard (карточки)  HIGH   — risk_score/secrets/findings уже
+        считаются; добавить карточки = переиспользование, без новых зависимостей.
+        ЧАРТЫ (lib) — отклонены, вместо них inline-бары (см. #8/charts ниже).
+  #9  Reporting 2.0 (CSS/SVG) ...... HIGH   — risk cards, severity-бары, site
+        map, exec summary через inline-CSS/SVG: оффлайн, без зависимостей (I2).
+        Часть «screenshots» — зависит от #4 (см. ниже), вынесена отдельно.
+  #3  Executive Summary (ДЕТЕРМ.) .. HIGH   — risk overview + recommendations,
+        выведенные ИЗ существующих findings (vuln/cookie/secret/recon). Чистая
+        функция над report-dict, тестируемая, оффлайн. БЕЗ LLM.
+  #3  AI/LLM (Ollama/LM Studio) .... LOW/POSTPONED — новый рантайм-surface,
+        недетерминированный вывод (тяжело тестировать, I5), маргинальный ROI для
+        recon-инструмента. Деттерм. summary покрывает 90% ценности. Отложить;
+        если делать — строго опц. localhost-эндпоинт по паттерну features.
+  #4  Screenshot (plain) ........... MEDIUM — выполнимо через УЖЕ опц. Playwright
+        (page.screenshot), gated по has_playwright. Польза: визуальная улика.
+        Минусы: бинарные артефакты, base64-инлайн раздувает оффлайн-отчёт (I2).
+  #4  Screenshot «Intelligence»(OCR) REJECTED — расплывчатый скоуп, тянет
+        OCR/ML-зависимости (нарушает I1), ценность недоказана.
+  #1  Attack Surface Graph ......... MEDIUM — данные есть (subdomains/APIs/JS/
+        secrets/tech). Интерактивный JS-граф нарушает I2/I1. Допустим ТОЛЬКО
+        как статический inline-SVG в отчёте. Перекрывается Dashboard. Отложить
+        до завершения Reporting 2.0 (там и решить, нужен ли SVG-граф).
+  #8  charts (lib) ................. REJECTED — matplotlib/QtCharts = bloat .exe
+        (I1). Замена: inline-CSS/SVG бары без зависимостей.
+  #10 Plugin SDK (analyzer) ........ MEDIUM/POSTPONED — второй extension-point,
+        YAGNI без спроса (I3). Путь миграции задокументировать, не строить.
+  #11 External (nuclei/katana/amass) MEDIUM/POSTPONED — вписывается в паттерн
+        опц. бинарь+subprocess+features, но каждый — отдельная нетривиальная
+        интеграция, нет немедленного must-have. Делать по запросу, не наперёд.
+
+------------------------------------------------------------------------------
+N5. ПРИОРИТИЗАЦИЯ
+------------------------------------------------------------------------------
+## HIGH VALUE (макс. эффект / мин. сложность — РЕАЛИЗУЕМ)
+  H1. Visual Site Map (#2)            [DONE]
+      Обоснование: данные уже есть, чистая stdlib-надстройка, оффлайн, прямая
+      интеграция в report.html. Единственная правка ядра — пробросить статус-код.
+  H2. Executive Summary детерм. (#3)  [DONE] — чистая функция над
+      агрегированными фазами; reuse risk_score. Без LLM.
+  H3. Enhanced Dashboard карточки (#8)[DONE] — показ уже считаемых
+      метрик (risk/secrets/findings) карточками; без новых зависимостей.
+  H4. Reporting 2.0 CSS/SVG (#9)      [DONE] — risk cards + severity-
+      бары + site map + exec summary в оффлайн-отчёт. Inline-CSS/SVG, без deps.
+
+## MEDIUM VALUE (полезно, не критично)
+  M1. Screenshot plain (#4) — gated по Playwright; ссылками, не base64.
+  M2. Attack Surface Graph как static SVG (#1) — после Reporting 2.0.
+  M3. External optional binaries (#11) — по паттерну scrapy, по запросу.
+  M4. Analyzer Plugin SDK (#10) — задокументировать контракт, отложить код.
+
+## LOW VALUE (низкий ROI)
+  L1. AI/LLM Executive Summary (#3) — недетерминир., новый рантайм, узкий ROI.
+
+## REJECTED (не подходит / лишняя сложность)
+  R1. Charts через matplotlib/QtCharts — bloat .exe, нарушает I1.
+  R2. Интерактивный граф через CDN/JS — нарушает оффлайн-контракт I2.
+  R3. Screenshot «Intelligence»/OCR — размытый скоуп + ML-зависимости (I1).
+  R4. Любой облачный AI-вызов — нарушает I1/I2 (сеть, ключи, приватность).
+
+------------------------------------------------------------------------------
+N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
+------------------------------------------------------------------------------
+  H1. Visual Site Map (#2) — [DONE] 2026-06-12
+      Реализовано (все обязательные пункты закрыты):
+        1) core/site_map.py — ЧИСТЫЙ stdlib-модуль: build_tree(pages)->дерево по
+           сегментам пути (intermediate-узлы без статуса), classify_status()->
+           группа/цвет (2xx green / 3xx blue / 4xx red / 5xx purple / err grey),
+           summarize()->счёт по группам, render_html(pages)->оффлайн inline-CSS
+           фрагмент (легенда + дерево с цветными бэйджами; экранирование путей).
+           Без зависимостей, оффлайн (инвариант I2), полностью детерминирован.
+        2) content_capture._fetch -> (status, html): прокинут HTTP-код, 4xx/5xx
+           (HTTPError) сохраняются с кодом, transport-ошибка → status=None.
+           run_capture пишет _site_map (saved-страницы + error-страницы со
+           статусом) в site_map.json — ОБРАТНО СОВМЕСТИМО (поле status/url
+           добавлены, прежний {url,file} сохранён); result отдаёт site_map +
+           status_summary для GUI.
+        3) collection_runner._render_html — секция-карточка «Site Map» из
+           render_site_map(cd['site_map']) после карточки Capture.
+        4) GUI tab_capture._on_capture_done — строка-сводка статусов
+           («Карта сайта (статусы) — 2xx: N, 4xx: M … всего K URL»),
+           использует GROUP_ORDER из core.site_map (без хардкода групп).
+        5) tests/test_site_map.py — 9 offline-тестов (классификация, дерево/
+           порядконезависимость/intermediate-узлы, summarize, рендер/
+           экранирование/оффлайн-проверка, capture-интеграция со стабом _fetch).
+           Параллельно поправлен test_capture_delay под новый кортеж _fetch.
+        6) README обновлён (Site Capture + Final Report строки).
+        ИТОГ: 278 passed, 1 skipped; ruff чист. Новых зависимостей нет.
+
+  H2. Executive Summary детерминированный (#3) — [DONE] 2026-06-12
+      Реализовано (тесты + докУ + GUI + отчёт):
+        1) core/executive_summary.py — ЧИСТЫЙ stdlib-модуль (без LLM/сети,
+           инвариант I1/I2/I5): build_summary(report)->{risk_level, risk_score,
+           metrics, key_findings, top_findings, recommendations}; детерминир.
+           веса (secret×5, weak-cookie×2 поверх vuln risk_score) и фикс-пороги
+           Critical/High/Medium/Low/Clean; render_html(summary)->оффлайн inline-
+           CSS баннер риска + находки + рекомендации (экранирование). Толерантен
+           к отсутствующим/нечисловым фазам.
+        2) collection_runner — report['executive_summary']=build_summary(report)
+           (попадает в report.json) + карточка «Executive Summary» ПЕРВОЙ в
+           report.html (render_exec_summary).
+        3) GUI tab_collection._on_collection_done — строка [РИСК: <level>] с
+           цветом из RISK_COLORS + первая рекомендация.
+        4) tests/test_executive_summary.py — 12 offline-тестов (пороги риска,
+           рекомендации по сигналам, severity-порядок top_findings,
+           толерантность к пустым/битым фазам, оффлайн-рендер + экранирование).
+        ИТОГ: 290 passed, 1 skipped; ruff чист. Без новых зависимостей.
+        Это детерминированное ядро кандидата #3; LLM-вариант остаётся LOW/
+        POSTPONED (см. N5/L1).
+
+  H3. Enhanced Dashboard карточки (#8) — [DONE] 2026-06-12
+      Реализовано (переиспользование, без новых зависимостей и без усложнения GUI):
+        1) Dashboard получил блок «Security Overview (последний Full Collection)»:
+           цветной вердикт риска + карточки Risk score / Секреты / High / Medium
+           + строка-источник. Источник данных — executive_summary ПОСЛЕДНЕГО
+           Full Collection-отчёта (read-only, без нового скана/движка).
+        2) core/executive_summary.load_latest_summary(dirs) — находит свежий
+           report.json (bounded glob: report.json + */report.json, без '**'-обхода
+           большого дерева вывода), отдаёт executive_summary (строит на лету для
+           легаси-отчётов). display_cards(sec) — ЧИСТОЕ уплощение в строки карточек
+           (формат/роутинг в core → GUI остаётся тонким сеттером, инвариант I4).
+        3) gui/tab_dashboard — _populate_security (тонкий сеттер над display_cards),
+           вызывается в _on_dashboard_loaded; _query_dashboard догружает summary в
+           воркер-потоке (guarded, не фатально); очистка вида сбрасывает и блок.
+        4) tests: test_dashboard_security.py (load_latest_summary: свежий/нет/
+           битый/легаси; display_cards: заполнение/пустое состояние) — ПУРЕ-core,
+           без Qt (логика вынесена из GUI, тест стабилен в headless).
+        ИТОГ: full suite exit=0, ruff чист. Без новых зависимостей.
+        Прим.: «charts через lib» отклонены (REJECTED R1, bloat .exe); метрики
+        показаны карточками. Визуальные бары/SVG идут в H4 (Reporting 2.0).
+
+  H4. Reporting 2.0 — визуальные метрики (#9) — [DONE] 2026-06-12
+      Реализовано (оффлайн, без зависимостей — инвариант I1/I2):
+        1) core/report_charts.py — ЧИСТЫЙ stdlib-модуль: stacked_bar(segments)
+           — горизонтальный stacked-бар из <div>+inline-CSS (без JS, без
+           charting-библиотеки → оффлайн-safe замена отклонённому matplotlib/
+           QtCharts, R1). Пропуск нулевых/отрицательных сегментов, легенда-чипы
+           со счётчиками, экранирование подписей, формат int/float.
+        2) Интеграция в ОТЧЁТЫ (переиспользование одного рендера везде):
+           • collection report.html: карточка Executive Summary (риск-баннер,
+             H2) + Site Map с visual status-баром (2xx/3xx/4xx/5xx/err) +
+             Vulnerabilities с severity-баром (High/Medium/Info).
+           • core/site_map.render_html — легенда заменена на stacked_bar статусов.
+           • core/vuln_report.render_html (standalone Vuln HTML/PDF-отчёт) —
+             severity-бар под бейджем. Один источник визуала для обоих отчётов.
+        3) tests/test_report_charts.py — 7 offline-тестов (пропорции ширин,
+           оффлайн/без-JS, пропуск нулей/негатива, пустое состояние, тоггл
+           легенды, экранирование, формат чисел). + регрессионно зелёные
+           test_site_map/test_vuln_report/test_collection_runner.
+        ИТОГ: full suite exit=0, ruff чист. Оффлайн-контракт отчётов сохранён
+        (проверено: нет <script>/CDN/внешних ресурсов). Без новых зависимостей.
+
+      ВСЕ HIGH VALUE (H1–H4) ЗАКРЫТЫ. Очередь MEDIUM (по запросу): M1 Screenshot
+      (gated Playwright), M2 Attack Surface Graph (static SVG), M3 External
+      optional binaries, M4 Analyzer Plugin SDK (контракт). LOW/REJECTED — без
+      изменений (см. N5).
 
 ==============================================================================

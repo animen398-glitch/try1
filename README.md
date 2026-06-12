@@ -21,15 +21,15 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Recon & Intel | GeoIP, фингерпринт CMS/стека, фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, дамп API-ответов |
 | Subdomain Scanner | Пассивное (crt.sh, HackerTarget, AlienVault OTX, Anubis) + brute-force перечисление с живой таблицей; опц. active-проверки (liveness + takeover) |
 | API Key Scanner | Поиск утечек API-ключей/секретов на странице |
-| Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) |
+| Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) + визуальная карта сайта (дерево путей с HTTP-статусами 2xx/3xx/4xx/5xx) в `site_map.json` и HTML-отчёте |
 | Clone Frontend | Скачивание ассетов и переписывание ссылок → самодостаточная оффлайн-копия |
 | Video Downloader | yt-dlp: пресеты до 4K (merge через ffmpeg), сессионные cookies |
 | Image Extractor | Оригинальное разрешение без водяных знаков; Instagram/соцсети через yt-dlp |
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map |
-| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт |
-| Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down |
+| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + визуальная карта сайта по HTTP-статусам) |
+| Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down + Security Overview (вердикт риска / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite) |
 | System | Очередь задач, экспорт данных, системные логи |
 

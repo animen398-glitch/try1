@@ -28,8 +28,12 @@ from urllib.parse import urlparse
 from core.api_key_extractor import ApiKeyExtractor
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
+from core.executive_summary import build_summary
+from core.executive_summary import render_html as render_exec_summary
 from core.frontend_cloner import FrontendCloner
 from core.recon_engine import ReconEngine
+from core.report_charts import stacked_bar
+from core.site_map import render_html as render_site_map
 from core.vuln_scanner import VulnScanner
 from utils.image_processor import ImageExtractor
 
@@ -130,6 +134,10 @@ class CollectionRunner:
             report['phases']['vulns'] = self._phase_vulns(report, project_dir)
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
+
+        # Executive summary: deterministic risk verdict + recommendations over
+        # the phases above (no model, no network).
+        report['executive_summary'] = build_summary(report)
 
         # Reports
         json_path = project_dir / 'report.json'
@@ -325,6 +333,13 @@ class CollectionRunner:
             cap.get('status', '—'),
         ))
 
+        # Site Map — visual tree of crawled paths coloured by HTTP status.
+        site_map = cd.get('site_map')
+        if site_map:
+            body_parts.append(card(
+                'Site Map', render_site_map(site_map), cap.get('status', '—'),
+            ))
+
         # Clone
         clone = phases.get('clone', {})
         cl = clone.get('data', {})
@@ -367,13 +382,23 @@ class CollectionRunner:
             f'{e(f.get("title",""))}</li>'
             for f in findings[:15]
         )
+        sev_bar = stacked_bar([
+            ('High', vs.get('high', 0), '#c62828'),
+            ('Medium', vs.get('medium', 0), '#f9a825'),
+            ('Info', vs.get('info', 0), '#2e7d32'),
+        ], empty_note='Уязвимостей не найдено')
         vuln_body = (
-            f'<p style="font-size:13px;">High: <b>{e(str(vs.get("high", 0)))}</b> · '
-            f'Medium: {e(str(vs.get("medium", 0)))} · Info: {e(str(vs.get("info", 0)))} · '
-            f'risk score: <b>{e(str(vs.get("risk_score", 0)))}</b></p>'
+            f'<p style="font-size:13px;">risk score: '
+            f'<b>{e(str(vs.get("risk_score", 0)))}</b></p>'
+            f'{sev_bar}'
             f'<ul style="font-size:12px;color:#444;margin:6px 0;">{items}</ul>'
         )
         body_parts.append(card('Vulnerabilities', vuln_body, vuln.get('status', '—')))
+
+        # Executive summary — risk verdict + recommendations, rendered first.
+        summary = report.get('executive_summary') or build_summary(report)
+        exec_card = card('Executive Summary', render_exec_summary(summary),
+                         summary.get('risk_level', '—'))
 
         return f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -387,6 +412,7 @@ max-width:860px;margin:24px auto;padding:0 16px;color:#222;">
   Завершено: {e(report.get('finished_at', ''))}<br>
   Директория: {e(report.get('project_dir', ''))}
 </p>
+{exec_card}
 {''.join(body_parts)}
 <p style="color:#aaa;font-size:11px;margin-top:24px;">
   Advanced Site Analyzer · Full Collection

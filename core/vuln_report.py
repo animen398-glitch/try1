@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from core.report_charts import stacked_bar
 from core.vuln_scanner import (
     SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM, VulnScanner,
 )
@@ -79,6 +80,13 @@ def render_html(target: str, findings: List[Dict],
         f'risk score: <b>{summary.get("risk_score", 0)}</b>'
     )
 
+    # Offline visual severity distribution (inline-CSS bar, no JS/deps).
+    sev_bar = stacked_bar([
+        (SEVERITY_HIGH, summary.get('high', 0), _SEVERITY_COLOR[SEVERITY_HIGH]),
+        (SEVERITY_MEDIUM, summary.get('medium', 0), _SEVERITY_COLOR[SEVERITY_MEDIUM]),
+        (SEVERITY_INFO, summary.get('info', 0), _SEVERITY_COLOR[SEVERITY_INFO]),
+    ], empty_note='No findings')
+
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <title>Vulnerability Report — {e(target)}</title></head>
@@ -88,6 +96,7 @@ max-width:820px;margin:24px auto;padding:0 16px;color:#222;">
 <p style="color:#666;font-size:13px;margin-top:0;">
   <b>{e(target)}</b><br>{badge}<br>Generated: {e(generated)}
 </p>
+<div style="margin:8px 0 16px;">{sev_bar}</div>
 {''.join(sections)}
 <p style="color:#aaa;font-size:11px;margin-top:24px;">
   Advanced Site Analyzer · VulnScanner

@@ -13,6 +13,9 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from core.config import load_settings
+from core.executive_summary import display_cards, load_latest_summary
+from core.paths import get_path_manager
 from gui.constants import REGISTRY_DB
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.data_viewer import DataViewer
@@ -44,6 +47,14 @@ class DashboardTabMixin:
         ('Видео',                'video'),
         ('Паттерны',             'pattern_match'),
         ('API Endpoints',        'api_endpoint'),
+    ]
+
+    # (ключ метрики -> подпись карточки) для Security Overview.
+    SECURITY_STATS = [
+        ('risk_score', 'Risk score'),
+        ('secrets',    'Секреты'),
+        ('high',       'High'),
+        ('medium',     'Medium'),
     ]
 
     ENDPOINTS_COLUMNS = ["Endpoint", "Count", "Sources", "Patterns"]
@@ -89,6 +100,28 @@ class DashboardTabMixin:
             self.dash_stats[key] = value_label
             stats_row.addWidget(card)
         layout.addLayout(stats_row)
+
+        # Security overview — reuses the executive summary of the most recent
+        # Full Collection (read-only; no extra scan). Empty until one exists.
+        sec_grp = SectionGroupBox("Security Overview (последний Full Collection)")
+        sec_v = QVBoxLayout()
+        self.sec_risk_label = QLabel("Риск: —")
+        self.sec_risk_label.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #888;")
+        sec_v.addWidget(self.sec_risk_label)
+        sec_cards = QHBoxLayout()
+        self.sec_stats: dict = {}
+        for key, title in self.SECURITY_STATS:
+            card, value_label = self._make_stat_card(title)
+            self.sec_stats[key] = value_label
+            sec_cards.addWidget(card)
+        sec_v.addLayout(sec_cards)
+        self.sec_source = QLabel("")
+        self.sec_source.setStyleSheet("color: #888; font-size: 11px;")
+        self.sec_source.setWordWrap(True)
+        sec_v.addWidget(self.sec_source)
+        sec_grp.setLayout(sec_v)
+        layout.addWidget(sec_grp)
 
         table_grp = SectionGroupBox("Записи реестра (data/registry.db)")
         self._activity_grp = table_grp
@@ -221,6 +254,7 @@ class DashboardTabMixin:
         self.dash_detail.clear()
         for label in self.dash_stats.values():
             label.setText("0")
+        self._clear_security()
         self._endpoint_filter = None
         self._update_activity_title()
         self.dash_status.setText("Очищено — БД не затронута")
@@ -240,7 +274,17 @@ class DashboardTabMixin:
         try:
             viewer = DataViewer(db_path=str(REGISTRY_DB))
             endpoints = EndpointIndex(db_path=str(REGISTRY_DB)).get_unique_endpoints()
-            return {'summary': viewer.get_summary(), 'endpoints': endpoints}
+            # Latest Full Collection verdict (read-only; never fatal).
+            security = None
+            try:
+                settings = load_settings()
+                dirs = [settings.get('output_dir'),
+                        str(get_path_manager().get_reports_path())]
+                security = load_latest_summary(dirs)
+            except Exception:
+                security = None
+            return {'summary': viewer.get_summary(), 'endpoints': endpoints,
+                    'security': security}
         except Exception as e:
             return {'error': str(e)}
 
@@ -259,6 +303,8 @@ class DashboardTabMixin:
             label.setText(str(summary.get(key, 0)))
         self.dash_status.setText(f"Всего записей: {summary.get('total', 0)}")
 
+        self._populate_security(result.get('security'))
+
         # A full refresh resets any drill-down back to the type-filter view.
         self._endpoint_filter = None
         self._update_activity_title()
@@ -266,6 +312,25 @@ class DashboardTabMixin:
 
         # Populate the table according to the currently selected type filter.
         self._apply_dashboard_filter()
+
+    def _populate_security(self, sec: dict):
+        """Fill the Security Overview from a loaded executive summary (or clear
+        it when no Full Collection report exists yet). Thin setter — all
+        formatting/routing lives in core.executive_summary.display_cards."""
+        c = display_cards(sec)
+        risk_text = (f"Риск: {c['risk_level']}" if c['available']
+                     else "Риск: — (нет отчётов Full Collection)")
+        self.sec_risk_label.setText(risk_text)
+        self.sec_risk_label.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {c['risk_color']};")
+        self.sec_stats['risk_score'].setText(c['risk_score'])
+        self.sec_stats['secrets'].setText(c['secrets'])
+        self.sec_stats['high'].setText(c['high'])
+        self.sec_stats['medium'].setText(c['medium'])
+        self.sec_source.setText(f"Источник: {c['source']}" if c['source'] else "")
+
+    def _clear_security(self):
+        self._populate_security(None)
 
     def _populate_endpoints_table(self, endpoints: list):
         self._endpoints_records = endpoints[:200]

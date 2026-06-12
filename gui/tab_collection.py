@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
 )
 
 from core.collection_runner import CollectionRunner
+from core.executive_summary import RISK_COLORS
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CollectionWorker
 
@@ -165,6 +166,20 @@ class FinalReportTabMixin:
                 f"Сбор завершён — успешных фаз: {ok}/{len(phases)}"
             )
         self.collect_log.append_info(f"Директория: {result.get('project_dir', '')}")
+
+        # Executive summary — risk verdict + top recommendation up front.
+        summary = result.get('executive_summary') or {}
+        if summary:
+            level = summary.get('risk_level', '—')
+            color = RISK_COLORS.get(level, '#888')
+            self.collect_log.append(
+                f'<span style="color:{color};font-weight:bold;">[РИСК: {level}]</span>'
+                f' risk score {summary.get("risk_score", 0)}'
+            )
+            recs = summary.get('recommendations') or []
+            if recs:
+                self.collect_log.append_info(f"Рекомендация: {recs[0]}")
+
         self._collection_report = result.get('report_html')
         if self._collection_report:
             self.collect_log.append_success(f"Отчёт: {self._collection_report}")

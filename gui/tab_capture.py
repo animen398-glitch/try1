@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
 
 from core.content_capture import SiteContentCapture
 from core.secret_scanner import SecretScanner
+from core.site_map import GROUP_ORDER
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CaptureWorker
 
@@ -129,6 +130,16 @@ class CaptureTabMixin:
         if result.get('errors'):
             self.capture_log.append_warning(
                 f"Недоступных URL при обходе: {len(result['errors'])}"
+            )
+
+        # Site map: per-status-group breakdown of every visited URL. The full
+        # tree is written to site_map.json and rendered in the HTML report.
+        summary = result.get('status_summary') or {}
+        parts = [f"{g}: {summary[g]}" for g in GROUP_ORDER if summary.get(g)]
+        if parts:
+            self.capture_log.append_info(
+                "Карта сайта (статусы) — " + ", ".join(parts)
+                + f" · всего {summary.get('total', 0)} URL (site_map.json)"
             )
 
         archive = self._make_archive(out_path, domain, 'capture')
