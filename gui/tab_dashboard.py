@@ -52,10 +52,17 @@ class DashboardTabMixin:
 
         ctrl = QHBoxLayout()
         self.dash_status = QLabel("Всего записей: 0")
+        btn_clear = StyledButton("Очистить", style='secondary')
+        btn_clear.setToolTip(
+            "Очищает таблицы и счётчики в интерфейсе.\n"
+            "Данные в registry.db не затрагиваются — «Обновить» вернёт их."
+        )
+        btn_clear.clicked.connect(self._clear_dashboard)
         btn_update = StyledButton("Обновить", style='secondary')
         btn_update.clicked.connect(self._refresh_dashboard)
         ctrl.addWidget(self.dash_status)
         ctrl.addStretch()
+        ctrl.addWidget(btn_clear)
         ctrl.addWidget(btn_update)
         layout.addLayout(ctrl)
 
@@ -178,6 +185,22 @@ class DashboardTabMixin:
         found = scan.get('patterns_found', 0)
         self.dash_status.setText(f"Сканирование завершено (находок: {found}). Обновляю...")
         self._refresh_dashboard()
+
+    def _clear_dashboard(self):
+        """Очистить отображение дашборда (таблицы + счётчики), не трогая БД.
+
+        Сбрасывает обе таблицы, счётчики-карточки и любой активный drill-down.
+        Реестр registry.db не меняется — «Обновить» вернёт данные. Флаг
+        _dashboard_loaded остаётся True, чтобы возврат на вкладку не перезагрузил
+        вид автоматически.
+        """
+        self.dashboard_table.setRowCount(0)
+        self.endpoints_table.setRowCount(0)
+        for label in self.dash_stats.values():
+            label.setText("0")
+        self._endpoint_filter = None
+        self._update_activity_title()
+        self.dash_status.setText("Очищено — БД не затронута")
 
     def _refresh_dashboard(self):
         if self._dashboard_loading:
