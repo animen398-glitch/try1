@@ -19,7 +19,9 @@ import json
 import subprocess
 from typing import Callable, Dict, List, Optional
 
-from core.features import has_nuclei
+from urllib.parse import urlparse
+
+from core.features import has_amass, has_katana, has_nuclei
 from core.vuln_scanner import SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM
 
 
@@ -142,5 +144,147 @@ class NucleiRunner:
         result['status'] = 'Success'
         result.pop('error', None)
         self._log(f'[nuclei] {len(findings)} findings'
+                  + (' (truncated)' if result['truncated'] else ''))
+        return result
+
+
+# ───────────────────────────────── katana ──────────────────────────────────
+
+def parse_katana_lines(text: str) -> List[str]:
+    """Parse katana output (``-jsonl`` objects or plain URL lines) → unique URLs,
+    in discovery order."""
+    seen: set = set()
+    out: List[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        url = None
+        if line.startswith('{'):
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                obj = {}
+            req = obj.get('request') if isinstance(obj.get('request'), dict) else {}
+            url = obj.get('endpoint') or req.get('endpoint') or obj.get('url')
+        if url is None and line.startswith(('http://', 'https://')):
+            url = line
+        if url and url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
+class KatanaRunner:
+    """Run katana against a URL and return discovered endpoint URLs."""
+
+    def __init__(self, timeout: int = 180, depth: int = 2,
+                 extra_args: Optional[List[str]] = None):
+        self.timeout = timeout
+        self.depth = depth
+        self.extra_args = list(extra_args) if extra_args else []
+        self.progress_callback: Optional[Callable] = None
+
+    @staticmethod
+    def available() -> bool:
+        return has_katana()
+
+    def set_progress_callback(self, cb: Callable):
+        self.progress_callback = cb
+
+    def _log(self, msg: str):
+        if self.progress_callback:
+            self.progress_callback(msg)
+
+    def crawl(self, url: str) -> Dict:
+        """Crawl ``url``; return ``{status, url, endpoints, truncated?, error?}``."""
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        result: Dict = {'status': 'Error', 'url': url, 'endpoints': []}
+        if not self.available():
+            result['status'] = 'Unavailable'
+            result['error'] = ('katana not installed '
+                               '(https://github.com/projectdiscovery/katana)')
+            return result
+
+        cmd = ['katana', '-u', url, '-silent', '-jsonl',
+               '-d', str(self.depth)] + self.extra_args
+        self._log(f'[katana] crawling {url} (depth {self.depth})')
+        run = run_command(cmd, self.timeout)
+        if run.get('error'):
+            result['error'] = run['error']
+            return result
+        result['endpoints'] = parse_katana_lines(run['stdout'])
+        result['truncated'] = run.get('timed_out', False)
+        result['status'] = 'Success'
+        result.pop('error', None)
+        self._log(f'[katana] {len(result["endpoints"])} endpoints'
+                  + (' (truncated)' if result['truncated'] else ''))
+        return result
+
+
+# ───────────────────────────────── amass ───────────────────────────────────
+
+def parse_amass_lines(text: str, domain: str) -> List[str]:
+    """Parse amass passive output → unique in-scope subdomains (sorted).
+
+    amass ``enum -passive`` prints one FQDN per line; lines with spaces (graph/
+    relation output) and out-of-scope names are dropped.
+    """
+    domain = (domain or '').strip().lower()
+    out: set = set()
+    for line in text.splitlines():
+        name = line.strip().lower()
+        if not name or ' ' in name:
+            continue
+        name = name.lstrip('*.')
+        if name == domain or name.endswith('.' + domain):
+            out.add(name)
+    return sorted(out)
+
+
+class AmassRunner:
+    """Run amass passive enumeration and return in-scope subdomains."""
+
+    def __init__(self, timeout: int = 180,
+                 extra_args: Optional[List[str]] = None):
+        self.timeout = timeout
+        self.extra_args = list(extra_args) if extra_args else []
+        self.progress_callback: Optional[Callable] = None
+
+    @staticmethod
+    def available() -> bool:
+        return has_amass()
+
+    def set_progress_callback(self, cb: Callable):
+        self.progress_callback = cb
+
+    def _log(self, msg: str):
+        if self.progress_callback:
+            self.progress_callback(msg)
+
+    def enumerate(self, domain: str) -> Dict:
+        """Enumerate ``domain``; return ``{status, domain, subdomains, …}``."""
+        domain = urlparse(
+            domain if '://' in domain else '//' + domain).netloc or domain
+        domain = domain.strip().lower().split('/')[0]
+        result: Dict = {'status': 'Error', 'domain': domain, 'subdomains': []}
+        if not self.available():
+            result['status'] = 'Unavailable'
+            result['error'] = 'amass not installed (https://github.com/owasp-amass/amass)'
+            return result
+
+        cmd = ['amass', 'enum', '-passive', '-d', domain,
+               '-nocolor'] + self.extra_args
+        self._log(f'[amass] passive enum {domain}')
+        run = run_command(cmd, self.timeout)
+        if run.get('error'):
+            result['error'] = run['error']
+            return result
+        result['subdomains'] = parse_amass_lines(run['stdout'], domain)
+        result['truncated'] = run.get('timed_out', False)
+        result['status'] = 'Success'
+        result.pop('error', None)
+        self._log(f'[amass] {len(result["subdomains"])} subdomains'
                   + (' (truncated)' if result['truncated'] else ''))
         return result

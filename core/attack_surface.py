@@ -63,6 +63,7 @@ def build_surface(report: Dict) -> Dict:
     recon = data('recon')
     api = data('api')
     capture = data('capture')
+    katana = data('katana')
     vulns = phases.get('vulns', {})
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
 
@@ -83,6 +84,7 @@ def build_surface(report: Dict) -> Dict:
         _category('Infrastructure',
                   [recon['ip']] if recon.get('ip') else []),
         _category('Secrets', secret_items),
+        _category('Endpoints', katana.get('endpoints') or []),
         _category('Pages', page_items),
         _category('Findings', [f.get('title', '') for f in findings]),
     ]

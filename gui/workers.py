@@ -36,13 +36,14 @@ class _SubdomainWorker(QObject):
     error       = pyqtSignal(str)
 
     def __init__(self, scanner, domain: str, passive: bool, brute: bool,
-                 active: bool = False):
+                 active: bool = False, amass: bool = False):
         super().__init__()
         self._scanner = scanner
         self._domain  = domain
         self._passive = passive
         self._brute   = brute
         self._active  = active
+        self._amass   = amass
 
     def run(self):
         try:
@@ -54,6 +55,7 @@ class _SubdomainWorker(QObject):
                 passive=self._passive,
                 brute=self._brute,
                 active=self._active,
+                amass=self._amass,
             )
             self.finished.emit(result)
         except Exception as e:

@@ -781,12 +781,31 @@ N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
            Бинарь nuclei НЕ вызывается (run_command/available застаблены).
         ИТОГ: 330 passed, 1 skipped; ruff чист; full suite exit 0. Без новых
         pip-зависимостей (nuclei — внешний бинарь, как ffmpeg).
-        Прим. (целесообразность katana/amass — изучено): фреймворк (run_command +
-        JSONL-парс) делает их добавление тонким (katana→endpoints, amass/
-        subfinder→subdomains), но это отдельные парсеры + точки интеграции (вкладки
-        Subdomain/Dashboard), без немедленного must-have → отложено до запроса
-        (паттерн готов). nuclei выбран первым: даёт max-leverage (вливается в уже
-        существующий findings-пайплайн).
+        nuclei выбран первым: даёт max-leverage (вливается в уже существующий
+        findings-пайплайн).
+
+      M3+. External binaries — katana + amass (#11, добито по запросу) — [DONE]
+      2026-06-12 (тот же фреймворк run_command + парсер, тесты со стабами):
+        • core/external_tools.py — parse_katana_lines (JSONL ИЛИ plain-URL →
+          уникальные эндпоинты в порядке) + KatanaRunner.crawl(url); parse_amass_lines
+          (in-scope FQDN, отброс graph/blank) + AmassRunner.enumerate(domain).
+          features.py: has_katana/has_amass + OPTIONAL_FEATURES (System-вкладка).
+        • amass → SubdomainScanner.scan(amass=False): фаза 2d рядом с crt.sh/
+          HackerTarget/AlienVault/Anubis (source='amass'), opt-in+gated, guarded,
+          субдомены идут в DataRegistry (Dashboard) как у прочих источников. GUI:
+          чекбокс «amass (внешний)» в Subdomain-вкладке (через _SubdomainWorker).
+        • katana → CollectionRunner.katana=False: фаза [8/8] _phase_katana →
+          эндпоинты в report['phases']['katana']; attack_surface.build_surface
+          добавляет КАТЕГОРИЮ «Endpoints» (узел графа) + карточка «Katana
+          Endpoints» в report.html. GUI: чекбокс «Katana (внешний краулер)» в
+          Collection-вкладке. Skipped без бинаря.
+        • tests/test_external_katana_amass.py — 12 offline-тестов (парсинг
+          katana plain/jsonl/dedup, amass scope/case/graph-фильтр; runners
+          unavailable/success; subdomain amass enabled/disabled; collection
+          katana фаза+граф/skip/дефолт-off). Бинари не вызываются.
+        ИТОГ: 353 passed, 1 skipped; ruff чист; full suite exit 0. ИТОГ M3:
+        nuclei+katana+amass — все три кандидата (#11) интегрированы как опц.
+        бинари, без обязательных зависимостей и без реимплементации.
 
   M4. Analyzer Plugin SDK — пользовательские аналитические плагины (#10) — [DONE]
       2026-06-12 (изначально POSTPONED/«документировать»; реализовано минимально и

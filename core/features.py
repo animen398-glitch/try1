@@ -53,6 +53,16 @@ def has_nuclei() -> bool:
     return _has_binary('nuclei')
 
 
+def has_katana() -> bool:
+    """projectdiscovery/katana — external crawler (optional)."""
+    return _has_binary('katana')
+
+
+def has_amass() -> bool:
+    """owasp/amass — external subdomain enumeration (optional)."""
+    return _has_binary('amass')
+
+
 # Optional feature -> (what it enables, detector).
 OPTIONAL_FEATURES = {
     'playwright': ('Dynamic API Sniffing (headless Chromium)', has_playwright),
@@ -62,6 +72,8 @@ OPTIONAL_FEATURES = {
     'lxml':       ('Faster HTML parsing',                      has_lxml),
     'scrapy':     ('Deep site crawl (subprocess)',             has_scrapy),
     'nuclei':     ('Nuclei vuln templates (external binary)',  has_nuclei),
+    'katana':     ('Katana crawler — endpoints (external)',    has_katana),
+    'amass':      ('Amass subdomain enum (external)',          has_amass),
 }
 
 

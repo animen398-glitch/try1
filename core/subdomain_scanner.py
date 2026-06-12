@@ -98,6 +98,7 @@ class SubdomainScanner:
         self._cancel = threading.Event()
         self._data_registry = data_registry
         self._active_checker: Optional[ActiveSubdomainChecker] = None
+        self._amass_timeout = 180   # seconds; amass passive enum subprocess
 
     def cancel(self):
         """Signal the scanner to stop at the next checkpoint."""
@@ -128,6 +129,7 @@ class SubdomainScanner:
         max_workers: int = 40,
         active_rate_per_sec: float = 0,
         use_cache: bool = True,
+        amass: bool = False,
     ) -> Dict:
         """
         Run passive + brute-force enumeration, optionally followed by active
@@ -207,6 +209,13 @@ class SubdomainScanner:
                 if self._cancel.is_set():
                     break
                 _record(name, _resolve(name) or '', 'anubis')
+
+        # ── Phase 2d: amass passive (external binary, opt-in) ─────────────
+        if amass and not self._cancel.is_set():
+            for name in self._passive_amass(domain):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'amass')
 
         # ── Phase 3: DNS brute-force ──────────────────────────────────────
         if brute and not self._cancel.is_set():
@@ -323,6 +332,22 @@ class SubdomainScanner:
                 return _PASSIVE_CACHE.get_or_compute(
                     ('anubis', domain), lambda: self._fetch_anubis(domain))
             return self._fetch_anubis(domain)
+        except Exception:
+            return []
+
+    def _passive_amass(self, domain: str) -> List[str]:
+        """Return amass passive subdomains (external binary, opt-in, guarded).
+
+        Not cached with the HTTP sources — amass spawns a subprocess and is only
+        run when explicitly requested. A missing binary or any failure yields an
+        empty list, never breaking the scan.
+        """
+        try:
+            from core.external_tools import AmassRunner
+            if not AmassRunner.available():
+                return []
+            return AmassRunner(timeout=self._amass_timeout).enumerate(
+                domain).get('subdomains', [])
         except Exception:
             return []
 

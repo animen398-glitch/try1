@@ -33,7 +33,7 @@ from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
-from core.external_tools import NucleiRunner
+from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
@@ -54,7 +54,8 @@ class CollectionRunner:
 
     def __init__(self, profile: str = 'chrome_windows', max_pages: int = 20,
                  cookies: Optional[str] = None, capture_delay: float = 0.5,
-                 screenshots: bool = False, nuclei: bool = False):
+                 screenshots: bool = False, nuclei: bool = False,
+                 katana: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -64,6 +65,8 @@ class CollectionRunner:
         self.screenshots = screenshots
         # Opt-in external nuclei scan (binary), merged into vuln findings.
         self.nuclei = nuclei
+        # Opt-in external katana crawl (binary) → endpoints in the graph/report.
+        self.katana = katana
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -72,7 +75,8 @@ class CollectionRunner:
                   cookies: Optional[str] = None,
                   capture_delay: Optional[float] = None,
                   screenshots: Optional[bool] = None,
-                  nuclei: Optional[bool] = None):
+                  nuclei: Optional[bool] = None,
+                  katana: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -83,6 +87,8 @@ class CollectionRunner:
             self.screenshots = screenshots
         if nuclei is not None:
             self.nuclei = nuclei
+        if katana is not None:
+            self.katana = katana
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -149,7 +155,10 @@ class CollectionRunner:
         # 7. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
             report['phases']['vulns'] = self._phase_vulns(report, project_dir)
-        # 8. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
+        # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
+        if self.katana and not self._cancelled(report):
+            report['phases']['katana'] = self._phase_katana(url)
+        # 8b. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
         if self.screenshots and not self._cancelled(report):
             report['phases']['screenshot'] = self._phase_screenshot(url, project_dir)
         # 9. Analyzer plugins (user-supplied) — see the whole report; their
@@ -332,6 +341,23 @@ class CollectionRunner:
             self._log(f'  Analyzer plugins failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_katana(self, url: str) -> Dict:
+        self._log('[8/8] Katana crawl…')
+        if not KatanaRunner.available():
+            self._log('  Katana — пропущено (бинарь не установлен)')
+            return {'status': 'Skipped', 'reason': 'katana not installed'}
+        try:
+            runner = KatanaRunner()
+            runner.set_progress_callback(self._log)
+            data = runner.crawl(url)
+            if data.get('status') == 'Success':
+                return {'status': 'Success', 'data': data}
+            return {'status': data.get('status', 'Error'),
+                    'reason': data.get('error', 'katana failed')}
+        except Exception as e:
+            self._log(f'  Katana failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _merge_nuclei(self, url: str, findings: list) -> int:
         """Run nuclei (if enabled + installed) and append its findings in place.
 
@@ -441,6 +467,25 @@ class CollectionRunner:
             body_parts.append(card(
                 'Site Map', render_site_map(site_map), cap.get('status', '—'),
             ))
+
+        # Katana endpoints (opt-in external crawl).
+        katana = phases.get('katana')
+        if katana:
+            kd = katana.get('data', {})
+            endpoints = kd.get('endpoints', [])
+            if endpoints:
+                items = ''.join(
+                    f'<li style="margin:1px 0;">{e(str(u))}</li>'
+                    for u in endpoints[:25])
+                kbody = (f'<p style="font-size:13px;">Эндпоинтов найдено: '
+                         f'<b>{e(str(len(endpoints)))}</b></p>'
+                         f'<ul style="font-size:12px;color:#444;margin:6px 0;'
+                         f'max-height:220px;overflow:auto;">{items}</ul>')
+            else:
+                kbody = (f'<p style="font-size:13px;color:#999;">'
+                         f'{e(katana.get("reason", "—"))}</p>')
+            body_parts.append(card('Katana Endpoints', kbody,
+                                   katana.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})

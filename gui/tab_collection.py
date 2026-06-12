@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 
 from core.collection_runner import CollectionRunner
 from core.executive_summary import RISK_COLORS
-from core.features import has_nuclei, has_playwright
+from core.features import has_katana, has_nuclei, has_playwright
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CollectionWorker
 
@@ -84,6 +84,15 @@ class FinalReportTabMixin:
                 "Требуется бинарь nuclei на PATH "
                 "(https://github.com/projectdiscovery/nuclei)")
         opt_row.addWidget(self.collect_nuclei)
+
+        # Opt-in external katana crawl — gated on the binary being on PATH.
+        self.collect_katana = QCheckBox("Katana (внешний краулер)")
+        if not has_katana():
+            self.collect_katana.setEnabled(False)
+            self.collect_katana.setToolTip(
+                "Требуется бинарь katana на PATH "
+                "(https://github.com/projectdiscovery/katana)")
+        opt_row.addWidget(self.collect_katana)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -139,6 +148,7 @@ class FinalReportTabMixin:
             capture_delay=self.settings.get('request_delay', 500) / 1000.0,
             screenshots=self.collect_screenshot.isChecked(),
             nuclei=self.collect_nuclei.isChecked(),
+            katana=self.collect_katana.isChecked(),
         )
         self._active_collector = runner
 

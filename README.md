@@ -19,7 +19,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Вкладка | Назначение |
 |---|---|
 | Recon & Intel | GeoIP, фингерпринт CMS/стека, фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, дамп API-ответов |
-| Subdomain Scanner | Пассивное (crt.sh, HackerTarget, AlienVault OTX, Anubis) + brute-force перечисление с живой таблицей; опц. active-проверки (liveness + takeover) |
+| Subdomain Scanner | Пассивное (crt.sh, HackerTarget, AlienVault OTX, Anubis; опц. внешний amass) + brute-force перечисление с живой таблицей; опц. active-проверки (liveness + takeover) |
 | API Key Scanner | Поиск утечек API-ключей/секретов на странице |
 | Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) + визуальная карта сайта (дерево путей с HTTP-статусами 2xx/3xx/4xx/5xx) в `site_map.json` и HTML-отчёте |
 | Clone Frontend | Скачивание ассетов и переписывание ссылок → самодостаточная оффлайн-копия |
@@ -28,7 +28,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map |
-| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешний nuclei-скан) |
+| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешние nuclei/katana) |
 | Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down + Security Overview (вердикт риска / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite) |
 | System | Очередь задач, экспорт данных, системные логи |
@@ -48,6 +48,8 @@ pip install "fastapi" "uvicorn[standard]"                          # web-кон�
 # ffmpeg — внешний бинарь; нужен для merge 4K/1080p (видео+аудио)
 # nuclei — внешний бинарь (projectdiscovery); опц. vuln-сканер в Full Collection
 #          (https://github.com/projectdiscovery/nuclei). Детект — в System-вкладке.
+# katana — внешний бинарь (projectdiscovery); опц. краулер эндпоинтов в Full Collection.
+# amass  — внешний бинарь (owasp); опц. пассивный источник субдоменов в Subdomain-вкладке.
 ```
 
 ## Запуск

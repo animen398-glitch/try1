@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from core.features import has_amass
 from core.subdomain_scanner import SubdomainScanner
 from gui.ui_components import SectionGroupBox, StyledButton
 from gui.workers import _SubdomainWorker
@@ -57,6 +58,16 @@ class SubdomainTabMixin:
             "After enumeration: HTTP/HTTPS liveness probe and subdomain-takeover\n"
             "detection (CNAME → known service + unclaimed-resource fingerprint)."
         )
+        # External amass passive source — gated on the binary being on PATH.
+        self.subdomain_chk_amass = QCheckBox("amass (внешний)")
+        if has_amass():
+            self.subdomain_chk_amass.setToolTip(
+                "Adds OWASP amass passive enumeration as an extra source.")
+        else:
+            self.subdomain_chk_amass.setEnabled(False)
+            self.subdomain_chk_amass.setToolTip(
+                "Требуется бинарь amass на PATH "
+                "(https://github.com/owasp-amass/amass)")
         self.btn_subdomain_scan = StyledButton("Start Scanning")
         self.btn_subdomain_scan.clicked.connect(self._run_subdomain_scan)
         self.btn_subdomain_stop = StyledButton("Stop", style='danger')
@@ -67,6 +78,8 @@ class SubdomainTabMixin:
         row_opts.addWidget(self.subdomain_chk_brute)
         row_opts.addSpacing(14)
         row_opts.addWidget(self.subdomain_chk_active)
+        row_opts.addSpacing(14)
+        row_opts.addWidget(self.subdomain_chk_amass)
         row_opts.addStretch()
         row_opts.addWidget(self.btn_subdomain_stop)
         row_opts.addSpacing(8)
@@ -168,11 +181,12 @@ class SubdomainTabMixin:
         passive = self.subdomain_chk_passive.isChecked()
         brute   = self.subdomain_chk_brute.isChecked()
         active  = self.subdomain_chk_active.isChecked()
+        amass   = self.subdomain_chk_amass.isChecked()
 
         scanner = SubdomainScanner()
         self._active_subdomain_scanner = scanner
 
-        worker = _SubdomainWorker(scanner, domain, passive, brute, active)
+        worker = _SubdomainWorker(scanner, domain, passive, brute, active, amass)
         self._start_task(
             worker,
             on_finished=self._on_subdomain_done,

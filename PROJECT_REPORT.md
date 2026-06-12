@@ -10,12 +10,12 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **341 passed, 1 skipped** (сетенезависимые, Qt headless) |
+| Тесты | **353 passed, 1 skipped** (сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
-| Своих модулей / тест-файлов | 76 / 54 |
+| Своих модулей / тест-файлов | 76 / 55 |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build |
 | Git | ветка `master`, **4 коммита не запушены** (см. §6) |
 
@@ -62,7 +62,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
 | screenshot | опц. headless-скриншот страницы (Playwright, lazy import, gated) |
 | attack_surface | статический оффлайн-SVG граф атак-поверхности (домен → категории) |
-| external_tools | опц. внешние бинари (nuclei): subprocess + нормализация в findings |
+| external_tools | опц. внешние бинари (nuclei/katana/amass): subprocess + нормализация |
 | analyzer_plugins | SDK пользовательских аналитических плагинов (plugins/analyzers/) |
 | anti_detect_engine / cloudflare_bypass | сессии с ротацией UA, retry, обход CF |
 | scrapy_crawler / _scrapy_spider | deep-crawl в отдельном процессе |
