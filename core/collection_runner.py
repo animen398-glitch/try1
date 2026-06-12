@@ -25,8 +25,10 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 from urllib.parse import urlparse
 
+from core.analyzer_plugins import discover_analyzers, run_analyzers
 from core.api_key_extractor import ApiKeyExtractor
 from core.attack_surface import build_surface, render_svg as render_surface_svg
+from core.config import PLUGINS_DIR
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.executive_summary import build_summary
@@ -150,6 +152,10 @@ class CollectionRunner:
         # 8. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
         if self.screenshots and not self._cancelled(report):
             report['phases']['screenshot'] = self._phase_screenshot(url, project_dir)
+        # 9. Analyzer plugins (user-supplied) — see the whole report; their
+        # findings fold into vulns so the summary/exec/graph reflect them.
+        if not self._cancelled(report):
+            report['phases']['analyzers'] = self._phase_analyzers(report)
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
@@ -291,6 +297,39 @@ class CollectionRunner:
             return {'status': 'Success', 'findings': findings, 'summary': summary}
         except Exception as e:
             self._log(f'  Vuln scan failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_analyzers(self, report: Dict) -> Dict:
+        """Run user-supplied analyzer plugins over the whole report and fold any
+        findings into the vuln phase (so summary/exec/graph include them).
+
+        Opt-in by presence: nothing runs unless the user dropped a plugin into
+        plugins/analyzers/. Isolated — a broken plugin is reported, not fatal.
+        """
+        self._log('[9/9] Analyzer plugins…')
+        try:
+            errs: list = []
+            analyzers = discover_analyzers(
+                PLUGINS_DIR / 'analyzers',
+                on_error=lambda name, e: errs.append({'plugin': name, 'error': str(e)}),
+            )
+            if not analyzers and not errs:
+                return {'status': 'Skipped', 'reason': 'no analyzer plugins'}
+
+            agg = run_analyzers(analyzers, report)
+            errs.extend(agg['errors'])
+            added = agg['findings']
+            vulns = report['phases'].get('vulns')
+            if added and isinstance(vulns, dict):
+                findings = vulns.get('findings', []) + added
+                vulns['findings'] = findings
+                vulns['summary'] = VulnScanner.summarize(findings)
+            self._log(f'  Analyzers: {len(analyzers)} plugin(s), '
+                      f'{len(added)} finding(s), {len(errs)} error(s)')
+            return {'status': 'Success', 'plugins': list(agg['results'].keys()),
+                    'findings_added': len(added), 'errors': errs}
+        except Exception as e:
+            self._log(f'  Analyzer plugins failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     def _merge_nuclei(self, url: str, findings: list) -> int:

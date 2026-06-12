@@ -1,0 +1,36 @@
+# Example analyzer plugin.
+#
+# Copy to `example_analyzer.py` (drop the .example suffix) to activate. Any
+# *.py in this folder that exposes one of the contracts below is auto-discovered
+# and run over the aggregated Full Collection report; returned findings fold
+# into the report's vulnerabilities (and so into the risk score, executive
+# summary and attack-surface graph).
+#
+# Contract — a plugin is a class with `name` and `run(self, results) -> dict`.
+# `results` is the collection report dict: {url, domain, phases: {...}}.
+# Return {"findings": [{"severity": "High|Medium|Info", "title": ..., "detail": ...}]}.
+
+from core.analyzer_plugins import AnalyzerPlugin
+
+
+class ManyPagesAnalyzer(AnalyzerPlugin):
+    name = "many-pages"
+
+    def run(self, results: dict) -> dict:
+        capture = (results.get("phases", {}).get("capture", {}) or {}).get("data", {})
+        pages = capture.get("pages_captured", 0)
+        findings = []
+        if pages and pages >= 20:
+            findings.append({
+                "severity": "Info",
+                "title": f"Large crawl surface: {pages} pages captured",
+                "detail": "A broad page surface can mean more to review.",
+            })
+        return {"findings": findings}
+
+
+# Expose to the loader. Any one of these works:
+#   • register_analyzers(registry): registry.register(ManyPagesAnalyzer())
+#   • ANALYZER_PLUGINS = [ManyPagesAnalyzer]
+#   • ANALYZER_PLUGIN = ManyPagesAnalyzer
+ANALYZER_PLUGIN = ManyPagesAnalyzer

@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import (
 )
 
 from core import features
+from core.analyzer_plugins import discover_analyzers
+from core.config import PLUGINS_DIR
 from gui.constants import REGISTRY_DB
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.endpoint_index import EndpointIndex
@@ -19,6 +21,14 @@ from utils.system_logger import get_last_logs
 
 class SystemTabMixin:
     """Builds and drives the System tab."""
+
+    @staticmethod
+    def _discover_analyzer_names() -> list:
+        """Names of analyzer plugins found in plugins/analyzers/ (never raises)."""
+        try:
+            return [p.name for p in discover_analyzers(PLUGINS_DIR / 'analyzers')]
+        except Exception:
+            return []
 
     def _build_system_tab(self) -> QWidget:
         w = QWidget()
@@ -73,6 +83,23 @@ class SystemTabMixin:
             cap.addWidget(row)
         cap_grp.setLayout(cap)
         layout.addWidget(cap_grp)
+
+        # ── Analyzer plugins (discovered in plugins/analyzers/) ───────────
+        ana_grp = SectionGroupBox("Analyzer-плагины (plugins/analyzers/)")
+        ana = QVBoxLayout()
+        names = self._discover_analyzer_names()
+        if names:
+            for name in names:
+                row = QLabel(f"• {name}")
+                row.setStyleSheet("color:#81c784; font-size:11px;")
+                ana.addWidget(row)
+        else:
+            hint = QLabel("Плагины не найдены. См. plugins/analyzers/"
+                          "example_analyzer.py.example")
+            hint.setStyleSheet("color:#888; font-size:11px;")
+            ana.addWidget(hint)
+        ana_grp.setLayout(ana)
+        layout.addWidget(ana_grp)
 
         # ── Logs ─────────────────────────────────────────────────────────
         l_grp = SectionGroupBox("Системные логи (последние 50)")

@@ -102,6 +102,15 @@ running» и позволяет запускать несколько задач
 добавить свою вкладку, положив `*.py` в `plugins/` — без правки кода ядра.
 Контракт и пример — [`plugins/README.md`](plugins/README.md).
 
+### Analyzer-плагины
+
+Помимо вкладок, можно подключить **аналитические плагины**: класс с `name` и
+`run(self, results)`, который разбирает агрегированный отчёт Full Collection и
+возвращает дополнительные findings (они вливаются в risk score, Executive
+Summary и граф атак-поверхности). Положите `*.py` в `plugins/analyzers/` —
+контракт и пример в [`plugins/analyzers/README.md`](plugins/analyzers/README.md).
+Найденные плагины видны во вкладке **System**.
+
 ## Тесты
 
 ```bash

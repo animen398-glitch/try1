@@ -592,11 +592,11 @@ N5. ПРИОРИТИЗАЦИЯ
   H4. Reporting 2.0 CSS/SVG (#9)      [DONE] — risk cards + severity-
       бары + site map + exec summary в оффлайн-отчёт. Inline-CSS/SVG, без deps.
 
-## MEDIUM VALUE (полезно, не критично)
+## MEDIUM VALUE (полезно, не критично)  [ВСЕ ЗАКРЫТЫ: M1–M4 DONE]
   M1. Screenshot plain (#4) — [DONE] gated по Playwright; ссылками, не base64.
   M2. Attack Surface Graph как static SVG (#1) — [DONE] после Reporting 2.0.
   M3. External optional binaries (#11) — [DONE] nuclei (фреймворк + интеграция).
-  M4. Analyzer Plugin SDK (#10) — задокументировать контракт, отложить код.
+  M4. Analyzer Plugin SDK (#10) — [DONE] контракт + дискавери + интеграция.
 
 ## LOW VALUE (низкий ROI)
   L1. AI/LLM Executive Summary (#3) — недетерминир., новый рантайм, узкий ROI.
@@ -788,7 +788,40 @@ N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
         (паттерн готов). nuclei выбран первым: даёт max-leverage (вливается в уже
         существующий findings-пайплайн).
 
-      Очередь MEDIUM (по запросу): M4 Analyzer Plugin SDK (контракт).
-      LOW/REJECTED — без изменений (см. N5).
+  M4. Analyzer Plugin SDK — пользовательские аналитические плагины (#10) — [DONE]
+      2026-06-12 (изначально POSTPONED/«документировать»; реализовано минимально и
+      БЕЗ дублирования механизма — переиспользует контракт-дискавери tab-плагинов):
+        1) core/analyzer_plugins.py — ЧИСТЫЙ stdlib-модуль. Контракт:
+           class AnalyzerPlugin: name; run(self, results)->dict (как в кандидате).
+           AnalyzerRegistry.register (принимает класс ИЛИ инстанс; валидирует
+           name+callable run). discover_analyzers(dir) — грузит plugins/analyzers/
+           *.py (контракт register_analyzers(registry)/ANALYZER_PLUGINS/
+           ANALYZER_PLUGIN — ЗЕРКАЛО PluginManager, не новый незнакомый механизм);
+           битый модуль изолируется (rollback + on_error), не роняет сбор.
+           run_analyzers — гоняет плагины, изолирует падения (errors[]), валидирует
+           и тегирует findings (source=имя плагина), отбрасывает мусор.
+        2) РАЗДЕЛЕНИЕ от tab-плагинов: analyzer-плагины в plugins/analyzers/
+           (PluginManager.discover глобит только верхний plugins/*.py → нет
+           коллизии двух систем).
+        3) collection_runner — фаза [9/9] _phase_analyzers(report): видит ВЕСЬ
+           отчёт, findings плагинов вливаются в vulns + re-summarize → попадают в
+           risk_score/Executive Summary/Attack Surface/vuln-карточку. Opt-in по
+           наличию (нет файлов → Skipped). Изолировано.
+        4) GUI tab_system — панель «Analyzer-плагины» со списком найденных (или
+           подсказкой на example). features-стиль discoverability.
+        5) plugins/analyzers/{README.md, example_analyzer.py.example} — контракт
+           + рабочий пример (many-pages). Проверено вживую: дискавери+run дают
+           finding с source='many-pages'.
+        6) tests/test_analyzer_plugins.py — 11 offline-тестов (registry класс/
+           инстанс/валидация; run агрегация/изоляция краша/отбрасывание мусора/
+           non-dict; discovery загрузка/изоляция битого/underscore+нет-папки;
+           collection merge + re-summarize; skip без плагинов).
+        ИТОГ: 341 passed, 1 skipped; ruff чист; full suite exit 0. Без новых
+        зависимостей. Долг НЕ создан: второй extension-point намеренно минимален,
+        изолирован от tab-системы, и переиспользует знакомый контракт.
+
+      LOW/REJECTED — без изменений (см. N5). РОАДМАП: HIGH (H1–H4) и MEDIUM
+      (M1–M4) ПОЛНОСТЬЮ ЗАКРЫТЫ. Остаются осознанно: L1 (LLM exec summary) и
+      R1–R4 — вне скоупа по архитектурным причинам.
 
 ==============================================================================
