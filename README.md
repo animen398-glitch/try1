@@ -28,7 +28,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map |
-| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот страницы через Playwright) |
+| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешний nuclei-скан) |
 | Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down + Security Overview (вердикт риска / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite) |
 | System | Очередь задач, экспорт данных, системные логи |
@@ -46,6 +46,8 @@ pip install playwright && python -m playwright install chromium   # Dynamic API 
 pip install yt-dlp                                                # Video / Instagram
 pip install "fastapi" "uvicorn[standard]"                          # web-консоль
 # ffmpeg — внешний бинарь; нужен для merge 4K/1080p (видео+аудио)
+# nuclei — внешний бинарь (projectdiscovery); опц. vuln-сканер в Full Collection
+#          (https://github.com/projectdiscovery/nuclei). Детект — в System-вкладке.
 ```
 
 ## Запуск

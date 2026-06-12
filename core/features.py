@@ -48,6 +48,11 @@ def has_scrapy() -> bool:
     return _has_module('scrapy')
 
 
+def has_nuclei() -> bool:
+    """projectdiscovery/nuclei — external vuln-template scanner (optional)."""
+    return _has_binary('nuclei')
+
+
 # Optional feature -> (what it enables, detector).
 OPTIONAL_FEATURES = {
     'playwright': ('Dynamic API Sniffing (headless Chromium)', has_playwright),
@@ -56,6 +61,7 @@ OPTIONAL_FEATURES = {
     'fastapi':    ('Web console (LAN)',                        has_fastapi),
     'lxml':       ('Faster HTML parsing',                      has_lxml),
     'scrapy':     ('Deep site crawl (subprocess)',             has_scrapy),
+    'nuclei':     ('Nuclei vuln templates (external binary)',  has_nuclei),
 }
 
 

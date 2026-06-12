@@ -595,7 +595,7 @@ N5. ПРИОРИТИЗАЦИЯ
 ## MEDIUM VALUE (полезно, не критично)
   M1. Screenshot plain (#4) — [DONE] gated по Playwright; ссылками, не base64.
   M2. Attack Surface Graph как static SVG (#1) — [DONE] после Reporting 2.0.
-  M3. External optional binaries (#11) — по паттерну scrapy, по запросу.
+  M3. External optional binaries (#11) — [DONE] nuclei (фреймворк + интеграция).
   M4. Analyzer Plugin SDK (#10) — задокументировать контракт, отложить код.
 
 ## LOW VALUE (низкий ROI)
@@ -755,7 +755,40 @@ N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
         входят (отдельные вкладки) → в граф попадают доступные категории; модуль
         обобщён под добавление новых категорий при появлении данных.
 
-      Очередь MEDIUM (по запросу): M3 External optional binaries, M4 Analyzer
-      Plugin SDK (контракт). LOW/REJECTED — без изменений (см. N5).
+  M3. External optional binaries — nuclei (#11) — [DONE] 2026-06-12
+      Реализовано (опц. внешний бинарь по паттерну scrapy: subprocess + features-
+      детект, БЕЗ обязательных зависимостей и БЕЗ переписывания инструмента, I1):
+        1) core/external_tools.py — run_command(cmd,timeout) (subprocess, никогда
+           не бросает: missing-binary/OSError/timeout → структурный результат с
+           частичным stdout); parse_nuclei_jsonl(text) — нормализует
+           `nuclei -jsonl` в наш finding-shape {severity,title,detail,source=
+           'nuclei'} с маппингом critical/high→High, medium→Medium, low/info/
+           unknown→Info; NucleiRunner.available()=features.has_nuclei,
+           scan(url)→{status: Unavailable/Error/Success, findings, truncated}.
+           НЕ реимплементируем nuclei — только shell-out + нормализация.
+        2) features.py — has_nuclei (which) + запись в OPTIONAL_FEATURES →
+           System-вкладка показывает ✓/✗.
+        3) collection_runner — ОПЦ. флаг nuclei=False; _merge_nuclei() в фазе
+           Vuln вливает находки nuclei в общий список findings ДО summarize() →
+           они автоматически попадают в summary/risk_score, Executive Summary,
+           Attack Surface (Findings) и vuln-карточку отчёта. Best-effort: нет
+           бинаря/сбой → лог + игнор, нативный скан остаётся.
+        4) GUI tab_collection — чекбокс «Nuclei (внешний сканер)», disabled+
+           подсказка без бинаря (upfront-деградация); прокидывает nuclei=.
+        5) tests/test_external_tools.py — 11 offline-тестов (парсинг severity/
+           полей/мусора/фолбэк-тайтла; scan unavailable/success/error/timeout-
+           partial; collection merge enabled/disabled/unavailable; дефолт off).
+           Бинарь nuclei НЕ вызывается (run_command/available застаблены).
+        ИТОГ: 330 passed, 1 skipped; ruff чист; full suite exit 0. Без новых
+        pip-зависимостей (nuclei — внешний бинарь, как ffmpeg).
+        Прим. (целесообразность katana/amass — изучено): фреймворк (run_command +
+        JSONL-парс) делает их добавление тонким (katana→endpoints, amass/
+        subfinder→subdomains), но это отдельные парсеры + точки интеграции (вкладки
+        Subdomain/Dashboard), без немедленного must-have → отложено до запроса
+        (паттерн готов). nuclei выбран первым: даёт max-leverage (вливается в уже
+        существующий findings-пайплайн).
+
+      Очередь MEDIUM (по запросу): M4 Analyzer Plugin SDK (контракт).
+      LOW/REJECTED — без изменений (см. N5).
 
 ==============================================================================

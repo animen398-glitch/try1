@@ -31,6 +31,7 @@ from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
+from core.external_tools import NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
@@ -51,7 +52,7 @@ class CollectionRunner:
 
     def __init__(self, profile: str = 'chrome_windows', max_pages: int = 20,
                  cookies: Optional[str] = None, capture_delay: float = 0.5,
-                 screenshots: bool = False):
+                 screenshots: bool = False, nuclei: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -59,6 +60,8 @@ class CollectionRunner:
         # Opt-in headless screenshot (Playwright) — off by default so the
         # default pipeline stays fast and dependency-free.
         self.screenshots = screenshots
+        # Opt-in external nuclei scan (binary), merged into vuln findings.
+        self.nuclei = nuclei
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -66,7 +69,8 @@ class CollectionRunner:
                   max_pages: Optional[int] = None,
                   cookies: Optional[str] = None,
                   capture_delay: Optional[float] = None,
-                  screenshots: Optional[bool] = None):
+                  screenshots: Optional[bool] = None,
+                  nuclei: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -75,6 +79,8 @@ class CollectionRunner:
             self.cookies = cookies
         if screenshots is not None:
             self.screenshots = screenshots
+        if nuclei is not None:
+            self.nuclei = nuclei
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -267,7 +273,12 @@ class CollectionRunner:
             recon = report['phases'].get('recon', {}).get('data', {})
             cookies = report['phases'].get('cookies', {}).get('data', {})
             findings = VulnScanner().scan(recon, {}, cookies)
+            # Optionally enrich with external nuclei findings (same shape), so
+            # summary / executive summary / attack surface all account for them.
+            nuclei_count = self._merge_nuclei(report.get('url', ''), findings)
             summary = VulnScanner.summarize(findings)
+            if nuclei_count:
+                summary['nuclei'] = nuclei_count
             out = project_dir / 'security'
             out.mkdir(exist_ok=True)
             (out / 'vulns.json').write_text(
@@ -281,6 +292,25 @@ class CollectionRunner:
         except Exception as e:
             self._log(f'  Vuln scan failed: {e}')
             return {'status': 'Error', 'error': str(e)}
+
+    def _merge_nuclei(self, url: str, findings: list) -> int:
+        """Run nuclei (if enabled + installed) and append its findings in place.
+
+        Returns the number of nuclei findings added. Opt-in and best-effort: a
+        missing binary or any failure is logged and ignored — the native scan
+        result still stands.
+        """
+        if not self.nuclei or not url:
+            return 0
+        if not NucleiRunner.available():
+            self._log('  nuclei — пропущено (бинарь не установлен)')
+            return 0
+        runner = NucleiRunner()
+        runner.set_progress_callback(self._log)
+        data = runner.scan(url)
+        extra = data.get('findings', [])
+        findings.extend(extra)
+        return len(extra)
 
     def _phase_screenshot(self, url: str, project_dir: Path) -> Dict:
         self._log('[8/8] Screenshot…')

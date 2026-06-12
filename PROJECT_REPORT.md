@@ -10,12 +10,12 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **319 passed, 1 skipped** (сетенезависимые, Qt headless) |
+| Тесты | **330 passed, 1 skipped** (сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
-| Своих модулей / тест-файлов | 74 / 52 |
+| Своих модулей / тест-файлов | 75 / 53 |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build |
 | Git | ветка `master`, **4 коммита не запушены** (см. §6) |
 
@@ -62,6 +62,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
 | screenshot | опц. headless-скриншот страницы (Playwright, lazy import, gated) |
 | attack_surface | статический оффлайн-SVG граф атак-поверхности (домен → категории) |
+| external_tools | опц. внешние бинари (nuclei): subprocess + нормализация в findings |
 | anti_detect_engine / cloudflare_bypass | сессии с ротацией UA, retry, обход CF |
 | scrapy_crawler / _scrapy_spider | deep-crawl в отдельном процессе |
 | registry / config / paths / features | DataRegistry, единый конфиг, PathManager, детект опц. фич |

@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
 
 from core.collection_runner import CollectionRunner
 from core.executive_summary import RISK_COLORS
-from core.features import has_playwright
+from core.features import has_nuclei, has_playwright
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CollectionWorker
 
@@ -67,13 +67,25 @@ class FinalReportTabMixin:
 
         # Opt-in headless screenshot (Playwright). Disabled with a hint when
         # Playwright is absent — the feature-gating pattern used elsewhere.
+        opt_row = QHBoxLayout()
         self.collect_screenshot = QCheckBox("Скриншот страницы (Playwright)")
         if not has_playwright():
             self.collect_screenshot.setEnabled(False)
             self.collect_screenshot.setToolTip(
                 "Требуется Playwright: pip install playwright "
                 "&& python -m playwright install chromium")
-        g.addWidget(self.collect_screenshot)
+        opt_row.addWidget(self.collect_screenshot)
+
+        # Opt-in external nuclei scan — gated on the binary being on PATH.
+        self.collect_nuclei = QCheckBox("Nuclei (внешний сканер)")
+        if not has_nuclei():
+            self.collect_nuclei.setEnabled(False)
+            self.collect_nuclei.setToolTip(
+                "Требуется бинарь nuclei на PATH "
+                "(https://github.com/projectdiscovery/nuclei)")
+        opt_row.addWidget(self.collect_nuclei)
+        opt_row.addStretch()
+        g.addLayout(opt_row)
 
         btn_row = QHBoxLayout()
         self.btn_collect_run = StyledButton("Run Full Collection")
@@ -126,6 +138,7 @@ class FinalReportTabMixin:
             cookies=self.collect_cookies.text().strip() or None,
             capture_delay=self.settings.get('request_delay', 500) / 1000.0,
             screenshots=self.collect_screenshot.isChecked(),
+            nuclei=self.collect_nuclei.isChecked(),
         )
         self._active_collector = runner
 
