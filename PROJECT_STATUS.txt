@@ -1,6 +1,6 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-12 (Hardening-проход: 6 багов закрыты + база тестов ~233)
+  Дата отчёта: 2026-06-12 (Hardening-проход: 7 багов закрыты + база тестов ~236)
 ==============================================================================
 
 ------------------------------------------------------------------------------
@@ -313,7 +313,7 @@ CLI / прочее:
     system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (~233 теста, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (~236 тестов, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
     субдоменов, paywall, web_app, config, features, per-tab feature-gating,
@@ -412,7 +412,7 @@ CLI / прочее:
     сканера теперь пишется в PathManager reports/ (per-host), а не в ~/. Мёртвый
     SimpleSiteDownloader (тот же баг, нигде не использовался) удалён. Покрыто
     tests/test_api_key_extractor.py (gzip-регрессия) + test_http_retry.py.
-  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~233 теста, сетенезависимый,
+  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~236 тестов, сетенезависимый,
     Qt headless) + CI (.github/workflows/ci.yml). Legacy examples/test_cases.py
     и ручной run_live_test.py остаются как smoke-сценарии.
   • Документация: [ЗАКРЫТО] есть корневой README.md (обзор/установка/запуск/
@@ -428,7 +428,7 @@ CLI / прочее:
   • Конфигурация путей к БД и каталогам: [ЗАКРЫТО] централизована в core/config.py
     поверх core/paths.py (PathManager, frozen-aware) — единый источник путей для
     GUI и CLI; см. «Data Path Context» в разделе 4.
-  • [ЗАКРЫТО — hardening-проход 2026-06-12] Аудит логики выявил и закрыл 6
+  • [ЗАКРЫТО — hardening-проход 2026-06-12] Аудит логики выявил и закрыл 7
     реальных багов (+ регрессионные тесты на каждый): (1) recon_engine.run_recon
     сериализовал полный result вместо урезанного report — большой pwa_manifest
     не вырезался из recon_report.json; (2) FrontendCloner._download кешировал путь
@@ -447,9 +447,17 @@ CLI / прочее:
     унификация secret-детекции (core.secret_scanner — единый источник правды):
     набор разошёлся (не ловил JWT, Stripe, PEM-ключи), Capture-вкладка
     недосчитывала утечки против API/Security-вкладок; переведён на общий
-    SecretScanner. Покрыто test_recon_engine, test_frontend_cloner,
+    SecretScanner. (7) gui/ui_components.ResultsDisplay — QTextEdit, чей append()
+    рендерит аргумент как HTML; цветные хелперы (append_info/error/…) получают
+    plain-text (URL с query, имена файлов, значения заголовков, тексты ошибок,
+    preview секретов), поэтому любой '<','>','&' трактовался как разметка и
+    портил/съедал вывод во ВСЕХ вкладках — теперь сообщение экранируется
+    (намеренный HTML — только префикс [LEVEL]; History-вкладка экранирует и
+    metadata-JSON в <pre>). Не security (Qt rich text не исполняет скрипты) —
+    корректность отображения. Покрыто test_recon_engine, test_frontend_cloner,
     test_anti_detect, test_cloudflare_bypass, test_site_extractor,
-    test_capture_analysis + новая база-характеризация
-    EndpointIndex/PatternAnalyser/DesignAnalyzer.
+    test_capture_analysis, test_results_display + новая база-характеризация
+    EndpointIndex/PatternAnalyser/DesignAnalyzer. Параллельно: фикс устаревшей
+    подписи/тултипа passive-recon в subdomain-вкладке (+ AlienVault/Anubis).
 
 ==============================================================================
