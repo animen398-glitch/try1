@@ -229,5 +229,5 @@ class ImageTabMixin:
         archive = self._make_archive(out_path, domain, 'images')
         if archive:
             self.image_results.append_success(f"Архив создан: {Path(archive).name}")
-        else:
+        elif self.settings.get('auto_compress', False):
             self.image_results.append_warning("Архивация пропущена — нет скачанных файлов")

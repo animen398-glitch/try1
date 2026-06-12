@@ -134,7 +134,7 @@ class CaptureTabMixin:
         archive = self._make_archive(out_path, domain, 'capture')
         if archive:
             self.capture_log.append_success(f"Архив создан: {Path(archive).name}")
-        else:
+        elif self.settings.get('auto_compress', False):
             self.capture_log.append_warning("Архивация пропущена — папка пуста или не найдена")
 
         files = [str(p) for p in out_path.glob('**/*') if p.is_file()] if out_path.exists() else []

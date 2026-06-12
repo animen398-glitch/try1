@@ -43,6 +43,9 @@ class WindowHelpersMixin:
         return f"{nbytes:.2f} TB"
 
     def _make_archive(self, source_dir: Path, domain: str, suffix: str) -> Optional[str]:
+        # Honour the "auto-archive" setting — off means no archive is produced.
+        if not self.settings.get('auto_compress', False):
+            return None
         if not source_dir.exists() or not any(source_dir.rglob('*')):
             return None
         fmt = self.settings.get('compression_format', 'zip')
