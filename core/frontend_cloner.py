@@ -152,6 +152,12 @@ class FrontendCloner:
             self._failed.append(full_url)
             return None
 
+        # Reserve the cache entry BEFORE processing the body so a circular CSS
+        # @import (a.css -> b.css -> a.css) resolves to this path instead of
+        # recursing into a re-fetch of the same file forever.
+        rel = f"assets/{subdir}/{local_name}"
+        self._cache[full_url] = rel
+
         # CSS: rewrite nested url() / @import before saving
         if subdir == 'css':
             try:
@@ -163,8 +169,6 @@ class FrontendCloner:
         else:
             asset_path.write_bytes(raw)
 
-        rel = f"assets/{subdir}/{local_name}"
-        self._cache[full_url] = rel
         self._log(f"  [{subdir}] {local_name}")
         return rel
 
