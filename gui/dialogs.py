@@ -1,3 +1,5 @@
+import os
+
 from PyQt5.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox,
@@ -138,7 +140,11 @@ class SettingsDialog(QDialog):
             self.output_dir_edit.setText(path)
 
     def _on_accept(self):
-        self.settings['output_dir'] = self.output_dir_edit.text()
+        # Expand ~ on save so an in-session scan never writes to a literal
+        # "~" folder in the CWD (load_settings expands too, but only on next
+        # launch — this closes the same-session gap).
+        self.settings['output_dir'] = os.path.expanduser(
+            self.output_dir_edit.text())
         self.settings['max_pages'] = self.max_pages_spin.value()
         self.settings['request_delay'] = self.delay_spin.value()
         self.settings['user_agent_profile'] = self.ua_combo.currentText()

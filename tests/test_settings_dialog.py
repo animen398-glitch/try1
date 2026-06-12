@@ -34,6 +34,21 @@ def test_dialog_persists_ua_profile_and_archive_format(qapp, isolated_config):
     assert saved["compression_format"] == "rar"
 
 
+def test_dialog_expands_tilde_in_output_dir(qapp, isolated_config):
+    """A '~/...' output dir must be expanded on save, so a same-session scan
+    never writes to a literal '~' folder in the CWD (the 50 GB-folder bug)."""
+    import os
+
+    from gui.dialogs import SettingsDialog
+    dlg = SettingsDialog()
+    dlg.output_dir_edit.setText("~/SiteAnalyzer")
+    dlg._on_accept()
+
+    saved = config.load_settings()["output_dir"]
+    assert "~" not in saved
+    assert saved == os.path.expanduser("~/SiteAnalyzer")
+
+
 def test_dialog_loads_current_values(qapp, isolated_config):
     from gui.dialogs import SettingsDialog
     config.save_settings({"user_agent_profile": "safari_mac",
