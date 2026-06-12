@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
 )
 
 from core.content_capture import SiteContentCapture
+from core.secret_scanner import SecretScanner
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CaptureWorker
 
@@ -152,18 +153,9 @@ class CaptureTabMixin:
                 f' Обнаружены скрытые/технические пути: {stats["hidden_paths"]}'
             )
 
-    _KEY_RE = re.compile(
-        r'(?:'
-        r'sk-[A-Za-z0-9]{20,}'
-        r'|AIza[A-Za-z0-9_\-]{35}'
-        r'|AKIA[A-Z0-9]{16}'
-        r'|ghp_[A-Za-z0-9]{36}'
-        r'|xox[baprs]-[A-Za-z0-9\-]+'
-        r'|(?:api[_\-]?key|apikey|api_token|access_token|secret_key)'
-        r'(?:["\'\s:=]+)[A-Za-z0-9_\-]{16,}'
-        r'|[Bb]earer\s+[A-Za-z0-9._\-]{20,}'
-        r')'
-    )
+    # Secret detection is delegated to the shared SecretScanner (single source
+    # of truth) so the Capture tab's leak count matches the API / Security tabs.
+    _secret_scanner = SecretScanner()
     _COMMENT_RE = re.compile(r'<!--(.{8,}?)-->', re.DOTALL)
     _HIDDEN_RE  = re.compile(
         r'(?:href|src|action)=["\'][^"\']*'
@@ -183,8 +175,8 @@ class CaptureTabMixin:
                 text = Path(filepath).read_text(encoding='utf-8', errors='ignore')
             except Exception:
                 continue
-            for m in self._KEY_RE.finditer(text):
-                token = m.group(0)[:60]
+            for finding in self._secret_scanner.scan_text(text, filepath):
+                token = finding['match']
                 if token not in seen_keys:
                     seen_keys.add(token)
                     key_leaks += 1
