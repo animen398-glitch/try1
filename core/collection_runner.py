@@ -26,6 +26,7 @@ from typing import Callable, Dict, Optional
 from urllib.parse import urlparse
 
 from core.api_key_extractor import ApiKeyExtractor
+from core.attack_surface import build_surface, render_svg as render_surface_svg
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.executive_summary import build_summary
@@ -447,6 +448,13 @@ class CollectionRunner:
         exec_card = card('Executive Summary', render_exec_summary(summary),
                          summary.get('risk_level', '—'))
 
+        # Attack Surface — static offline SVG graph (domain → categories).
+        surface = build_surface(report)
+        surface_card = (
+            card('Attack Surface', render_surface_svg(surface), 'Success')
+            if surface.get('categories') else ''
+        )
+
         return f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
 <title>Collection Report — {e(report.get('domain', ''))}</title></head>
@@ -460,6 +468,7 @@ max-width:860px;margin:24px auto;padding:0 16px;color:#222;">
   Директория: {e(report.get('project_dir', ''))}
 </p>
 {exec_card}
+{surface_card}
 {''.join(body_parts)}
 <p style="color:#aaa;font-size:11px;margin-top:24px;">
   Advanced Site Analyzer · Full Collection

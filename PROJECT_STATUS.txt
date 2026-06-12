@@ -594,7 +594,7 @@ N5. ПРИОРИТИЗАЦИЯ
 
 ## MEDIUM VALUE (полезно, не критично)
   M1. Screenshot plain (#4) — [DONE] gated по Playwright; ссылками, не base64.
-  M2. Attack Surface Graph как static SVG (#1) — после Reporting 2.0.
+  M2. Attack Surface Graph как static SVG (#1) — [DONE] после Reporting 2.0.
   M3. External optional binaries (#11) — по паттерну scrapy, по запросу.
   M4. Analyzer Plugin SDK (#10) — задокументировать контракт, отложить код.
 
@@ -734,8 +734,28 @@ N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
         полный прогон снова зелёный в одном процессе (потолок снят).
         ИТОГ: 311 passed, 1 skipped (один процесс, exit 0); ruff чист.
 
-      Очередь MEDIUM (по запросу): M2 Attack Surface Graph (static SVG), M3
-      External optional binaries, M4 Analyzer Plugin SDK (контракт). LOW/REJECTED
-      — без изменений (см. N5).
+  M2. Attack Surface Graph — static SVG (#1) — [DONE] 2026-06-12
+      Реализовано (статическая оффлайн-форма; интерактивный JS-граф REJECTED, R2):
+        1) core/attack_surface.py — ЧИСТЫЙ stdlib-модуль: build_surface(report)
+           извлекает категории из фаз коллекции (Technologies←recon.cms,
+           Infrastructure←recon.ip, Secrets←api.details ТИПЫ секретов с фолбэком
+           на счёт, Pages←capture.site_map, Findings←vulns.findings); пустые
+           категории опускаются (частичный прогон → меньший граф, без выдуманных
+           узлов). render_svg(surface) — hub-and-spoke инлайн-SVG: домен в центре,
+           спицы к узлам категорий с count, список элементов в SVG <title>
+           (тултип). Без JS, без xmlns-URN, без внешних ресурсов (I1/I2),
+           экранирование. Радиальная раскладка через math.cos/sin.
+        2) collection_runner._render_html — карточка «Attack Surface» (после
+           Executive Summary), только если есть категории.
+        3) tests/test_attack_surface.py — 8 offline-тестов (извлечение/пропуск
+           пустых/фолбэк секретов/пустой отчёт/кап элементов; рендер оффлайн-
+           инлайн/экранирование/плейсхолдер).
+        ИТОГ: 319 passed, 1 skipped; ruff чист; full suite exit 0. Без новых
+        зависимостей. Прим.: субдомены/JS/source-maps в отчёт коллекции не
+        входят (отдельные вкладки) → в граф попадают доступные категории; модуль
+        обобщён под добавление новых категорий при появлении данных.
+
+      Очередь MEDIUM (по запросу): M3 External optional binaries, M4 Analyzer
+      Plugin SDK (контракт). LOW/REJECTED — без изменений (см. N5).
 
 ==============================================================================
