@@ -5,6 +5,8 @@ Mixin folded into MainWindow; relies on shared helpers (_set_busy,
 _run_async) and dashboard state flags initialised in MainWindow.__init__.
 """
 
+import json
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
@@ -12,7 +14,7 @@ from PyQt5.QtWidgets import (
 )
 
 from gui.constants import REGISTRY_DB
-from gui.ui_components import SectionGroupBox, StyledButton
+from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.data_viewer import DataViewer
 from utils.endpoint_index import EndpointIndex
 from utils.site_extractor import SiteExtractor
@@ -113,6 +115,7 @@ class DashboardTabMixin:
         header = self.dashboard_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.Stretch)  # Snippet fills space
+        self.dashboard_table.itemSelectionChanged.connect(self._on_dashboard_row_selected)
         table_layout.addWidget(self.dashboard_table)
         table_grp.setLayout(table_layout)
         layout.addWidget(table_grp, stretch=1)
@@ -133,6 +136,23 @@ class DashboardTabMixin:
         ep_layout.addWidget(self.endpoints_table)
         ep_grp.setLayout(ep_layout)
         layout.addWidget(ep_grp, stretch=1)
+
+        # Full content of the selected row — read-only, but selectable and
+        # copyable (Ctrl+C), so long endpoints/snippets that don't fit a cell
+        # can be read and copied in full.
+        detail_grp = SectionGroupBox("Детали выбранной строки (выделяется и копируется)")
+        detail_layout = QVBoxLayout()
+        self.dash_detail = ResultsDisplay()
+        self.dash_detail.setMaximumHeight(150)
+        self.dash_detail.setPlaceholderText(
+            "Выберите строку в таблице, чтобы увидеть полное содержимое")
+        detail_layout.addWidget(self.dash_detail)
+        detail_grp.setLayout(detail_layout)
+        layout.addWidget(detail_grp)
+
+        # Full records backing each table, so a selection can show untruncated text.
+        self._dashboard_records: list = []
+        self._endpoints_records: list = []
 
         self._dashboard_widget = w
         return w
@@ -196,6 +216,9 @@ class DashboardTabMixin:
         """
         self.dashboard_table.setRowCount(0)
         self.endpoints_table.setRowCount(0)
+        self._dashboard_records = []
+        self._endpoints_records = []
+        self.dash_detail.clear()
         for label in self.dash_stats.values():
             label.setText("0")
         self._endpoint_filter = None
@@ -245,6 +268,7 @@ class DashboardTabMixin:
         self._apply_dashboard_filter()
 
     def _populate_endpoints_table(self, endpoints: list):
+        self._endpoints_records = endpoints[:200]
         self.endpoints_table.setRowCount(0)
         for ep in endpoints[:200]:
             r = self.endpoints_table.rowCount()
@@ -332,6 +356,7 @@ class DashboardTabMixin:
         if item is None:
             return
         self._endpoint_filter = item.text()
+        self._show_endpoint_detail(rows[0].row())
         # Keep the type combo consistent (api_endpoint) without re-firing it.
         api_idx = next(
             (i for i, (_, dt) in enumerate(self.DASHBOARD_FILTERS)
@@ -345,13 +370,53 @@ class DashboardTabMixin:
         self._update_activity_title()
         self._apply_dashboard_filter()
 
+    def _show_endpoint_detail(self, row: int):
+        if not (0 <= row < len(self._endpoints_records)):
+            return
+        ep = self._endpoints_records[row]
+        lines = [
+            f"Эндпоинт:   {ep.get('endpoint', '')}",
+            f"Вхождений:  {ep.get('count', 0)}",
+            f"Источников: {ep.get('source_count', 0)}",
+        ]
+        if ep.get('sources'):
+            lines.append("Источники:\n  " + "\n  ".join(ep['sources']))
+        if ep.get('patterns'):
+            lines.append("Паттерны:   " + ", ".join(ep['patterns']))
+        self.dash_detail.setPlainText("\n".join(lines))
+
     def _update_activity_title(self):
         if self._endpoint_filter:
             self._activity_grp.setTitle(f"Вхождения эндпоинта: {self._endpoint_filter}")
         else:
             self._activity_grp.setTitle("Записи реестра (data/registry.db)")
 
+    def _on_dashboard_row_selected(self):
+        rows = self.dashboard_table.selectionModel().selectedRows()
+        if not rows:
+            return
+        idx = rows[0].row()
+        if not (0 <= idx < len(self._dashboard_records)):
+            return
+        rec = self._dashboard_records[idx]
+        lines = [
+            f"Тип:        {rec.get('data_type', '')}",
+            f"Источник:   {rec.get('source', '')}",
+            f"Содержимое: {rec.get('content') or ''}",
+        ]
+        meta = rec.get('metadata')
+        if isinstance(meta, dict):
+            ctx = meta.get('context')
+            if ctx:
+                lines.append(f"Контекст:   {ctx}")
+            extra = {k: v for k, v in meta.items() if k != 'context'}
+            if extra:
+                lines.append("Метаданные: "
+                             + json.dumps(extra, ensure_ascii=False))
+        self.dash_detail.setPlainText("\n".join(lines))
+
     def _populate_dashboard_table(self, records: list):
+        self._dashboard_records = records
         self.dashboard_table.setRowCount(0)
         for rec in records:
             r = self.dashboard_table.rowCount()
