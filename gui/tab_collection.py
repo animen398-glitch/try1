@@ -112,6 +112,7 @@ class FinalReportTabMixin:
             profile=self.settings.get('user_agent_profile', 'chrome_windows'),
             max_pages=self.collect_pages.value(),
             cookies=self.collect_cookies.text().strip() or None,
+            capture_delay=self.settings.get('request_delay', 500) / 1000.0,
         )
         self._active_collector = runner
 

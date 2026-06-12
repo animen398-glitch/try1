@@ -44,22 +44,26 @@ class CollectionRunner:
     """Sequentially drives every collection module into one project folder."""
 
     def __init__(self, profile: str = 'chrome_windows', max_pages: int = 20,
-                 cookies: Optional[str] = None):
+                 cookies: Optional[str] = None, capture_delay: float = 0.5):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
+        self.capture_delay = capture_delay   # seconds between captured pages
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
     def configure(self, profile: Optional[str] = None,
                   max_pages: Optional[int] = None,
-                  cookies: Optional[str] = None):
+                  cookies: Optional[str] = None,
+                  capture_delay: Optional[float] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
             self.max_pages = max_pages
         if cookies is not None:
             self.cookies = cookies
+        if capture_delay is not None:
+            self.capture_delay = capture_delay
 
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
@@ -183,7 +187,8 @@ class CollectionRunner:
         self._log('[3/7] Capture (frontend)…')
         try:
             cap = SiteContentCapture()
-            cap.configure(url, str(capture_dir), self.max_pages, profile=self.profile)
+            cap.configure(url, str(capture_dir), self.max_pages,
+                          profile=self.profile, delay=self.capture_delay)
             cap.set_progress_callback(self._log)
             data = cap.run_capture()
             return {'status': 'Success', 'data': data}

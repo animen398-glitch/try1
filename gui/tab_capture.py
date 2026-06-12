@@ -85,6 +85,7 @@ class CaptureTabMixin:
             url, str(out_path),
             self.settings.get('max_pages', 50),
             profile=self.settings.get('user_agent_profile', 'chrome_windows'),
+            delay=self.settings.get('request_delay', 500) / 1000.0,
         )
         self._active_capturer = capturer
         self.btn_capture_start.setEnabled(False)
