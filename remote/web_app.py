@@ -38,6 +38,7 @@ from core.config import OPERATIONS_DB, REGISTRY_DB
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.design_analyzer import DesignAnalyzer
+from core.frontend_cloner import FrontendCloner
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
 from core.security_auditor import SecurityAuditor
@@ -45,6 +46,7 @@ from core.subdomain_scanner import SubdomainScanner
 from utils.data_viewer import DataViewer
 from utils.image_processor import ImageExtractor
 from utils.operation_registry import OperationRegistry
+from utils.video_processor import VideoDownloader
 
 # Reports/output live under here; report serving is restricted to this tree.
 _REPORT_BASE = (Path.home() / 'SiteAnalyzer').resolve()
@@ -110,6 +112,29 @@ def _run_capture(url: str, push: Callable) -> dict:
     return result
 
 
+def _run_clone(url: str, push: Callable) -> dict:
+    # The console only has a URL, so capture the site first, then clone the
+    # captured pages into a self-contained offline copy (mirrors the GUI flow
+    # of capture -> clone, and CollectionRunner's capture/clone phases).
+    base = _out_dir(url, 'clone')
+    capture_dir = base / 'capture'
+    cap = SiteContentCapture()
+    cap.configure(url, str(capture_dir), max_pages=20)
+    cap.set_progress_callback(lambda m: push(m))
+    cap_result = cap.run_capture()
+    if cap_result.get('pages_captured', 0) == 0:
+        return {'status': 'Error', 'error': 'no pages captured to clone',
+                'output_dir': str(capture_dir)}
+
+    clone_dir = base / 'clone'
+    cloner = FrontendCloner()
+    cloner.configure(str(capture_dir), str(clone_dir))
+    cloner.set_progress_callback(lambda m: push(m))
+    result = cloner.clone()
+    result['output_dir'] = str(clone_dir)
+    return result
+
+
 def _run_paywall(url: str, push: Callable) -> dict:
     bypass = PaywallBypass()
     bypass.configure()
@@ -138,6 +163,15 @@ def _run_images(url: str, push: Callable) -> dict:
     ex = ImageExtractor()
     ex.set_progress_callback(lambda m: push(m))
     result = ex.extract_images(url, str(out))
+    result['output_dir'] = str(out)
+    return result
+
+
+def _run_video(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'video')
+    dl = VideoDownloader()   # default preset 'best'; degrades if yt-dlp absent
+    dl.set_progress_callback(lambda m: push(m))
+    result = dl.download_video(url, str(out))
     result['output_dir'] = str(out)
     return result
 
@@ -172,15 +206,17 @@ JOBS: Dict[str, dict] = {
     'subdomain':  {'label': 'Subdomains',      'fn': _run_subdomain},
     'apikeys':    {'label': 'API Keys',        'fn': _run_apikeys},
     'capture':    {'label': 'Capture',         'fn': _run_capture},
+    'clone':      {'label': 'Clone Frontend',  'fn': _run_clone},
     'paywall':    {'label': 'Bypass Paywall',  'fn': _run_paywall},
     'cookies':    {'label': 'Cookie Audit',    'fn': _run_cookies},
     'security':   {'label': 'Security Audit',  'fn': _run_security},
     'images':     {'label': 'Images',          'fn': _run_images},
+    'video':      {'label': 'Video Download',  'fn': _run_video},
     'design':     {'label': 'Design Lab',      'fn': _run_design},
     'collection': {'label': 'Full Collection', 'fn': _run_collection},
 }
 
-_HEAVY_KEYS = ('html', 'reader_view', 'body')
+_HEAVY_KEYS = ('html', 'reader_view', 'body', 'output')
 
 
 def _strip_heavy(result) -> dict:
@@ -382,7 +418,9 @@ function metrics(data){
   if(data.geo?.isp) rows.push(['ISP',data.geo.isp]);
   if(data.total_api_calls!==undefined) rows.push(['API Calls',data.total_api_calls]);
   if(data.pages_captured!==undefined) rows.push(['Pages',data.pages_captured]);
+  if(data.pages_processed!==undefined) rows.push(['Cloned pages',data.pages_processed]);
   if(data.assets_downloaded!==undefined) rows.push(['Assets',data.assets_downloaded]);
+  if(data.quality!==undefined) rows.push(['Quality',data.quality]);
   if(data.strategy_used) rows.push(['Strategy',data.strategy_used]);
   if(data.html_size!==undefined) rows.push(['HTML size',(data.html_size/1024).toFixed(1)+' KB']);
   if(data.keys_found!==undefined) rows.push(['Keys found',data.keys_found]);

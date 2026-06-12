@@ -220,6 +220,12 @@ CLI / прочее:
     Design Lab (capture + палитра/типографика), GET /history (просмотр
     операций), безопасный GET /report (отдача отчётов из дерева SiteAnalyzer,
     защита от path traversal) и GET /data (просмотр реестра DataViewer).
+    [ДОБИТ ПАРИТЕТ] Добавлены последние GUI-фичи как job'ы: Security Audit
+    (secret + source-map сканер), Clone Frontend (capture→clone в одну
+    директорию) и Video Download (yt-dlp, мягкая деградация без бинаря);
+    dashboard-метрики показывают сводки (secrets/endpoints/source maps,
+    cloned pages, quality), шумный stdout yt-dlp срезается из payload
+    (_HEAVY_KEYS += 'output'). Покрыто test_web_security_job, test_web_clone_video.
 
 Рефакторинг / архитектура:
   • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
