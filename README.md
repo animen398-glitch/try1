@@ -72,7 +72,10 @@ core/                    # движки анализа (recon, capture, clone, c
                          #   collection_runner, dynamic_analyzer, vuln_scanner, …)
 utils/                   # инфраструктура (SQLite-реестры, экспорт, медиа, паттерны)
 gui/
-  main_window.py         # каркас окна + раннер задач _start_task + общие helpers
+  main_window.py         # тонкий контейнер: собирает окно из mixin'ов
+  task_runner.py         # раннер фоновых задач _start_task (Signals/Slots)
+  window_chrome.py       # меню, таб-бар из PluginManager, статус-бар
+  window_helpers.py      # общие helpers (пути, архивация, busy-state)
   plugin_manager.py      # реестр вкладок-плагинов + авто-дискавери внешних
   tab_*.py               # по модулю на вкладку (mixin-классы)
   workers.py             # QObject-воркеры фоновых задач
