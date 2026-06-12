@@ -38,11 +38,13 @@ class SubdomainTabMixin:
         g.addLayout(row_domain)
 
         row_opts = QHBoxLayout()
-        self.subdomain_chk_passive = QCheckBox("Passive recon  (crt.sh + HackerTarget)")
+        self.subdomain_chk_passive = QCheckBox(
+            "Passive recon  (crt.sh + HackerTarget + AlienVault + Anubis)")
         self.subdomain_chk_passive.setChecked(True)
         self.subdomain_chk_passive.setToolTip(
-            "Queries certificate transparency logs and HackerTarget\n"
-            "without sending any requests to the target domain."
+            "Queries certificate transparency logs (crt.sh), HackerTarget,\n"
+            "AlienVault OTX and Anubis without sending any requests to the\n"
+            "target domain."
         )
         self.subdomain_chk_brute = QCheckBox("DNS Brute Force")
         self.subdomain_chk_brute.setChecked(True)
@@ -208,6 +210,8 @@ class SubdomainTabMixin:
                 colours = {
                     'crt.sh': '#4fc3f7',
                     'hackertarget': '#4fc3f7',
+                    'alienvault': '#4fc3f7',
+                    'anubis': '#4fc3f7',
                     'brute': '#ffb74d',
                 }
                 item.setForeground(QColor(colours.get(text, '#d4d4d4')))

@@ -4,6 +4,7 @@ Mixin folded into MainWindow. Also owns _on_tab_changed, which lazy-loads the
 History and Dashboard tabs the first time each is opened.
 """
 
+import html
 import json
 
 from PyQt5.QtCore import Qt
@@ -167,4 +168,7 @@ class HistoryTabMixin:
             text = json.dumps(metadata, indent=2, ensure_ascii=False)
         except (TypeError, ValueError):
             text = str(metadata)
-        self.history_meta.append(f'<pre style="color:#d4d4d4;margin:0;">{text}</pre>')
+        # Raw append() renders HTML, so escape the JSON (it can carry recorded
+        # target data with <, > or & that would otherwise corrupt the display).
+        self.history_meta.append(
+            f'<pre style="color:#d4d4d4;margin:0;">{html.escape(text)}</pre>')
