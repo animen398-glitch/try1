@@ -14,12 +14,12 @@
 
 ## Возможности
 
-GUI содержит 13 вкладок:
+GUI содержит 14 встроенных вкладок (+ внешний плагин Deep Crawl при установленном Scrapy):
 
 | Вкладка | Назначение |
 |---|---|
 | Recon & Intel | GeoIP, фингерпринт CMS/стека, фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, дамп API-ответов |
-| Subdomain Scanner | Пассивное (crt.sh, HackerTarget) + brute-force перечисление с живой таблицей |
+| Subdomain Scanner | Пассивное (crt.sh, HackerTarget, AlienVault OTX, Anubis) + brute-force перечисление с живой таблицей; опц. active-проверки (liveness + takeover) |
 | API Key Scanner | Поиск утечек API-ключей/секретов на странице |
 | Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) |
 | Clone Frontend | Скачивание ассетов и переписывание ссылок → самодостаточная оффлайн-копия |
@@ -27,6 +27,7 @@ GUI содержит 13 вкладок:
 | Image Extractor | Оригинальное разрешение без водяных знаков; Instagram/соцсети через yt-dlp |
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
+| Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map |
 | Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт |
 | Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down |
 | История операций | Журнал операций пайплайна (SQLite) |
@@ -56,6 +57,7 @@ python main.py
 # CLI-пайплайн: Recon -> [Paywall] -> Capture -> [Dynamic] -> [Vulns] -> [API dump]
 python main_orchestrator.py https://example.com --dynamic --paywall --vulns
 python main_orchestrator.py https://example.com --max-pages 10 --output ./reports
+python main_orchestrator.py https://example.com --profile firefox_windows --delay 1000
 
 # Web-консоль (LAN, http://0.0.0.0:5000)
 python main_orchestrator.py https://example.com --web
