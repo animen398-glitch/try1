@@ -33,6 +33,7 @@ from core.executive_summary import render_html as render_exec_summary
 from core.frontend_cloner import FrontendCloner
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
+from core.screenshot import ScreenshotCapturer
 from core.site_map import render_html as render_site_map
 from core.vuln_scanner import VulnScanner
 from utils.image_processor import ImageExtractor
@@ -48,24 +49,31 @@ class CollectionRunner:
     """Sequentially drives every collection module into one project folder."""
 
     def __init__(self, profile: str = 'chrome_windows', max_pages: int = 20,
-                 cookies: Optional[str] = None, capture_delay: float = 0.5):
+                 cookies: Optional[str] = None, capture_delay: float = 0.5,
+                 screenshots: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
         self.capture_delay = capture_delay   # seconds between captured pages
+        # Opt-in headless screenshot (Playwright) — off by default so the
+        # default pipeline stays fast and dependency-free.
+        self.screenshots = screenshots
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
     def configure(self, profile: Optional[str] = None,
                   max_pages: Optional[int] = None,
                   cookies: Optional[str] = None,
-                  capture_delay: Optional[float] = None):
+                  capture_delay: Optional[float] = None,
+                  screenshots: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
             self.max_pages = max_pages
         if cookies is not None:
             self.cookies = cookies
+        if screenshots is not None:
+            self.screenshots = screenshots
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -132,6 +140,9 @@ class CollectionRunner:
         # 7. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
             report['phases']['vulns'] = self._phase_vulns(report, project_dir)
+        # 8. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
+        if self.screenshots and not self._cancelled(report):
+            report['phases']['screenshot'] = self._phase_screenshot(url, project_dir)
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
@@ -270,6 +281,27 @@ class CollectionRunner:
             self._log(f'  Vuln scan failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_screenshot(self, url: str, project_dir: Path) -> Dict:
+        self._log('[8/8] Screenshot…')
+        if not ScreenshotCapturer.available():
+            self._log('  Screenshot — пропущено (Playwright не установлен)')
+            return {'status': 'Skipped', 'reason': 'playwright not installed'}
+        try:
+            out = project_dir / 'screenshots' / 'home.png'
+            cap = ScreenshotCapturer()
+            cap.set_progress_callback(self._log)
+            data = cap.capture(url, out)
+            if data.get('status') == 'Success':
+                # URL-style relative path (forward slashes) so the offline HTML
+                # <img> resolves on every OS, including Windows.
+                data['rel_path'] = 'screenshots/home.png'
+                return {'status': 'Success', 'data': data}
+            return {'status': data.get('status', 'Error'),
+                    'reason': data.get('error', 'screenshot failed')}
+        except Exception as e:
+            self._log(f'  Screenshot failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     # ── HTML report ──────────────────────────────────────────────────────────
 
     def _render_html(self, report: Dict) -> str:
@@ -394,6 +426,21 @@ class CollectionRunner:
             f'<ul style="font-size:12px;color:#444;margin:6px 0;">{items}</ul>'
         )
         body_parts.append(card('Vulnerabilities', vuln_body, vuln.get('status', '—')))
+
+        # Screenshot (opt-in) — only rendered when the phase ran.
+        shot = phases.get('screenshot')
+        if shot:
+            sd = shot.get('data', {})
+            rel = sd.get('rel_path')
+            if rel:
+                shot_body = (
+                    f'<img src="{e(rel)}" alt="screenshot" '
+                    f'style="max-width:100%;border:1px solid #ddd;border-radius:4px;">'
+                )
+            else:
+                shot_body = (f'<p style="font-size:13px;color:#999;">'
+                             f'{e(shot.get("reason", "—"))}</p>')
+            body_parts.append(card('Screenshot', shot_body, shot.get('status', '—')))
 
         # Executive summary — risk verdict + recommendations, rendered first.
         summary = report.get('executive_summary') or build_summary(report)

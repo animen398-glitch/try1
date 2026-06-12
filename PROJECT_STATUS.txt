@@ -593,7 +593,7 @@ N5. ПРИОРИТИЗАЦИЯ
       бары + site map + exec summary в оффлайн-отчёт. Inline-CSS/SVG, без deps.
 
 ## MEDIUM VALUE (полезно, не критично)
-  M1. Screenshot plain (#4) — gated по Playwright; ссылками, не base64.
+  M1. Screenshot plain (#4) — [DONE] gated по Playwright; ссылками, не base64.
   M2. Attack Surface Graph как static SVG (#1) — после Reporting 2.0.
   M3. External optional binaries (#11) — по паттерну scrapy, по запросу.
   M4. Analyzer Plugin SDK (#10) — задокументировать контракт, отложить код.
@@ -699,9 +699,43 @@ N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
         ИТОГ: full suite exit=0, ruff чист. Оффлайн-контракт отчётов сохранён
         (проверено: нет <script>/CDN/внешних ресурсов). Без новых зависимостей.
 
-      ВСЕ HIGH VALUE (H1–H4) ЗАКРЫТЫ. Очередь MEDIUM (по запросу): M1 Screenshot
-      (gated Playwright), M2 Attack Surface Graph (static SVG), M3 External
-      optional binaries, M4 Analyzer Plugin SDK (контракт). LOW/REJECTED — без
-      изменений (см. N5).
+      ВСЕ HIGH VALUE (H1–H4) ЗАКРЫТЫ.
+
+  M1. Screenshot plain (#4) — [DONE] 2026-06-12
+      Реализовано (gated-опциональный паттерн, инвариант I1; БЕЗ OCR/«intelligence»
+      — та часть REJECTED, R3):
+        1) core/screenshot.py — ScreenshotCapturer: headless Chromium через
+           Playwright (async API в отдельном event-loop в ThreadPoolExecutor,
+           как dynamic_analyzer). Playwright импортируется ЛЕНИВО внутри
+           _capture_async (модуль тянется через collection_runner почти всем
+           приложением — незачем грузить тяжёлый драйвер всюду). available()
+           делегирует в features.has_playwright (единый детект, I3). capture()
+           отдаёт {status: Success/Unavailable/Error, path, http_status}, мягкая
+           деградация без Playwright, bounded timeout.
+        2) collection_runner — ОПЦ. фаза [8/8] (screenshots=False по умолчанию,
+           чтобы дефолтный пайплайн оставался быстрым/без зависимостей). Сохраняет
+           screenshots/home.png; в отчёте — карточка Screenshot с <img> по
+           ОТНОСИТЕЛЬНОМУ URL-пути (forward-slash, работает и на Windows), без
+           base64 — оффлайн-отчёт остаётся компактным (I2). Без Playwright фаза
+           Skipped (без ложной failed-операции).
+        3) GUI tab_collection — чекбокс «Скриншот страницы (Playwright)», disabled
+           + подсказка при отсутствии Playwright (паттерн upfront-деградации);
+           прокидывает screenshots= в CollectionRunner.
+        4) tests/test_screenshot.py — 8 offline-тестов (Unavailable/scheme-prefix/
+           success-стаб/error-стаб; collection-фаза Skipped/Success; дефолт off;
+           рендер карточки с относительным src). Playwright не запускается.
+        5) README обновлён.
+        ИНФРА-ФИКС (попутно, важно): tests/conftest.py — autouse-фикстура
+        _reclaim_qt_objects: top-level QWidget'ы тестов живут в
+        QApplication.topLevelWidgets() (C++-владение, GC не освобождает) →
+        на Windows за сессию исчерпывался пул GDI/USER-хэндлов и прогон
+        аварийно падал без трейсбэка при росте числа тестов. Теперь после
+        каждого теста deleteLater() + флаш DeferredDelete освобождают окна —
+        полный прогон снова зелёный в одном процессе (потолок снят).
+        ИТОГ: 311 passed, 1 skipped (один процесс, exit 0); ruff чист.
+
+      Очередь MEDIUM (по запросу): M2 Attack Surface Graph (static SVG), M3
+      External optional binaries, M4 Analyzer Plugin SDK (контракт). LOW/REJECTED
+      — без изменений (см. N5).
 
 ==============================================================================

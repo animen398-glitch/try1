@@ -9,12 +9,13 @@ import webbrowser
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QSpinBox,
-    QVBoxLayout, QWidget,
+    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
+    QSpinBox, QVBoxLayout, QWidget,
 )
 
 from core.collection_runner import CollectionRunner
 from core.executive_summary import RISK_COLORS
+from core.features import has_playwright
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CollectionWorker
 
@@ -63,6 +64,16 @@ class FinalReportTabMixin:
         row_opts.addWidget(self.collect_cookies)
         row_opts.addWidget(btn_ck)
         g.addLayout(row_opts)
+
+        # Opt-in headless screenshot (Playwright). Disabled with a hint when
+        # Playwright is absent — the feature-gating pattern used elsewhere.
+        self.collect_screenshot = QCheckBox("Скриншот страницы (Playwright)")
+        if not has_playwright():
+            self.collect_screenshot.setEnabled(False)
+            self.collect_screenshot.setToolTip(
+                "Требуется Playwright: pip install playwright "
+                "&& python -m playwright install chromium")
+        g.addWidget(self.collect_screenshot)
 
         btn_row = QHBoxLayout()
         self.btn_collect_run = StyledButton("Run Full Collection")
@@ -114,6 +125,7 @@ class FinalReportTabMixin:
             max_pages=self.collect_pages.value(),
             cookies=self.collect_cookies.text().strip() or None,
             capture_delay=self.settings.get('request_delay', 500) / 1000.0,
+            screenshots=self.collect_screenshot.isChecked(),
         )
         self._active_collector = runner
 
