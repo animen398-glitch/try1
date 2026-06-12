@@ -2,11 +2,14 @@
 """
 main_orchestrator.py
 Unified pipeline: Recon -> Paywall Bypass -> Capture -> Dynamic Analysis
+                  -> Vulnerability Scan -> API Response Dump
+(phases after Capture are opt-in via flags).
 
 Usage:
     python main_orchestrator.py https://example.com
     python main_orchestrator.py https://example.com --dynamic --paywall --web
     python main_orchestrator.py https://example.com --max-pages 10 --output ~/reports
+    python main_orchestrator.py https://example.com --profile firefox_windows --delay 1000
 """
 
 import argparse
@@ -37,6 +40,7 @@ from core.recon_engine import ReconEngine
 from core.vuln_scanner import VulnScanner
 
 from utils import OperationRegistry
+from utils.browser_utils import BROWSER_HEADERS
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,10 +82,10 @@ def run_phase(registry: OperationRegistry, url: str, phase: str,
 
 # ── Pipeline phases ───────────────────────────────────────────────────────────
 
-def phase_recon(url: str, base_dir: Path) -> dict:
+def phase_recon(url: str, base_dir: Path, profile: str = 'chrome_windows') -> dict:
     section('Phase 1: Reconnaissance')
     engine = ReconEngine()
-    engine.configure(output_dir=str(base_dir / 'recon'))
+    engine.configure(output_dir=str(base_dir / 'recon'), profile=profile)
     result = engine.run_recon(url)
 
     if result.get('status') == 'Success':
@@ -128,11 +132,13 @@ def phase_paywall(url: str, base_dir: Path) -> dict:
     return {k: v for k, v in result.items() if k != 'html'}
 
 
-def phase_capture(url: str, base_dir: Path, max_pages: int) -> dict:
+def phase_capture(url: str, base_dir: Path, max_pages: int,
+                  profile: str = 'chrome_windows', delay: float = 0.5) -> dict:
     section('Phase 3: Content Capture')
     cap_dir = base_dir / 'capture'
     capturer = SiteContentCapture()
-    capturer.configure(url, str(cap_dir), max_pages=max_pages)
+    capturer.configure(url, str(cap_dir), max_pages=max_pages,
+                       profile=profile, delay=delay)
     capturer.set_progress_callback(progress)
     result = capturer.run_capture()
 
@@ -256,6 +262,11 @@ def main():
                         help='Start web management console on :5000')
     parser.add_argument('--max-pages', type=int, default=20,
                         help='Pages to capture (default: 20)')
+    parser.add_argument('--profile',   default='chrome_windows',
+                        choices=list(BROWSER_HEADERS.keys()),
+                        help='User-Agent profile for recon/capture (default: chrome_windows)')
+    parser.add_argument('--delay',     type=int, default=500,
+                        help='Delay between captured pages, ms (default: 500)')
     parser.add_argument('--output',    default=None,
                         help='Base output directory (default: ~/SiteAnalyzer)')
     opts = parser.parse_args()
@@ -292,7 +303,7 @@ def main():
         # ── 1. Recon (always) ────────────────────────────────────────────
         pipeline['phases']['recon'] = run_phase(
             registry, url, 'recon', base_dir,
-            lambda: phase_recon(url, base_dir),
+            lambda: phase_recon(url, base_dir, opts.profile),
         )
 
         # ── 2. Paywall bypass (optional) ─────────────────────────────────
@@ -305,7 +316,8 @@ def main():
         # ── 3. Capture (always) ──────────────────────────────────────────
         pipeline['phases']['capture'] = run_phase(
             registry, url, 'capture', base_dir,
-            lambda: phase_capture(url, base_dir, opts.max_pages),
+            lambda: phase_capture(url, base_dir, opts.max_pages,
+                                  opts.profile, opts.delay / 1000.0),
         )
 
         # ── 4. Dynamic analysis (optional) ───────────────────────────────
