@@ -130,7 +130,7 @@ class ReconTabMixin:
             if do_paywall:
                 log.append_info("Запускаю Paywall Bypass...")
                 bypass = PaywallBypass()
-                bypass.configure()
+                bypass.configure(profile=profile)
                 pw = bypass.extract(url)
                 if pw.get('html'):
                     domain = self._domain_slug(url)

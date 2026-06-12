@@ -113,10 +113,10 @@ def phase_recon(url: str, base_dir: Path, profile: str = 'chrome_windows') -> di
     return result
 
 
-def phase_paywall(url: str, base_dir: Path) -> dict:
+def phase_paywall(url: str, base_dir: Path, profile: str = 'chrome_windows') -> dict:
     section('Phase 2: Paywall Bypass')
     bypass = PaywallBypass()
-    bypass.configure(timeout=25)
+    bypass.configure(timeout=25, profile=profile)
     result = bypass.extract(url)
 
     print(f'  Status   : {result["status"]}')
@@ -310,7 +310,7 @@ def main():
         if opts.paywall:
             pipeline['phases']['paywall'] = run_phase(
                 registry, url, 'paywall', base_dir,
-                lambda: phase_paywall(url, base_dir),
+                lambda: phase_paywall(url, base_dir, opts.profile),
             )
 
         # ── 3. Capture (always) ──────────────────────────────────────────

@@ -65,16 +65,20 @@ class PaywallBypass:
 
     def __init__(self):
         self._timeout: int = 20
+        self._profile: str = 'chrome_windows'
 
-    def configure(self, timeout: int = 20):
+    def configure(self, timeout: int = 20, profile: str = 'chrome_windows'):
         self._timeout = timeout
+        self._profile = profile
 
     # ---------------------------------------------------------------- internal
 
     def _fetch_raw(self, url: str, ua: Optional[str] = None,
                    referer: Optional[str] = None) -> Optional[bytes]:
         try:
-            headers = SessionBuilder('chrome_windows').get_headers()
+            # Base headers follow the configured browser profile; a per-strategy
+            # ``ua`` (e.g. the Googlebot spoof) still overrides just the UA.
+            headers = SessionBuilder(self._profile).get_headers()
             if ua:
                 headers['User-Agent'] = ua
             if referer:
