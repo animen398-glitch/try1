@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-    QHBoxLayout, QLabel, QLineEdit, QSpinBox,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -85,6 +85,15 @@ class SettingsDialog(QDialog):
             self.ua_combo.setCurrentText(current_ua)
         g_layout.addWidget(self.ua_combo)
 
+        g_layout.addWidget(QLabel("Кеш сканирования (GeoIP + пассивные субдомены):"))
+        btn_clear_cache = StyledButton("Очистить кеш", style='secondary')
+        btn_clear_cache.setToolTip(
+            "Сбрасывает TTL-кеш GeoIP и пассивного перечисления субдоменов,\n"
+            "чтобы следующий скан пошёл в сеть за свежими данными."
+        )
+        btn_clear_cache.clicked.connect(self._clear_cache)
+        g_layout.addWidget(btn_clear_cache)
+
         group.setLayout(g_layout)
         layout.addWidget(group)
         layout.addStretch()
@@ -115,6 +124,13 @@ class SettingsDialog(QDialog):
         layout.addWidget(group)
         layout.addStretch()
         return widget
+
+    def _clear_cache(self):
+        """Сбросить in-memory TTL-кеши сканирования (GeoIP + пассивные субдомены)."""
+        from core.recon_engine import clear_geo_cache
+        from core.subdomain_scanner import clear_passive_cache
+        n = clear_geo_cache() + clear_passive_cache()
+        QMessageBox.information(self, "Кеш", f"Очищено записей кеша: {n}")
 
     def _browse_output_dir(self):
         path = QFileDialog.getExistingDirectory(self, "Выберите папку", self.output_dir_edit.text())

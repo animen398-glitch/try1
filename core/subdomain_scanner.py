@@ -30,6 +30,13 @@ _DNS_TIMEOUT      = 3
 # services on repeat scans. DNS resolution still runs fresh — IPs can change.
 _PASSIVE_CACHE = TTLCache(ttl_seconds=3600)
 
+
+def clear_passive_cache() -> int:
+    """Drop all cached passive-enumeration results; returns entries removed."""
+    n = len(_PASSIVE_CACHE)
+    _PASSIVE_CACHE.clear()
+    return n
+
 _WORDLIST: tuple = (
     'www', 'www2', 'www3', 'mail', 'mail1', 'mail2', 'smtp', 'smtp1', 'smtp2',
     'pop', 'pop3', 'imap', 'webmail', 'mx', 'mx1', 'mx2',

@@ -17,6 +17,13 @@ _GEOIP_API = 'http://ip-api.com/json/{ip}?fields=status,country,regionName,city,
 # avoid hammering ip-api.com when scanning the same host repeatedly.
 _GEO_CACHE = TTLCache(ttl_seconds=3600)
 
+
+def clear_geo_cache() -> int:
+    """Drop all cached GeoIP lookups; returns the number of entries removed."""
+    n = len(_GEO_CACHE)
+    _GEO_CACHE.clear()
+    return n
+
 _SECURITY_HEADER_NAMES = frozenset({
     'strict-transport-security',
     'content-security-policy',
