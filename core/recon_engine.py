@@ -1,15 +1,13 @@
-import gzip
 import json
 import re
 import socket
 import urllib.request
-import zlib
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from utils.browser_utils import SessionBuilder
-from utils.http_retry import urlopen_retry
+from utils.http_retry import decompress, urlopen_retry
 from utils.scan_cache import TTLCache
 
 
@@ -102,18 +100,6 @@ def enrich_cms_with_dynamic(recon_result: Dict, dynamic_result: Dict) -> None:
     recon_result['cms_details'] = cms_details
 
 
-def _decompress(raw: bytes, headers) -> bytes:
-    enc = headers.get('Content-Encoding', '').lower().strip()
-    if enc == 'gzip' or (not enc and raw[:2] == b'\x1f\x8b'):
-        return gzip.decompress(raw)
-    if enc == 'deflate':
-        try:
-            return zlib.decompress(raw)
-        except zlib.error:
-            return zlib.decompress(raw, -zlib.MAX_WBITS)
-    return raw
-
-
 class ReconEngine:
     """
     Deep site reconnaissance:
@@ -159,7 +145,7 @@ class ReconEngine:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
             raw, resp_headers = urlopen_retry(req, self._timeout)
-            return _decompress(raw, resp_headers)
+            return decompress(raw, resp_headers)
         except Exception:
             return None
 
@@ -168,7 +154,7 @@ class ReconEngine:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
             raw, resp_headers = urlopen_retry(req, self._timeout)
-            return _decompress(raw, resp_headers), dict(resp_headers)
+            return decompress(raw, resp_headers), dict(resp_headers)
         except Exception:
             return None, {}
 
@@ -361,7 +347,7 @@ class ReconEngine:
             report.pop('pwa_manifest', None)   # can be large
             out = self._output_dir / 'recon_report.json'
             out.write_text(
-                json.dumps(result, indent=2, ensure_ascii=False),
+                json.dumps(report, indent=2, ensure_ascii=False),
                 encoding='utf-8',
             )
 
