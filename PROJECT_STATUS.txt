@@ -1,6 +1,6 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-12 (Hardening-проход: 4 бага закрыты + база тестов ~227)
+  Дата отчёта: 2026-06-12 (Hardening-проход: 5 багов закрыты + база тестов ~230)
 ==============================================================================
 
 ------------------------------------------------------------------------------
@@ -313,13 +313,13 @@ CLI / прочее:
     system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (~227 тестов, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (~230 тестов, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
     субдоменов, paywall, web_app, config, features, per-tab feature-gating,
     EndpointIndex/PatternAnalyser/DesignAnalyzer, recon-отчёт, FrontendCloner
-    (циклический CSS-импорт), gzip/deflate-декод сессий. + README.md,
-    requirements-dev.txt, pytest.ini.
+    (циклический CSS-импорт), gzip/deflate-декод сессий, SiteExtractor
+    (provenance внешних JS). + README.md, requirements-dev.txt, pytest.ini.
   • [СДЕЛАНО] CI: .github/workflows/ci.yml — джобы lint (ruff, правила
     pyflakes; см. ruff.toml), test (pytest, Python 3.11/3.12, headless-PyQt5,
     offscreen) и build-windows (PyInstaller → артефакт dist/). requirements-dev
@@ -412,7 +412,7 @@ CLI / прочее:
     сканера теперь пишется в PathManager reports/ (per-host), а не в ~/. Мёртвый
     SimpleSiteDownloader (тот же баг, нигде не использовался) удалён. Покрыто
     tests/test_api_key_extractor.py (gzip-регрессия) + test_http_retry.py.
-  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~227 тестов, сетенезависимый,
+  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~230 тестов, сетенезависимый,
     Qt headless) + CI (.github/workflows/ci.yml). Legacy examples/test_cases.py
     и ручной run_live_test.py остаются как smoke-сценарии.
   • Документация: [ЗАКРЫТО] есть корневой README.md (обзор/установка/запуск/
@@ -428,8 +428,8 @@ CLI / прочее:
   • Конфигурация путей к БД и каталогам: [ЗАКРЫТО] централизована в core/config.py
     поверх core/paths.py (PathManager, frozen-aware) — единый источник путей для
     GUI и CLI; см. «Data Path Context» в разделе 4.
-  • [ЗАКРЫТО — hardening-проход 2026-06-12] Аудит логики выявил и закрыл 4
-    реальных бага (+ регрессионные тесты на каждый): (1) recon_engine.run_recon
+  • [ЗАКРЫТО — hardening-проход 2026-06-12] Аудит логики выявил и закрыл 5
+    реальных багов (+ регрессионные тесты на каждый): (1) recon_engine.run_recon
     сериализовал полный result вместо урезанного report — большой pwa_manifest
     не вырезался из recon_report.json; (2) FrontendCloner._download кешировал путь
     CSS только ПОСЛЕ _process_css → циклический @import (a→b→a) уходил в
@@ -439,8 +439,11 @@ CLI / прочее:
     ответы (в т.ч. CSS/JS-ассеты клонера) сохранялись как мусор — оба переведены
     на общий http_retry.decompress(). Параллельно дедуп: убраны локальные копии
     _decompress в recon_engine/anti_detect/cloudflare (единый источник —
-    http_retry.decompress). Покрыто test_recon_engine, test_frontend_cloner,
-    test_anti_detect, test_cloudflare_bypass + новая база-характеризация
-    EndpointIndex/PatternAnalyser/DesignAnalyzer.
+    http_retry.decompress). (5) SiteExtractor.fetch_text атрибутировал находки
+    из внешних <script src> на URL страницы вместо URL самого скрипта — Dashboard
+    «Run Scan» терял provenance утечки (какой именно JS-файл слил ключ/эндпоинт);
+    теперь source=js_url. Покрыто test_recon_engine, test_frontend_cloner,
+    test_anti_detect, test_cloudflare_bypass, test_site_extractor + новая база-
+    характеризация EndpointIndex/PatternAnalyser/DesignAnalyzer.
 
 ==============================================================================
