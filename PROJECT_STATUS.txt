@@ -1,6 +1,6 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-11 (Data Path Context — шаг 2/2 завершён)
+  Дата отчёта: 2026-06-12 (Per-tab upfront-деградация optional-фич закрыта)
 ==============================================================================
 
 ------------------------------------------------------------------------------
@@ -313,10 +313,11 @@ CLI / прочее:
     system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
 
 Качество / инфраструктура:
-  • [СДЕЛАНО] pytest-набор tests/ (~190 тестов, сетенезависимый, Qt headless):
+  • [СДЕЛАНО] pytest-набор tests/ (~191 тест, сетенезависимый, Qt headless):
     cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
     кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
-    субдоменов, paywall, web_app, config, features. + README.md,
+    субдоменов, paywall, web_app, config, features, per-tab feature-gating.
+    + README.md,
     requirements-dev.txt, pytest.ini.
   • [СДЕЛАНО] CI: .github/workflows/ci.yml — джобы lint (ruff, правила
     pyflakes; см. ruff.toml), test (pytest, Python 3.11/3.12, headless-PyQt5,
@@ -388,8 +389,14 @@ CLI / прочее:
     (dynamic_analyzer ловит отсутствие playwright и отдаёт error-dict; tab_media
     чекает has_ffmpeg(); web_app — стаб). Детект централизован в core/features.py;
     window_chrome показывает features.missing() в статус-баре, System-вкладка —
-    панель «Возможности». Остаточно: точечный аудит каждой вкладки на дружелюбное
-    сообщение (полировка, не баг).
+    панель «Возможности». [ЗАКРЫТО — per-tab upfront-деградация] Каждая
+    feature-зависимая вкладка теперь сигнализирует о нехватке ДО запуска задачи
+    (паттерн Scrapy-плагина: disabled+подсказка), а не падает постфактум: Recon —
+    чекбокс «Dynamic API Sniffing» дизейблится с подсказкой при отсутствии
+    Playwright; Video — «Скачать» блокируется с дружелюбным сообщением при
+    отсутствии бинаря yt-dlp (без спурьезной failed-операции в реестре); ffmpeg
+    уже предупреждался (мягкий fallback). Покрыто
+    tests/test_optional_feature_gating.py.
   • Зависимость от внешних сервисов: [ЗАКРЫТО] recon/субдомены/paywall
     (ip-api.com, crt.sh, HackerTarget, AlienVault, Anubis, archive.org, Google
     cache) обёрнуты в utils/http_retry.py — экспоненциальный backoff + jitter,
@@ -404,7 +411,7 @@ CLI / прочее:
     сканера теперь пишется в PathManager reports/ (per-host), а не в ~/. Мёртвый
     SimpleSiteDownloader (тот же баг, нигде не использовался) удалён. Покрыто
     tests/test_api_key_extractor.py (gzip-регрессия) + test_http_retry.py.
-  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~190 тестов, сетенезависимый,
+  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~191 тест, сетенезависимый,
     Qt headless) + CI (.github/workflows/ci.yml). Legacy examples/test_cases.py
     и ручной run_live_test.py остаются как smoke-сценарии.
   • Документация: [ЗАКРЫТО] есть корневой README.md (обзор/установка/запуск/

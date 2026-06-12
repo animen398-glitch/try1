@@ -87,6 +87,12 @@ class VideoTabMixin:
         cookies = self.video_cookies.text().strip() or None
 
         self.video_results.clear()
+        if not VideoDownloader.is_available():
+            self.video_results.append_error(
+                "yt-dlp не найден — загрузка видео недоступна. "
+                "Установите: pip install yt-dlp"
+            )
+            return
         self.video_results.append_info(f"Загружаю [{quality}]: {url}")
         self.video_results.append_info(f"Директория: {out_path}")
         if cookies:

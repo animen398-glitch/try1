@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
 from core import vuln_report
 from core.api_dumper import ApiDumper
 from core.dynamic_analyzer import DynamicAnalyzer
+from core.features import has_playwright
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine, enrich_cms_with_dynamic
 from core.vuln_scanner import VulnScanner
@@ -48,6 +49,15 @@ class ReconTabMixin:
             "Запускает headless Chromium (Playwright) для перехвата XHR/Fetch запросов.\n"
             "Требует: pip install playwright && python -m playwright install chromium"
         )
+        if not has_playwright():
+            # Same upfront-degradation pattern as the Scrapy plugin: disable the
+            # control and say how to enable it, instead of failing only on Run.
+            self.chk_dynamic.setText("Dynamic API Sniffing (Playwright не установлен)")
+            self.chk_dynamic.setEnabled(False)
+            self.chk_dynamic.setToolTip(
+                "Недоступно: не установлен Playwright.\n"
+                "Установите: pip install playwright && python -m playwright install chromium"
+            )
         self.chk_paywall = QCheckBox("Paywall Bypass")
         self.chk_paywall.setToolTip(
             "Последовательно применяет Googlebot-спуфинг, вырезание JS-блоков\n"
