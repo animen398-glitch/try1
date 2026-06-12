@@ -1,4 +1,3 @@
-import gzip
 import http.cookiejar
 import random
 import time
@@ -7,6 +6,7 @@ import urllib.request
 from typing import Dict, Optional
 
 from utils.cloudflare_tools import detect_cloudflare
+from utils.http_retry import decompress
 
 
 USER_AGENTS = [
@@ -49,9 +49,7 @@ class CloudflareSession:
             try:
                 req = urllib.request.Request(url, headers=headers)
                 with self.opener.open(req, timeout=timeout) as response:
-                    content = response.read()
-                    if response.headers.get('Content-Encoding') == 'gzip':
-                        content = gzip.decompress(content)
+                    content = decompress(response.read(), response.headers)
                     return content.decode('utf-8', errors='ignore')
 
             except urllib.error.HTTPError as e:

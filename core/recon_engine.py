@@ -1,17 +1,21 @@
-import gzip
 import json
 import re
 import socket
 import urllib.request
-import zlib
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 from utils.browser_utils import SessionBuilder
+from utils.http_retry import decompress, urlopen_retry
+from utils.scan_cache import TTLCache
 
 
 _GEOIP_API = 'http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,as'
+
+# GeoIP for a given IP is stable for a long time — cache it for an hour to
+# avoid hammering ip-api.com when scanning the same host repeatedly.
+_GEO_CACHE = TTLCache(ttl_seconds=3600)
 
 _SECURITY_HEADER_NAMES = frozenset({
     'strict-transport-security',
@@ -96,18 +100,6 @@ def enrich_cms_with_dynamic(recon_result: Dict, dynamic_result: Dict) -> None:
     recon_result['cms_details'] = cms_details
 
 
-def _decompress(raw: bytes, headers) -> bytes:
-    enc = headers.get('Content-Encoding', '').lower().strip()
-    if enc == 'gzip' or (not enc and raw[:2] == b'\x1f\x8b'):
-        return gzip.decompress(raw)
-    if enc == 'deflate':
-        try:
-            return zlib.decompress(raw)
-        except zlib.error:
-            return zlib.decompress(raw, -zlib.MAX_WBITS)
-    return raw
-
-
 class ReconEngine:
     """
     Deep site reconnaissance:
@@ -152,8 +144,8 @@ class ReconEngine:
         try:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                return _decompress(r.read(), r.headers)
+            raw, resp_headers = urlopen_retry(req, self._timeout)
+            return decompress(raw, resp_headers)
         except Exception:
             return None
 
@@ -161,9 +153,8 @@ class ReconEngine:
         try:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=self._timeout) as r:
-                raw = _decompress(r.read(), r.headers)
-                return raw, dict(r.headers)
+            raw, resp_headers = urlopen_retry(req, self._timeout)
+            return decompress(raw, resp_headers), dict(resp_headers)
         except Exception:
             return None, {}
 
@@ -176,12 +167,16 @@ class ReconEngine:
             return None
 
     def _geoip(self, ip: str) -> Dict:
+        cached = _GEO_CACHE.get(ip)
+        if cached is not None:
+            return cached
         try:
             raw = self._fetch(_GEOIP_API.format(ip=ip))
             if raw:
                 data = json.loads(raw.decode('utf-8', errors='ignore'))
                 if data.get('status') == 'success':
                     data.pop('status', None)
+                    _GEO_CACHE.set(ip, data)   # cache only successful lookups
                     return data
         except Exception:
             pass
@@ -352,7 +347,7 @@ class ReconEngine:
             report.pop('pwa_manifest', None)   # can be large
             out = self._output_dir / 'recon_report.json'
             out.write_text(
-                json.dumps(result, indent=2, ensure_ascii=False),
+                json.dumps(report, indent=2, ensure_ascii=False),
                 encoding='utf-8',
             )
 

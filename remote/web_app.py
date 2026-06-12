@@ -13,8 +13,10 @@ import socket
 import sys
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, Optional
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -22,15 +24,32 @@ try:
     import uvicorn
     from fastapi import BackgroundTasks, FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+    from fastapi.responses import (
+        FileResponse, HTMLResponse, JSONResponse, StreamingResponse,
+    )
     from pydantic import BaseModel
     _FASTAPI_OK = True
 except ImportError:
     _FASTAPI_OK = False
 
+from core.api_key_extractor import ApiKeyExtractor
+from core.collection_runner import CollectionRunner
+from core.config import OPERATIONS_DB, REGISTRY_DB
 from core.content_capture import SiteContentCapture
+from core.cookie_auditor import CookieAuditor
+from core.design_analyzer import DesignAnalyzer
+from core.frontend_cloner import FrontendCloner
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
+from core.security_auditor import SecurityAuditor
+from core.subdomain_scanner import SubdomainScanner
+from utils.data_viewer import DataViewer
+from utils.image_processor import ImageExtractor
+from utils.operation_registry import OperationRegistry
+from utils.video_processor import VideoDownloader
+
+# Reports/output live under here; report serving is restricted to this tree.
+_REPORT_BASE = (Path.home() / 'SiteAnalyzer').resolve()
 
 # ── Global state ──────────────────────────────────────────────────────────────
 _log_queue: asyncio.Queue = asyncio.Queue()
@@ -43,6 +62,211 @@ async def _push(msg: str, level: str = 'info', msg_type: str = 'log', data: Opti
     if data:
         payload['data'] = data
     await _log_queue.put(payload)
+
+
+# ── Job registry ──────────────────────────────────────────────────────────────
+# One synchronous runner per GUI-equivalent feature. Each takes (url, push) and
+# returns a result dict; ``push(msg, level)`` streams progress to the console.
+# JOBS is the single source of truth for what the console can do (mirrors the
+# GUI tabs) and is introspectable via the /jobs endpoint.
+
+def _out_dir(url: str, suffix: str) -> Path:
+    domain = urlparse(url if '://' in url else 'https://' + url).netloc.replace('www.', '') or 'site'
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return Path.home() / 'SiteAnalyzer' / f'{domain}_{stamp}_{suffix}'
+
+
+def _run_recon(url: str, push: Callable) -> dict:
+    engine = ReconEngine()
+    engine.configure()
+    return engine.run_recon(url)
+
+
+def _run_subdomain(url: str, push: Callable) -> dict:
+    domain = urlparse(url if '://' in url else 'https://' + url).netloc or url
+    scanner = SubdomainScanner()
+    return scanner.scan(
+        domain,
+        on_found=lambda e: push(f"found: {e['subdomain']}"),
+        on_update=lambda e: push(
+            f"{e['subdomain']} — {e.get('status', '')}",
+            'wn' if e.get('takeover') else 'info'),
+        passive=True, brute=True, active=True,
+    )
+
+
+def _run_apikeys(url: str, push: Callable) -> dict:
+    ex = ApiKeyExtractor()
+    ex.set_target_url(url)
+    ex.set_profile('chrome_windows')
+    return ex.run_extraction()
+
+
+def _run_capture(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'capture')
+    cap = SiteContentCapture()
+    cap.configure(url, str(out), max_pages=30)
+    cap.set_progress_callback(lambda m: push(m))
+    result = cap.run_capture()
+    result['output_dir'] = str(out)
+    return result
+
+
+def _run_clone(url: str, push: Callable) -> dict:
+    # The console only has a URL, so capture the site first, then clone the
+    # captured pages into a self-contained offline copy (mirrors the GUI flow
+    # of capture -> clone, and CollectionRunner's capture/clone phases).
+    base = _out_dir(url, 'clone')
+    capture_dir = base / 'capture'
+    cap = SiteContentCapture()
+    cap.configure(url, str(capture_dir), max_pages=20)
+    cap.set_progress_callback(lambda m: push(m))
+    cap_result = cap.run_capture()
+    if cap_result.get('pages_captured', 0) == 0:
+        return {'status': 'Error', 'error': 'no pages captured to clone',
+                'output_dir': str(capture_dir)}
+
+    clone_dir = base / 'clone'
+    cloner = FrontendCloner()
+    cloner.configure(str(capture_dir), str(clone_dir))
+    cloner.set_progress_callback(lambda m: push(m))
+    result = cloner.clone()
+    result['output_dir'] = str(clone_dir)
+    return result
+
+
+def _run_paywall(url: str, push: Callable) -> dict:
+    bypass = PaywallBypass()
+    bypass.configure()
+    result = bypass.extract(url)
+    if result.get('status') == 'Success' and result.get('html'):
+        out = _out_dir(url, 'bypass')
+        out.parent.mkdir(parents=True, exist_ok=True)
+        path = out.with_suffix('.html')
+        path.write_text(result['html'], encoding='utf-8')
+        result['saved_to'] = str(path)
+    return result
+
+
+def _run_cookies(url: str, push: Callable) -> dict:
+    return CookieAuditor().audit(url)
+
+
+def _run_security(url: str, push: Callable) -> dict:
+    auditor = SecurityAuditor()
+    auditor.set_progress_callback(lambda m: push(m))
+    return auditor.audit(url)
+
+
+def _run_images(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'images')
+    ex = ImageExtractor()
+    ex.set_progress_callback(lambda m: push(m))
+    result = ex.extract_images(url, str(out))
+    result['output_dir'] = str(out)
+    return result
+
+
+def _run_video(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'video')
+    dl = VideoDownloader()   # default preset 'best'; degrades if yt-dlp absent
+    dl.set_progress_callback(lambda m: push(m))
+    result = dl.download_video(url, str(out))
+    result['output_dir'] = str(out)
+    return result
+
+
+def _run_design(url: str, push: Callable) -> dict:
+    out = _out_dir(url, 'design')
+    cap = SiteContentCapture()
+    cap.configure(url, str(out), max_pages=10)
+    cap.set_progress_callback(lambda m: push(m))
+    cap.run_capture()
+    analyzer = DesignAnalyzer()
+    analyzer.configure(str(out))
+    analyzer.set_progress_callback(lambda m: push(m))
+    return analyzer.analyze()
+
+
+def _run_collection(url: str, push: Callable) -> dict:
+    runner = CollectionRunner(max_pages=20)
+    runner.set_progress_callback(lambda m: push(m))
+    res = runner.run(url, str(Path.home() / 'SiteAnalyzer'))
+    # Compact summary (full per-phase data is on disk in report.json).
+    return {
+        'status': res.get('status'),
+        'project_dir': res.get('project_dir'),
+        'report_html': res.get('report_html'),
+        'phases': {k: v.get('status') for k, v in res.get('phases', {}).items()},
+    }
+
+
+JOBS: Dict[str, dict] = {
+    'recon':      {'label': 'Recon',           'fn': _run_recon},
+    'subdomain':  {'label': 'Subdomains',      'fn': _run_subdomain},
+    'apikeys':    {'label': 'API Keys',        'fn': _run_apikeys},
+    'capture':    {'label': 'Capture',         'fn': _run_capture},
+    'clone':      {'label': 'Clone Frontend',  'fn': _run_clone},
+    'paywall':    {'label': 'Bypass Paywall',  'fn': _run_paywall},
+    'cookies':    {'label': 'Cookie Audit',    'fn': _run_cookies},
+    'security':   {'label': 'Security Audit',  'fn': _run_security},
+    'images':     {'label': 'Images',          'fn': _run_images},
+    'video':      {'label': 'Video Download',  'fn': _run_video},
+    'design':     {'label': 'Design Lab',      'fn': _run_design},
+    'collection': {'label': 'Full Collection', 'fn': _run_collection},
+}
+
+_HEAVY_KEYS = ('html', 'reader_view', 'body', 'output')
+
+
+def _strip_heavy(result) -> dict:
+    """Drop large payloads before sending a result to the browser."""
+    if not isinstance(result, dict):
+        return {'result': result}
+    out = {k: v for k, v in result.items() if k not in _HEAVY_KEYS}
+    if isinstance(result.get('html'), str):
+        out['html_size'] = len(result['html'])
+    return out
+
+
+def _safe_report_path(file: str) -> Optional[Path]:
+    """Resolve a report path, but only inside the SiteAnalyzer tree.
+
+    Guards against path traversal: returns the Path only if it stays under
+    _REPORT_BASE, exists, and is an .html file; otherwise None.
+    """
+    if not file:
+        return None
+    try:
+        candidate = (_REPORT_BASE / file).resolve() if not Path(file).is_absolute() \
+            else Path(file).resolve()
+    except Exception:
+        return None
+    try:
+        candidate.relative_to(_REPORT_BASE)
+    except ValueError:
+        return None
+    if candidate.is_file() and candidate.suffix.lower() == '.html':
+        return candidate
+    return None
+
+
+def _recent_history(limit: int = 100) -> list:
+    """Read-only recent operations from the operations registry."""
+    try:
+        return OperationRegistry(db_path=str(OPERATIONS_DB)).history(limit=limit)
+    except Exception:
+        return []
+
+
+def _registry_data(limit: int = 50) -> dict:
+    """Read-only DataRegistry summary + recent records for the console."""
+    try:
+        viewer = DataViewer(db_path=str(REGISTRY_DB))
+        return {'summary': viewer.get_summary(),
+                'records': viewer.get_recent_records(limit=limit)}
+    except Exception as e:
+        return {'summary': {}, 'records': [], 'error': str(e)}
 
 
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
@@ -120,11 +344,10 @@ margin-right:5px;vertical-align:middle}
     <div class="row">
       <input type="text" id="url" placeholder="https://example.com">
     </div>
-    <div class="btns">
-      <button class="btn"     id="b-scan"    onclick="go('/scan','scan')">Recon</button>
-      <button class="btn sec" id="b-cap"     onclick="go('/capture','capture')">Capture</button>
-      <button class="btn sec" id="b-pw"      onclick="go('/paywall','paywall')">Bypass Paywall</button>
-      <button class="btn er"  id="b-clr"     onclick="clr()">Clear</button>
+    <div class="btns" id="jobbtns">
+      <button class="btn er" id="b-clr" onclick="clr()">Clear</button>
+      <button class="btn sec" onclick="showHistory()">History</button>
+      <button class="btn sec" onclick="showData()">Data</button>
     </div>
   </div>
 
@@ -166,9 +389,20 @@ function setConn(ok){
 }
 
 function setBusy(v){
-  ['b-scan','b-cap','b-pw'].forEach(id=>{
-    document.getElementById(id).disabled=v;
-  });
+  document.querySelectorAll('#jobbtns .btn.sec').forEach(b=>{b.disabled=v;});
+}
+
+async function loadJobs(){
+  try{
+    const r=await fetch('/jobs'); const jobs=await r.json();
+    const box=document.getElementById('jobbtns');
+    jobs.slice().reverse().forEach(j=>{
+      const b=document.createElement('button');
+      b.className='btn sec'; b.id='b-'+j.name; b.textContent=j.label;
+      b.onclick=()=>go(j.name);
+      box.insertBefore(b, box.firstChild);
+    });
+  }catch(ex){log('Failed to load jobs: '+ex.message,'er');}
 }
 
 function metrics(data){
@@ -184,11 +418,30 @@ function metrics(data){
   if(data.geo?.isp) rows.push(['ISP',data.geo.isp]);
   if(data.total_api_calls!==undefined) rows.push(['API Calls',data.total_api_calls]);
   if(data.pages_captured!==undefined) rows.push(['Pages',data.pages_captured]);
+  if(data.pages_processed!==undefined) rows.push(['Cloned pages',data.pages_processed]);
   if(data.assets_downloaded!==undefined) rows.push(['Assets',data.assets_downloaded]);
+  if(data.quality!==undefined) rows.push(['Quality',data.quality]);
   if(data.strategy_used) rows.push(['Strategy',data.strategy_used]);
-  if(data.html) rows.push(['HTML size',(data.html.length/1024).toFixed(1)+' KB']);
+  if(data.html_size!==undefined) rows.push(['HTML size',(data.html_size/1024).toFixed(1)+' KB']);
+  if(data.keys_found!==undefined) rows.push(['Keys found',data.keys_found]);
+  if(data.total!==undefined) rows.push(['Total',data.total]);
+  if(data.live_count!==undefined) rows.push(['Live',data.live_count]);
+  if(data.weak!==undefined) rows.push(['Weak cookies',data.weak]);
+  if(data.takeover_candidates&&data.takeover_candidates.length) rows.push(['Takeovers',data.takeover_candidates.length]);
+  if(data.stats&&data.stats.total_colors!==undefined) rows.push(['Colors',data.stats.total_colors]);
+  if(data.stats&&data.stats.total_fonts!==undefined) rows.push(['Fonts',data.stats.total_fonts]);
+  if(data.summary&&data.summary.secrets!==undefined){
+    rows.push(['Secrets',data.summary.secrets]);
+    rows.push(['Endpoints',data.summary.endpoints]);
+    rows.push(['Source maps',data.summary.source_maps]);
+    rows.push(['JS scanned',data.summary.scanned_scripts]);
+  }
+  if(data.report_html) rows.push(['Report',data.report_html]);
   rows.forEach(([l,v])=>{
-    mg.innerHTML+=`<div class="met"><div class="mlb">${l}</div><div class="mvl">${v}</div></div>`;
+    const val=(l==='Report')
+      ? `<a href="/report?file=${encodeURIComponent(v)}" target="_blank" style="color:var(--ac)">open report</a>`
+      : v;
+    mg.innerHTML+=`<div class="met"><div class="mlb">${l}</div><div class="mvl">${val}</div></div>`;
   });
   (data.cms||[]).forEach(c=>ba.innerHTML+=`<span class="bdg bcms">${c}</span>`);
   if(data.geo?.as) ba.innerHTML+=`<span class="bdg bgeo">${data.geo.as}</span>`;
@@ -209,13 +462,13 @@ function sse(){
   };
 }
 
-async function go(ep,label){
+async function go(name){
   const url=document.getElementById('url').value.trim();
   if(!url){log('Enter a URL first','wn');return;}
   setBusy(true);
-  log('Sending '+label+' request for: '+url,'data');
+  log('Sending '+name+' request for: '+url,'data');
   try{
-    const r=await fetch(ep,{method:'POST',
+    const r=await fetch('/run/'+name,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({url})});
     const d=await r.json();
@@ -225,6 +478,31 @@ async function go(ep,label){
   setTimeout(()=>setBusy(false),1500);
 }
 
+async function showHistory(){
+  try{
+    const r=await fetch('/history'); const rows=await r.json();
+    log('History: '+rows.length+' operation(s)','data');
+    rows.slice(0,20).forEach(o=>{
+      log('#'+o.id+' '+o.phase+' ['+o.status+'] '+(o.target||''),
+          o.status==='failed'?'er':(o.status==='success'?'ok':'info'));
+    });
+  }catch(ex){log('History failed: '+ex.message,'er');}
+}
+
+async function showData(){
+  try{
+    const r=await fetch('/data'); const d=await r.json();
+    const s=d.summary||{};
+    log('Registry: '+(s.total||0)+' records · '+(s.subdomains||0)+' subdomains · '
+        +(s.api_endpoints||0)+' endpoints · '+(s.images||0)+' images','data');
+    (d.records||[]).slice(0,20).forEach(rec=>{
+      const c=(rec.content||'').slice(0,80);
+      log('['+(rec.data_type||'')+'] '+c,'info');
+    });
+  }catch(ex){log('Data failed: '+ex.message,'er');}
+}
+
+loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
 </script>
@@ -272,107 +550,24 @@ if _FASTAPI_OK:
             headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
         )
 
-    # ── Background tasks ─────────────────────────────────────────────────
+    # ── Generic background runner ────────────────────────────────────────
 
-    async def _task_recon(url: str, job_id: str):
+    async def _run_job(name: str, url: str, job_id: str):
         global _active_job
         loop = asyncio.get_event_loop()
-        await _push(f'[RECON] Starting reconnaissance: {url}')
+        label = JOBS[name]['label']
+        await _push(f'[{label}] start: {url}')
         try:
-            engine = ReconEngine()
-            engine.configure()
-            result = await loop.run_in_executor(None, engine.run_recon, url)
-            _job_results[job_id] = result
+            def push_sync(msg, level: str = 'info'):
+                asyncio.run_coroutine_threadsafe(_push(str(msg), level), loop)
 
-            if result.get('status') == 'Success':
-                geo = result.get('geo', {})
-                if geo.get('country'):
-                    await _push(
-                        f'[RECON] {geo.get("city","?")}, {geo.get("country")} '
-                        f'| {geo.get("isp","")}',
-                        'ok'
-                    )
-                if result.get('ip'):
-                    await _push(f'[RECON] IP: {result["ip"]}', 'info')
-                if result.get('cms'):
-                    await _push(f'[RECON] CMS: {", ".join(result["cms"])}', 'ok')
-                icons = result.get('favicons', [])
-                await _push(f'[RECON] Favicons found: {len(icons)}', 'info')
-                manifest = result.get('pwa_manifest', {})
-                if manifest:
-                    name = manifest.get('data', {}).get('name', 'PWA')
-                    await _push(f'[RECON] Manifest: {name} ({manifest.get("url","")})', 'info')
-            else:
-                await _push(f'[RECON] Failed: {result.get("error","")}', 'er')
-
-            await _push('[RECON] Complete', 'ok', 'result', result)
+            result = await loop.run_in_executor(
+                None, JOBS[name]['fn'], url, push_sync)
+            compact = _strip_heavy(result)
+            _job_results[job_id] = compact
+            await _push(f'[{label}] complete', 'ok', 'result', compact)
         except Exception as e:
-            await _push(f'[RECON] Exception: {e}', 'er', 'error')
-        finally:
-            _active_job = None
-
-    async def _task_capture(url: str, job_id: str):
-        global _active_job
-        loop = asyncio.get_event_loop()
-        await _push(f'[CAPTURE] Starting: {url}')
-        try:
-            from pathlib import Path as _Path
-            from datetime import datetime
-            from urllib.parse import urlparse as _up
-            domain = _up(url).netloc.replace('www.', '') or 'site'
-            date = datetime.now().strftime('%Y%m%d_%H%M')
-            out_dir = _Path.home() / 'SiteAnalyzer' / f'{domain}_{date}_capture'
-
-            capturer = SiteContentCapture()
-            capturer.configure(url, str(out_dir), max_pages=30)
-
-            def _prog(msg):
-                asyncio.run_coroutine_threadsafe(
-                    _push(msg, 'info'), loop
-                )
-            capturer.set_progress_callback(_prog)
-
-            result = await loop.run_in_executor(None, capturer.run_capture)
-            _job_results[job_id] = result
-            await _push(
-                f'[CAPTURE] {result.get("pages_captured",0)} pages saved to {out_dir}',
-                'ok', 'result', result,
-            )
-        except Exception as e:
-            await _push(f'[CAPTURE] Exception: {e}', 'er', 'error')
-        finally:
-            _active_job = None
-
-    async def _task_paywall(url: str, job_id: str):
-        global _active_job
-        loop = asyncio.get_event_loop()
-        await _push(f'[PAYWALL] Attempting bypass: {url}')
-        try:
-            bypass = PaywallBypass()
-            bypass.configure()
-            result = await loop.run_in_executor(None, bypass.extract, url)
-            _job_results[job_id] = {k: v for k, v in result.items() if k != 'html'}
-
-            if result.get('status') == 'Success':
-                strat = result.get('strategy_used', '?')
-                html_len = len(result.get('html') or '')
-                await _push(
-                    f'[PAYWALL] Success via {strat} ({html_len:,} chars)',
-                    'ok', 'result', _job_results[job_id],
-                )
-                # Save HTML to disk
-                from pathlib import Path as _P
-                from datetime import datetime
-                from urllib.parse import urlparse as _up
-                domain = _up(url).netloc.replace('www.', '') or 'site'
-                out = _P.home() / 'SiteAnalyzer' / f'{domain}_{datetime.now().strftime("%Y%m%d_%H%M")}_bypass.html'
-                out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_text(result['html'], encoding='utf-8')
-                await _push(f'[PAYWALL] Saved: {out}', 'info')
-            else:
-                await _push('[PAYWALL] All strategies failed', 'wn', 'error')
-        except Exception as e:
-            await _push(f'[PAYWALL] Exception: {e}', 'er', 'error')
+            await _push(f'[{label}] error: {e}', 'er', 'error')
         finally:
             _active_job = None
 
@@ -383,42 +578,41 @@ if _FASTAPI_OK:
             return JSONResponse({'error': f'Job already running: {_active_job}'}, status_code=409)
         return None
 
-    @app.post('/scan')
-    async def scan(body: TargetRequest, bg: BackgroundTasks):
-        global _active_job
-        busy = _check_busy()
-        if busy:
-            return busy
-        job_id = str(uuid.uuid4())[:8]
-        _active_job = 'scan'
-        bg.add_task(_task_recon, body.url, job_id)
-        return {'job_id': job_id, 'job': 'scan', 'url': body.url, 'status': 'started'}
+    @app.get('/jobs')
+    async def jobs():
+        return [{'name': n, 'label': s['label']} for n, s in JOBS.items()]
 
-    @app.post('/capture')
-    async def capture(body: TargetRequest, bg: BackgroundTasks):
+    @app.post('/run/{name}')
+    async def run_job(name: str, body: TargetRequest, bg: BackgroundTasks):
         global _active_job
+        if name not in JOBS:
+            return JSONResponse({'error': f'unknown job: {name}'}, status_code=404)
         busy = _check_busy()
         if busy:
             return busy
         job_id = str(uuid.uuid4())[:8]
-        _active_job = 'capture'
-        bg.add_task(_task_capture, body.url, job_id)
-        return {'job_id': job_id, 'job': 'capture', 'url': body.url, 'status': 'started'}
-
-    @app.post('/paywall')
-    async def paywall(body: TargetRequest, bg: BackgroundTasks):
-        global _active_job
-        busy = _check_busy()
-        if busy:
-            return busy
-        job_id = str(uuid.uuid4())[:8]
-        _active_job = 'paywall'
-        bg.add_task(_task_paywall, body.url, job_id)
-        return {'job_id': job_id, 'job': 'paywall', 'url': body.url, 'status': 'started'}
+        _active_job = name
+        bg.add_task(_run_job, name, body.url, job_id)
+        return {'job_id': job_id, 'job': name, 'url': body.url, 'status': 'started'}
 
     @app.get('/results')
     async def results():
         return JSONResponse(_job_results)
+
+    @app.get('/history')
+    async def history():
+        return JSONResponse(_recent_history(100))
+
+    @app.get('/data')
+    async def data():
+        return JSONResponse(_registry_data(50))
+
+    @app.get('/report')
+    async def report(file: str):
+        path = _safe_report_path(file)
+        if path is None:
+            return JSONResponse({'error': 'report not found'}, status_code=404)
+        return FileResponse(str(path), media_type='text/html')
 
 else:
     # Stub so import never crashes even without fastapi installed
@@ -443,7 +637,7 @@ def get_local_ip() -> str:
 
 def print_access_url(port: int = 5000):
     ip = get_local_ip()
-    print(f'\n  Advanced Site Analyzer — Web Console')
+    print('\n  Advanced Site Analyzer — Web Console')
     print(f'  Local   : http://localhost:{port}')
     print(f'  Network : http://{ip}:{port}  (phone / tablet on same Wi-Fi)')
     print()

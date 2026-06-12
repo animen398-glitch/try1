@@ -1,15 +1,16 @@
-import json
-from pathlib import Path
-
 from PyQt5.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFileDialog,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
 )
 
+from core import config
 from gui.ui_components import SectionGroupBox, StyledButton
+from utils.browser_utils import BROWSER_HEADERS
 
-SETTINGS_FILE = Path(__file__).parent.parent / 'configs' / 'settings.json'
+# User-Agent profiles the request layer (SessionBuilder) actually supports.
+_UA_PROFILES = list(BROWSER_HEADERS.keys())
+_ARCHIVE_FORMATS = ['zip', 'rar']
 
 
 class SettingsDialog(QDialog):
@@ -19,31 +20,11 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
         self.setMinimumSize(500, 380)
-        self.settings = self._load_settings()
+        self.settings = config.load_settings()
         self._build_ui()
 
-    def _load_settings(self) -> dict:
-        try:
-            if SETTINGS_FILE.exists():
-                return json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
-        except Exception:
-            pass
-        return {
-            'output_dir': str(Path.home() / 'SiteAnalyzer'),
-            'max_pages': 50,
-            'request_delay': 500,
-            'auto_compress': False,
-        }
-
     def _save_settings(self):
-        try:
-            SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            SETTINGS_FILE.write_text(
-                json.dumps(self.settings, indent=2, ensure_ascii=False),
-                encoding='utf-8'
-            )
-        except Exception:
-            pass
+        config.save_settings(self.settings)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -96,6 +77,14 @@ class SettingsDialog(QDialog):
         self.delay_spin.setValue(self.settings.get('request_delay', 500))
         g_layout.addWidget(self.delay_spin)
 
+        g_layout.addWidget(QLabel("Профиль User-Agent:"))
+        self.ua_combo = QComboBox()
+        self.ua_combo.addItems(_UA_PROFILES)
+        current_ua = self.settings.get('user_agent_profile', 'chrome_windows')
+        if current_ua in _UA_PROFILES:
+            self.ua_combo.setCurrentText(current_ua)
+        g_layout.addWidget(self.ua_combo)
+
         group.setLayout(g_layout)
         layout.addWidget(group)
         layout.addStretch()
@@ -107,9 +96,20 @@ class SettingsDialog(QDialog):
 
         group = SectionGroupBox("Архивация")
         g_layout = QVBoxLayout()
-        self.auto_compress_cb = QCheckBox("Авто-архивация результатов в ZIP")
+        self.auto_compress_cb = QCheckBox("Авто-архивация результатов")
         self.auto_compress_cb.setChecked(self.settings.get('auto_compress', False))
         g_layout.addWidget(self.auto_compress_cb)
+
+        g_layout.addWidget(QLabel("Формат архива:"))
+        self.compress_combo = QComboBox()
+        self.compress_combo.addItems(_ARCHIVE_FORMATS)
+        current_fmt = self.settings.get('compression_format', 'zip')
+        if current_fmt in _ARCHIVE_FORMATS:
+            self.compress_combo.setCurrentText(current_fmt)
+        self.compress_combo.setToolTip(
+            "RAR требует winrar/rar в PATH; иначе автоматически используется ZIP."
+        )
+        g_layout.addWidget(self.compress_combo)
         group.setLayout(g_layout)
 
         layout.addWidget(group)
@@ -125,7 +125,9 @@ class SettingsDialog(QDialog):
         self.settings['output_dir'] = self.output_dir_edit.text()
         self.settings['max_pages'] = self.max_pages_spin.value()
         self.settings['request_delay'] = self.delay_spin.value()
+        self.settings['user_agent_profile'] = self.ua_combo.currentText()
         self.settings['auto_compress'] = self.auto_compress_cb.isChecked()
+        self.settings['compression_format'] = self.compress_combo.currentText()
         self._save_settings()
         self.accept()
 

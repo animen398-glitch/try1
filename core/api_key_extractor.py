@@ -1,26 +1,24 @@
-import re
 import urllib.error
-from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
+from core.paths import get_path_manager
+from core.secret_scanner import SecretScanner
 from utils.browser_utils import SessionBuilder
+from utils.http_retry import urlopen_text
 
 
 class ApiKeyExtractor:
     """
     Безопасный инструмент для поиска забытых API-ключей и токенов
     в открытом исходном коде страниц (HTML/JS).
+
+    Детектирование делегировано общему core.secret_scanner.SecretScanner —
+    единому набору правил для всего приложения.
     """
 
-    KEY_PATTERNS = {
-        'Generic API Key': r'api[_-]?key\s*[:=]\s*["\']([a-zA-Z0-9_\-]{16,})["\']',
-        'Firebase API Key': r'apiKey\s*:\s*["\']([a-zA-Z0-9_\-]{35,})["\']',
-        'Google Cloud / Maps': r'AIzaSy[a-zA-Z0-9_\-]{33}',
-        'AWS Access Key ID': r'AKIA[0-9A-Z]{16}',
-        'Slack Token': r'xox[bapr]-[0-9]{12}-[0-9]{12}-[a-zA-Z0-9]{24}',
-    }
-
     def __init__(self):
+        self._scanner = SecretScanner()
         self.target_url: Optional[str] = None
         self.extracted_keys: Dict[str, List[str]] = {}
         self._profile: str = 'chrome_windows'
@@ -46,19 +44,17 @@ class ApiKeyExtractor:
             return result
 
         try:
-            session = SessionBuilder(self._profile)
-            req = session.make_request(self.target_url)
-            opener = session.build_opener()
-            with opener.open(req, timeout=10) as response:
-                content = response.read().decode('utf-8', errors='ignore')
+            req = SessionBuilder(self._profile).make_request(self.target_url)
+            # gzip-aware fetch with retry — SessionBuilder advertises gzip, so a
+            # raw .read() would feed compressed bytes to the regexes.
+            content = urlopen_text(req, 10)
 
             total_found = 0
-            for key_type, pattern in self.KEY_PATTERNS.items():
-                matches = re.findall(pattern, content, re.IGNORECASE)
-                if matches:
-                    unique_matches = list(set(matches))
-                    self.extracted_keys[key_type] = unique_matches
-                    total_found += len(unique_matches)
+            for finding in self._scanner.scan_text(content, self.target_url):
+                bucket = self.extracted_keys.setdefault(finding['type'], [])
+                if finding['match'] not in bucket:
+                    bucket.append(finding['match'])
+                    total_found += 1
 
             result['status'] = 'Success'
             result['keys_found'] = total_found
@@ -73,7 +69,11 @@ class ApiKeyExtractor:
         return result
 
     def _save_report(self, result: Dict):
-        report_path = Path.home() / "api_keys_report.txt"
+        # Write under the PathManager reports/ tree (per-host filename), not the
+        # user's home dir, so it lands with the rest of the app's output and a
+        # frozen .exe writes to %APPDATA% instead of next to the binary.
+        netloc = urlparse(self.target_url or '').netloc.replace(':', '_') or 'site'
+        report_path = get_path_manager().get_reports_path(f'api_keys_{netloc}.txt')
         try:
             with open(report_path, "w", encoding="utf-8") as f:
                 f.write(f"=== Отчет об анализе сайта {self.target_url} ===\n")
@@ -86,29 +86,3 @@ class ApiKeyExtractor:
                     f.write("\n")
         except Exception:
             pass
-
-
-class SimpleSiteDownloader:
-    """Безопасный сборщик ссылок и изображений"""
-
-    def __init__(self, target_url: str, profile: str = 'chrome_windows'):
-        self.target_url = target_url
-        self._profile = profile
-
-    def get_resources(self) -> Dict[str, List[str]]:
-        resources = {'links': [], 'images': []}
-        try:
-            session = SessionBuilder(self._profile)
-            req = session.make_request(self.target_url)
-            opener = session.build_opener()
-            with opener.open(req, timeout=10) as response:
-                html = response.read().decode('utf-8', errors='ignore')
-
-            links = re.findall(r'href=["\'](https?://[^"\']+)["\']', html)
-            images = re.findall(r'src=["\'](https?://[^"\']+\.(?:png|jpg|jpeg|gif|svg))["\']', html)
-
-            resources['links'] = list(set(links))
-            resources['images'] = list(set(images))
-        except Exception:
-            pass
-        return resources

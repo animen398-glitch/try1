@@ -1,3 +1,5 @@
+import html
+
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QGroupBox, QPushButton, QTextEdit
 
@@ -81,20 +83,25 @@ class ResultsDisplay(QTextEdit):
             }
         """)
 
+    # ``append()`` renders its argument as rich text (HTML), so the caller's
+    # message — usually a URL, filename, header value or error string — must be
+    # escaped; only the coloured ``[LEVEL]`` prefix is intentional markup.
+    # Callers that want to emit real HTML use ``append()`` directly.
+
     def append_info(self, text: str):
-        self.append(f'<span style="color:#4fc3f7;">[INFO]</span> {text}')
+        self.append(f'<span style="color:#4fc3f7;">[INFO]</span> {html.escape(str(text))}')
 
     def append_success(self, text: str):
-        self.append(f'<span style="color:#81c784;">[OK]</span> {text}')
+        self.append(f'<span style="color:#81c784;">[OK]</span> {html.escape(str(text))}')
 
     def append_error(self, text: str):
-        self.append(f'<span style="color:#e57373;">[ERR]</span> {text}')
+        self.append(f'<span style="color:#e57373;">[ERR]</span> {html.escape(str(text))}')
 
     def append_warning(self, text: str):
-        self.append(f'<span style="color:#ffb74d;">[WARN]</span> {text}')
+        self.append(f'<span style="color:#ffb74d;">[WARN]</span> {html.escape(str(text))}')
 
     def append_high(self, text: str):
-        self.append(f'<span style="color:#ff5252; font-weight:bold;">[HIGH]</span> {text}')
+        self.append(f'<span style="color:#ff5252; font-weight:bold;">[HIGH]</span> {html.escape(str(text))}')
 
     def append_medium(self, text: str):
-        self.append(f'<span style="color:#ffb74d; font-weight:bold;">[MEDIUM]</span> {text}')
+        self.append(f'<span style="color:#ffb74d; font-weight:bold;">[MEDIUM]</span> {html.escape(str(text))}')

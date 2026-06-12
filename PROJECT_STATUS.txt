@@ -1,0 +1,482 @@
+==============================================================================
+  PROJECT STATUS — Advanced Site Analyzer
+  Дата отчёта: 2026-06-12 (Hardening: 7 багов + 4 «мёртвых» настройки; тесты ~245)
+==============================================================================
+
+------------------------------------------------------------------------------
+1. ОБЗОР ПРОЕКТА
+------------------------------------------------------------------------------
+Advanced Site Analyzer — десктопный инструмент (Python 3.11+ / PyQt5) для
+комплексной разведки и анализа веб-сайтов. Программа объединяет в едином
+интерфейсе пассивную разведку (recon), перечисление субдоменов, перехват и
+анализ динамического трафика (API-эндпоинты, токены), обход paywall, захват
+и оффлайн-клонирование фронтенда, извлечение изображений/видео и анализ
+дизайн-системы (палитра, типографика).
+
+Сценарии запуска:
+  • GUI       — main.py (основной режим, PyQt5, 14 вкладок).
+  • CLI       — main_orchestrator.py (единый pipeline из 6 фаз).
+  • Web/LAN   — remote/web_app.py (консоль управления на FastAPI, порт 5000).
+
+Целевая поставка: автономный .exe через PyInstaller (build.spec). Тяжёлые
+зависимости (Playwright, yt-dlp, FastAPI) опциональны и не бандлятся в .exe.
+
+------------------------------------------------------------------------------
+2. ЧТО УЖЕ РЕАЛИЗОВАНО
+------------------------------------------------------------------------------
+Ядро (core/):
+  • recon_engine.py        — IP-резолв + гео (ip-api), фингерпринт CMS/стека,
+                             фавиконы, PWA-манифест.
+  • subdomain_scanner.py   — пассивное перечисление (crt.sh, HackerTarget) +
+                             brute-force словарём.
+  • dynamic_analyzer.py    — перехват XHR/Fetch через Playwright, извлечение
+                             API-эндпоинтов, JSON-структур, auth-заголовков.
+  • paywall_bypass.py      — 3 стратегии: Googlebot-спуфинг, вырезание JS,
+                             Wayback Machine.
+  • content_capture.py     — обход и сохранение HTML-страниц сайта.
+  • frontend_cloner.py     — скачивание CSS/JS/шрифтов/картинок + переписывание
+                             ссылок в относительные (оффлайн-копия).
+  • design_analyzer.py     — извлечение палитры цветов и типографики -> JSON.
+  • api_key_extractor.py   — поиск API-ключей/секретов в коде страниц.
+  • vuln_scanner.py        — эвристические уязвимости по recon+dynamic.
+  • api_dumper.py          — дамп перехваченных API-ответов на диск.
+  • image_extractor.py / video_downloader.py — извлечение медиа (yt-dlp).
+  • anti_detect_engine.py  — сессия с ротацией UA, cookie, retry-backoff.
+  • cloudflare_bypass.py   — обход базовых проверок Cloudflare.
+
+GUI (gui/main_window.py — каркас ~280 строк + per-tab модули gui/tab_*.py):
+  • 14 вкладок: Recon & Intel, Subdomain Scanner, API Key Scanner, Site
+    Capture, Clone Frontend, Video Downloader, Image Extractor, Design Lab,
+    Cookie Security Audit, Security Audit, Final Report & Collection,
+    Dashboard, История операций, System.
+  • Многопоточность через QThread/QObject-воркеры (Worker, SubdomainWorker,
+    CloneWorker, CaptureWorker) — UI не блокируется во время сканов.
+  • [НОВОЕ] Единый раннер задач _start_task() (паттерн Signals/Slots): вся
+    работа с потоками вынесена из вкладок в один метод, потоки учитываются в
+    едином реестре self._tasks, teardown через deleteLater после реального
+    завершения OS-потока. Поддержан одновременный запуск нескольких задач без
+    гонок и краша «QThread destroyed while running» (проверено стресс-тестом
+    на 5 параллельных задачах).
+  • Dashboard: дедуплицированная таблица эндпоинтов (EndpointIndex), фильтр
+    по типам, drill-down по кликам, кнопка «Run Scan», экспорт.
+
+Утилиты (utils/):
+  • operation_registry.py / sqlite_store.py — учёт операций в SQLite
+    (data/operations.db, registry.db).
+  • endpoint_index.py / pattern_analyser.py — нормализация и дедуп эндпоинтов,
+    канонические DEFAULT_PATTERNS (API/GraphQL).
+  • site_extractor.py, data_viewer.py, exporter.py, task_manager.py,
+    system_logger.py, image_processor.py, video_processor.py,
+    file_compression.py.
+
+CLI / прочее:
+  • main_orchestrator.py — pipeline из 6 фаз с записью жизненного цикла в
+    реестр операций, итоговый pipeline_summary.json.
+  • remote/web_app.py — LAN-консоль (FastAPI); корректно «глушится» в стаб
+    при отсутствии fastapi.
+  • build.spec + requirements.txt — упаковка PyInstaller.
+
+------------------------------------------------------------------------------
+3. ТЕКУЩИЙ ФУНКЦИОНАЛ (как это работает сейчас)
+------------------------------------------------------------------------------
+  • Запуск из GUI: пользователь вводит URL/домен на нужной вкладке; задача
+    уходит в фоновый QThread-воркер, прогресс и результаты стримятся в UI,
+    запись об операции пишется в SQLite.
+  • CLI-pipeline: Recon (всегда) -> Paywall (опц.) -> Capture (всегда) ->
+    Dynamic (опц.) -> Vuln scan (опц.) -> API dump (опц.). Каждая фаза
+    оборачивается run_phase() и логируется в OperationRegistry; результаты
+    складываются в ~/SiteAnalyzer/<домен>_<timestamp>/.
+  • Dynamic-анализ поднимает headless Chromium (Playwright), слушает сетевой
+    трафик, агрегирует эндпоинты/JSON/токены, отдаёт отчёт dynamic_report.json.
+  • Эндпоинты прогоняются через EndpointIndex (нормализация + дедуп) и
+    отображаются на Dashboard с возможностью провалиться в исходные вхождения.
+  • Clone Frontend через AntiDetectSession скачивает ассеты и переписывает
+    ссылки -> самодостаточная оффлайн-копия.
+
+------------------------------------------------------------------------------
+4. ПЛАН РАБОТ (ROADMAP)
+------------------------------------------------------------------------------
+НОВЫЕ ФИЧИ (запланировано, в работе):
+
+  [A] [СДЕЛАНО] Вкладка "Final Report & Collection":
+      • core/collection_runner.py + gui/tab_collection.py. Кнопка "Run Full
+        Collection" последовательно прогоняет Recon -> API -> Capture ->
+        Clone -> Images в единую директорию <домен>_<timestamp>/ с под-
+        папками; автогенерация report.json и report.html. Фазы guarded
+        (сбой не рушит пайплайн), есть Stop/отмена и "Открыть отчёт".
+
+  [B] [СДЕЛАНО] Вкладка "Cookie Security Audit":
+      • core/cookie_auditor.py + gui/tab_cookie.py. Парсинг сырых Set-Cookie,
+        флаги HttpOnly/Secure/SameSite, скоринг 0–3 и вердикт
+        Strong/Moderate/Weak с подсказками по проблемам в таблице.
+
+  [C] [СДЕЛАНО] Апгрейд медиа-загрузчика (utils/video_processor,
+      utils/image_processor):
+      • Видео: пресеты 4k/1440p/1080p/720p/best/audio, merge через ffmpeg
+        с прогрессивным fallback; --cookies/--cookies-from-browser.
+      • Изображения: оригинальное разрешение (срез resize/watermark-
+        параметров + макс. srcset), Netscape cookies, Instagram/соцсети
+        через yt-dlp (оригинал без водяных знаков).
+
+  [D] Стабилизация многопоточности (КРИТИЧНО, см. п.5):
+      • Полная развязка GUI и фоновых воркеров через паттерн Signals/Slots.
+      • Безопасное управление жизненным циклом QThread.
+      • Поддержка одновременного запуска нескольких задач без конфликтов
+        и вылетов.
+
+Функциональность (ранее запланированное):
+  • [СДЕЛАНО — Интеграция vendor-инструментов, Native-Python подход] Вместо
+    импорта чужого кода (4 из 6 vendor/-инструментов не Python: gitleaks=Go,
+    JSMap=HTML, tuitube=TS, WebRecon=только README) выбран перенос полезной
+    логики в чистый Python, вписанный в recon-домен. [СДЕЛАНО — бэкенд
+    Security Audit]: core/secret_scanner.py — единый, прецизионный набор
+    secret-правил (SecretScanner/RULES), заменивший 2 разошедшихся набора
+    (api_key_extractor.KEY_PATTERNS и dynamic_analyzer._SECRET_PATTERNS);
+    api_key_extractor и dynamic_analyzer теперь используют его (один источник
+    правды). core/source_map_parser.py — headless-аналог JSMap-Inspector:
+    parse(.js.map), extract_sources/extract_sources_content, find_map_urls
+    (//# sourceMappingURL=, относит./data-URI), scan_for_secrets по
+    sourcesContent (указывает оригинальный путь утечки); чистый парсинг,
+    сеть опциональна (fetch_and_parse — только из воркера). dynamic_analyzer:
+    при перехвате static-JS тянет тело, extract_js_urls() достаёт URL-строки
+    (абсолютные + api-подобные относительные → urljoin) и регистрирует их в
+    endpoints как method='JS-REF'/source='static-js' (total_api_calls считает
+    только реальные вызовы, discovered_endpoints — отдельно); секреты из JS
+    идут в secrets_found. Всё в существующем worker-потоке (ThreadPoolExecutor),
+    GUI не блокируется. Без новых зависимостей (stdlib). Покрыто
+    tests/test_secret_scanner.py, test_source_map_parser.py,
+    test_dynamic_js_urls.py (19 тестов). [СДЕЛАНО — вкладка 'Security Audit',
+    14-я]: core/security_auditor.py (SecurityAuditor) — оркестратор: тянет
+    страницу + её JS (inline и внешние, bounded max_scripts), гонит
+    SecretScanner по всему, extract_js_urls собирает эндпоинты, находит и
+    парсит .js.map (scan_for_secrets по sourcesContent с указанием утечки);
+    gzip/deflate-декод, кооперативная отмена (threading.Event), graceful на
+    сбоях. Тонкая gui/tab_security.py (SecurityAuditTabMixin): URL→Run Audit,
+    таблицы Leaked Secrets + Exposed Source Maps, статус-сводка; вся сеть в
+    воркере через _run_async (GUI не блокируется). Зарегистрирована в
+    BUILTIN_TABS (после Cookie); окно строится headless с 14 вкладками.
+    Без новых зависимостей. Покрыто tests/test_security_auditor.py (offline
+    через стаб _fetch). [СДЕЛАНО — Scrapy deep-crawl, ВНЕШНИЙ ПЛАГИН]:
+    Scrapy встраивает Twisted-reactor (несовместим с Qt, не перезапускается
+    в процессе) → каждый кролл в ОТДЕЛЬНОМ subprocess. GUI-процесс scrapy
+    вообще не импортирует: core/scrapy_crawler.py (ScrapyCrawler) детектит
+    через features.has_scrapy()/find_spec и спавнит дочерний процесс,
+    core/_scrapy_spider.py (импорт scrapy только в ребёнке) — bounded
+    CrawlSpider (CLOSESPIDER_PAGECOUNT/DEPTH_LIMIT, JSON-Lines feed), родитель
+    парсит фид, чистит temp (PathManager.get_temp_path), graceful на
+    timeout/ненулевом коде (партиал-результаты). Реализован как РЕАЛЬНЫЙ
+    внешний плагин plugins/scrapy_tab.py (register()/TabPlugin + standalone
+    _ScrapyTab(QWidget); сеть в воркере через window._run_async) — авто-
+    дискаверится PluginManager'ом (демонстрация plugin-ready архитектуры).
+    Импортируется чисто и без scrapy → вкладка видна всегда (если scrapy нет
+    — кнопка disabled + подсказка). features.py: has_scrapy в OPTIONAL_FEATURES
+    (System-вкладка). requirements.txt: scrapy>=2.11,<3 (опционально, закомм.).
+    Покрыто tests/test_scrapy_crawler.py (offline: subprocess+scrapy
+    застаблены). Окно строится headless с 15 вкладками (14 builtin + плагин).
+    tuitube/WebRecon — исключены (нет выигрыша/кода). ИТОГ: интеграция vendor-
+    инструментов закрыта.
+  • [СДЕЛАНО — выборочный harvest из tools/] tools/ (SecretFinder, subfinder,
+    amass, katana, nuclei) проектом не использовались (0 ссылок). Решение: НЕ
+    переписывать целиком (katana/SecretFinder уже покрыты нативно; subfinder/
+    amass/nuclei ценны охватом/экосистемой — нативный порт был бы хуже и тянул
+    бы долг). Сняты только дешёвые точечные выигрыши: (1) уникальные
+    высокоточные secret-regex'ы из SecretFinder → secret_scanner.RULES
+    (Google OAuth ya29., AWS MWS, Stripe rk_live, PayPal/Braintree, Square
+    oauth+access, Twilio Account SID, GitHub-URL-creds, Authorization Basic;
+    шумные — reCAPTCHA/Heroku-UUID/Facebook — отброшены); (2) два бесключевых
+    бесплатных пассивных источника субдоменов (AlienVault OTX, Anubis/jldc) в
+    subdomain_scanner рядом с crt.sh/HackerTarget (тот же TTL-кэш, фильтр по
+    домену, сбой не отравляет кэш). katana/amass/nuclei нативно не трогаем —
+    если понадобятся, только как опц. внешние бинари. Без новых зависимостей;
+    покрыто тестами (test_secret_scanner, test_subdomain_cache).
+  • [СДЕЛАНО] VulnScanner: cookie-findings (SameSite=None без Secure → High;
+    слабые куки → Medium) и summarize() с severity-счётом и risk_score.
+    CollectionRunner получил фазы Cookie Audit + Vuln Scan (security/
+    cookies.json, security/vulns.json + карточки в report.html). Правила:
+    CSP-слабость (unsafe-inline/eval/wildcard), HSTS-слабость (короткий
+    max-age / без includeSubDomains), слабая Referrer-Policy, слабый/легаси
+    X-Frame-Options (clickjacking), раскрытие технологий через Server/
+    X-Powered-By/X-Generator, чувствительные пути (.env/.git/admin/swagger/…),
+    CMS-фингерпринт, PWA-манифест, JS-фреймворк-глобалы. + core/vuln_report.py
+    — экспорт отдельного отчёта в HTML+JSON и PDF (export_pdf через
+    опциональный fpdf2; latin-1-санитайзер) с кнопкой в recon-вкладке.
+  • [СДЕЛАНО] Углубление paywall-bypass: extract() расширен с 3 до 6
+    стратегий (googlebot_spoof, js_strip, amp, referer_spoof, google_cache,
+    wayback_machine) + reader_view (lightweight readability) в результате.
+  • [СДЕЛАНО] Активные проверки субдоменов: core/subdomain_active.py
+    (ActiveSubdomainChecker) — CNAME-резолв (stdlib), HTTP/HTTPS-liveness и
+    детект takeover (CNAME известного сервиса + fingerprint незаявленного
+    ресурса: GitHub Pages, Heroku, S3, Azure, Fastly, Shopify, …).
+    SubdomainScanner.scan(active=True) обогащает записи (alive/http_status/
+    takeover/service) + summary.takeover_candidates; вкладка получила чекбокс
+    «Active checks», апдейт строк и красную ⚠-подсветку takeover-кандидатов.
+  • Полноценный экспорт результатов: единый отчёт (HTML/PDF/JSON) по проекту
+    (пересекается с фичей [A]).
+  • [СДЕЛАНО] Web-консоль (remote/web_app.py) к паритету с GUI: задачи
+    вынесены в единый реестр JOBS (один runner на фичу), добавлены
+    Subdomains (active/takeover), API Keys, Cookie Audit, Full Collection
+    рядом с Recon/Capture/Paywall. Generic POST /run/{name}, GET /jobs;
+    дэшборд строит кнопки из /jobs (UI и бэкенд не расходятся). + job Images,
+    Design Lab (capture + палитра/типографика), GET /history (просмотр
+    операций), безопасный GET /report (отдача отчётов из дерева SiteAnalyzer,
+    защита от path traversal) и GET /data (просмотр реестра DataViewer).
+    [ДОБИТ ПАРИТЕТ] Добавлены последние GUI-фичи как job'ы: Security Audit
+    (secret + source-map сканер), Clone Frontend (capture→clone в одну
+    директорию) и Video Download (yt-dlp, мягкая деградация без бинаря);
+    dashboard-метрики показывают сводки (secrets/endpoints/source maps,
+    cloned pages, quality), шумный stdout yt-dlp срезается из payload
+    (_HEAVY_KEYS += 'output'). Покрыто test_web_security_job, test_web_clone_video.
+
+Рефакторинг / архитектура:
+  • [СДЕЛАНО] gui/main_window.py разбит на модули по вкладкам (mixin-паттерн):
+    gui/tab_*.py (recon, subdomain, api, capture, clone, media, design,
+    cookie, collection, dashboard, history, system) + gui/workers.py +
+    gui/constants.py. main_window.py ужат с ~2480 до ~280 строк.
+  • [СДЕЛАНО, шаг 1 декомпозиции каркаса] Раннер фоновых задач вынесен из
+    main_window.py в gui/task_runner.py (TaskRunnerMixin): _start_task,
+    _run_async, _update_task_indicator, _on_worker_error и слив потоков при
+    закрытии (_await_running_tasks). MainWindow подмешивает mixin и держит
+    лишь тонкий closeEvent-override, делегирующий в _await_running_tasks.
+    main_window.py: 327 → 242 строки. Контракт self._start_task/_run_async
+    для вкладок не изменился (резолвится через mixin).
+  • [СДЕЛАНО, шаг 2 декомпозиции каркаса] Оконный chrome вынесен из
+    main_window.py в gui/window_chrome.py (WindowChromeMixin): _build_menu,
+    _build_central (сборка таб-бара из PluginManager), _build_statusbar,
+    _report_plugin_errors, _check_dependencies + меню-диалоги _open_settings/
+    _show_about. main_window.py: 242 → 145 строк.
+  • [СДЕЛАНО, шаг 3 — ФИНАЛ декомпозиции каркаса] Общие helpers вынесены из
+    main_window.py в gui/window_helpers.py (WindowHelpersMixin): _domain_slug,
+    _folder_size, _fmt_size, _make_archive, _save_video_log, _browse,
+    _browse_file, _set_busy + _save_target; _load_settings заинлайнен в
+    __init__ (config.load_settings). ИТОГ: MainWindow — чистый контейнер
+    (75 строк), на самом классе определён только closeEvent; всё остальное
+    приходит из mixin'ов (TaskRunnerMixin + WindowChromeMixin +
+    WindowHelpersMixin + 12 per-tab mixin'ов). Раскладка каркаса:
+    main_window 75 / task_runner 115 / window_chrome 126 / window_helpers 86
+    строк. Окно строится headless (13 вкладок), 118 тестов зелёные, ruff чист.
+    Контракты self._start_task/_run_async/_set_busy/_browse/… для вкладок не
+    изменились (резолвятся через mixin'ы). Полный путь: ~2480 → 75 строк.
+  • Декомпозиция вкладок — выбран mixin-паттерн (gui/tab_*.py, плоско),
+    НЕ gui/tabs/ + базовый класс. Причина: mixin'ы вплетены в MainWindow,
+    поэтому self._start_task / self.settings доступны напрямую — отдельный
+    «безопасный мост» к раннеру не нужен. Альтернатива на будущее (если
+    понадобится строгая изоляция): standalone-вкладки gui/tabs/<name>.py с
+    base.py:BaseTab(QWidget), хранящим ссылку на окно и проксирующим
+    start_task()/run_async()/settings; plugin_manager уже принимает
+    factory(window)->QWidget, так что миграция не требует правок ядра.
+  • [СДЕЛАНО] Хвост GUI: кнопка «Сбросить историю» в History-вкладке —
+    очищает только таблицу (self._history_rows + QTableWidget), БД
+    operations.db не трогает; флаг _history_view_cleared не даёт lazy-load
+    перезагрузить вид при возврате на вкладку («Обновить» сбрасывает флаг).
+  • [СДЕЛАНО] gui/plugin_manager.py — реестр вкладок-«плагинов»: список
+    вкладок (TabPlugin: id/title/factory) больше не захардкожен в
+    _build_central, а собирается из PluginManager (единый источник правды
+    для таб-бара). PluginManager.discover() авто-загружает внешние вкладки
+    из plugins/*.py (контракт register/TAB_PLUGIN/TAB_PLUGINS; битый плагин
+    изолируется, не роняя приложение) — вкладки добавляются без правки ядра.
+    См. plugins/README.md и example_tab.py.example.
+  • [СДЕЛАНО] Вынос бизнес-логики из GUI-воркеров в core/ (тонкий UI-слой):
+    _CloneWorker больше не парсит русские лог-строки ('HTML файлов для
+    обработки:'/'Локализую:') для вычисления прогресса страниц. FrontendCloner
+    отдаёт структурный прогресс через set_page_progress_callback(current,
+    total) — эмиссия (0,total) при старте и (n,total) на каждой границе
+    страницы (включая пропущенные). Воркер стал тонким форвардером (колбэки →
+    Qt-сигналы), убраны _on_msg и состояние _total/_current. Контракт сигнала
+    progress(int,int) не изменился. Покрыто tests/test_clone_progress.py.
+  • [СДЕЛАНО] Унификация конфигурации: core/config.py — единый источник
+    путей, дефолтов и load/save для settings.json и targets.json. Заменены
+    3 расходящихся загрузчика настроек (main_window, dialogs) и относительные
+    хардкоды data/*.db (video/image/design/data_viewer/endpoint_index/
+    pattern_analyser/registry/orchestrator) на пути от корня проекта.
+    gui/constants.py теперь реэкспортит из core.config.
+  • [СДЕЛАНО — Data Path Context, шаг 1/2] core/paths.py — PathManager:
+    frozen-aware (PyInstaller) выбор путей. Два корня: resource_root
+    (sys._MEIPASS в .exe, иначе корень проекта — read-only бандл) и data_root
+    (записываемые данные: %APPDATA%/<app> в .exe с фолбэками XDG/~/.<app>,
+    иначе корень проекта — сохраняет текущую раскладку data/ в dev). Методы:
+    get_resource_path, get_db_path (создаёт data/), get_workspace_path(domain)
+    (слаг+mkdir), get_reports_path, get_temp_path; синглтон init_path_manager/
+    get_path_manager (инициализация один раз в main.py). Реэкспорт из
+    core.config. Покрыто tests/test_paths.py (13 тестов).
+  • [СДЕЛАНО — Data Path Context, шаг 2/2 — ФИНАЛ] PathManager стал единым
+    источником путей для всех потребителей. config.py — чокпойнт: CONFIG_DIR/
+    DATA_DIR/OPERATIONS_DB/REGISTRY_DB/SETTINGS_FILE/TARGETS_FILE/
+    LIVE_TEST_OUTPUT берут data_root, PLUGINS_DIR — resource_root, поэтому
+    ImageExtractor/VideoDownloader/SqliteStore-наследники (OperationRegistry,
+    DataRegistry) и orchestrator мигрируют транзитивно через импорт из config
+    (в dev пути байт-в-байт прежние). Точечно добиты реальные хардкоды:
+    (1) utils/system_logger.py — 'data/system.log' (писал в CWD, ломался во
+    frozen) → лениво через get_path_manager().get_db_path('system.log');
+    (2) utils/operation_registry.py — дефолт 'operations.db' (фолбэк в CWD) →
+    None→OPERATIONS_DB, симметрично DataRegistry→REGISTRY_DB; (3) main.py и
+    main_orchestrator.py зовут init_path_manager() до импорта core.config (GUI
+    и CLI-входы единообразны). Инъекция в GUI: MainWindow.__init__ ставит
+    self.paths = get_path_manager() ДО _build_central, поэтому раннер задач
+    (TaskRunnerMixin, mixin на окне) и плагины/вкладки (factory(window))
+    достают PathManager через window.paths — задокументировано в
+    plugins/README.md и продемонстрировано в example_tab.py.example. Покрыто
+    tests/test_config.py (paths-derive-from-PM, registry-default-uses-PM,
+    system-logger-uses-PM) + tests/test_paths.py. Все тесты зелёные, ruff чист.
+
+Качество / инфраструктура:
+  • [СДЕЛАНО] pytest-набор tests/ (~245 тестов, сетенезависимый, Qt headless):
+    cookie-скоринг, формат видео, URL/srcset, plugin-реестр+дискавери,
+    кооперативная отмена, VulnScanner, рендер отчёта, TTL-кэш + кэш пассивных
+    субдоменов, paywall, web_app, config, features, per-tab feature-gating,
+    EndpointIndex/PatternAnalyser/DesignAnalyzer, recon-отчёт, FrontendCloner
+    (циклический CSS-импорт), gzip/deflate-декод сессий, SiteExtractor
+    (provenance внешних JS). + README.md, requirements-dev.txt, pytest.ini.
+  • [СДЕЛАНО] CI: .github/workflows/ci.yml — джобы lint (ruff, правила
+    pyflakes; см. ruff.toml), test (pytest, Python 3.11/3.12, headless-PyQt5,
+    offscreen) и build-windows (PyInstaller → артефакт dist/). requirements-dev
+    тянет ruff/fastapi/httpx.
+  • [СДЕЛАНО] Опциональные feature-флаги: core/features.py — единый детект
+    playwright/yt-dlp/ffmpeg/fastapi/lxml; main_window показывает недоступные
+    в статус-баре, System-вкладка — панель «Возможности» с ✓/✗.
+  • [СДЕЛАНО] Верхние границы версий в requirements.txt/requirements-dev.txt:
+    каждая зависимость ограничена снизу известным минимумом и сверху —
+    следующим мажором (для 0.x-пакетов < 1.0): PyQt5 <6, requests <3,
+    beautifulsoup4 <5, lxml <7, playwright <2, fastapi <1, uvicorn <1,
+    fpdf2 <3, pytest <10, ruff <1, httpx <1. yt-dlp намеренно без верхней
+    границы (CalVer; устаревшая версия теряет поддержку сайтов).
+  • [СДЕЛАНО] README.md (обзор, установка, запуск GUI/CLI/web, архитектура,
+    плагины, тесты, сборка .exe).
+
+Оптимизация:
+  • [СДЕЛАНО] utils/rate_limiter.py — потокобезопасный RateLimiter
+    (token-interval, инъекция часов для тестов); opt-in троттлинг в активном
+    чекере субдоменов (параллелизм + вежливость), scan(active_rate_per_sec=).
+  • [СДЕЛАНО] utils/scan_cache.py — TTL-кэш; применён к GeoIP-запросам recon
+    (1ч) и к пассивному перечислению субдоменов — crt.sh + HackerTarget
+    (_PASSIVE_CACHE, 1ч, ключ (источник, домен); fetch/parse вынесены в
+    _fetch_crtsh/_fetch_hackertarget, DNS-резолв остаётся «свежим», сбойный
+    fetch не отравляет кэш). SubdomainScanner.scan(use_cache=) — повторные
+    сканы того же домена не дёргают сеть. Покрыто tests/test_subdomain_cache.
+
+------------------------------------------------------------------------------
+5. ПРИОРИТЕТНЫЕ ЗАДАЧИ (ближайшая очередь)
+------------------------------------------------------------------------------
+  1. [ПРИОРИТЕТ №1 — КРИТИЧНО] Аудит многопоточности и развязка GUI/воркеров.
+     [СДЕЛАНО — ядро] Внедрён единый раннер _start_task() на Signals/Slots:
+     4 дублирующихся блока запуска потоков (capture / subdomain / clone /
+     generic) сведены к одному, 5 разрозненных контейнеров учёта заменены на
+     единый реестр self._tasks, унифицирован безопасный teardown. Устранён
+     баг single-slot _subdomain_thread (перезапуск скана терял ссылку на
+     живой поток). Concurrency-стресс на 5 задачах проходит.
+     [СДЕЛАНО — хвосты] Кооперативная отмена (threading.Event) в
+     SiteContentCapture и FrontendCloner + кнопки Stop на вкладках Capture
+     и Clone; индикатор «Активных задач: N» в статус-баре от self._tasks.
+     ПРИОРИТЕТ №1 ЗАКРЫТ.
+  2. [СДЕЛАНО] Вкладка "Final Report & Collection" (фича [A]).
+  3. [СДЕЛАНО] Вкладка "Cookie Security Audit" (фича [B]).
+  4. [СДЕЛАНО] Апгрейд медиа-загрузчика (фича [C]).
+  5. [СДЕЛАНО] Декомпозиция gui/main_window.py — монолит разбит на
+     per-tab mixin-модули gui/tab_*.py (+ workers.py, constants.py);
+     main_window.py ужат с ~2480 до ~280 строк.
+
+  ВСЕ ПЯТЬ ПРИОРИТЕТОВ ЗАКРЫТЫ. GUI: 14 вкладок.
+
+Бэклог: [ПРОВЕРЕНО ВЖИВУЮ] yt-dlp 2026.06.09 — наш format-string для 1080p
+резолвится на реальном YouTube в раздельные потоки (399 1080p + 258 audio),
+подтверждая корректность стратегии merge. ffmpeg в этой среде не ставится
+(нет winget/admin) → нужен пользователю для 4K-merge: gyan.dev/ffmpeg/builds
+(без ffmpeg авто-fallback на прогрессивный поток — работает). Instagram —
+требует валидных сессионных cookies пользователя.
+
+------------------------------------------------------------------------------
+6. ИЗВЕСТНЫЕ БАГИ И ТЕХНИЧЕСКИЙ ДОЛГ
+------------------------------------------------------------------------------
+  • Монолитный GUI: [ЗАКРЫТО] gui/main_window.py разбит на per-tab
+    mixin-модули gui/tab_*.py; каркас ужат до ~320 строк.
+  • Многопоточность: [ЗАКРЫТО] краш разрушения QThread и риск гонок устранены
+    единым раннером _start_task() + реестром self._tasks; добавлены отмена
+    длительных capture/clone задач и индикатор активных задач.
+  • Хрупкость внешних зависимостей: [СНИЖЕНО] gui больше не импортирует
+    Playwright/yt-dlp/FastAPI напрямую — всё за core-модулями с guard'ами
+    (dynamic_analyzer ловит отсутствие playwright и отдаёт error-dict; tab_media
+    чекает has_ffmpeg(); web_app — стаб). Детект централизован в core/features.py;
+    window_chrome показывает features.missing() в статус-баре, System-вкладка —
+    панель «Возможности». [ЗАКРЫТО — per-tab upfront-деградация] Каждая
+    feature-зависимая вкладка теперь сигнализирует о нехватке ДО запуска задачи
+    (паттерн Scrapy-плагина: disabled+подсказка), а не падает постфактум: Recon —
+    чекбокс «Dynamic API Sniffing» дизейблится с подсказкой при отсутствии
+    Playwright; Video — «Скачать» блокируется с дружелюбным сообщением при
+    отсутствии бинаря yt-dlp (без спурьезной failed-операции в реестре); ffmpeg
+    уже предупреждался (мягкий fallback). Покрыто
+    tests/test_optional_feature_gating.py.
+  • Зависимость от внешних сервисов: [ЗАКРЫТО] recon/субдомены/paywall
+    (ip-api.com, crt.sh, HackerTarget, AlienVault, Anubis, archive.org, Google
+    cache) обёрнуты в utils/http_retry.py — экспоненциальный backoff + jitter,
+    учёт Retry-After (с потолком), retry на 429/5xx/URLError/timeout и fail-fast
+    на permanent (404/parse). Сбой после ретраев деградирует мягко (None/[]).
+    + TTL-кэш пассивных источников. Покрыто tests/test_http_retry.py.
+  • gzip-баг сканера ключей: [ЗАКРЫТО] api_key_extractor читал ответ без
+    распаковки, хотя SessionBuilder шлёт Accept-Encoding: gzip → на сжатых
+    сайтах (большинство) тело было мусором и утечки не находились. Введён общий
+    gzip-aware фетч utils.http_retry.decompress()/urlopen_text(); на него
+    переведены ApiKeyExtractor и source_map_parser.fetch_and_parse. Отчёт
+    сканера теперь пишется в PathManager reports/ (per-host), а не в ~/. Мёртвый
+    SimpleSiteDownloader (тот же баг, нигде не использовался) удалён. Покрыто
+    tests/test_api_key_extractor.py (gzip-регрессия) + test_http_retry.py.
+  • Тесты: [ЗАКРЫТО] полноценный pytest-набор (~245 тестов, сетенезависимый,
+    Qt headless) + CI (.github/workflows/ci.yml). Legacy examples/test_cases.py
+    и ручной run_live_test.py остаются как smoke-сценарии.
+  • Документация: [ЗАКРЫТО] есть корневой README.md (обзор/установка/запуск/
+    архитектура/плагины/тесты/сборка) + plugins/README.md; модули документированы
+    docstring'ами.
+  • Дублирование: [ЗАКРЫТО] устаревшие core/image_extractor.py и
+    core/video_downloader.py (простые regex/urllib-версии без реестра, дедупа,
+    ffmpeg/cookies) удалены — нигде не использовались, кроме реэкспорта в
+    core/__init__.py. Канонические апгрейженные реализации остаются в utils/
+    (utils.image_processor.ImageExtractor, utils.video_processor.VideoDownloader);
+    весь прикладной код (gui/tab_media, remote/web_app, collection_runner,
+    тесты) уже импортирует именно их.
+  • Конфигурация путей к БД и каталогам: [ЗАКРЫТО] централизована в core/config.py
+    поверх core/paths.py (PathManager, frozen-aware) — единый источник путей для
+    GUI и CLI; см. «Data Path Context» в разделе 4.
+  • [ЗАКРЫТО — мёртвые/полу-подключённые настройки] Аудит DEFAULT_SETTINGS выявил
+    4 настройки, которые код объявлял, но не использовал или не давал задать из
+    UI; все доведены до рабочего состояния (+ тесты): (1) request_delay — диалог
+    позволял задать «задержку между запросами», но capture спал хардкод-0.5с;
+    теперь SiteContentCapture.configure(delay=) реально троттлит (Capture-вкладка
+    и Full Collection шлют request_delay/1000; 0 отключает); (2) user_agent_profile
+    — читался 8 вкладками, но не имел контрола → всегда chrome_windows; добавлен
+    выпадающий список (вкладка «Сеть», источник BROWSER_HEADERS); (3)
+    compression_format — читался архиватором, но не задавался → rar недостижим;
+    добавлен селектор zip/rar (вкладка «Вывод»); (4) auto_compress — чекбокс был,
+    но _make_archive вызывался безусловно → архивировалось всегда; теперь
+    _make_archive уважает настройку (off → None, без ложного «папка пуста»).
+    Покрыто test_capture_delay, test_settings_dialog, test_make_archive.
+  • [ЗАКРЫТО — hardening-проход 2026-06-12] Аудит логики выявил и закрыл 7
+    реальных багов (+ регрессионные тесты на каждый): (1) recon_engine.run_recon
+    сериализовал полный result вместо урезанного report — большой pwa_manifest
+    не вырезался из recon_report.json; (2) FrontendCloner._download кешировал путь
+    CSS только ПОСЛЕ _process_css → циклический @import (a→b→a) уходил в
+    бесконечную рекурсию/переполнение стека (теперь запись в кеш до обработки
+    тела); (3) AntiDetectSession и (4) CloudflareSession анонсировали
+    'gzip, deflate', но декодировали только gzip (и регистрозависимо) → deflate-
+    ответы (в т.ч. CSS/JS-ассеты клонера) сохранялись как мусор — оба переведены
+    на общий http_retry.decompress(). Параллельно дедуп: убраны локальные копии
+    _decompress в recon_engine/anti_detect/cloudflare (единый источник —
+    http_retry.decompress). (5) SiteExtractor.fetch_text атрибутировал находки
+    из внешних <script src> на URL страницы вместо URL самого скрипта — Dashboard
+    «Run Scan» терял provenance утечки (какой именно JS-файл слил ключ/эндпоинт);
+    теперь source=js_url. (6) gui/tab_capture нёс СВОЙ regex-набор секретов
+    (_KEY_RE) и считал «утечки ключей» им — третья копия, которую пропустила
+    унификация secret-детекции (core.secret_scanner — единый источник правды):
+    набор разошёлся (не ловил JWT, Stripe, PEM-ключи), Capture-вкладка
+    недосчитывала утечки против API/Security-вкладок; переведён на общий
+    SecretScanner. (7) gui/ui_components.ResultsDisplay — QTextEdit, чей append()
+    рендерит аргумент как HTML; цветные хелперы (append_info/error/…) получают
+    plain-text (URL с query, имена файлов, значения заголовков, тексты ошибок,
+    preview секретов), поэтому любой '<','>','&' трактовался как разметка и
+    портил/съедал вывод во ВСЕХ вкладках — теперь сообщение экранируется
+    (намеренный HTML — только префикс [LEVEL]; History-вкладка экранирует и
+    metadata-JSON в <pre>). Не security (Qt rich text не исполняет скрипты) —
+    корректность отображения. Покрыто test_recon_engine, test_frontend_cloner,
+    test_anti_detect, test_cloudflare_bypass, test_site_extractor,
+    test_capture_analysis, test_results_display + новая база-характеризация
+    EndpointIndex/PatternAnalyser/DesignAnalyzer. Параллельно: фикс устаревшей
+    подписи/тултипа passive-recon в subdomain-вкладке (+ AlienVault/Anubis).
+
+==============================================================================

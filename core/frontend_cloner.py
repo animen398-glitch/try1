@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
@@ -48,9 +49,15 @@ class FrontendCloner:
         self.source_dir: Optional[Path] = None
         self.output_dir: Optional[Path] = None
         self.progress_callback: Optional[Callable] = None
+        self.page_progress_callback: Optional[Callable] = None
         self._session = AntiDetectSession()
         self._cache: Dict[str, str] = {}   # original_url -> relative_local_path
         self._failed: List[str] = []
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        """Signal the clone loop to stop at the next page boundary."""
+        self._cancel.set()
 
     def configure(
         self,
@@ -64,13 +71,27 @@ class FrontendCloner:
         self._session.configure(profile=profile, rotate_ua=rotate_ua, retry_count=3)
         self._cache = {}
         self._failed = []
+        self._cancel.clear()
 
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
 
+    def set_page_progress_callback(self, cb: Callable):
+        """Register cb(current, total) for structured per-page progress.
+
+        Emitted with (0, total) once the page count is known and (n, total)
+        after each page boundary. Keeps progress reporting independent of the
+        human-readable log wording, so the UI never has to parse log strings.
+        """
+        self.page_progress_callback = cb
+
     def _log(self, msg: str):
         if self.progress_callback:
             self.progress_callback(msg)
+
+    def _emit_page_progress(self, current: int, total: int):
+        if self.page_progress_callback:
+            self.page_progress_callback(current, total)
 
     # ---------------------------------------------------------------- helpers
 
@@ -131,6 +152,12 @@ class FrontendCloner:
             self._failed.append(full_url)
             return None
 
+        # Reserve the cache entry BEFORE processing the body so a circular CSS
+        # @import (a.css -> b.css -> a.css) resolves to this path instead of
+        # recursing into a re-fetch of the same file forever.
+        rel = f"assets/{subdir}/{local_name}"
+        self._cache[full_url] = rel
+
         # CSS: rewrite nested url() / @import before saving
         if subdir == 'css':
             try:
@@ -142,8 +169,6 @@ class FrontendCloner:
         else:
             asset_path.write_bytes(raw)
 
-        rel = f"assets/{subdir}/{local_name}"
-        self._cache[full_url] = rel
         self._log(f"  [{subdir}] {local_name}")
         return rel
 
@@ -247,13 +272,20 @@ class FrontendCloner:
             result['status'] = 'Warning: no HTML files found in source directory'
             return result
 
-        self._log(f"HTML файлов для обработки: {len(html_files)}")
+        total = len(html_files)
+        self._log(f"HTML файлов для обработки: {total}")
+        self._emit_page_progress(0, total)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        for html_file in html_files:
+        for idx, html_file in enumerate(html_files):
+            if self._cancel.is_set():
+                result['cancelled'] = True
+                self._log("Отменено пользователем")
+                break
             page_url = url_map.get(html_file.name, '')
             if not page_url:
                 self._log(f"Пропускаю (нет URL в site_map): {html_file.name}")
+                self._emit_page_progress(idx + 1, total)
                 continue
 
             self._log(f"Локализую: {html_file.name}")
@@ -266,10 +298,14 @@ class FrontendCloner:
             except Exception as e:
                 self._log(f"  Ошибка при обработке {html_file.name}: {e}")
                 result['failed'].append(html_file.name)
+            self._emit_page_progress(idx + 1, total)
 
         result['assets_downloaded'] = len(self._cache)
         result['failed'].extend(self._failed)
-        result['status'] = 'Success' if result['pages_processed'] > 0 else 'Warning: no pages processed'
+        if result.get('cancelled'):
+            result['status'] = 'Cancelled'
+        else:
+            result['status'] = 'Success' if result['pages_processed'] > 0 else 'Warning: no pages processed'
         self._log(
             f"Готово: {result['pages_processed']} стр., "
             f"{result['assets_downloaded']} ассетов, "

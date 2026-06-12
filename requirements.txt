@@ -1,19 +1,26 @@
 # Advanced Site Analyzer — Python 3.11+
 # Install: pip install -r requirements.txt
 
+# Upper bounds cap each dependency below its next major (or, for 0.x / ZeroVer
+# packages, below 1.0) to keep a known-good range and avoid surprise breaking
+# upgrades. yt-dlp is the deliberate exception (see below).
+
 # ── Core (required for the GUI / .exe build) ──────────────────────────────
-PyQt5>=5.15.9
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=5.1.0                  # faster HTML parsing
+PyQt5>=5.15.9,<6.0          # PyQt6 is a separate, breaking package
+requests>=2.31.0,<3.0
+beautifulsoup4>=4.12.0,<5.0
+lxml>=5.1.0,<7.0            # faster HTML parsing (5.x/6.x are compatible)
 
 # ── Optional features ─────────────────────────────────────────────────────
 # Enable only if you use these; they bloat / complicate the PyInstaller build
 # and are NOT bundled into the .exe (external binaries).
-# playwright>=1.40.0         # dynamic traffic analysis; then: python -m playwright install chromium
-# yt-dlp>=2024.1.0           # video downloader (external CLI, called via subprocess)
-# fastapi>=0.110.0           # web console (main_orchestrator --web)
-# uvicorn[standard]>=0.27.0
+# playwright>=1.40.0,<2.0    # dynamic traffic analysis; then: python -m playwright install chromium
+# yt-dlp>=2024.1.0           # video downloader + Instagram/social (CalVer; intentionally UNcapped — stale yt-dlp breaks site support, keep it current)
+# ffmpeg                     # external binary; required to merge 4K/1080p video+audio
+# fastapi>=0.110.0,<1.0      # web console (main_orchestrator --web); 0.x ZeroVer
+# uvicorn[standard]>=0.27.0,<1.0
+# fpdf2>=2.7,<3.0            # PDF export of the vulnerability report
+# scrapy>=2.11,<3.0          # Deep Crawl (Scrapy) plugin; runs in a child process (Twisted reactor)
 
 # ── Packaging (build-time only) ───────────────────────────────────────────
 # pip install pyinstaller     # build: pyinstaller build.spec --clean --noconfirm

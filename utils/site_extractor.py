@@ -93,7 +93,9 @@ class SiteExtractor:
                 except Exception:
                     # Сбой загрузки одного скрипта не должен ломать процесс.
                     continue
-                result['findings'].extend(self.analyser.analyze(js_content, url))
+                # Attribute findings to the script they came from, not the page,
+                # so the leak's provenance points at the exact external JS file.
+                result['findings'].extend(self.analyser.analyze(js_content, js_url))
                 analyzed += 1
             result['scripts_analyzed'] = analyzed
 

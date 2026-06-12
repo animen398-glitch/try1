@@ -1,8 +1,8 @@
 import gzip
 import json
 import re
+import threading
 import time
-import urllib.error
 import zlib
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -22,8 +22,15 @@ class SiteContentCapture:
         self.captured: List[Dict] = []
         self.progress_callback: Optional[Callable] = None
         self._profile: str = 'chrome_windows'
+        self._delay: float = 0.5   # polite pause between page fetches (seconds)
+        self._cancel = threading.Event()
 
-    def configure(self, url: str, output_dir: str, max_pages: int = 50, profile: str = 'chrome_windows'):
+    def cancel(self):
+        """Signal the capture loop to stop at the next page boundary."""
+        self._cancel.set()
+
+    def configure(self, url: str, output_dir: str, max_pages: int = 50,
+                  profile: str = 'chrome_windows', delay: float = 0.5):
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
         self.base_url = url
@@ -31,8 +38,10 @@ class SiteContentCapture:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.max_pages = max_pages
         self._profile = profile
+        self._delay = max(0.0, delay)
         self.visited.clear()
         self.captured.clear()
+        self._cancel.clear()
 
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
@@ -92,6 +101,11 @@ class SiteContentCapture:
         queue = [self.base_url]
 
         while queue and len(self.captured) < self.max_pages:
+            if self._cancel.is_set():
+                result['cancelled'] = True
+                if self.progress_callback:
+                    self.progress_callback("Отменено пользователем")
+                break
             url = queue.pop(0)
             if url in self.visited:
                 continue
@@ -111,7 +125,8 @@ class SiteContentCapture:
 
             new_links = self._extract_links(html, url)
             queue.extend(new_links[:10])
-            time.sleep(0.5)
+            if self._delay:
+                time.sleep(self._delay)
 
         result['pages_captured'] = len(self.captured)
 

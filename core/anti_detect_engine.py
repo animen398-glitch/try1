@@ -1,10 +1,11 @@
-import gzip
 import http.cookiejar
 import random
 import time
 import urllib.error
 import urllib.request
 from typing import Dict, List, Optional
+
+from utils.http_retry import decompress
 
 
 _PROFILES: Dict[str, Dict[str, str]] = {
@@ -108,12 +109,6 @@ class AntiDetectSession:
             handlers.append(urllib.request.ProxyHandler(self.proxies))
         return urllib.request.build_opener(*handlers)
 
-    @staticmethod
-    def _decompress(raw: bytes, response) -> bytes:
-        if response.headers.get('Content-Encoding', '') == 'gzip':
-            return gzip.decompress(raw)
-        return raw
-
     def _backoff(self, attempt: int):
         wait = self._base_delay * (2 ** attempt) + random.uniform(0.2, 0.8)
         time.sleep(wait)
@@ -127,7 +122,7 @@ class AntiDetectSession:
             try:
                 req = urllib.request.Request(url, headers=self._headers())
                 with opener.open(req, timeout=timeout) as r:
-                    raw = self._decompress(r.read(), r)
+                    raw = decompress(r.read(), r.headers)
                     return raw.decode('utf-8', errors='ignore')
             except urllib.error.HTTPError as e:
                 if e.code in (429, 503) and attempt < self._retry_count - 1:
@@ -152,7 +147,7 @@ class AntiDetectSession:
             try:
                 req = urllib.request.Request(url, headers=self._headers())
                 with opener.open(req, timeout=timeout) as r:
-                    return self._decompress(r.read(), r)
+                    return decompress(r.read(), r.headers)
             except urllib.error.HTTPError as e:
                 if e.code in (429, 503) and attempt < self._retry_count - 1:
                     self._backoff(attempt)

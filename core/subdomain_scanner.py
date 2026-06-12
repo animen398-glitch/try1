@@ -1,6 +1,9 @@
 """
-SubdomainScanner — passive enumeration (crt.sh, HackerTarget) +
-active DNS brute-force with concurrent resolution.
+SubdomainScanner — passive enumeration (crt.sh, HackerTarget, AlienVault OTX,
+Anubis/jldc) + active DNS brute-force with concurrent resolution.
+
+All passive sources are keyless and free; the keyed/heavyweight backends from
+dedicated tools (subfinder/amass) are intentionally not reimplemented.
 """
 import concurrent.futures
 import json
@@ -8,13 +11,24 @@ import socket
 import threading
 import time
 import urllib.request
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
+
+from core.subdomain_active import ActiveSubdomainChecker
+from utils.http_retry import urlopen_retry
+from utils.scan_cache import TTLCache
 
 
 _CRTSH_URL        = 'https://crt.sh/?q=%.{domain}&output=json'
 _HACKERTARGET_URL = 'https://api.hackertarget.com/hostsearch/?q={domain}'
+_ALIENVAULT_URL   = 'https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns'
+_ANUBIS_URL       = 'https://jldc.me/anubis/subdomains/{domain}'
 _FETCH_TIMEOUT    = 10
 _DNS_TIMEOUT      = 3
+
+# Passive enumeration is idempotent within a session, so cache the parsed
+# crt.sh / HackerTarget results per domain (1h TTL) to avoid re-hitting those
+# services on repeat scans. DNS resolution still runs fresh — IPs can change.
+_PASSIVE_CACHE = TTLCache(ttl_seconds=3600)
 
 _WORDLIST: tuple = (
     'www', 'www2', 'www3', 'mail', 'mail1', 'mail2', 'smtp', 'smtp1', 'smtp2',
@@ -68,17 +82,21 @@ _WORDLIST: tuple = (
 class SubdomainScanner:
     """
     Enumerates subdomains via:
-    1. Passive:   crt.sh certificate transparency + HackerTarget
+    1. Passive:   crt.sh certificate transparency + HackerTarget +
+                  AlienVault OTX + Anubis (all keyless, free, cached)
     2. Active:    DNS brute-force against a built-in wordlist
     """
 
     def __init__(self, data_registry=None):
         self._cancel = threading.Event()
         self._data_registry = data_registry
+        self._active_checker: Optional[ActiveSubdomainChecker] = None
 
     def cancel(self):
         """Signal the scanner to stop at the next checkpoint."""
         self._cancel.set()
+        if self._active_checker is not None:
+            self._active_checker.cancel()
 
     def _record_discovery(self, source: str, data_type: str, content: str,
                           metadata: Optional[Dict] = None) -> None:
@@ -98,15 +116,26 @@ class SubdomainScanner:
         on_progress: Optional[Callable[[int, int], None]] = None,
         passive: bool = True,
         brute: bool = True,
+        active: bool = False,
+        on_update: Optional[Callable[[Dict], None]] = None,
         max_workers: int = 40,
+        active_rate_per_sec: float = 0,
+        use_cache: bool = True,
     ) -> Dict:
         """
-        Run passive + brute-force enumeration.
-        on_found(entry)           called for each new result
-        on_progress(current, total) called during brute-force phase
-        Returns summary dict: {status, domain, total, results, elapsed}
+        Run passive + brute-force enumeration, optionally followed by active
+        checks (HTTP liveness + subdomain-takeover detection).
+
+        on_found(entry)            called for each newly discovered subdomain
+        on_progress(current, total) progress during brute-force / active phase
+        on_update(entry)           called when an entry is enriched by active checks
+        use_cache                  reuse cached passive (crt.sh/HackerTarget)
+                                   results for this domain within the TTL window
+        Returns summary dict: {status, domain, total, results, elapsed,
+                               live_count, takeover_candidates}
         """
         self._cancel.clear()
+        self._active_rate = active_rate_per_sec
         domain = (
             domain.strip().lower()
             .replace('https://', '').replace('http://', '')
@@ -145,49 +174,32 @@ class SubdomainScanner:
         if passive and not self._cancel.is_set():
             if on_progress:
                 on_progress(0, 0)  # indeterminate
-            try:
-                req = urllib.request.Request(
-                    _CRTSH_URL.format(domain=domain),
-                    headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
-                )
-                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-                    data = json.loads(r.read().decode('utf-8', errors='ignore'))
-                raw_names: set = set()
-                for entry in data:
-                    for name in entry.get('name_value', '').splitlines():
-                        name = name.strip().lstrip('*.').lower()
-                        if name.endswith(f'.{domain}'):
-                            raw_names.add(name)
-                        elif name == domain:
-                            raw_names.add(name)
-                for name in sorted(raw_names):
-                    if self._cancel.is_set():
-                        break
-                    ip = _resolve(name)
-                    _record(name, ip or '', 'crt.sh')
-            except Exception:
-                pass
+            for name in self._passive_crtsh(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                ip = _resolve(name)
+                _record(name, ip or '', 'crt.sh')
 
         # ── Phase 2: HackerTarget passive API ────────────────────────────
         if passive and not self._cancel.is_set():
-            try:
-                req = urllib.request.Request(
-                    _HACKERTARGET_URL.format(domain=domain),
-                    headers={'User-Agent': 'Mozilla/5.0'},
-                )
-                with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as r:
-                    text = r.read().decode('utf-8', errors='ignore')
-                for line in text.splitlines():
-                    if self._cancel.is_set():
-                        break
-                    if ',' not in line or 'API count' in line:
-                        continue
-                    parts = line.split(',', 1)
-                    sub, ip = parts[0].strip().lower(), parts[1].strip()
-                    if sub.endswith(f'.{domain}') or sub == domain:
-                        _record(sub, ip, 'hackertarget')
-            except Exception:
-                pass
+            for sub, ip in self._passive_hackertarget(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(sub, ip, 'hackertarget')
+
+        # ── Phase 2b: AlienVault OTX passive DNS ─────────────────────────
+        if passive and not self._cancel.is_set():
+            for name in self._passive_alienvault(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'alienvault')
+
+        # ── Phase 2c: Anubis (jldc.me) ───────────────────────────────────
+        if passive and not self._cancel.is_set():
+            for name in self._passive_anubis(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'anubis')
 
         # ── Phase 3: DNS brute-force ──────────────────────────────────────
         if brute and not self._cancel.is_set():
@@ -208,12 +220,178 @@ class SubdomainScanner:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
                 list(pool.map(_probe, _WORDLIST))
 
+        # ── Phase 4: Active checks (HTTP liveness + takeover) ─────────────
+        if active and found and not self._cancel.is_set():
+            self._run_active(found, on_progress, on_update, max_workers)
+
         elapsed = round(time.time() - t_start, 2)
         results = list(found.values())
+        takeover_candidates = [
+            e['subdomain'] for e in results if e.get('takeover')
+        ]
         return {
             'status': 'Cancelled' if self._cancel.is_set() else 'Success',
             'domain': domain,
             'total': len(results),
             'results': results,
             'elapsed': elapsed,
+            'live_count': sum(1 for e in results if e.get('alive')),
+            'takeover_candidates': takeover_candidates,
         }
+
+    # ── Passive sources (cached) ─────────────────────────────────────────
+
+    def _passive_crtsh(self, domain: str, use_cache: bool) -> List[str]:
+        """Return crt.sh-discovered names for ``domain`` (cached, network-safe)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('crtsh', domain), lambda: self._fetch_crtsh(domain))
+            return self._fetch_crtsh(domain)
+        except Exception:
+            return []
+
+    def _passive_hackertarget(self, domain: str,
+                              use_cache: bool) -> List[Tuple[str, str]]:
+        """Return HackerTarget (subdomain, ip) pairs for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('hackertarget', domain),
+                    lambda: self._fetch_hackertarget(domain))
+            return self._fetch_hackertarget(domain)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _fetch_crtsh(domain: str) -> List[str]:
+        """Fetch + parse crt.sh certificate-transparency names (network)."""
+        req = urllib.request.Request(
+            _CRTSH_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
+        raw_names: set = set()
+        for entry in data:
+            for name in entry.get('name_value', '').splitlines():
+                name = name.strip().lstrip('*.').lower()
+                if name.endswith(f'.{domain}') or name == domain:
+                    raw_names.add(name)
+        return sorted(raw_names)
+
+    @staticmethod
+    def _fetch_hackertarget(domain: str) -> List[Tuple[str, str]]:
+        """Fetch + parse the HackerTarget hostsearch CSV (network)."""
+        req = urllib.request.Request(
+            _HACKERTARGET_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        text = body.decode('utf-8', errors='ignore')
+        pairs: List[Tuple[str, str]] = []
+        for line in text.splitlines():
+            if ',' not in line or 'API count' in line:
+                continue
+            sub, ip = line.split(',', 1)
+            sub, ip = sub.strip().lower(), ip.strip()
+            if sub.endswith(f'.{domain}') or sub == domain:
+                pairs.append((sub, ip))
+        return pairs
+
+    def _passive_alienvault(self, domain: str, use_cache: bool) -> List[str]:
+        """Return AlienVault OTX passive-DNS names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('alienvault', domain), lambda: self._fetch_alienvault(domain))
+            return self._fetch_alienvault(domain)
+        except Exception:
+            return []
+
+    def _passive_anubis(self, domain: str, use_cache: bool) -> List[str]:
+        """Return Anubis (jldc.me) subdomain names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('anubis', domain), lambda: self._fetch_anubis(domain))
+            return self._fetch_anubis(domain)
+        except Exception:
+            return []
+
+    @staticmethod
+    def _names_in_domain(names, domain: str) -> List[str]:
+        """Normalise + keep only names within ``domain``."""
+        out: set = set()
+        for name in names:
+            name = str(name or '').strip().lstrip('*.').lower()
+            if name.endswith(f'.{domain}') or name == domain:
+                out.add(name)
+        return sorted(out)
+
+    @classmethod
+    def _fetch_alienvault(cls, domain: str) -> List[str]:
+        """Fetch + parse AlienVault OTX passive DNS (network, keyless)."""
+        req = urllib.request.Request(
+            _ALIENVAULT_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
+        records = data.get('passive_dns', []) if isinstance(data, dict) else []
+        return cls._names_in_domain(
+            (rec.get('hostname') for rec in records if isinstance(rec, dict)), domain)
+
+    @classmethod
+    def _fetch_anubis(cls, domain: str) -> List[str]:
+        """Fetch + parse the Anubis (jldc.me) subdomain JSON list (network, keyless)."""
+        req = urllib.request.Request(
+            _ANUBIS_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
+        return cls._names_in_domain(data if isinstance(data, list) else [], domain)
+
+    def _run_active(self, found: Dict[str, Dict],
+                    on_progress: Optional[Callable[[int, int], None]],
+                    on_update: Optional[Callable[[Dict], None]],
+                    max_workers: int) -> None:
+        """Enrich discovered entries with HTTP liveness + takeover verdicts."""
+        checker = ActiveSubdomainChecker(rate_per_sec=self._active_rate)
+        self._active_checker = checker
+
+        def _on_res(res: Dict):
+            entry = found.get(res['host'])
+            if entry is None:
+                return
+            entry['alive'] = res['alive']
+            entry['http_status'] = res['http_status']
+            entry['server'] = res['server']
+            entry['title'] = res['title']
+            entry['cname'] = res['cname']
+            entry['service'] = res['service']
+            entry['takeover'] = res['takeover']
+            if res['takeover']:
+                entry['status'] = f"TAKEOVER? ({res['service']})"
+            elif res['alive']:
+                entry['status'] = (
+                    f"HTTP {res['http_status']}" if res['http_status'] else 'Live'
+                )
+            else:
+                entry['status'] = 'Dead'
+            if res['takeover']:
+                self._record_discovery(
+                    source=entry.get('subdomain', ''), data_type='takeover',
+                    content=entry.get('subdomain', ''),
+                    metadata={'service': res['service'], 'cname': res['cname']},
+                )
+            if on_update:
+                on_update(entry)
+
+        checker.check_many(
+            list(found.keys()),
+            on_result=_on_res,
+            on_progress=on_progress,
+            max_workers=min(max_workers, 20),
+        )

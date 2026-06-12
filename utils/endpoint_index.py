@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 from urllib.parse import urlsplit, urlunsplit
 
-DEFAULT_DB = 'data/registry.db'
+from core.config import REGISTRY_DB
+DEFAULT_DB = str(REGISTRY_DB)
 
 
 class EndpointIndex:

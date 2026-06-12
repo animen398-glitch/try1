@@ -1,0 +1,14 @@
+# Ruff configuration. The lint gate runs the pyflakes ("F") rules — real
+# problems (undefined names, unused imports, redefinitions) — across our code.
+# Vendored / generated / output trees are excluded.
+
+exclude = [
+    "tools",
+    "build",
+    "dist",
+    "examples",
+    ".venv",
+]
+
+[lint]
+select = ["F"]
