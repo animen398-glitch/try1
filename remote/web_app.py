@@ -40,6 +40,7 @@ from core.cookie_auditor import CookieAuditor
 from core.design_analyzer import DesignAnalyzer
 from core.paywall_bypass import PaywallBypass
 from core.recon_engine import ReconEngine
+from core.security_auditor import SecurityAuditor
 from core.subdomain_scanner import SubdomainScanner
 from utils.data_viewer import DataViewer
 from utils.image_processor import ImageExtractor
@@ -126,6 +127,12 @@ def _run_cookies(url: str, push: Callable) -> dict:
     return CookieAuditor().audit(url)
 
 
+def _run_security(url: str, push: Callable) -> dict:
+    auditor = SecurityAuditor()
+    auditor.set_progress_callback(lambda m: push(m))
+    return auditor.audit(url)
+
+
 def _run_images(url: str, push: Callable) -> dict:
     out = _out_dir(url, 'images')
     ex = ImageExtractor()
@@ -167,6 +174,7 @@ JOBS: Dict[str, dict] = {
     'capture':    {'label': 'Capture',         'fn': _run_capture},
     'paywall':    {'label': 'Bypass Paywall',  'fn': _run_paywall},
     'cookies':    {'label': 'Cookie Audit',    'fn': _run_cookies},
+    'security':   {'label': 'Security Audit',  'fn': _run_security},
     'images':     {'label': 'Images',          'fn': _run_images},
     'design':     {'label': 'Design Lab',      'fn': _run_design},
     'collection': {'label': 'Full Collection', 'fn': _run_collection},
@@ -384,6 +392,12 @@ function metrics(data){
   if(data.takeover_candidates&&data.takeover_candidates.length) rows.push(['Takeovers',data.takeover_candidates.length]);
   if(data.stats&&data.stats.total_colors!==undefined) rows.push(['Colors',data.stats.total_colors]);
   if(data.stats&&data.stats.total_fonts!==undefined) rows.push(['Fonts',data.stats.total_fonts]);
+  if(data.summary&&data.summary.secrets!==undefined){
+    rows.push(['Secrets',data.summary.secrets]);
+    rows.push(['Endpoints',data.summary.endpoints]);
+    rows.push(['Source maps',data.summary.source_maps]);
+    rows.push(['JS scanned',data.summary.scanned_scripts]);
+  }
   if(data.report_html) rows.push(['Report',data.report_html]);
   rows.forEach(([l,v])=>{
     const val=(l==='Report')
