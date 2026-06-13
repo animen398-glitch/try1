@@ -10,16 +10,18 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **434 passed, 1 skipped** (сетенезависимые, Qt headless) |
+| Тесты | **504 passed, 1 skipped** (505 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
-| Своих модулей / тест-файлов | 76 / 55 |
+| Своих модулей / тест-файлов | 80 (core 40 / utils 17 / gui 22 / remote 1) / 65 |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build |
-| Git | ветка `master`, локальные feat-коммиты не запушены (Next-Gen TIER S/A) |
+| Git | ветка `master`, синхронна с `origin/master`; платформенные фичи P1–P12 закоммичены и запушены |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
+Весь реализуемый роадмап закрыт (P1–P12 + TIER S/A/B + C1/C2 в безопасных
+оффлайн/localhost-вариантах); см. §6.
 
 ---
 
@@ -51,22 +53,25 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | subdomain_active | HTTP-liveness + детект takeover |
 | dynamic_analyzer | перехват XHR/Fetch через Playwright |
 | paywall_bypass | 6 стратегий обхода + reader view |
-| content_capture | обход и сохранение HTML-страниц |
+| content_capture | обход и сохранение HTML-страниц + site_map (статус/тип/глубина) |
 | frontend_cloner | скачивание ассетов + переписывание ссылок → оффлайн-копия |
 | design_analyzer | палитра/типографика + сравнение версий |
-| secret_scanner | **единый** детектор секретов (источник правды) |
+| secret_scanner | **единый** детектор секретов (источник правды); к каждой находке прикрепляет `validation` |
+| secret_validator | **оффлайн** структурная валидация формата секретов (без сети): vendor-форматы, JWT/Basic-декод, отсев плейсхолдеров |
 | source_map_parser | `.js.map` → исходники и утечки |
-| security_auditor | оркестратор secret + source-map по странице и её JS |
+| security_auditor | оркестратор secret + source-map + GraphQL по странице и её JS; summary со счётом валидного формата |
 | cookie_auditor | аудит флагов HttpOnly/Secure/SameSite |
 | vuln_scanner / vuln_report | правила уязвимостей + экспорт HTML/JSON/PDF |
 | api_key_extractor / api_dumper | поиск ключей / дамп API-ответов |
-| project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json) |
+| project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json); `load_scan_report` для diff |
+| scan_diff | **оффлайн-diff двух сканов проекта** (страницы/секреты/тех/зависимости/заголовки/эндпоинты/findings + дельта риска), HTML-отчёт |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/ |
-| site_map | дерево путей сайта по HTTP-статусам (визуальная карта) |
-| executive_summary | детерминир. вердикт риска + рекомендации над фазами (без LLM) |
+| site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
+| executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
+| llm_summary | опц. LLM-резюме через **локальный Ollama** (stdlib urllib, graceful, ничего не уходит с машины) |
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
-| screenshot | опц. headless-скриншот страницы (Playwright, lazy import, gated) |
-| attack_surface | статический оффлайн-SVG граф атак-поверхности (домен → категории) |
+| screenshot | опц. headless-скриншоты (Playwright, lazy, gated); **мульти-страничные** (home/login/admin/dashboard) через select_targets/capture_many |
+| attack_surface | граф атак-поверхности (домен → категории); **интерактивный оффлайн** (CSS `:target`/`:hover`, без JS) + статический SVG + surface_score 0–100 |
 | external_tools | опц. внешние бинари (nuclei/katana/amass): subprocess + нормализация |
 | analyzer_plugins | SDK пользовательских аналитических плагинов (plugins/analyzers/) |
 | anti_detect_engine / cloudflare_bypass | сессии с ротацией UA, retry, обход CF |
@@ -88,22 +93,32 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 
 ---
 
-## 4. Найденные ошибки (этот ревью)
+## 4. Что нового (платформа P1–P12)
 
-**НОВОЕ — исправлено сейчас:**
-- 🐞 **literal-tilde bug** (`b6d96d8`): `SettingsDialog` сохранял `output_dir`
-  без раскрытия `~`, поэтому при вводе `~/SiteAnalyzer` сканы в той же сессии
-  писали в папку, буквально названную `~`, в рабочем каталоге. **Это и есть
-  причина папки `~\SiteAnalyzer` на ~51 ГБ** в корне репозитория. Исправлено
-  (раскрытие `~` при сохранении) + тест.
+Сессия закрыла весь реализуемый роадмап «Tools → Platform» + Next-Gen TIER B/C.
+Каждая фича: оффлайн-тесты + живой прогон на реальном сайте + лог в
+`PROJECT_STATUS.txt`. Без новых зависимостей на всём протяжении.
+
+| # | Фича | Суть |
+|---|---|---|
+| P2 | Project Workspace | проект владеет таймстамп-сканами (`Projects/<slug>/`) |
+| P3 | Unified Risk Engine | единый риск 0–100 + 5 уровней (executive_summary) |
+| P4 | Dashboard 2.0 | агрегация из DataRegistry (+ takeovers/source maps) |
+| P8 | **Scan Diff** | оффлайн-diff двух сканов проекта → HTML (`reports/diff_*.html`) |
+| P9 | **Multi-page Screenshots** | home/login/admin/dashboard (Aquatone-style), галерея в отчёте |
+| P10 | **Interactive Attack Graph** | клик/подсветка через чистый CSS (`:target`/`:hover`), без JS |
+| P11 | **LLM Exec Summary** | опц. нарратив через локальный Ollama (graceful, ничего не уходит с машины) |
+| P12 | **Secret Format Validation** | оффлайн-проверка формата ключей (без сети): отсев плейсхолдеров, vendor/JWT/Basic |
+
+**Багов в этом feature-pass не внесено:** 504 теста зелёные, ruff чист,
+оффлайн-контракт отчётов (нет `<script>`/CDN) проверяется тестами.
+
+**Историческая справка (ранние ревью, см. PROJECT_STATUS §6):** закрыты
+literal-tilde bug в `SettingsDialog` и 7 логических багов (recon/pwa_manifest,
+циклический CSS `@import`, deflate-декод, provenance внешних JS, дубль
+secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёртвые» настройки.
 
 **Статические проверки:** чисто (компиляция, ruff, нет bare-except, нет TODO).
-
-**Ранее за сессию закрыто 7 логических багов** (см. PROJECT_STATUS §6):
-recon-отчёт не урезал pwa_manifest; циклический CSS `@import` → рекурсия;
-deflate не декодировался в AntiDetect/Cloudflare; provenance внешних JS;
-дублирующий secret-regex в Capture; экранирование вывода в ResultsDisplay.
-Плюс 4 «мёртвые» настройки доведены до рабочих.
 
 ---
 
@@ -117,22 +132,26 @@ deflate не декодировался в AntiDetect/Cloudflare; provenance в�
 | Web-консоль в LAN | Отдаёт найденные секреты по сети (by design для LAN-инструмента) — не выставлять наружу. |
 | UA-профиль в dynamic/paywall | Paywall теперь honor-ит профиль; Playwright-перехват использует свой UA браузера (ожидаемо). |
 | Security Audit вкладка | Нет кнопки Stop/прогресса (ограничена `max_scripts`, не критично). |
+| LLM-нарратив (P11) | Строго opt-in, **только localhost-Ollama**; вердикт риска остаётся детерминированным (LLM лишь нарративит), текст запекается в отчёт → оффлайн сохраняется. Облачный LLM осознанно вне скоупа. |
+| Secret-валидация (P12) | Только **оффлайн** структурная проверка формата — секреты не покидают машину. ЖИВАЯ сетевая валидация (отправка ключа провайдеру) сознательно НЕ реализована (dual-use/приватность). |
 
 ---
 
 ## 6. С чего начать (backlog / опции)
 
-**Гигиена:**
-1. [СДЕЛАНО] Запушены локальные коммиты на `origin/master`.
-2. [СДЕЛАНО] Удалена литеральная папка `~/` (легаси-артефакт tilde-бага;
-   ранняя оценка «51 ГБ» была ошибкой измерения, см. §5).
+**Роадмап исчерпан:** весь реализуемый объём закрыт — Platform P1–P12, Next-Gen
+TIER S/A/B, и TIER C в безопасных вариантах (C1 — localhost-Ollama, C2 —
+оффлайн-валидация формата). Осознанно вне скоупа остаётся лишь то, что нарушает
+инварианты по своей природе и требует отдельного явного решения:
+- **C2 «живая» сетевая secret-валидация** (отправка ключа провайдеру) — dual-use/приватность.
+- **REJECTED:** тяжёлый JS-AST-парсер, интерактивный граф через CDN-JS, любой облачный AI.
 
-**Возможные фичи/улучшения (выбрать по приоритету):**
+**Возможные точечные улучшения (не из роадмапа, по желанию):**
 - Security Audit: кнопка Stop + прогресс; вынести `max_scripts`/таймауты в настройки.
-- Web-консоль: отмена выполняющегося job'а; job экспорта Vuln-отчёта.
-- Конфиг профиля/таймаутов для dynamic-анализа из GUI-настроек.
-- Опц. внешние бинари (subfinder/nuclei) как дополнительные источники.
+- Web-консоль: отмена выполняющегося job'а; job экспорта Vuln-отчёта; job Scan Diff.
+- Конфиг профиля/таймаутов для dynamic-анализа и модели Ollama из GUI-настроек.
 - Happy-path тесты сетевых модулей (recon/subdomain) на моках.
+- Scan Diff: добавить секцию субдоменов/сертификатов, когда collection начнёт их собирать.
 - Решить вопрос с Dashboard «Очистить»: оставить как очистку вида или сделать
   реальное удаление из registry.db (с диалогом подтверждения) — открытый вопрос.
 
