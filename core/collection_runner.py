@@ -39,6 +39,7 @@ from core.project import ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
 from core.screenshot import ScreenshotCapturer
+from core.screenshot import select_targets as select_screenshot_targets
 from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
@@ -168,7 +169,8 @@ class CollectionRunner:
             report['phases']['katana'] = self._phase_katana(url)
         # 8b. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
         if self.screenshots and not self._cancelled(report):
-            report['phases']['screenshot'] = self._phase_screenshot(url, scan_dir)
+            report['phases']['screenshot'] = self._phase_screenshot(
+                url, scan_dir, report)
         # 9. Analyzer plugins (user-supplied) — see the whole report; their
         # findings fold into vulns so the summary/exec/graph reflect them.
         if not self._cancelled(report):
@@ -393,23 +395,31 @@ class CollectionRunner:
         findings.extend(extra)
         return len(extra)
 
-    def _phase_screenshot(self, url: str, project_dir: Path) -> Dict:
+    def _phase_screenshot(self, url: str, project_dir: Path,
+                          report: Dict) -> Dict:
         self._log('[8/8] Screenshot…')
         if not ScreenshotCapturer.available():
             self._log('  Screenshot — пропущено (Playwright не установлен)')
             return {'status': 'Skipped', 'reason': 'playwright not installed'}
         try:
-            out = project_dir / 'screenshots' / 'home.png'
+            # Multi-page (Aquatone-style): homepage + crawled login/admin/… +
+            # a bounded probe of common paths. Targets are chosen from the
+            # report the pipeline already built (its site_map), no extra crawl.
+            targets = select_screenshot_targets(report, base_url=url)
             cap = ScreenshotCapturer()
             cap.set_progress_callback(self._log)
-            data = cap.capture(url, out)
-            if data.get('status') == 'Success':
-                # URL-style relative path (forward slashes) so the offline HTML
-                # <img> resolves on every OS, including Windows.
-                data['rel_path'] = 'screenshots/home.png'
-                return {'status': 'Success', 'data': data}
-            return {'status': data.get('status', 'Error'),
-                    'reason': data.get('error', 'screenshot failed')}
+            shots = cap.capture_many(targets, project_dir / 'screenshots')
+            ok = [s for s in shots if s.get('status') == 'Success']
+            if not ok:
+                return {'status': 'Error', 'data': {'shots': shots},
+                        'reason': 'no screenshots captured'}
+            # Backward-compatible: keep a top-level rel_path (the homepage shot,
+            # or the first success) so older report readers still find an image.
+            home = next((s for s in shots
+                         if s['label'] == 'home' and s.get('rel_path')), ok[0])
+            data = {'shots': shots, 'rel_path': home.get('rel_path')}
+            self._log(f'  Screenshots: {len(ok)}/{len(shots)} страниц(ы)')
+            return {'status': 'Success', 'data': data}
         except Exception as e:
             self._log(f'  Screenshot failed: {e}')
             return {'status': 'Error', 'error': str(e)}
@@ -582,19 +592,46 @@ class CollectionRunner:
         )
         body_parts.append(card('Vulnerabilities', vuln_body, vuln.get('status', '—')))
 
-        # Screenshot (opt-in) — only rendered when the phase ran.
+        # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')
         if shot:
             sd = shot.get('data', {})
-            rel = sd.get('rel_path')
-            if rel:
-                shot_body = (
-                    f'<img src="{e(rel)}" alt="screenshot" '
-                    f'style="max-width:100%;border:1px solid #ddd;border-radius:4px;">'
-                )
+            shots = sd.get('shots')
+            if shots:
+                tiles = []
+                for s in shots:
+                    label = e(str(s.get('label', '')))
+                    rel = s.get('rel_path')
+                    if rel:
+                        tiles.append(
+                            f'<figure style="margin:0;width:240px;">'
+                            f'<figcaption style="font-size:12px;font-weight:bold;'
+                            f'margin-bottom:4px;">{label}</figcaption>'
+                            f'<a href="{e(rel)}"><img src="{e(rel)}" '
+                            f'alt="{label}" style="width:240px;border:1px solid '
+                            f'#ddd;border-radius:4px;"></a></figure>')
+                    else:
+                        st = s.get('http_status')
+                        note = f'HTTP {st}' if st else e(str(s.get('error', '—')))
+                        tiles.append(
+                            f'<figure style="margin:0;width:240px;">'
+                            f'<figcaption style="font-size:12px;font-weight:bold;'
+                            f'margin-bottom:4px;">{label}</figcaption>'
+                            f'<div style="width:240px;height:90px;border:1px '
+                            f'dashed #ccc;border-radius:4px;color:#999;'
+                            f'font-size:12px;display:flex;align-items:center;'
+                            f'justify-content:center;">недоступно · {e(str(note))}'
+                            f'</div></figure>')
+                shot_body = (f'<div style="display:flex;flex-wrap:wrap;gap:12px;">'
+                             f'{"".join(tiles)}</div>')
             else:
-                shot_body = (f'<p style="font-size:13px;color:#999;">'
-                             f'{e(shot.get("reason", "—"))}</p>')
+                # Legacy report shape: a single top-level rel_path.
+                rel = sd.get('rel_path')
+                shot_body = (
+                    f'<img src="{e(rel)}" alt="screenshot" style="max-width:100%;'
+                    f'border:1px solid #ddd;border-radius:4px;">'
+                    if rel else f'<p style="font-size:13px;color:#999;">'
+                                f'{e(shot.get("reason", "—"))}</p>')
             body_parts.append(card('Screenshot', shot_body, shot.get('status', '—')))
 
         # Executive summary — risk verdict + recommendations, rendered first.

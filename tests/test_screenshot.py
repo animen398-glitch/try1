@@ -174,7 +174,7 @@ def test_capture_many_empty_when_unavailable(tmp_path, monkeypatch):
 def test_collection_screenshot_skipped_when_unavailable(tmp_path, monkeypatch):
     monkeypatch.setattr(ScreenshotCapturer, 'available', staticmethod(lambda: False))
     runner = CollectionRunner(screenshots=True)
-    phase = runner._phase_screenshot('https://ex.com', tmp_path)
+    phase = runner._phase_screenshot('https://ex.com', tmp_path, {'url': 'https://ex.com'})
     assert phase['status'] == 'Skipped'
     assert 'playwright' in phase['reason'].lower()
 
@@ -186,15 +186,34 @@ def test_collection_screenshot_phase_success(tmp_path, monkeypatch):
     def fake_capture(self, url, out):
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_bytes(b'\x89PNG')
-        return {'status': 'Success', 'path': str(out)}
+        return {'status': 'Success', 'url': url, 'path': str(out),
+                'http_status': 200}
 
     monkeypatch.setattr(ScreenshotCapturer, 'capture', fake_capture)
     runner = CollectionRunner(screenshots=True)
-    phase = runner._phase_screenshot('https://ex.com', tmp_path)
+    # The phase now reads the report for crawled pages to screenshot.
+    report = {'url': 'https://ex.com', 'phases': {'capture': {
+        'status': 'Success', 'data': {'site_map': [
+            {'url': 'https://ex.com/login', 'status': 200}]}}}}
+    phase = runner._phase_screenshot('https://ex.com', tmp_path, report)
     assert phase['status'] == 'Success'
-    # Report links the image by a URL-style relative path (forward slashes →
-    # offline-safe and resolves on Windows too).
+    # Backward-compatible top-level rel_path = the homepage shot.
     assert phase['data']['rel_path'] == 'screenshots/home.png'
+    # Multi-page: homepage + the crawled /login page were both shot.
+    labels = {s['label'] for s in phase['data']['shots']}
+    assert {'home', 'login'} <= labels
+
+
+def test_collection_screenshot_phase_error_when_none_captured(tmp_path, monkeypatch):
+    monkeypatch.setattr(ScreenshotCapturer, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(
+        ScreenshotCapturer, 'capture',
+        lambda self, url, out: {'status': 'Error', 'url': url, 'path': None,
+                                'http_status': 404, 'error': 'not found'})
+    runner = CollectionRunner(screenshots=True)
+    phase = runner._phase_screenshot('https://ex.com', tmp_path, {'url': 'https://ex.com'})
+    assert phase['status'] == 'Error'
+    assert phase['data']['shots']            # rows preserved for the report
 
 
 def test_default_collection_has_no_screenshot_flag():
@@ -202,7 +221,8 @@ def test_default_collection_has_no_screenshot_flag():
     assert CollectionRunner().screenshots is False
 
 
-def test_report_renders_screenshot_card(tmp_path):
+def test_report_renders_screenshot_card_legacy_shape(tmp_path):
+    # Older reports carry only a top-level rel_path (no 'shots') — still render.
     runner = CollectionRunner()
     report = {
         'url': 'https://ex.com', 'domain': 'ex.com',
@@ -214,6 +234,32 @@ def test_report_renders_screenshot_card(tmp_path):
     }
     html = runner._render_html(report)
     assert 'Screenshot' in html
-    # Relative <img> source → offline-safe (no absolute path, no remote URL).
     assert 'src="screenshots/home.png"' in html
     assert 'http://' not in html.split('<img')[1][:80]
+
+
+def test_report_renders_screenshot_gallery(tmp_path):
+    runner = CollectionRunner()
+    report = {
+        'url': 'https://ex.com', 'domain': 'ex.com',
+        'started_at': 't0', 'finished_at': 't1', 'project_dir': str(tmp_path),
+        'phases': {'screenshot': {'status': 'Success', 'data': {
+            'rel_path': 'screenshots/home.png',
+            'shots': [
+                {'label': 'home', 'status': 'Success',
+                 'rel_path': 'screenshots/home.png'},
+                {'label': 'login', 'status': 'Success',
+                 'rel_path': 'screenshots/login.png'},
+                {'label': 'admin', 'status': 'Error', 'http_status': 403},
+            ]}}},
+    }
+    html = runner._render_html(report)
+    # Each successful page type gets its own labelled <img>.
+    assert 'src="screenshots/home.png"' in html
+    assert 'src="screenshots/login.png"' in html
+    assert '>login<' in html and '>home<' in html
+    # A failed probe shows a "not reachable" tile, not a broken image.
+    assert 'admin' in html and 'недоступно' in html
+    assert 'src="screenshots/admin.png"' not in html
+    # Still offline-safe.
+    assert 'http://' not in html and 'https://cdn' not in html

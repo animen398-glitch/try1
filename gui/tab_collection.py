@@ -70,7 +70,7 @@ class FinalReportTabMixin:
         # Opt-in headless screenshot (Playwright). Disabled with a hint when
         # Playwright is absent — the feature-gating pattern used elsewhere.
         opt_row = QHBoxLayout()
-        self.collect_screenshot = QCheckBox("Скриншот страницы (Playwright)")
+        self.collect_screenshot = QCheckBox("Скриншоты ключевых страниц (Playwright)")
         if not has_playwright():
             self.collect_screenshot.setEnabled(False)
             self.collect_screenshot.setToolTip(
