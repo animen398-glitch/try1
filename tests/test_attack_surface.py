@@ -1,5 +1,7 @@
 """Attack Surface graph — category extraction and offline SVG render."""
 
+import re
+
 from core import attack_surface as asf
 
 
@@ -127,5 +129,65 @@ def test_render_svg_escapes_text():
 
 def test_render_svg_empty_is_placeholder():
     out = asf.render_svg({'domain': 'ex.com', 'categories': []})
+    assert '<svg' not in out
+    assert 'Недостаточно данных' in out
+
+
+# ── render_interactive (offline CSS interactivity, no JS) ───────────────────
+
+def _interactive_surface():
+    return asf.build_surface(_report(
+        recon={'data': {'cms': ['React']}},
+        api={'data': {'details': {'AWS Key': ['x']}}},
+        capture={'data': {'site_map': [{'url': 'https://ex.com/a'}]}},
+        vulns={'findings': [{'title': 'Exposed .env'}]}))
+
+
+def test_render_interactive_is_offline_no_js():
+    out = asf.render_interactive(_interactive_surface())
+    # Interactivity is pure CSS — never any script or *loaded* external resource.
+    # (Page URLs may appear as text/tooltip data; that is content, not a load.)
+    assert '<script' not in out.lower()
+    assert 'src=' not in out
+    assert '<link' not in out.lower()
+    assert 'url(' not in out                       # no CSS-loaded resource
+    # The only hrefs are internal fragment anchors (#as-…), nothing external.
+    hrefs = re.findall(r'href="([^"]*)"', out)
+    assert hrefs and all(h.startswith('#as-') for h in hrefs)
+    # CSS click + hover hooks are present.
+    assert '.as-panel:target{display:block;}' in out
+    assert 'a:hover .as-node rect' in out
+
+
+def test_render_interactive_links_nodes_to_panels():
+    out = asf.render_interactive(_interactive_surface())
+    # Every node anchor has a matching panel element with the same id.
+    for slug in ('technologies', 'secrets', 'pages', 'findings'):
+        assert f'href="#as-{slug}"' in out
+        assert f'id="as-{slug}"' in out
+
+
+def test_render_interactive_panel_lists_items_and_overflow():
+    surface = {'domain': 'ex.com', 'categories': [
+        {'name': 'Pages', 'color': '#2e7d32', 'count': 50,
+         'items': [f'/p{i}' for i in range(10)]}]}
+    out = asf.render_interactive(surface)
+    assert '<li>/p0</li>' in out
+    # count (50) exceeds shown items (10) → an overflow line, not 50 <li>.
+    assert 'ещё 40' in out
+
+
+def test_render_interactive_escapes_and_slugs():
+    surface = {'domain': '<x>', 'categories': [
+        {'name': 'Source Maps', 'color': '#ad1457', 'count': 1,
+         'items': ['<img>']}]}
+    out = asf.render_interactive(surface)
+    assert 'id="as-source-maps"' in out          # multiword name slugged
+    assert '&lt;img&gt;' in out                   # item escaped in the panel
+    assert '&lt;x&gt;' in out                     # domain escaped
+
+
+def test_render_interactive_empty_is_placeholder():
+    out = asf.render_interactive({'domain': 'ex.com', 'categories': []})
     assert '<svg' not in out
     assert 'Недостаточно данных' in out
