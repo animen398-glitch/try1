@@ -68,6 +68,27 @@ def test_render_html_includes_security_sections():
     assert "Weak cookie sid" in html
 
 
+def test_render_html_attack_surface_is_interactive_and_offline():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {
+            "recon": {"status": "Success", "data": {"cms": ["Nginx"]}},
+            "vulns": {"status": "Success", "summary": {},
+                      "findings": [{"severity": "High", "title": "Exposed .env"}]},
+        },
+    }
+    html = r._render_html(report)
+    assert "Attack Surface" in html
+    # The graph is now the interactive (CSS :target) form, still offline.
+    assert 'class="as-wrap"' in html
+    assert '.as-panel:target{display:block;}' in html
+    assert 'href="#as-findings"' in html and 'id="as-findings"' in html
+    # No JavaScript anywhere in the report (offline contract I2).
+    assert "<script" not in html.lower()
+
+
 def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     """run() nests the scan under Projects/<slug>/scans/<id>/ and indexes it in
     metadata.json — with every network phase stubbed (fully offline)."""

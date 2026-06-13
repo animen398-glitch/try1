@@ -25,7 +25,8 @@ from typing import Callable, Dict, Optional
 
 from core.analyzer_plugins import discover_analyzers, run_analyzers
 from core.api_key_extractor import ApiKeyExtractor
-from core.attack_surface import build_surface, render_svg as render_surface_svg
+from core.attack_surface import build_surface
+from core.attack_surface import render_interactive as render_surface_graph
 from core.config import PLUGINS_DIR
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
@@ -642,7 +643,7 @@ class CollectionRunner:
         # Attack Surface — static offline SVG graph (domain → categories).
         surface = build_surface(report)
         surface_card = (
-            card('Attack Surface', render_surface_svg(surface), 'Success')
+            card('Attack Surface', render_surface_graph(surface), 'Success')
             if surface.get('categories') else ''
         )
 
