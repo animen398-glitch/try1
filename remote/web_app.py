@@ -40,7 +40,9 @@ from core.cookie_auditor import CookieAuditor
 from core.design_analyzer import DesignAnalyzer
 from core.frontend_cloner import FrontendCloner
 from core.paywall_bypass import PaywallBypass
+from core.project import ProjectStore, project_slug
 from core.recon_engine import ReconEngine
+from core.scan_diff import write_diff_report
 from core.security_auditor import SecurityAuditor
 from core.subdomain_scanner import SubdomainScanner
 from utils.data_viewer import DataViewer
@@ -206,6 +208,27 @@ def _run_collection(url: str, push: Callable) -> dict:
     }
 
 
+def _run_scandiff(url: str, push: Callable) -> dict:
+    """Diff the two most recent scans of the target's project (Scan Diff / P8).
+
+    The job framework hands a single URL, so this defaults to the most useful
+    comparison — previous scan vs latest — for that project. Needs at least two
+    scans; otherwise it reports cleanly rather than failing."""
+    store = ProjectStore(Path.home() / 'SiteAnalyzer')
+    project = store.get(project_slug(url))
+    if project is None:
+        push('Проект не найден — сначала запустите Full Collection')
+        return {'status': 'No project', 'url': url}
+    ids = [s['id'] for s in project.scans() if s.get('id')]
+    if len(ids) < 2:
+        push(f'Недостаточно сканов для diff (есть {len(ids)}, нужно 2)')
+        return {'status': 'Need >=2 scans', 'scans': len(ids)}
+    push(f'Diff: {ids[-2]} → {ids[-1]}')
+    out = write_diff_report(project, ids[-2], ids[-1])
+    return {'status': 'Success', 'line': out['line'],
+            'report_html': out['html_path']}
+
+
 JOBS: Dict[str, dict] = {
     'recon':      {'label': 'Recon',           'fn': _run_recon},
     'subdomain':  {'label': 'Subdomains',      'fn': _run_subdomain},
@@ -219,6 +242,7 @@ JOBS: Dict[str, dict] = {
     'video':      {'label': 'Video Download',  'fn': _run_video},
     'design':     {'label': 'Design Lab',      'fn': _run_design},
     'collection': {'label': 'Full Collection', 'fn': _run_collection},
+    'scandiff':   {'label': 'Scan Diff',       'fn': _run_scandiff},
 }
 
 _HEAVY_KEYS = ('html', 'reader_view', 'body', 'output')

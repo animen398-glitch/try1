@@ -7,10 +7,53 @@ import remote.web_app as wa
 
 def test_job_registry_covers_gui_features():
     expected = {"recon", "subdomain", "apikeys", "capture",
-                "paywall", "cookies", "images", "design", "collection"}
+                "paywall", "cookies", "images", "design", "collection",
+                "scandiff"}
     assert expected.issubset(set(wa.JOBS))
     for spec in wa.JOBS.values():
         assert spec["label"] and callable(spec["fn"])
+
+
+def test_scandiff_job_needs_existing_project(monkeypatch, tmp_path):
+    # No project on disk → the job reports cleanly instead of failing.
+    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    msgs = []
+    out = wa._run_scandiff("https://nope.example.com", msgs.append)
+    assert out["status"] == "No project"
+
+
+def test_scandiff_job_needs_two_scans(monkeypatch, tmp_path):
+    from core.project import ProjectStore
+    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    # One scan only → not enough to diff.
+    p = ProjectStore(tmp_path / "SiteAnalyzer").get_or_create("https://x.com")
+    p.record_scan(p.start_scan("20260613_010000"),
+                  {"url": "https://x.com", "status": "Success",
+                   "executive_summary": {"risk_level": "Low"}})
+    out = wa._run_scandiff("https://x.com", lambda m: None)
+    assert out["status"] == "Need >=2 scans" and out["scans"] == 1
+
+
+def test_scandiff_job_diffs_last_two_scans(monkeypatch, tmp_path):
+    import json
+
+    from core.project import ProjectStore
+    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    store = ProjectStore(tmp_path / "SiteAnalyzer")
+    p = store.get_or_create("https://x.com")
+    for sid, lvl in (("20260613_010000", "Low"), ("20260613_020000", "High")):
+        sd = p.start_scan(sid)
+        report = {"url": "https://x.com", "status": "Success", "scan_id": sid,
+                  "phases": {"capture": {"status": "Success", "data": {
+                      "site_map": [{"url": f"/{sid}", "status": 200}]}}},
+                  "executive_summary": {"risk_level": lvl, "risk_100": 4,
+                                        "metrics": {"risk_100": 4}}}
+        (sd / "report.json").write_text(json.dumps(report), encoding="utf-8")
+        p.record_scan(sd, report)
+    out = wa._run_scandiff("https://x.com", lambda m: None)
+    assert out["status"] == "Success"
+    assert out["report_html"].endswith(".html")
+    assert "Страницы" in out["line"]
 
 
 def test_safe_report_path_allows_html_inside_base(tmp_path, monkeypatch):
