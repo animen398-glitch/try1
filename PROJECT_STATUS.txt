@@ -1824,3 +1824,40 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       по OSINT-разведке (DNS + Email + Employee) фактически закрыт.
 
 ==============================================================================
+
+  ROADMAP #13 — OSINT: Certificate Transparency History — [DONE] 2026-06-13
+      Четвёртый (последний) модуль бандла #13. Вертикальный срез. Stdlib only
+      (I1: json + datetime + urllib через SessionBuilder/urlopen_text).
+      Инвариант I5: сетевой _fetch_crtsh отделён от чистого analyze (с
+      ИНЪЕКТИРУЕМЫМ now) → тесты без сети И детерминированы по времени. Ключевое
+      наблюдение: subdomain-сканер уже дёргает crt.sh, но берёт ТОЛЬКО имена и
+      выбрасывает временну́ю/issuer-метадату — этот модуль её сохраняет (история
+      выдачи сертификатов как самостоятельный OSINT-сигнал). Информационный: в
+      риск-движок НЕ идёт (как Email/Employee), только отчёт + Scan Diff.
+        1) core/ct_history.py — _fetch_crtsh(domain) тянет crt.sh JSON
+           (q=%.<domain>&output=json), вернёт список записей или []. ЧИСТЫЕ:
+           _parse_dt (ISO с/без долей секунды, пробел/Z), _issuer_label (CA из
+           DN: O= → CN= → raw), _in_domain_names (SAN в домене + флаг wildcard).
+           analyze(entries, domain, now=…): дедуп по crt.sh id, агрегаты —
+           total_certs, имена (in-domain), issuers (CA + count), first/last_seen
+           (по not_before), recent_count (≤90 дн.), active/expired (по not_after
+           vs now), wildcards; certs[] — самые свежие первыми, cap 100, без
+           приватных _nb/_na. discover(target, fetch=…, now=…) снимает www.;
+           render_html оффлайн (сводка + таблица CA + последние сертификаты).
+        2) core/collection_runner.py — опц. флаг ct=False; _phase_ct (guarded,
+           No-certificates чистый) пишет ct/ct_history.json; карточка
+           «Certificate Transparency».
+        3) core/scan_diff.py — секция 'ct' (set-like по crt.sh id, label
+           «дата · CA: имена» → новый сертификат между сканами); _extract_ct +
+           регистрация в SECTION_PHASES/_TITLES/_EXTRACTORS/_SET_LIKE.
+        4) gui/tab_collection.py — чекбокс «CT-история» → ct=… в runner.
+        5) tests: test_ct_history.py (11: _parse_dt варианты, _issuer_label,
+           _in_domain_names+wildcard, analyze агрегаты/empty/recent-first-clean,
+           discover success+www/no-certs, render offline/no-certs, scan_diff ct
+           added) + test_collection_runner (+2: фаза пишет артефакт, рендер
+           карточки) + test_scan_diff (empty-skipped +ct).
+        ИТОГ: 675 passed, 3 skipped (678 собрано); ruff чист. Без новых
+        зависимостей.
+      БАНДЛ #13 (OSINT) ПОЛНОСТЬЮ ЗАКРЫТ: DNS + Email + Employee + CT-история.
+
+==============================================================================
