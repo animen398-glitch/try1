@@ -149,6 +149,14 @@ class FinalReportTabMixin:
             "Собирает e-mail адреса (homepage/robots.txt/sitemap.xml) и "
             "группирует по ролям (security/admin/support/…) и домену.")
         opt_row.addWidget(self.collect_emails)
+
+        # Opt-in employee intelligence (#13) — named people + e-mail scheme.
+        self.collect_employees = QCheckBox("Сотрудники")
+        self.collect_employees.setToolTip(
+            "Собирает имена сотрудников (страницы team/about/leadership, "
+            "JSON-LD Person + личные mailto), выводит корпоративный формат "
+            "e-mail и достраивает вероятные адреса.")
+        opt_row.addWidget(self.collect_employees)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -275,6 +283,7 @@ class FinalReportTabMixin:
             historical=self.collect_historical.isChecked(),
             dns=self.collect_dns.isChecked(),
             emails=self.collect_emails.isChecked(),
+            employees=self.collect_employees.isChecked(),
         )
         self._active_collector = runner
 

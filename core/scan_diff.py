@@ -36,6 +36,7 @@ SECTION_PHASES = {
     'historical':   'historical',
     'dns':          'dns',
     'emails':       'emails',
+    'employees':    'employees',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -51,6 +52,7 @@ SECTION_TITLES = {
     'historical':   'Историч. URL (интересные)',
     'dns':          'DNS / email-auth',
     'emails':       'E-mail адреса',
+    'employees':    'Сотрудники',
     'findings':     'Findings',
 }
 
@@ -215,6 +217,19 @@ def _extract_emails(report: Dict) -> Optional[Dict]:
     return {str(a): str(a) for a in addrs}
 
 
+def _extract_employees(report: Dict) -> Optional[Dict]:
+    people = _data(report, 'employees').get('people')
+    if not isinstance(people, list):
+        return None
+    out: Dict[str, str] = {}
+    for p in people:
+        if isinstance(p, dict) and p.get('name'):
+            name = str(p['name'])
+            title = str(p.get('title') or '')
+            out[name] = f'{name} — {title}' if title else name
+    return out
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -238,13 +253,14 @@ _EXTRACTORS = {
     'historical':   _extract_historical,
     'dns':          _extract_dns,
     'emails':       _extract_emails,
+    'employees':    _extract_employees,
     'findings':     _extract_findings,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
 _SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'historical',
-             'emails', 'findings'}
+             'emails', 'employees', 'findings'}
 
 
 def _label(section: str, key, value) -> str:

@@ -40,6 +40,8 @@ from core.dns_intel import discover as discover_dns
 from core.dns_intel import render_html as render_dns
 from core.email_intel import discover as discover_emails
 from core.email_intel import render_html as render_emails
+from core.employee_intel import discover as discover_employees
+from core.employee_intel import render_html as render_employees
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.infrastructure import render_html as render_infrastructure
@@ -74,7 +76,7 @@ class CollectionRunner:
                  llm_model: Optional[str] = None, subdomains: bool = False,
                  certificate: bool = False, openapi: bool = False,
                  historical: bool = False, dns: bool = False,
-                 emails: bool = False):
+                 emails: bool = False, employees: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -110,6 +112,9 @@ class CollectionRunner:
         # Opt-in Email intelligence (#13) — harvest + group exposed addresses
         # (homepage/robots/sitemap); feeds report + Scan Diff.
         self.emails = emails
+        # Opt-in Employee intelligence (#13) — named people from team/about
+        # pages + inferred corporate e-mail scheme; feeds report + Scan Diff.
+        self.employees = employees
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -127,7 +132,8 @@ class CollectionRunner:
                   openapi: Optional[bool] = None,
                   historical: Optional[bool] = None,
                   dns: Optional[bool] = None,
-                  emails: Optional[bool] = None):
+                  emails: Optional[bool] = None,
+                  employees: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -156,6 +162,8 @@ class CollectionRunner:
             self.dns = dns
         if emails is not None:
             self.emails = emails
+        if employees is not None:
+            self.employees = employees
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -249,6 +257,9 @@ class CollectionRunner:
         # 7g. Email intelligence (opt-in) → harvested + grouped addresses.
         if self.emails and not self._cancelled(report):
             report['phases']['emails'] = self._phase_emails(url, scan_dir)
+        # 7h. Employee intelligence (opt-in) → named people + e-mail scheme.
+        if self.employees and not self._cancelled(report):
+            report['phases']['employees'] = self._phase_employees(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -611,6 +622,31 @@ class CollectionRunner:
             self._log(f'  Email intel failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_employees(self, url: str, project_dir: Path) -> Dict:
+        """Harvest named people + infer the corporate e-mail scheme (opt-in).
+        Guarded; an empty harvest is a clean 'No employees'. Writes
+        employees/employees.json."""
+        self._log('[+] Employee intelligence…')
+        try:
+            data = discover_employees(url)
+            if data.get('status') != 'Success':
+                self._log('  Employee — сотрудники не найдены')
+                return {'status': data.get('status', 'No employees'),
+                        'data': data}
+            out = project_dir / 'employees'
+            out.mkdir(exist_ok=True)
+            (out / 'employees.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            self._log(f"  Employee: {data['total']} чел. "
+                      f"(с e-mail {data['with_email']}; "
+                      f"формат {data.get('format') or '—'})")
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Employee intel failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -880,6 +916,14 @@ class CollectionRunner:
             edata = emails.get('data', {})
             body_parts.append(card('Email Intelligence', render_emails(edata),
                                    emails.get('status', '—')))
+
+        # Employee intelligence (opt-in) — named people + e-mail scheme.
+        employees = phases.get('employees')
+        if employees:
+            empdata = employees.get('data', {})
+            body_parts.append(card('Employee Intelligence',
+                                   render_employees(empdata),
+                                   employees.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})

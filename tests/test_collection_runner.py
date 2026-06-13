@@ -219,6 +219,37 @@ def test_render_html_emails_card():
     assert "<script" not in html.lower()
 
 
+def test_phase_employees_writes_artifact(tmp_path, monkeypatch):
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_employees", lambda url: {
+        "status": "Success", "domain": "x.com", "sources": ["/team"],
+        "total": 1, "with_email": 1, "format": "{first}.{last}",
+        "people": [{"name": "Jane Smith", "title": "CTO",
+                    "email": "jane.smith@x.com", "email_source": "found",
+                    "social": []}]})
+    r = CollectionRunner(employees=True)
+    phase = r._phase_employees("https://x.com", tmp_path)
+    assert phase["status"] == "Success" and phase["data"]["total"] == 1
+    assert (tmp_path / "employees" / "employees.json").exists()
+
+
+def test_render_html_employees_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"employees": {"status": "Success", "data": {
+            "status": "Success", "total": 1, "with_email": 1,
+            "format": "{first}.{last}", "sources": ["/team"],
+            "people": [{"name": "Jane Smith", "title": "CTO",
+                        "email": "jane.smith@x.com", "email_source": "found",
+                        "social": []}]}}},
+    }
+    html = r._render_html(report)
+    assert "Employee Intelligence" in html and "Jane Smith" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary
