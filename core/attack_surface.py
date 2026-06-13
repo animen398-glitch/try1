@@ -31,6 +31,7 @@ _CATEGORY_COLORS = {
     'Subdomains': '#00838f',
     'Endpoints': '#5d4037',
     'APIs': '#00695c',
+    'Historical': '#827717',
     'Source Maps': '#ad1457',
 }
 _DEFAULT_COLOR = '#555'
@@ -67,6 +68,7 @@ def build_surface(report: Dict) -> Dict:
     capture = data('capture')
     katana = data('katana')
     openapi = data('openapi')
+    historical = data('historical')
     subdomains = data('subdomains')
     vulns = phases.get('vulns', {})
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
@@ -118,6 +120,10 @@ def build_surface(report: Dict) -> Dict:
     api_items = [f"{e.get('method', '')} {e.get('path', '')}".strip()
                  for e in api_endpoints if isinstance(e, dict)]
 
+    # Historical: the interesting archived URLs (admin/auth/api/config subset).
+    hist_items = historical.get('interesting') if isinstance(
+        historical.get('interesting'), list) else []
+
     candidates = [
         _category('Technologies', tech_items),
         _category('Infrastructure', infra_items),
@@ -125,6 +131,7 @@ def build_surface(report: Dict) -> Dict:
         _category('Subdomains', sub_items),
         _category('Endpoints', katana.get('endpoints') or []),
         _category('APIs', api_items),
+        _category('Historical', hist_items),
         _category('Pages', page_items),
         _category('Findings', [f.get('title', '') for f in findings]),
     ]
@@ -136,8 +143,8 @@ def build_surface(report: Dict) -> Dict:
 # (secrets, findings, source maps) count for more than mere breadth (pages/tech).
 _SCORE_WEIGHTS = {
     'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'Endpoints': 2,
-    'APIs': 2, 'Subdomains': 2, 'Technologies': 1, 'Infrastructure': 1,
-    'Pages': 1,
+    'APIs': 2, 'Historical': 2, 'Subdomains': 2, 'Technologies': 1,
+    'Infrastructure': 1, 'Pages': 1,
 }
 
 

@@ -33,6 +33,7 @@ SECTION_PHASES = {
     'certificates': 'certificate',
     'endpoints':    'katana',
     'apis':         'openapi',
+    'historical':   'historical',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -45,6 +46,7 @@ SECTION_TITLES = {
     'certificates': 'TLS-сертификат',
     'endpoints':    'Эндпоинты (Katana)',
     'apis':         'API (OpenAPI)',
+    'historical':   'Историч. URL (интересные)',
     'findings':     'Findings',
 }
 
@@ -178,6 +180,15 @@ def _extract_openapi(report: Dict) -> Optional[Dict]:
     return out
 
 
+def _extract_historical(report: Dict) -> Optional[Dict]:
+    # Diff the security-relevant subset (admin/auth/api/config), not the whole
+    # archive — a newly-archived admin/config URL is the signal worth surfacing.
+    interesting = _data(report, 'historical').get('interesting')
+    if not isinstance(interesting, list):
+        return None
+    return {str(u): str(u) for u in interesting}
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -198,12 +209,14 @@ _EXTRACTORS = {
     'certificates': _extract_certificate,
     'endpoints':    _extract_endpoints,
     'apis':         _extract_openapi,
+    'historical':   _extract_historical,
     'findings':     _extract_findings,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
-_SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'findings'}
+_SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'historical',
+             'findings'}
 
 
 def _label(section: str, key, value) -> str:

@@ -124,6 +124,34 @@ def test_render_html_openapi_card():
     assert "<script" not in html.lower()
 
 
+def test_phase_historical_writes_artifact(tmp_path, monkeypatch):
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_historical", lambda url: {
+        "status": "Success", "source": "wayback", "domain": "x.com",
+        "total": 3, "categories": {"admin": ["https://x.com/admin"]},
+        "interesting": ["https://x.com/admin"]})
+    r = CollectionRunner(historical=True)
+    phase = r._phase_historical("https://x.com", tmp_path)
+    assert phase["status"] == "Success"
+    assert phase["data"]["total"] == 3
+    assert (tmp_path / "historical" / "historical.json").exists()
+
+
+def test_render_html_historical_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"historical": {"status": "Success", "data": {
+            "status": "Success", "source": "wayback", "total": 2,
+            "categories": {"admin": ["https://x/admin"]},
+            "interesting": ["https://x/admin"]}}},
+    }
+    html = r._render_html(report)
+    assert "Historical URLs" in html and "/admin" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

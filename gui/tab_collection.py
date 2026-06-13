@@ -127,6 +127,13 @@ class FinalReportTabMixin:
             "Ищет спеку API (swagger.json/openapi.json/…) и строит карту "
             "эндпоинтов. Питает отчёт, граф (категория APIs) и Scan Diff.")
         opt_row.addWidget(self.collect_openapi)
+
+        # Opt-in historical URL intelligence (#12) — Wayback archive.
+        self.collect_historical = QCheckBox("Историч. URL (Wayback)")
+        self.collect_historical.setToolTip(
+            "Тянет архивные URL домена из Wayback Machine и классифицирует их "
+            "(старые админки/auth/API/конфиги). Питает отчёт, граф и Scan Diff.")
+        opt_row.addWidget(self.collect_historical)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -250,6 +257,7 @@ class FinalReportTabMixin:
             subdomains=self.collect_subdomains.isChecked(),
             certificate=self.collect_certificate.isChecked(),
             openapi=self.collect_openapi.isChecked(),
+            historical=self.collect_historical.isChecked(),
         )
         self._active_collector = runner
 

@@ -36,6 +36,8 @@ from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
 from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
+from core.historical_intel import discover as discover_historical
+from core.historical_intel import render_html as render_historical
 from core.infrastructure import render_html as render_infrastructure
 from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
 from core.openapi_discovery import discover as discover_openapi
@@ -66,7 +68,8 @@ class CollectionRunner:
                  screenshots: bool = False, nuclei: bool = False,
                  katana: bool = False, llm: bool = False,
                  llm_model: Optional[str] = None, subdomains: bool = False,
-                 certificate: bool = False, openapi: bool = False):
+                 certificate: bool = False, openapi: bool = False,
+                 historical: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -93,6 +96,9 @@ class CollectionRunner:
         # Opt-in OpenAPI/Swagger discovery (#11) — probes for an API spec and
         # maps its endpoints; feeds the report, attack surface, and Scan Diff.
         self.openapi = openapi
+        # Opt-in Historical URL intelligence (#12) — archived URLs (Wayback)
+        # classified into admin/auth/api/config; feeds report/surface/diff.
+        self.historical = historical
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -107,7 +113,8 @@ class CollectionRunner:
                   llm_model: Optional[str] = None,
                   subdomains: Optional[bool] = None,
                   certificate: Optional[bool] = None,
-                  openapi: Optional[bool] = None):
+                  openapi: Optional[bool] = None,
+                  historical: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -130,6 +137,8 @@ class CollectionRunner:
             self.certificate = certificate
         if openapi is not None:
             self.openapi = openapi
+        if historical is not None:
+            self.historical = historical
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -213,6 +222,9 @@ class CollectionRunner:
         # 7d. OpenAPI/Swagger discovery (opt-in) → API map for report/surface/diff.
         if self.openapi and not self._cancelled(report):
             report['phases']['openapi'] = self._phase_openapi(url, scan_dir)
+        # 7e. Historical URL intelligence (opt-in) → archived URLs classified.
+        if self.historical and not self._cancelled(report):
+            report['phases']['historical'] = self._phase_historical(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -498,6 +510,28 @@ class CollectionRunner:
             self._log(f'  OpenAPI discovery failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_historical(self, url: str, project_dir: Path) -> Dict:
+        """Fetch + classify archived URLs (opt-in, Wayback). Guarded; an empty
+        archive is a clean 'No history'. Writes historical/historical.json."""
+        self._log('[+] Historical URL intelligence (Wayback)…')
+        try:
+            data = discover_historical(url)
+            if data.get('status') == 'Success':
+                out = project_dir / 'historical'
+                out.mkdir(exist_ok=True)
+                (out / 'historical.json').write_text(
+                    json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                    encoding='utf-8',
+                )
+                self._log(f"  Historical: {data['total']} URL, "
+                          f"{len(data['interesting'])} интересных")
+                return {'status': 'Success', 'data': data}
+            self._log('  Historical — архив пуст')
+            return {'status': 'No history', 'data': data}
+        except Exception as e:
+            self._log(f'  Historical intel failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -746,6 +780,13 @@ class CollectionRunner:
             odata = openapi.get('data', {})
             body_parts.append(card('OpenAPI / API Map', render_openapi(odata),
                                    openapi.get('status', '—')))
+
+        # Historical URLs (opt-in) — archived URLs classified (Wayback).
+        historical = phases.get('historical')
+        if historical:
+            hdata = historical.get('data', {})
+            body_parts.append(card('Historical URLs', render_historical(hdata),
+                                   historical.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})
