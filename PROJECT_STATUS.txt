@@ -1667,3 +1667,44 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       GUI/CLI-collection).
 
 ==============================================================================
+
+  ROADMAP #12 — Historical Intelligence — [DONE] 2026-06-13
+      Следующая фаза роадмапа. Вертикальный срез как #11. Инварианты: I1 (stdlib
+      — json+urllib; Common Crawl/OTX вне скоупа: тяжелее/ключи), I5 (сетевой
+      fetch_wayback отделён от чистого classify/analyze, инъектируется в
+      discover() → тесты без сети).
+        1) core/historical_intel.py — fetch_wayback(domain): Wayback CDX API
+           (url=<domain>/* output=json fl=original,timestamp,statuscode). ВАЖНО:
+           collapse=urlkey УБРАН — на wildcard-запросе серверный dedup даёт 504
+           Gateway Timeout; дедуп делается клиентски в analyze. timeout 25с
+           (CDX медленный). classify(url) ЧИСТАЯ: substring-эвристики →
+           admin/auth/api/config/upload/docs (CATEGORY_RULES). analyze(entries)
+           ЧИСТАЯ: дедуп URL, по категориям, interesting = подмножество
+           admin/auth/api/config. discover(target, fetch=…) → {status, source,
+           domain, total, categories, interesting}. render_html оффлайн.
+        2) core/collection_runner.py — опц. флаг historical=False;
+           _phase_historical (guarded, No-history чистый) пишет historical/
+           historical.json; карточка «Historical URLs» в отчёте.
+        3) core/attack_surface.py — категория 'Historical' (из interesting) +
+           цвет + вес 2.
+        4) core/scan_diff.py — секция 'historical' (фаза historical, SET_LIKE):
+           added/removed по INTERESTING-подмножеству (новый архивный admin/
+           config URL — вот сигнал), _extract_historical.
+        5) gui/tab_collection.py — чекбокс «Историч. URL (Wayback)» →
+           historical=… в CollectionRunner.
+        6) tests: test_historical_intel.py (13: classify-бакеты, analyze дедуп/
+           пустой, fetch_wayback парс CDX/ошибка→[], discover found/no-history,
+           render offline/no-history, scan_diff historical added, attack_surface
+           Historical категория) + test_collection_runner (+2: фаза артефакт,
+           рендер карточки) + test_scan_diff (обновлён empty-skipped: +historical).
+        ИТОГ: 619 passed, 3 skipped (622 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный Wayback CDX, github.com]: fetch_wayback
+        вернул 300 архивных строк (sample http://github.com/ @20080514); после
+        диагностики 504 на collapse-варианте — убран collapse, запрос 4.6с;
+        discover() классифицировал (8 уникальных, 2 config-интересных); render
+        оффлайн. RESULT: PASS.
+      ОСТАЛОСЬ опц. по #12: доп. источники (Common Crawl/OTX) — источник
+      расширяем; web-collection-job фазу не включает (GUI/CLI-collection).
+
+==============================================================================
