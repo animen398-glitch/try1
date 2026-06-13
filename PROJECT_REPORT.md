@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **541 passed, 1 skipped** (542 собрано; сетенезависимые, Qt headless) |
+| Тесты | **561 passed, 1 skipped** (562 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -32,10 +32,11 @@
 paywall, оффлайн-клон фронтенда, извлечение медиа, анализ дизайна, аудиты
 безопасности (cookie, секреты, source-map, уязвимости).
 
-**Три точки входа:**
+**Точки входа:**
 - `main.py` — GUI (PyQt5), 14 вкладок + внешний плагин Deep Crawl.
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
-- `remote/web_app.py` — FastAPI LAN-консоль (:5000), 12 job'ов с паритетом GUI.
+- `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а).
+- `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
 
 ---
 
@@ -65,6 +66,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | api_key_extractor / api_dumper | поиск ключей / дамп API-ответов |
 | project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json); `load_scan_report` для diff |
 | scan_diff | **оффлайн-diff двух сканов проекта** (страницы/субдомены/секреты/тех/зависимости/заголовки/TLS-сертификат/эндпоинты/findings + дельта риска), HTML-отчёт |
+| monitor | **Continuous Monitoring (P-роадмап #8)**: расписание (daily/weekly/monthly) в metadata.json; `run_due` гоняет Full Collection + авто-Scan Diff против прошлого скана; чистая логика (`compute_next_run`/`is_due`) и тонкий `MonitorScheduler`-тред отделены от инъектируемого раннера (тесты без сети) |
 | cert_info | TLS-сертификат хоста (stdlib ssl): fetch + summarize (issuer/срок/SAN/SHA-256) для Scan Diff |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
@@ -140,10 +142,21 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 
 ## 6. С чего начать (backlog / опции)
 
-**Роадмап исчерпан:** весь реализуемый объём закрыт — Platform P1–P12, Next-Gen
-TIER S/A/B, и TIER C в безопасных вариантах (C1 — localhost-Ollama, C2 —
-оффлайн-валидация формата). Осознанно вне скоупа остаётся лишь то, что нарушает
-инварианты по своей природе и требует отдельного явного решения:
+**Внутренний трек Platform P1–P12 + TIER S/A/B/C закрыт.** Но против ИСХОДНОГО
+роадмапа (`2.txt`, приоритеты в строках 515–533) ещё есть непостроенные фазы —
+ранее отчёт ошибочно называл их «исчерпанными». Реальный остаток по приоритету:
+- **#8 Continuous Monitoring — [НАЧАТО/ЯДРО ГОТОВО]** `core/monitor.py` + CLI
+  `monitor_cli.py`: расписание daily/weekly/monthly, авто-Scan Diff, оффлайн,
+  без новых зависимостей. Осталось: GUI/web-поверхность для управления.
+- **#9 Alert Center** — уведомления (Telegram/Discord/Email) на дельту из #8.
+  Естественный следующий шаг; единственная фаза с сетевым выходом наружу.
+- **#11 OpenAPI Discovery** — swagger.json/openapi.json → карта API.
+- **#12 Historical Intelligence** — Wayback / CommonCrawl.
+- **#13 OSINT-модули** — DNS-записи (SPF/DMARC/DKIM/CAA), Email/Employee Intel,
+  CT-история (частично есть через subdomain crt.sh).
+- **#14 Findings Management** — статусы OPEN/IN_PROGRESS/FIXED/IGNORED (оффлайн).
+
+Осознанно вне скоупа (нарушают инварианты по своей природе):
 - **C2 «живая» сетевая secret-валидация** (отправка ключа провайдеру) — dual-use/приватность.
 - **REJECTED:** тяжёлый JS-AST-парсер, интерактивный граф через CDN-JS, любой облачный AI.
 

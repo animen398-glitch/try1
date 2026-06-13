@@ -1476,3 +1476,43 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         зависимостей.
 
 ==============================================================================
+
+  ROADMAP #8 — Continuous Monitoring (ядро) — [DONE] 2026-06-13
+      Первая непостроенная фаза исходного роадмапа (2.txt, приоритет #8).
+      Предпосылка (Scan Diff, #7) уже была готова. Инварианты: I1/I2 (stdlib,
+      оффлайн сам по себе), I3 (расписание в metadata.json), I4 (логика в core,
+      GUI/CLI тонкие), I5 (тайминг/треды отделены от чистой логики и от
+      инъектируемого тяжёлого шага).
+        1) core/monitor.py — ЧИСТАЯ логика: compute_next_run(interval, from)
+           (daily/weekly/monthly; _add_month календарно-aware с клампом дня
+           Jan31→Feb28), make_schedule, is_due (нет next_run/битый → due; off →
+           никогда). Движок run_due(store, run_fn, now, on_event): обходит
+           проекты, для enabled+due гоняет run_fn(url) (Full Collection,
+           записывает скан) и, если есть прошлый скан, пишет авто write_diff_
+           report; advance расписания (last_run/last_scan_id/next_run). run_fn
+           инъектируется → тесты без сети; дефолт (_default_run_fn) лениво тянет
+           CollectionRunner (subdomains+certificate on). MonitorScheduler —
+           тонкий тред (Event.wait, мгновенный stop()); tick() публичный.
+        2) core/project.py — get_monitor()/set_monitor(cfg|None): расписание в
+           metadata.json, read-modify-write → сосуществует с record_scan (оба
+           грузят весь meta и пишут назад, ключи друг друга не затирают).
+        3) monitor_cli.py — точка входа enable/disable/status/run/watch; чистые
+           cmd_* возвращают данные (тестируемы), main только печатает.
+           sys.stdout.reconfigure(errors='replace') — '→'/кириллица не роняют
+           watch-цикл на cp1251-консоли Windows.
+        4) tests: test_monitor.py (14: next-run daily/weekly/monthly+кламп,
+           is_due, persist/clear, survive record_scan, first-run-no-diff,
+           second-run-auto-diff, run_due only-due, fail-safe run_fn, scheduler
+           tick+start/stop) + test_monitor_cli.py (6: enable/disable/unknown/
+           status/run-due/main enable→status).
+        ИТОГ: 561 passed, 1 skipped (562 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный example.com, 2 цикла]: цикл1 — реальный
+        Full Collection, новый скан, diff НЕТ (первый), next_run сдвинут на
+        завтра; цикл2 (force due) — новый скан + АВТО Scan Diff против цикла1,
+        HTML записан в Projects/example.com/reports/diff_*.html, дельта риска
+        «Medium 16/100 → Medium 16/100»; цикл3 (не due) — 0 запусков. RESULT:
+        PASS. (encoding-фикс CLI подтверждён: '→' печатается корректно.)
+      ОСТАЛОСЬ по #8: GUI/web-поверхность управления расписанием (ядро+CLI есть).
+
+==============================================================================
