@@ -21,6 +21,8 @@ Design notes:
 import re
 from typing import Dict, List, NamedTuple, Pattern, Tuple
 
+from core.secret_validator import validate as validate_secret
+
 
 class SecretRule(NamedTuple):
     """One detection rule: a human label and a compiled pattern.
@@ -113,6 +115,9 @@ class SecretScanner:
                     'match': value,
                     'preview': _preview(value),
                     'source': source,
+                    # Offline structural format check (no network) — demotes
+                    # placeholders/truncated values, confirms exact shapes.
+                    'validation': validate_secret(rule.name, value),
                 })
         return findings
 
