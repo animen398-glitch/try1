@@ -1,8 +1,8 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-13 (Platform P1–P8 + P9 Multi-page Screenshots
-  (TIER B1); Project Workspace / Risk Engine 0–100 / Dashboard 2.0 / Scan
-  Diff / мульти-скриншоты; тесты ~467)
+  Дата отчёта: 2026-06-13 (Platform P1–P10; Project Workspace / Risk Engine
+  0–100 / Dashboard 2.0 / Scan Diff / мульти-скриншоты (B1) / интерактивный
+  attack-surface граф (B2); тесты ~474)
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -946,6 +946,7 @@ G3. ПРИОРИТИЗАЦИЯ НОВОГО
 ## TIER B (полезно, опционально)
   B1. CF4 мульти-тип скриншоты (login/admin/dashboard).  [DONE] (см. P9 ниже)
   B2. CF1 интерактивность графа — только если найдётся оффлайн-способ.
+      [DONE] — найден чистый CSS-способ (:target/:hover), см. P10 ниже.
 
 ## TIER C (низкий ROI)
   C1. CF3 LLM exec summary (Ollama).  C2. CF9 живая secret-валидация.
@@ -1223,5 +1224,36 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         снял все 4 PNG разного размера (home 1.7MB, login/dashboard по 19KB —
         github редиректит /dashboard→/login без авторизации, admin 259KB).
         Мульти-страничный путь подтверждён end-to-end без правок кода.
+
+  P10. Interactive Attack Surface Graph (TIER B2 / CF1) — [DONE] 2026-06-13
+      Условие роадмапа было «только если найдётся ОФФЛАЙН-способ» (интерактив
+      через CDN-JS вроде Cytoscape отклонён, R2 — нарушает I2; контракт отчётов
+      проверяется тестами на отсутствие <script>). Найден чистый CSS-способ БЕЗ
+      JS: клик по узлу через :target, подсветка через :hover. Инварианты I1/I2/I3.
+        1) core/attack_surface.py — render_interactive(surface): тот же hub-and-
+           spoke SVG, но каждый узел категории обёрнут в SVG2 <a href="#as-
+           <slug>"> (ТОЛЬКО внутренний фрагмент, не внешний ресурс) и ведёт к
+           своей панели; ниже SVG — панели <div class="as-panel" id="as-<slug>">
+           с полным списком элементов категории (+ строка «… ещё N» при
+           переполнении). Интерактив — scoped <style> под .as-wrap: .as-panel
+           {display:none}/.as-panel:target{display:block} (клик раскрывает),
+           a:hover .as-node rect{stroke…} (подсветка). НИ JS, ни src/<link>/
+           url() → оффлайн-контракт держится. Геометрия вынесена в общий
+           _layout() (единый источник для render_svg и render_interactive, I3);
+           _slug() — стабильный id ('Source Maps'→'source-maps'). render_svg
+           (статический) НЕ изменён — оба остаются доступны.
+        2) collection_runner — карточка «Attack Surface» рендерится через
+           render_interactive (было render_svg). Оффлайн-самодостаточность
+           отчёта сохранена (тест: нет <script>).
+        3) tests/test_attack_surface.py (+6: оффлайн/без-JS, узлы↔панели по id,
+           список+overflow, экранирование+слаг, пустой-плейсхолдер) +
+           test_collection_runner (+1: отчёт содержит .as-wrap, :target-CSS,
+           совпадающие якоря/id, JS-free).
+        ИТОГ: 473 passed, 1 skipped (474 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный report.html example.com]: в живом
+        отчёте 4 узла (technologies/infrastructure/pages/findings) кликабельны
+        и связаны с панелями по id; :target/:hover CSS на месте; ни <script>,
+        ни <link>, ни url() — оффлайн-контракт подтверждён. RESULT: PASS.
 
 ==============================================================================
