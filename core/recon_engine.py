@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
+from core.infrastructure import build_infrastructure
+from core.tech_fingerprint import extract_script_srcs
+from core.tech_fingerprint import fingerprint as fingerprint_tech
 from utils.browser_utils import SessionBuilder
 from utils.http_retry import decompress, urlopen_retry
 from utils.scan_cache import TTLCache
@@ -161,7 +164,14 @@ class ReconEngine:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
             raw, resp_headers = urlopen_retry(req, self._timeout)
-            return decompress(raw, resp_headers), dict(resp_headers)
+            hdrs = dict(resp_headers)
+            # dict() collapses duplicate headers; preserve every Set-Cookie so
+            # cookie-based backend fingerprints (Laravel/Django/Rails) still fire.
+            if hasattr(resp_headers, 'get_all'):
+                cookies = resp_headers.get_all('Set-Cookie')
+                if cookies:
+                    hdrs['Set-Cookie'] = '\n'.join(cookies)
+            return decompress(raw, resp_headers), hdrs
         except Exception:
             return None, {}
 
@@ -294,6 +304,8 @@ class ReconEngine:
             'ip': None,
             'geo': {},
             'cms': [],
+            'technologies': [],
+            'infrastructure': {},
             'favicons': [],
             'pwa_manifest': {},
             'server_headers': {},
@@ -306,6 +318,10 @@ class ReconEngine:
         result['ip'] = ip
         if ip:
             result['geo'] = self._geoip(ip)
+
+        # Infrastructure intelligence (Domain → ASN → IP → Provider) derived
+        # from the GeoIP fields (as/org/isp) ip-api already returns.
+        result['infrastructure'] = build_infrastructure(result)
 
         # Persist discovered assets (host + resolved IP) to the DataRegistry
         if domain:
@@ -344,6 +360,12 @@ class ReconEngine:
         cms, cms_details       = self._detect_cms(html, resp_headers)
         result['cms']          = cms
         result['cms_details']  = cms_details
+        # Advanced technology fingerprint (CDN/infra/server/backend/analytics +
+        # versions) from the response headers, body and script URLs.
+        result['technologies'] = fingerprint_tech(
+            headers=resp_headers, html=html,
+            scripts=extract_script_srcs(html),
+        )
         result['favicons']     = self._extract_favicons(html, url)
         result['pwa_manifest'] = self._fetch_pwa_manifest(html, url)
         result['status']       = 'Success'

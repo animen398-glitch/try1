@@ -38,6 +38,33 @@ def test_recon_report_excludes_large_pwa_manifest(tmp_path):
     assert report["cms"] == result["cms"]        # rest is intact
 
 
+def test_recon_populates_technologies_and_infrastructure():
+    """run_recon fingerprints tech from headers/scripts and derives the
+    Domain → ASN → IP → Provider chain from the GeoIP fields."""
+    eng = ReconEngine(data_registry=_FakeRegistry())
+    eng._resolve_ip = lambda domain: "1.2.3.4"
+    eng._geoip = lambda ip: {"as": "AS13335 Cloudflare, Inc.", "org": "Cloudflare"}
+    eng._fetch_with_headers = lambda url: (
+        b'<html><head><script src="/gtag/js?id=G-X"></script></head>'
+        b'<body></body></html>',
+        {"Server": "nginx/1.25.3", "CF-Ray": "abc"},
+    )
+    eng._fetch_pwa_manifest = lambda html, url: {}
+
+    result = eng.run_recon("https://example.com")
+
+    names = {t["name"]: t for t in result["technologies"]}
+    assert names["Nginx"]["version"] == "1.25.3"
+    assert "Cloudflare" in names
+    assert "Google Analytics" in names
+
+    infra = result["infrastructure"]
+    assert infra["asn"] == "AS13335"
+    assert infra["provider"] == "Cloudflare"
+    assert [hop["role"] for hop in infra["chain"]] == [
+        "Domain", "ASN", "IP", "Provider"]
+
+
 def test_enrich_cms_from_script_url_corpus():
     recon = {"cms": [], "cms_details": {}}
     dynamic = {

@@ -844,3 +844,160 @@ N6. ЭТАП 3 — РЕАЛИЗАЦИЯ HIGH VALUE (лог)
       R1–R4 — вне скоупа по архитектурным причинам.
 
 ==============================================================================
+  [NEXT GENERATION AUDIT]  —  2026-06-13
+  Аудит как Lead Architect под mega-task «Attack Surface Intelligence Platform».
+  Ключевой вывод: БОЛЬШАЯ ЧАСТЬ 15 кандидатов уже закрыта в этой сессии (H/M-
+  роадмап). Ниже — честный аудит и приоритизация ТОЛЬКО нового.
+==============================================================================
+
+------------------------------------------------------------------------------
+G1. АУДИТ ПОДСИСТЕМ (сильные / слабые стороны, долг, узкие места)
+------------------------------------------------------------------------------
+  • GUI/Dashboard — СИЛЬНО: mixin-каркас, единый раннер задач, Security Overview,
+    дедуп эндпоинтов. СЛАБО: нет Attack-Surface-Score карточки; чарты только
+    inline-бары (осознанно, REJECTED lib). Узких мест нет (вся сеть в воркерах).
+  • Reporting — СИЛЬНО: оффлайн-самодостаточные report.html (exec summary,
+    attack-surface SVG, site map, severity-бары, screenshot), vuln HTML/JSON/PDF.
+    Долг: нет — единый рендер переиспользуется.
+  • PluginManager / Analyzer SDK — СИЛЬНО: два изолированных extension-point
+    (tab + analyzer), дискавери, изоляция битых. СЛАБО: analyzer-контракт без
+    version/context (кандидат CF15 просит) — мелкое расширение.
+  • Collection Pipeline — СИЛЬНО: guarded-фазы, отмена, opt-in тяжёлое
+    (screenshot/nuclei/katana/analyzers). Узкое место: последовательные фазы
+    (приемлемо для desktop-инструмента).
+  • Recon Engine — СИЛЬНО: GeoIP+CMS+favicons+PWA, retry/gzip. СЛАБО (ГЛАВНОЕ):
+    (1) фингерпринт мелкий — только HTML/script-сигнатуры, НЕТ header-based
+    инфры (Cloudflare/Akamai/Fastly), backend-фреймворков (Laravel/Django/Rails/
+    Spring/Express), большинства аналитик, и НЕТ версий. (2) ASN/org/provider
+    УЖЕ тянутся из ip-api (fields=...,isp,org,as), но НЕ выведены как
+    инфраструктурная интеллидженс. → САМЫЙ высокий ROI для нового.
+  • Dynamic Analyzer — СИЛЬНО: Playwright-перехват XHR/Fetch, JS-URL-экстракт,
+    secret-scan. СЛАБО: нет явного GraphQL-detection/introspection.
+  • Security Audit — СИЛЬНО: secret_scanner (единый), source-map, vuln-правила,
+    nuclei. СЛАБО: нет GraphQL-аудита, нет dependency/RetireJS-анализа уязвимых
+    JS-библиотек.
+  • Capture/Clone — СИЛЬНО: отмена, site_map со статусами, прогресс. Долг: нет.
+  • Database/Path — СИЛЬНО: PathManager (frozen-aware), единый config, DataRegistry.
+    Долг: нет (закрыт ранее).
+  • Web Console — СИЛЬНО: паритет с GUI, JOBS-реестр. Вне скоупа mega-task.
+  • Tests — СИЛЬНО: 353 сетенезависимых, Qt headless, conftest reclaim Qt-окон
+    (потолок снят). Долг: нет.
+
+  Scalability-лимиты: десктоп-инструмент, последовательный пайплайн — это
+  by-design, не дефект. Тяжёлое — opt-in. .exe не бандлит тяжёлое (контракт).
+
+------------------------------------------------------------------------------
+G2. СТАТУС 15 КАНДИДАТОВ (что УЖЕ сделано в этой сессии — не дублировать!)
+------------------------------------------------------------------------------
+  CF1  Attack Surface Graph ...... ✅ DONE (M2, static offline SVG: домен→
+       Technologies/Secrets/Endpoints/Pages/Findings). Interactive JS-граф
+       (Cytoscape) — REJECTED (оффлайн/exe-контракт I2). Текущий — exportable
+       (в report.html) и report-compatible. Покрывает требование.
+  CF2  Visual Site Map ........... ✅ DONE (H1). Добавить depth + response-type
+       = мелкое расширение (TIER B).
+  CF3  AI Executive Summary ...... ✅ DONE детерминированно (H2). LLM (Ollama/
+       LM Studio) — TIER C (нарушает детерминизм/тестируемость; деттерм. версия
+       покрывает ценность; мягкая деградация = «не запускать»).
+  CF4  Screenshot Intelligence ... ◑ ЧАСТИЧНО (M1: homepage screenshot, gated
+       Playwright, в отчёте). Мульти-тип (login/admin/dashboard, Aquatone-style)
+       = TIER B.
+  CF5  Advanced Tech Fingerprint . ❌ НОВОЕ → TIER S (см. G3). Главный новый ROI.
+  CF6  ASN & Infra Intelligence .. ❌ НОВОЕ → TIER S. Данные УЖЕ есть (ip-api as/
+       org/isp) — нужно вывести + граф Domain→ASN→IP→Provider. Дёшево, ценно.
+  CF7  GraphQL Discovery ......... ❌ НОВОЕ → TIER A. Probe /graphql* +
+       introspection. Вписывается в Security Audit.
+  CF8  JS AST Analysis ........... ❌ → REJECTED. Требует JS-парсер (esprima/
+       slimit — тяжёлая зависимость, нарушает I1) ради маржинального выигрыша
+       над regex extract_js_urls. Не оправдано.
+  CF9  Secret Validation ......... ❌ → TIER C (живая валидация шлёт секрет в
+       provider-API по сети — dual-use/риск приватности; оффлайн-структурная
+       валидация = низкая ценность). Отложено, требует явного opt-in дизайна.
+  CF10 Dependency Vuln (RetireJS) . ❌ НОВОЕ → TIER A. Детект JS-библиотек+версий
+       и флаг известных уязвимых через МАЛЕНЬКУЮ бандл-сигнатуру. Оффлайн,
+       вписывается в Security Audit.
+  CF11 Nuclei .................... ✅ DONE (M3).
+  CF12 Katana ................... ✅ DONE (M3+).
+  CF13 Advanced Dashboard ....... ◑ ЧАСТИЧНО (H3: Security Overview). Attack
+       Surface Score карточка = TIER A (мелкое, reuse).
+  CF14 Reporting 2.0 ............ ✅ DONE (H4).
+  CF15 Plugin SDK ............... ✅ DONE (M4 AnalyzerPlugin). + version/context
+       = TIER A (мелкое расширение контракта, обратносовместимо).
+
+------------------------------------------------------------------------------
+G3. ПРИОРИТИЗАЦИЯ НОВОГО
+------------------------------------------------------------------------------
+## TIER S (огромная ценность / низкий риск — РЕАЛИЗУЕМ ПЕРВЫМ)
+  S1. CF5 Advanced Technology Fingerprinting — расширяет recon без новых
+      зависимостей: header-based (CDN/инфра/сервер), cookie/HTML/script-
+      сигнатуры backend-фреймворков, аналитика, ИЗВЛЕЧЕНИЕ ВЕРСИЙ; категории;
+      оффлайн сигнатур-движок. Питает Attack Surface (Technologies) + отчёт.
+  S2. CF6 ASN & Infrastructure Intelligence — вывести уже собранные ASN/org/
+      isp; цепочка Domain→ASN→IP→Provider в отчёте + Attack Surface Infra.
+      Почти бесплатно (данные есть), высокий аналитический эффект.
+
+## TIER A (сильная ценность / умеренная сложность)
+  A1. CF7 GraphQL Discovery (Security Audit).
+  A2. CF10 Dependency Vulnerability Analysis / RetireJS-lite (Security Audit).
+  A3. CF13 Attack Surface Score (Dashboard-карточка, reuse метрик).
+  A4. CF15 AnalyzerPlugin version/context (мелкое расширение контракта).
+  A5. CF2 Site Map depth + response-type.
+
+## TIER B (полезно, опционально)
+  B1. CF4 мульти-тип скриншоты (login/admin/dashboard).
+  B2. CF1 интерактивность графа — только если найдётся оффлайн-способ.
+
+## TIER C (низкий ROI)
+  C1. CF3 LLM exec summary (Ollama).  C2. CF9 живая secret-валидация.
+
+## REJECTED
+  R1. CF8 JS AST (тяжёлый парсер ради маржи).  R2. CF1 через CDN-JS (Cytoscape)
+  — оффлайн-контракт.  R3. Облачный AI любого рода (I1/I2).
+
+------------------------------------------------------------------------------
+G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
+------------------------------------------------------------------------------
+  S1 CF5 Advanced Technology Fingerprinting — [DONE] 2026-06-13
+      Реализовано (расширение recon без новых зависимостей, оффлайн-движок
+      сигнатур; инварианты I1/I3/I5 — единый детектор, чистая функция, тесты):
+        1) core/tech_fingerprint.py — ЧИСТЫЙ stdlib-движок: fingerprint(headers,
+           html, scripts)->[{name,category,version,evidence}] по категориям
+           CDN/Server/Backend/Language/Analytics. Сигнатуры: header-value-regex,
+           header-present, Set-Cookie-substr (Laravel/Django/Rails), <script
+           src>-substr и inline-HTML-regex (GA/GTM/Hotjar/Mixpanel/Segment/
+           Amplitude/FB Pixel); ИЗВЛЕЧЕНИЕ ВЕРСИЙ из Server/X-Powered-By/
+           X-AspNet-Version (nginx/apache/iis/php/werkzeug/asp.net). Дедуп по
+           имени, сортировка по CATEGORY_ORDER. extract_script_srcs(html) +
+           render_html(techs) — оффлайн inline-CSS чипы по категориям (без JS).
+           НЕ дублирует recon._CMS/_SCRIPT_SIGNATURES — добавляет категории,
+           читаемые из HTTP-ответа (инфра/сервер/бэкенд/аналитика + версии).
+        2) recon_engine.run_recon — result['technologies']=fingerprint(...);
+           _fetch_with_headers сохраняет ВСЕ Set-Cookie (dict() их схлопывал →
+           cookie-бэкенд-сигнатуры не срабатывали). Питает Attack Surface
+           (Technologies, с версией) и отчёт.
+        3) collection_runner — карточка «Technology Fingerprint» (render_html).
+           attack_surface.build_surface — Technologies = cms ∪ technologies
+           (label с версией, дедуп). GUI tab_recon — секция Technologies.
+        4) tests/test_tech_fingerprint.py (17) + recon/attack_surface-интеграция.
+        ИТОГ: 383 passed, 1 skipped; ruff чист. Без новых зависимостей.
+
+  S2 CF6 ASN & Infrastructure Intelligence  — [DONE] 2026-06-13
+      Реализовано (вывод УЖЕ собираемых ip-api as/org/isp — почти бесплатно):
+        1) core/infrastructure.py — ЧИСТЫЙ stdlib: parse_as_field('AS13335
+           Cloudflare, Inc.')->(asn,name); build_infrastructure(recon)->
+           {domain,ip,asn,asn_name,org,isp,provider,location,chain} — цепочка
+           Domain→ASN→IP→Provider (пропуск пустых хопов, без выдуманных узлов;
+           provider = org|asn_name|isp). render_html(infra) — оффлайн inline-CSS
+           цепочка с цветными хопами + таблица ASN/Provider/ISP/Location.
+        2) recon_engine.run_recon — result['infrastructure']=build_infrastructure.
+        3) attack_surface — Infrastructure = [ip, ASN, provider] (было только ip).
+           collection_runner — карточка «Infrastructure». GUI tab_recon уже
+           показывал ISP/ASN/Org из geo.
+        4) tests/test_infrastructure.py (12) + recon/attack_surface-интеграция.
+        ИТОГ: см. S1 (общий прогон). Без новых зависимостей.
+
+  TIER A (очередь после TIER S):
+    A1 CF7 GraphQL Discovery · A2 CF10 Dependency Vuln (RetireJS-lite) ·
+    A3 CF13 Attack Surface Score (Dashboard) · A4 CF15 AnalyzerPlugin
+    version/context · A5 CF2 Site Map depth+response-type.
+
+==============================================================================

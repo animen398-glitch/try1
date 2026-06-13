@@ -30,6 +30,23 @@ def test_build_surface_extracts_present_categories():
     assert names['Findings']['items'] == ['Exposed .env']
 
 
+def test_build_surface_merges_technologies_and_infra_chain():
+    report = _report(recon={'data': {
+        'ip': '1.2.3.4',
+        'cms': ['React'],
+        'technologies': [
+            {'name': 'Nginx', 'category': 'Server', 'version': '1.25'},
+            {'name': 'React', 'category': 'JS'},   # dup of cms, dropped
+        ],
+        'infrastructure': {'asn': 'AS13335', 'asn_name': 'Cloudflare',
+                           'provider': 'Cloudflare'},
+    }})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Technologies']['items'] == ['React', 'Nginx 1.25']
+    assert names['Infrastructure']['items'] == [
+        '1.2.3.4', 'AS13335 Cloudflare', 'Cloudflare']
+
+
 def test_build_surface_omits_empty_categories():
     surface = asf.build_surface(_report(recon={'data': {'cms': ['Vue']}}))
     names = [c['name'] for c in surface['categories']]

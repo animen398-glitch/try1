@@ -35,10 +35,12 @@ from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
 from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
+from core.infrastructure import render_html as render_infrastructure
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
 from core.screenshot import ScreenshotCapturer
 from core.site_map import render_html as render_site_map
+from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
 from utils.image_processor import ImageExtractor
 
@@ -439,6 +441,22 @@ class CollectionRunner:
             ),
             recon.get('status', '—'),
         ))
+
+        # Infrastructure intelligence — Domain → ASN → IP → Provider chain.
+        infra = rd.get('infrastructure')
+        if infra and infra.get('chain'):
+            body_parts.append(card(
+                'Infrastructure', render_infrastructure(infra),
+                recon.get('status', '—'),
+            ))
+
+        # Technology fingerprint — CDN / server / backend / analytics + versions.
+        technologies = rd.get('technologies')
+        if technologies:
+            body_parts.append(card(
+                'Technology Fingerprint', render_technologies(technologies),
+                recon.get('status', '—'),
+            ))
 
         # API
         api = phases.get('api', {})

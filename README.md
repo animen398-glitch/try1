@@ -18,7 +18,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 
 | Вкладка | Назначение |
 |---|---|
-| Recon & Intel | GeoIP, фингерпринт CMS/стека, фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, дамп API-ответов |
+| Recon & Intel | GeoIP, фингерпринт CMS/стека + расширенный tech-fingerprint (CDN/сервер/бэкенд/аналитика + версии), ASN/инфра-интеллидженс (Domain → ASN → IP → Provider), фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, дамп API-ответов |
 | Subdomain Scanner | Пассивное (crt.sh, HackerTarget, AlienVault OTX, Anubis; опц. внешний amass) + brute-force перечисление с живой таблицей; опц. active-проверки (liveness + takeover) |
 | API Key Scanner | Поиск утечек API-ключей/секретов на странице |
 | Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) + визуальная карта сайта (дерево путей с HTTP-статусами 2xx/3xx/4xx/5xx) в `site_map.json` и HTML-отчёте |

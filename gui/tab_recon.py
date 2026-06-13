@@ -206,6 +206,19 @@ class ReconTabMixin:
             else:
                 self.recon_results.append("  CMS / Stack  : не определён")
 
+            # Advanced technology fingerprint (CDN / server / backend / analytics)
+            technologies = recon.get('technologies', [])
+            if technologies:
+                self.recon_results.append_info(
+                    f"  Technologies ({len(technologies)}):"
+                )
+                for t in technologies:
+                    ver = f" {t['version']}" if t.get('version') else ''
+                    self.recon_results.append(
+                        f"    • [{t.get('category', '?')}] "
+                        f"{t.get('name', '')}{ver}"
+                    )
+
             # Favicons
             favicons = recon.get('favicons', [])
             if favicons:

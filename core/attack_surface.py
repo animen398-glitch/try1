@@ -79,10 +79,32 @@ def build_surface(report: Dict) -> Dict:
     pages = capture.get('site_map') or []
     page_items = [p.get('url', '') for p in pages if isinstance(p, dict)]
 
+    # Technologies: CMS/stack signatures plus the advanced fingerprint (with
+    # version where known), de-duplicated by display label.
+    tech_items: List[str] = list(recon.get('cms') or [])
+    for t in recon.get('technologies') or []:
+        if not isinstance(t, dict):
+            continue
+        name = t.get('name')
+        if not name:
+            continue
+        label = f"{name} {t['version']}" if t.get('version') else name
+        if label not in tech_items:
+            tech_items.append(label)
+
+    # Infrastructure: the Domain → ASN → IP → Provider chain (ip + ASN + provider).
+    infra = recon.get('infrastructure') if isinstance(recon.get('infrastructure'), dict) else {}
+    infra_items: List[str] = []
+    if recon.get('ip'):
+        infra_items.append(str(recon['ip']))
+    if infra.get('asn'):
+        infra_items.append(f"{infra['asn']} {infra.get('asn_name', '')}".strip())
+    if infra.get('provider'):
+        infra_items.append(str(infra['provider']))
+
     candidates = [
-        _category('Technologies', recon.get('cms') or []),
-        _category('Infrastructure',
-                  [recon['ip']] if recon.get('ip') else []),
+        _category('Technologies', tech_items),
+        _category('Infrastructure', infra_items),
         _category('Secrets', secret_items),
         _category('Endpoints', katana.get('endpoints') or []),
         _category('Pages', page_items),
