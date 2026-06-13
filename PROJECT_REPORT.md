@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **561 passed, 1 skipped** (562 собрано; сетенезависимые, Qt headless) |
+| Тесты | **571 passed, 2 skipped** (573 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -35,8 +35,9 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 **Точки входа:**
 - `main.py` — GUI (PyQt5), 14 вкладок + внешний плагин Deep Crawl.
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
-- `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а).
+- `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
+  (та же логика доступна в GUI — вкладка Collection — и в web-консоли.)
 
 ---
 
@@ -145,9 +146,12 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 **Внутренний трек Platform P1–P12 + TIER S/A/B/C закрыт.** Но против ИСХОДНОГО
 роадмапа (`2.txt`, приоритеты в строках 515–533) ещё есть непостроенные фазы —
 ранее отчёт ошибочно называл их «исчерпанными». Реальный остаток по приоритету:
-- **#8 Continuous Monitoring — [НАЧАТО/ЯДРО ГОТОВО]** `core/monitor.py` + CLI
-  `monitor_cli.py`: расписание daily/weekly/monthly, авто-Scan Diff, оффлайн,
-  без новых зависимостей. Осталось: GUI/web-поверхность для управления.
+- **#8 Continuous Monitoring — [ГОТОВО]** `core/monitor.py` + CLI
+  `monitor_cli.py` + GUI (вкладка Collection) + web-консоль: расписание
+  daily/weekly/monthly, авто-Scan Diff, оффлайн, без новых зависимостей.
+  Единая логика (`monitor.enable/disable/status/run_due`) под тремя тонкими
+  поверхностями. Осталось опц.: фоновый scheduler внутри GUI/web-процесса
+  (сейчас периодический прогон — через `monitor_cli.py watch`).
 - **#9 Alert Center** — уведомления (Telegram/Discord/Email) на дельту из #8.
   Естественный следующий шаг; единственная фаза с сетевым выходом наружу.
 - **#11 OpenAPI Discovery** — swagger.json/openapi.json → карта API.

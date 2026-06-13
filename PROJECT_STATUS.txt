@@ -1516,3 +1516,39 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       ОСТАЛОСЬ по #8: GUI/web-поверхность управления расписанием (ядро+CLI есть).
 
 ==============================================================================
+
+  ROADMAP #8 — Continuous Monitoring (GUI + web поверхность) — [DONE] 2026-06-13
+      Доделывает #8: управление расписанием в GUI и web-консоли поверх готового
+      ядра. Инвариант I4 — обе поверхности тонкие, единый источник логики.
+        1) core/monitor.py — вынесены enable(store,url,interval)/disable(store,
+           url)/status(store) (единый источник для CLI/web/GUI). monitor_cli
+           cmd_* теперь тонкие делегаты (тесты CLI без изменений). Добавлен
+           import project_slug (disable резолвит проект по url).
+        2) remote/web_app.py — эндпоинты GET /monitor (status), POST
+           /monitor/enable (400 на плохой интервал), POST /monitor/disable (404
+           если не найден/не мониторится), POST /monitor/run (фоновый run_due,
+           busy-lock через _active_job='monitor:run', события стримятся в SSE
+           через _monitor_event_text). UI: карточка «Continuous Monitoring» —
+           select интервала + Watch/Unwatch/Status/Run-due-now; monRun() ведёт
+           setRunning как обычный job. <select> застилизован под input.
+        3) gui/workers.py — _MonitorWorker(store): off-thread run_due, события →
+           log_message (текст через статический _event_line). gui/tab_collection
+           — секция «Continuous Monitoring»: комбо проекта (из того же стора, что
+           Scan Diff) + интервал + Включить/Выключить/Запустить-готовые + статус-
+           лейбл; _refresh_monitor_projects/_on_monitor_project_changed/_enable_/
+           _disable_/_run_monitor_due/_on_monitor_run_done. Обновляется после
+           Full Collection.
+        4) tests: test_monitor (+4: enable/disable/unknown/status) + test_web_app
+           (+3: event-text, dashboard-controls, endpoints-with-testclient[skip
+           без httpx]) + test_monitor_gui.py (4 headless: combo+untracked,
+           enable→status, disable, пустой стор).
+        ИТОГ: 571 passed, 2 skipped (573 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный сервер :5099 + requests]: GET /monitor
+        200; enable hourly→400; enable weekly→200 (schedule next_run +7д); status
+        показал проект enabled; disable→200 (enabled=False); disable неизвестного
+        →404. Тестовый проект подчищен из ~/SiteAnalyzer. RESULT: PASS.
+      ОСТАЛОСЬ опц.: фоновый scheduler в самом GUI/web-процессе (периодика — пока
+      через monitor_cli.py watch). #8 функционально закрыт на всех поверхностях.
+
+==============================================================================
