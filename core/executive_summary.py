@@ -298,8 +298,26 @@ def render_html(summary: Dict) -> str:
         f'{e("; ".join(t for t in top if t))}</p>' if any(top) else ''
     )
 
+    # Optional LLM narrative (local Ollama) — supplementary prose UNDER the
+    # authoritative deterministic verdict above. Rendered only when present, so
+    # a report generated without Ollama is unchanged.
+    narrative = summary.get('narrative')
+    narrative_html = ''
+    if narrative:
+        model = summary.get('narrative_model', '')
+        tag = f' · {e(str(model))}' if model else ''
+        narrative_html = (
+            f'<h3 style="font-size:14px;margin:12px 0 2px;">'
+            f'AI-резюме <span style="font-weight:normal;color:#888;font-size:12px;">'
+            f'(локальный Ollama{tag}; вердикт выше — детерминированный)</span></h3>'
+            f'<p style="font-size:13px;margin:4px 0;white-space:pre-wrap;'
+            f'background:#f5f5f5;border-radius:4px;padding:8px 12px;">'
+            f'{e(str(narrative))}</p>'
+        )
+
     return (
         f'{banner}'
         f'<h3 style="font-size:14px;margin:10px 0 2px;">Находки</h3>{findings}{top_html}'
         f'<h3 style="font-size:14px;margin:12px 0 2px;">Рекомендации</h3>{recs}'
+        f'{narrative_html}'
     )

@@ -104,3 +104,64 @@ def test_generate_never_raises_on_post_failure(monkeypatch):
     out = llm.generate_narrative(_summary())          # must not raise
     assert out['status'] == 'Error'
     assert 'model crashed' in out['error']
+
+
+# ── executive summary render: narrative section ─────────────────────────────
+
+def test_exec_render_shows_narrative_when_present():
+    from core.executive_summary import render_html
+    s = _summary()
+    s['narrative'] = 'Цель раскрывает ключ <secret> и имеет 2 High-замечания.'
+    s['narrative_model'] = 'llama3'
+    html = render_html(s)
+    assert 'AI-резюме' in html
+    assert 'локальный Ollama · llama3' in html
+    assert 'детерминированный' in html               # makes authority explicit
+    assert '&lt;secret&gt;' in html                   # narrative is escaped
+
+
+def test_exec_render_omits_narrative_when_absent():
+    from core.executive_summary import render_html
+    html = render_html(_summary())
+    assert 'AI-резюме' not in html                    # unchanged without Ollama
+
+
+# ── collection integration (network stubbed) ───────────────────────────────
+
+def test_collection_attaches_narrative_without_touching_verdict(monkeypatch):
+    from core.collection_runner import CollectionRunner
+    monkeypatch.setattr('core.collection_runner.generate_llm_narrative',
+                        lambda summary, model, log: {
+                            'status': 'Success', 'narrative': 'AI текст.',
+                            'model': model})
+    r = CollectionRunner(llm=True)
+    summary = {'risk_level': 'High', 'risk_100': 48, 'metrics': {'risk_100': 48}}
+    r._attach_llm_narrative(summary)
+    assert summary['narrative'] == 'AI текст.'
+    # The deterministic verdict is left exactly as it was.
+    assert summary['risk_level'] == 'High' and summary['risk_100'] == 48
+
+
+def test_collection_narrative_graceful_when_unavailable(monkeypatch):
+    from core.collection_runner import CollectionRunner
+    monkeypatch.setattr('core.collection_runner.generate_llm_narrative',
+                        lambda summary, model, log: {
+                            'status': 'Unavailable', 'narrative': None,
+                            'model': model})
+    r = CollectionRunner(llm=True)
+    summary = {'risk_level': 'Low', 'risk_100': 4}
+    r._attach_llm_narrative(summary)                  # must not raise
+    assert 'narrative' not in summary                 # nothing added
+
+
+def test_default_collection_has_llm_off():
+    from core.collection_runner import CollectionRunner
+    assert CollectionRunner().llm is False
+
+
+def test_features_has_ollama_delegates(monkeypatch):
+    from core import features
+    monkeypatch.setattr('core.llm_summary.available', lambda *a, **k: True)
+    assert features.has_ollama() is True
+    monkeypatch.setattr('core.llm_summary.available', lambda *a, **k: False)
+    assert features.has_ollama() is False

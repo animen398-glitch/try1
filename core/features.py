@@ -63,6 +63,18 @@ def has_amass() -> bool:
     return _has_binary('amass')
 
 
+def has_ollama() -> bool:
+    """A local Ollama answering on localhost (optional LLM narrative).
+
+    Unlike the others this probes a *running service*, so it makes a short
+    localhost request rather than a find_spec/which check — kept out of
+    OPTIONAL_FEATURES below so the instant, network-free detection there is
+    preserved. Callers that want it ask for it explicitly.
+    """
+    from core.llm_summary import available
+    return available()
+
+
 # Optional feature -> (what it enables, detector).
 OPTIONAL_FEATURES = {
     'playwright': ('Dynamic API Sniffing (headless Chromium)', has_playwright),

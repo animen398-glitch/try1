@@ -95,6 +95,15 @@ class FinalReportTabMixin:
                 "Требуется бинарь katana на PATH "
                 "(https://github.com/projectdiscovery/katana)")
         opt_row.addWidget(self.collect_katana)
+
+        # Opt-in local-Ollama AI narrative. A *running service*, not a binary —
+        # left enabled with a hint and degraded gracefully at runtime (the phase
+        # is skipped if Ollama isn't reachable), so building the tab does no I/O.
+        self.collect_llm = QCheckBox("AI-резюме (локальный Ollama)")
+        self.collect_llm.setToolTip(
+            "Требует запущенного Ollama на localhost:11434 "
+            "(иначе фаза пропускается; вердикт риска детерминированный в любом случае)")
+        opt_row.addWidget(self.collect_llm)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -178,6 +187,8 @@ class FinalReportTabMixin:
             screenshots=self.collect_screenshot.isChecked(),
             nuclei=self.collect_nuclei.isChecked(),
             katana=self.collect_katana.isChecked(),
+            llm=self.collect_llm.isChecked(),
+            llm_model=self.settings.get('ollama_model') or None,
         )
         self._active_collector = runner
 

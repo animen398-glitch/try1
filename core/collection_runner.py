@@ -36,6 +36,8 @@ from core.executive_summary import render_html as render_exec_summary
 from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.infrastructure import render_html as render_infrastructure
+from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
+from core.llm_summary import generate_narrative as generate_llm_narrative
 from core.project import ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
@@ -58,7 +60,8 @@ class CollectionRunner:
     def __init__(self, profile: str = 'chrome_windows', max_pages: int = 20,
                  cookies: Optional[str] = None, capture_delay: float = 0.5,
                  screenshots: bool = False, nuclei: bool = False,
-                 katana: bool = False):
+                 katana: bool = False, llm: bool = False,
+                 llm_model: Optional[str] = None):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -70,6 +73,10 @@ class CollectionRunner:
         self.nuclei = nuclei
         # Opt-in external katana crawl (binary) → endpoints in the graph/report.
         self.katana = katana
+        # Opt-in local-Ollama narrative over the deterministic executive summary
+        # (off by default — the verdict never depends on a model being present).
+        self.llm = llm
+        self.llm_model = llm_model
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -79,7 +86,9 @@ class CollectionRunner:
                   capture_delay: Optional[float] = None,
                   screenshots: Optional[bool] = None,
                   nuclei: Optional[bool] = None,
-                  katana: Optional[bool] = None):
+                  katana: Optional[bool] = None,
+                  llm: Optional[bool] = None,
+                  llm_model: Optional[str] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -92,6 +101,10 @@ class CollectionRunner:
             self.nuclei = nuclei
         if katana is not None:
             self.katana = katana
+        if llm is not None:
+            self.llm = llm
+        if llm_model is not None:
+            self.llm_model = llm_model
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -180,8 +193,12 @@ class CollectionRunner:
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
         # Executive summary: deterministic risk verdict + recommendations over
-        # the phases above (no model, no network).
+        # the phases above (no model, no network). This stays authoritative.
         report['executive_summary'] = build_summary(report)
+        # Optional: enrich it with a local-Ollama narrative (opt-in, graceful —
+        # the verdict above is untouched; a missing Ollama just adds nothing).
+        if self.llm and not self._cancelled(report):
+            self._attach_llm_narrative(report['executive_summary'])
 
         # Reports
         json_path = scan_dir / 'report.json'
@@ -395,6 +412,23 @@ class CollectionRunner:
         extra = data.get('findings', [])
         findings.extend(extra)
         return len(extra)
+
+    def _attach_llm_narrative(self, summary: Dict) -> None:
+        """Add a local-Ollama narrative to the deterministic summary in place.
+
+        Best-effort: an unavailable/failing Ollama logs and adds nothing, so
+        the report is identical to a non-LLM run. The verdict/metrics are never
+        modified — only a ``narrative`` (+ model) field is added on success.
+        """
+        self._log('[LLM] Локальное AI-резюме (Ollama)…')
+        model = self.llm_model or _LLM_DEFAULT_MODEL
+        result = generate_llm_narrative(summary, model=model, log=self._log)
+        if result.get('status') == 'Success':
+            summary['narrative'] = result['narrative']
+            summary['narrative_model'] = result.get('model', model)
+            self._log('  AI-резюме добавлено')
+        else:
+            self._log(f'  AI-резюме пропущено ({result.get("status")})')
 
     def _phase_screenshot(self, url: str, project_dir: Path,
                           report: Dict) -> Dict:
