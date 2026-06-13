@@ -664,6 +664,28 @@ class CollectionRunner:
             body_parts.append(card('Subdomains', sbody,
                                    subdomains.get('status', '—')))
 
+        # TLS certificate (opt-in) — served-cert fields.
+        certificate = phases.get('certificate')
+        if certificate:
+            cdata = certificate.get('data', {})
+            if cdata:
+                _CERT_LABELS = [
+                    ('subject', 'Subject'), ('issuer', 'Issuer'),
+                    ('not_before', 'Not before'), ('not_after', 'Not after'),
+                    ('serial', 'Serial'), ('sans', 'SANs'),
+                    ('fingerprint_sha256', 'SHA-256'),
+                ]
+                rows = ''.join(
+                    f'<tr><td style="color:#666;padding:2px 12px 2px 0;">{e(lbl)}</td>'
+                    f'<td style="word-break:break-all;">{e(str(cdata[key]))}</td></tr>'
+                    for key, lbl in _CERT_LABELS if cdata.get(key))
+                cbody = f'<table style="font-size:13px;">{rows}</table>'
+            else:
+                cbody = (f'<p style="font-size:13px;color:#999;">'
+                         f'{e(certificate.get("reason", "—"))}</p>')
+            body_parts.append(card('TLS Certificate', cbody,
+                                   certificate.get('status', '—')))
+
         # Katana endpoints (opt-in external crawl).
         katana = phases.get('katana')
         if katana:

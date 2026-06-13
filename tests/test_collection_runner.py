@@ -66,6 +66,22 @@ def test_render_html_subdomains_card_flags_takeover():
     assert "<script" not in html.lower()
 
 
+def test_render_html_certificate_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"certificate": {"status": "Success", "data": {
+            "subject": "x.com", "issuer": "R3 (Let's Encrypt)",
+            "not_after": "Aug 1 2026", "fingerprint_sha256": "a" * 64}}},
+    }
+    html = r._render_html(report)
+    assert "TLS Certificate" in html
+    assert "x.com" in html and "Let&#x27;s Encrypt" in html  # issuer escaped
+    assert "Aug 1 2026" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

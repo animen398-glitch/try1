@@ -112,6 +112,13 @@ class FinalReportTabMixin:
             "Перечисление субдоменов (crt.sh/HackerTarget/… + активная проверка "
             "takeover). Доп. сетевые запросы; питает риск-движок и Scan Diff.")
         opt_row.addWidget(self.collect_subdomains)
+
+        # Opt-in TLS certificate capture (one handshake) — feeds Scan Diff.
+        self.collect_certificate = QCheckBox("TLS-сертификат")
+        self.collect_certificate.setToolTip(
+            "Снимает TLS-сертификат хоста (issuer/срок/SAN/отпечаток). "
+            "Scan Diff покажет смену сертификата между сканами.")
+        opt_row.addWidget(self.collect_certificate)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -198,6 +205,7 @@ class FinalReportTabMixin:
             llm=self.collect_llm.isChecked(),
             llm_model=self.settings.get('ollama_model') or None,
             subdomains=self.collect_subdomains.isChecked(),
+            certificate=self.collect_certificate.isChecked(),
         )
         self._active_collector = runner
 
