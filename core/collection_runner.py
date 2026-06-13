@@ -27,6 +27,7 @@ from core.analyzer_plugins import discover_analyzers, run_analyzers
 from core.api_key_extractor import ApiKeyExtractor
 from core.attack_surface import build_surface
 from core.attack_surface import render_interactive as render_surface_graph
+from core.cert_info import fetch_certificate
 from core.config import PLUGINS_DIR
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
@@ -62,7 +63,8 @@ class CollectionRunner:
                  cookies: Optional[str] = None, capture_delay: float = 0.5,
                  screenshots: bool = False, nuclei: bool = False,
                  katana: bool = False, llm: bool = False,
-                 llm_model: Optional[str] = None, subdomains: bool = False):
+                 llm_model: Optional[str] = None, subdomains: bool = False,
+                 certificate: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -82,6 +84,10 @@ class CollectionRunner:
         # feeds the risk engine's takeover signal and the Scan Diff subdomain
         # section. Off by default (it does extra network).
         self.subdomains = subdomains
+        # Opt-in TLS certificate capture — feeds the Scan Diff certificate
+        # section (renewal / issuer / SAN changes). Off by default (extra TLS
+        # handshake).
+        self.certificate = certificate
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -94,7 +100,8 @@ class CollectionRunner:
                   katana: Optional[bool] = None,
                   llm: Optional[bool] = None,
                   llm_model: Optional[str] = None,
-                  subdomains: Optional[bool] = None):
+                  subdomains: Optional[bool] = None,
+                  certificate: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -113,6 +120,8 @@ class CollectionRunner:
             self.llm_model = llm_model
         if subdomains is not None:
             self.subdomains = subdomains
+        if certificate is not None:
+            self.certificate = certificate
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -190,6 +199,9 @@ class CollectionRunner:
         # and the Scan Diff subdomain section.
         if self.subdomains and not self._cancelled(report):
             report['phases']['subdomains'] = self._phase_subdomains(url, scan_dir)
+        # 7c. TLS certificate (opt-in) → Scan Diff certificate section.
+        if self.certificate and not self._cancelled(report):
+            report['phases']['certificate'] = self._phase_certificate(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -423,6 +435,32 @@ class CollectionRunner:
             return {'status': result.get('status', 'Success'), 'data': data}
         except Exception as e:
             self._log(f'  Subdomain enumeration failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_certificate(self, url: str, project_dir: Path) -> Dict:
+        """Capture the served TLS certificate so Scan Diff can show changes
+        (renewal / issuer / SAN) between scans. https only; guarded."""
+        from urllib.parse import urlparse
+        self._log('[+] TLS certificate…')
+        parts = urlparse(url)
+        if parts.scheme != 'https':
+            return {'status': 'Skipped', 'reason': 'not https'}
+        try:
+            host = parts.hostname or parts.netloc.split(':')[0]
+            cert = fetch_certificate(host, parts.port or 443)
+            if not cert:
+                return {'status': 'Error', 'reason': 'no certificate retrieved'}
+            out = project_dir / 'security'
+            out.mkdir(exist_ok=True)
+            (out / 'certificate.json').write_text(
+                json.dumps(cert, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            self._log(f"  Cert: {cert.get('subject', '—')} / "
+                      f"issuer {cert.get('issuer', '—')}")
+            return {'status': 'Success', 'data': cert}
+        except Exception as e:
+            self._log(f'  Certificate capture failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_katana(self, url: str) -> Dict:

@@ -30,6 +30,7 @@ SECTION_PHASES = {
     'technologies': 'recon',
     'dependencies': 'recon',
     'headers':      'recon',
+    'certificates': 'certificate',
     'endpoints':    'katana',
     'findings':     'vulns',
 }
@@ -40,6 +41,7 @@ SECTION_TITLES = {
     'technologies': 'Технологии',
     'dependencies': 'Зависимости (JS)',
     'headers':      'HTTP-заголовки',
+    'certificates': 'TLS-сертификат',
     'endpoints':    'Эндпоинты (Katana)',
     'findings':     'Findings',
 }
@@ -148,6 +150,13 @@ def _extract_headers(report: Dict) -> Optional[Dict]:
     return merged
 
 
+def _extract_certificate(report: Dict) -> Optional[Dict]:
+    # The certificate phase stores the flat cert summary as its ``data``.
+    data = _data(report, 'certificate')
+    fields = {k: str(v) for k, v in data.items() if v not in (None, '')}
+    return fields or None
+
+
 def _extract_endpoints(report: Dict) -> Optional[Dict]:
     endpoints = _data(report, 'katana').get('endpoints')
     if not isinstance(endpoints, list):
@@ -172,6 +181,7 @@ _EXTRACTORS = {
     'technologies': _extract_technologies,
     'dependencies': _extract_dependencies,
     'headers':      _extract_headers,
+    'certificates': _extract_certificate,
     'endpoints':    _extract_endpoints,
     'findings':     _extract_findings,
 }
@@ -195,7 +205,7 @@ def _label(section: str, key, value) -> str:
         ver = value.get('version')
         flag = ' ⚠ vulnerable' if value.get('vulnerable') else ''
         return f'{key}' + (f' {ver}' if ver else '') + flag
-    if section == 'headers':
+    if section in ('headers', 'certificates'):
         return f'{key}: {value}'
     return str(key)
 

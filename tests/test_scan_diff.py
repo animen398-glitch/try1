@@ -8,7 +8,7 @@ from core.scan_diff import diff, render_html, summarize_line
 
 def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
             deps=None, headers=None, sec_headers=None, endpoints=None,
-            findings=None, level='Low', risk_100=4, subdomains=None):
+            findings=None, level='Low', risk_100=4, subdomains=None, cert=None):
     """A minimal but shape-faithful collection report."""
     phases = {
         'capture': {'status': 'Success',
@@ -31,6 +31,8 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
     if subdomains is not None:
         phases['subdomains'] = {'status': 'Success',
                                 'data': {'results': subdomains}}
+    if cert is not None:
+        phases['certificate'] = {'status': 'Success', 'data': cert}
     return {
         'scan_id': scan_id, 'finished_at': f'2026-06-13T0{1 if scan_id == "A" else 2}:00:00',
         'phases': phases,
@@ -116,6 +118,35 @@ def test_subdomains_added_removed_with_takeover_flag():
     assert sec['removed'] == ['old.x.com']
 
 
+def test_certificate_renewal_shows_changed_fields():
+    a = _report('A', cert={'issuer': 'R3 (Lets Encrypt)', 'serial': 'AA',
+                           'not_after': 'Aug 1 2026', 'fingerprint_sha256': 'a' * 64})
+    b = _report('B', cert={'issuer': 'R3 (Lets Encrypt)', 'serial': 'BB',
+                           'not_after': 'Nov 1 2026', 'fingerprint_sha256': 'b' * 64})
+    sec = diff(a, b)['sections']['certificates']
+    changed = {c['key']: (c['a'], c['b']) for c in sec['changed']}
+    assert changed['serial'] == ('AA', 'BB')               # renewed
+    assert changed['not_after'] == ('Aug 1 2026', 'Nov 1 2026')
+    assert 'fingerprint_sha256' in changed
+    assert sec['added'] == [] and sec['removed'] == []     # same field set
+
+
+def test_certificate_added_field():
+    a = _report('A', cert={'subject': 'x.com'})
+    b = _report('B', cert={'subject': 'x.com',
+                           'sans': 'x.com, www.x.com'})       # SAN appeared
+    sec = diff(a, b)['sections']['certificates']
+    assert sec['added'] == ['sans: x.com, www.x.com']
+
+
+def test_certificate_skipped_when_phase_absent_in_one():
+    a = _report('A', cert={'subject': 'x.com'})
+    b = _report('B')                            # no certificate phase in B
+    d = diff(a, b)
+    assert 'certificates' not in d['sections']
+    assert 'certificates' in d['skipped']
+
+
 def test_subdomains_skipped_when_phase_absent_in_one():
     a = _report('A', subdomains=[{'subdomain': 'a.x.com'}])
     b = _report('B')                       # no subdomain phase in B
@@ -184,7 +215,7 @@ def test_tolerates_empty_reports():
     assert d['sections'] == {}
     assert set(d['skipped']) == {'pages', 'subdomains', 'secrets',
                                  'technologies', 'dependencies', 'headers',
-                                 'endpoints', 'findings'}
+                                 'certificates', 'endpoints', 'findings'}
     assert d['is_empty'] is True
 
 
