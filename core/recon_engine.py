@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
+from core.dependency_audit import audit as audit_dependencies
 from core.infrastructure import build_infrastructure
 from core.tech_fingerprint import extract_script_srcs
 from core.tech_fingerprint import fingerprint as fingerprint_tech
@@ -305,6 +306,7 @@ class ReconEngine:
             'geo': {},
             'cms': [],
             'technologies': [],
+            'dependencies': {},
             'infrastructure': {},
             'favicons': [],
             'pwa_manifest': {},
@@ -362,10 +364,14 @@ class ReconEngine:
         result['cms_details']  = cms_details
         # Advanced technology fingerprint (CDN/infra/server/backend/analytics +
         # versions) from the response headers, body and script URLs.
+        script_srcs            = extract_script_srcs(html)
         result['technologies'] = fingerprint_tech(
-            headers=resp_headers, html=html,
-            scripts=extract_script_srcs(html),
+            headers=resp_headers, html=html, scripts=script_srcs,
         )
+        # Dependency vulnerability analysis (RetireJS-lite): detect JS libraries
+        # + versions and flag known-vulnerable ones. Findings fold into the
+        # vuln scan (VulnScanner._check_dependencies) → risk score / report.
+        result['dependencies'] = audit_dependencies(scripts=script_srcs, html=html)
         result['favicons']     = self._extract_favicons(html, url)
         result['pwa_manifest'] = self._fetch_pwa_manifest(html, url)
         result['status']       = 'Success'

@@ -39,9 +39,28 @@ def classify_status(status: Optional[int]) -> Dict[str, str]:
     return {'group': _ERR_GROUP, 'color': _ERR_COLOR}
 
 
+# Content-Type (MIME) → short response-type label for the site-map column.
+_TYPE_LABELS = [
+    ('html', 'html'), ('json', 'json'), ('javascript', 'js'), ('css', 'css'),
+    ('xml', 'xml'), ('image/', 'image'), ('font', 'font'), ('pdf', 'pdf'),
+    ('text/plain', 'text'),
+]
+
+
+def classify_type(content_type: Optional[str]) -> str:
+    """Map a MIME type to a short response-type label (``html``/``json``/…)."""
+    if not content_type:
+        return ''
+    ct = content_type.lower()
+    for needle, label in _TYPE_LABELS:
+        if needle in ct:
+            return label
+    return ct.split('/')[-1][:8]
+
+
 def _new_node(segment: str, path: str) -> Dict:
     return {'segment': segment, 'path': path, 'status': None,
-            'url': None, 'children': {}}
+            'url': None, 'content_type': None, 'depth': 0, 'children': {}}
 
 
 def build_tree(pages: List[Dict]) -> Dict:
@@ -60,25 +79,35 @@ def build_tree(pages: List[Dict]) -> Dict:
         segments = [s for s in path.split('/') if s]
         node = root
         acc = ''
-        for seg in segments:
+        for depth, seg in enumerate(segments, start=1):
             acc = f'{acc}/{seg}'
             child = node['children'].get(seg)
             if child is None:
                 child = _new_node(seg, acc)
+                child['depth'] = depth
                 node['children'][seg] = child
             node = child
         # Leaf (or root for '/') is the page itself.
         node['status'] = status
         node['url'] = url
+        node['content_type'] = p.get('content_type')
     return root
 
 
+def _page_depth(page: Dict) -> int:
+    d = page.get('depth')
+    if isinstance(d, int):
+        return d
+    return len([s for s in urlparse(page.get('url') or '').path.split('/') if s])
+
+
 def summarize(pages: List[Dict]) -> Dict[str, int]:
-    """Count pages per status group plus the total."""
+    """Count pages per status group plus the total and the max crawl depth."""
     counts = {g: 0 for g in GROUP_ORDER}
     for p in pages:
         counts[classify_status(p.get('status'))['group']] += 1
     counts['total'] = len(pages)
+    counts['max_depth'] = max((_page_depth(p) for p in pages), default=0)
     return counts
 
 
@@ -91,6 +120,15 @@ def _badge(status: Optional[int]) -> str:
             f'{html.escape(label)}</span>')
 
 
+def _type_chip(content_type: Optional[str]) -> str:
+    label = classify_type(content_type)
+    if not label:
+        return ''
+    return (f'<span style="display:inline-block;font-size:10px;color:#555;'
+            f'background:#eef1f5;border-radius:4px;padding:0 5px;margin-left:6px;">'
+            f'{html.escape(label)}</span>')
+
+
 def _render_children(node: Dict) -> str:
     children = node['children']
     if not children:
@@ -98,11 +136,13 @@ def _render_children(node: Dict) -> str:
     items = []
     for seg in sorted(children):
         child = children[seg]
-        badge = _badge(child['status']) if child['url'] is not None else ''
+        is_page = child['url'] is not None
+        badge = _badge(child['status']) if is_page else ''
+        chip = _type_chip(child.get('content_type')) if is_page else ''
         items.append(
             f'<li style="margin:2px 0;">'
             f'<span style="font-family:Consolas,Menlo,monospace;">'
-            f'{html.escape(seg)}</span>{badge}'
+            f'{html.escape(seg)}</span>{badge}{chip}'
             f'{_render_children(child)}</li>'
         )
     return (f'<ul style="list-style:none;margin:0;padding-left:18px;'
@@ -130,12 +170,14 @@ def render_html(pages: List[Dict]) -> str:
     segments = [(group, counts.get(group, 0), _group_color(group))
                 for group in GROUP_ORDER]
     legend = (f'<p style="margin:0 0 4px;font-size:12px;color:#666;">'
-              f'Страниц всего: <b>{counts["total"]}</b></p>'
+              f'Страниц всего: <b>{counts["total"]}</b> · '
+              f'макс. глубина: <b>{counts.get("max_depth", 0)}</b></p>'
               + stacked_bar(segments))
 
     tree = build_tree(pages)
     root_badge = _badge(tree['status']) if tree['url'] is not None else ''
+    root_chip = _type_chip(tree.get('content_type')) if tree['url'] is not None else ''
     body = (f'<div style="font-size:13px;"><span style='
             f'"font-family:Consolas,Menlo,monospace;font-weight:bold;">/</span>'
-            f'{root_badge}{_render_children(tree)}</div>')
+            f'{root_badge}{root_chip}{_render_children(tree)}</div>')
     return legend + body

@@ -15,8 +15,8 @@ def _capturer_with_recorded_sleep(monkeypatch, tmp_path, html, delay):
     cap = SiteContentCapture()
     cap.configure("https://x.com", str(tmp_path), max_pages=1, delay=delay)
     # One self-page, no outgoing links → exactly one fetch, then the pause.
-    # _fetch returns (status, html).
-    cap._fetch = lambda url: (200, html)
+    # _fetch returns (status, html, content_type).
+    cap._fetch = lambda url: (200, html, 'text/html')
     cap.run_capture()
     return slept
 

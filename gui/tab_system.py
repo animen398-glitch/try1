@@ -24,9 +24,10 @@ class SystemTabMixin:
 
     @staticmethod
     def _discover_analyzer_names() -> list:
-        """Names of analyzer plugins found in plugins/analyzers/ (never raises)."""
+        """Analyzer plugins found in plugins/analyzers/ as ``name vX`` (never raises)."""
         try:
-            return [p.name for p in discover_analyzers(PLUGINS_DIR / 'analyzers')]
+            plugins = discover_analyzers(PLUGINS_DIR / 'analyzers')
+            return [f"{p.name}  v{getattr(p, 'version', '1.0')}" for p in plugins]
         except Exception:
             return []
 

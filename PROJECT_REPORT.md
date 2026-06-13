@@ -1,6 +1,6 @@
 # Advanced Site Analyzer — Отчёт о состоянии проекта
 
-> Снимок на 2026-06-12. Это навигабельная «карта проекта»: здоровье, структура,
+> Снимок на 2026-06-13. Это навигабельная «карта проекта»: здоровье, структура,
 > найденные ошибки и с чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt).
 
@@ -10,14 +10,14 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **353 passed, 1 skipped** (сетенезависимые, Qt headless) |
+| Тесты | **413 passed, 1 skipped** (сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
 | Своих модулей / тест-файлов | 76 / 55 |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build |
-| Git | ветка `master`, **4 коммита не запушены** (см. §6) |
+| Git | ветка `master`, локальные feat-коммиты не запушены (Next-Gen TIER S/A) |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
 
@@ -42,7 +42,11 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 ### core/ — движки анализа
 | Модуль | Назначение |
 |---|---|
-| recon_engine | GeoIP + CMS-фингерпринт + фавиконы + PWA-манифест |
+| recon_engine | GeoIP + CMS-фингерпринт + tech-fingerprint + dependency-audit + infra + фавиконы + PWA-манифест |
+| tech_fingerprint | расширенный оффлайн tech-fingerprint (CDN/server/backend/analytics + версии) |
+| infrastructure | ASN/инфра-интеллидженс: цепочка Domain → ASN → IP → Provider |
+| dependency_audit | RetireJS-lite: детект JS-библиотек + версий и флаг известных уязвимых |
+| graphql_discovery | probe /graphql* + introspection-проверка (Security Audit) |
 | subdomain_scanner | пассив (crt.sh, HackerTarget, AlienVault, Anubis) + brute |
 | subdomain_active | HTTP-liveness + детект takeover |
 | dynamic_analyzer | перехват XHR/Fetch через Playwright |

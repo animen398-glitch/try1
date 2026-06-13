@@ -114,6 +114,39 @@ def build_surface(report: Dict) -> Dict:
             'categories': [c for c in candidates if c]}
 
 
+# Per-category weight for the Attack Surface Score — risk-bearing categories
+# (secrets, findings, source maps) count for more than mere breadth (pages/tech).
+_SCORE_WEIGHTS = {
+    'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'Endpoints': 2,
+    'Subdomains': 2, 'Technologies': 1, 'Infrastructure': 1, 'Pages': 1,
+}
+
+
+def surface_score(surface: Dict) -> int:
+    """Weighted breadth-of-exposure score from a built surface dict.
+
+    Sums ``weight × category count`` so a wide surface with secrets/findings
+    scores higher than one that only exposes a couple of technologies. Pure and
+    deterministic — feeds the Dashboard 'Attack Surface Score' card."""
+    total = 0
+    for cat in surface.get('categories', []):
+        total += _SCORE_WEIGHTS.get(cat.get('name'), 1) * int(cat.get('count', 0))
+    return total
+
+
+def score_band(score: int) -> str:
+    """Bucket a surface score into a coarse label for display."""
+    if score >= 40:
+        return 'Critical'
+    if score >= 20:
+        return 'High'
+    if score >= 8:
+        return 'Medium'
+    if score >= 1:
+        return 'Low'
+    return 'Minimal'
+
+
 def _node_rect(cx: float, cy: float, label: str, color: str,
                title: str = '', text_color: str = '#fff') -> str:
     e = html.escape

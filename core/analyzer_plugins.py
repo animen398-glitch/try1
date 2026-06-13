@@ -33,9 +33,15 @@ _VALID_SEVERITIES = {'High', 'Medium', 'Info'}
 
 
 class AnalyzerPlugin:
-    """Base class for analysis plugins. Subclass and override ``run``."""
+    """Base class for analysis plugins. Subclass and override ``run``.
+
+    ``run(results)`` receives the aggregated collection report (the plugin's
+    *context*) and returns a dict (optionally with a ``findings`` list). The
+    optional ``version`` is surfaced in the System tab and recorded per finding.
+    """
 
     name: str = 'unnamed-analyzer'
+    version: str = '1.0'
 
     def run(self, results: Dict) -> Dict:  # noqa: D401
         """Inspect ``results`` and return a dict (optionally with 'findings')."""
@@ -60,6 +66,11 @@ class AnalyzerRegistry:
 
     def names(self) -> List[str]:
         return [p.name for p in self._plugins]
+
+    def describe(self) -> List[Dict]:
+        """``[{name, version}]`` for each plugin — for the System-tab listing."""
+        return [{'name': p.name, 'version': str(getattr(p, 'version', '1.0'))}
+                for p in self._plugins]
 
     def __iter__(self):
         return iter(self._plugins)
@@ -149,6 +160,7 @@ def run_analyzers(analyzers: List[AnalyzerPlugin], results: Dict) -> Dict:
     errors: List[Dict] = []
     for plugin in analyzers:
         name = getattr(plugin, 'name', plugin.__class__.__name__)
+        version = str(getattr(plugin, 'version', '1.0'))
         try:
             output = plugin.run(results)
         except Exception as e:  # noqa: BLE001 — one bad plugin must not abort
@@ -157,5 +169,8 @@ def run_analyzers(analyzers: List[AnalyzerPlugin], results: Dict) -> Dict:
         if not isinstance(output, dict):
             output = {}
         by_name[name] = output
-        findings.extend(_clean_findings(output.get('findings'), default_source=name))
+        cleaned = _clean_findings(output.get('findings'), default_source=name)
+        for f in cleaned:
+            f['plugin_version'] = version    # provenance: which plugin build
+        findings.extend(cleaned)
     return {'results': by_name, 'findings': findings, 'errors': errors}

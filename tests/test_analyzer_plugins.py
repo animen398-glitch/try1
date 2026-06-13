@@ -56,6 +56,26 @@ def test_run_aggregates_and_tags_findings():
     assert 'good' in agg['results']
 
 
+def test_plugin_version_default_and_describe():
+    class Versioned(AnalyzerPlugin):
+        name = 'ver'
+        version = '2.3'
+
+        def run(self, results):
+            return {'findings': [{'severity': 'Info', 'title': 't'}]}
+
+    reg = AnalyzerRegistry()
+    reg.register(_Good)        # default version
+    reg.register(Versioned)
+    assert reg.describe() == [
+        {'name': 'good', 'version': '1.0'},
+        {'name': 'ver', 'version': '2.3'},
+    ]
+    # Findings carry the plugin version as provenance.
+    agg = run_analyzers([Versioned()], {'phases': {}})
+    assert agg['findings'][0]['plugin_version'] == '2.3'
+
+
 def test_run_isolates_crashing_plugin():
     class Boom(AnalyzerPlugin):
         name = 'boom'

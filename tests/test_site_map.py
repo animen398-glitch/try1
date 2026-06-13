@@ -24,6 +24,49 @@ def test_classify_status_groups():
     assert site_map.classify_status(200)['color'].startswith('#')
 
 
+# ── classify_type ───────────────────────────────────────────────────────────
+
+def test_classify_type_labels():
+    assert site_map.classify_type('text/html') == 'html'
+    assert site_map.classify_type('application/json') == 'json'
+    assert site_map.classify_type('application/javascript') == 'js'
+    assert site_map.classify_type('image/png') == 'image'
+    assert site_map.classify_type('') == ''
+    assert site_map.classify_type(None) == ''
+
+
+# ── depth + content_type in tree / summary ──────────────────────────────────
+
+def test_build_tree_records_depth_and_type():
+    pages = [
+        {'url': 'https://ex.com/blog/post', 'status': 200,
+         'content_type': 'text/html', 'depth': 2},
+    ]
+    tree = site_map.build_tree(pages)
+    blog = tree['children']['blog']
+    post = blog['children']['post']
+    assert blog['depth'] == 1
+    assert post['depth'] == 2
+    assert post['content_type'] == 'text/html'
+
+
+def test_summarize_reports_max_depth():
+    pages = [
+        {'url': 'https://ex.com/', 'status': 200},
+        {'url': 'https://ex.com/a/b/c', 'status': 200},
+    ]
+    summary = site_map.summarize(pages)
+    assert summary['max_depth'] == 3
+
+
+def test_render_html_shows_type_chip_and_depth():
+    pages = [{'url': 'https://ex.com/api', 'status': 200,
+              'content_type': 'application/json', 'depth': 1}]
+    out = site_map.render_html(pages)
+    assert 'json' in out               # response-type chip
+    assert 'глубина' in out            # max-depth in legend
+
+
 # ── build_tree ──────────────────────────────────────────────────────────────
 
 def test_build_tree_nests_by_path_segments():
@@ -78,7 +121,8 @@ def test_summarize_counts_each_group():
         {'url': 'https://e/d', 'status': None},
     ]
     s = site_map.summarize(pages)
-    assert s == {'2xx': 2, '3xx': 1, '4xx': 1, '5xx': 0, 'err': 1, 'total': 5}
+    assert s == {'2xx': 2, '3xx': 1, '4xx': 1, '5xx': 0, 'err': 1,
+                 'total': 5, 'max_depth': 1}
 
 
 # ── render_html ─────────────────────────────────────────────────────────────
@@ -119,12 +163,12 @@ def test_capture_writes_site_map_with_statuses(tmp_path, monkeypatch):
 
     pages = {
         'https://ex.com': (200, '<a href="https://ex.com/ok">o</a>'
-                                '<a href="https://ex.com/gone">g</a>'),
-        'https://ex.com/ok': (200, '<html>ok</html>'),
-        'https://ex.com/gone': (404, None),    # error page keeps its status
+                                '<a href="https://ex.com/gone">g</a>', 'text/html'),
+        'https://ex.com/ok': (200, '<html>ok</html>', 'text/html'),
+        'https://ex.com/gone': (404, None, 'text/html'),  # error page keeps status
     }
     monkeypatch.setattr(cap, '_fetch',
-                        lambda url: pages.get(url, (None, None)))
+                        lambda url: pages.get(url, (None, None, None)))
 
     result = cap.run_capture()
 

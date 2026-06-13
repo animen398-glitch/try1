@@ -995,9 +995,55 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         4) tests/test_infrastructure.py (12) + recon/attack_surface-интеграция.
         ИТОГ: см. S1 (общий прогон). Без новых зависимостей.
 
-  TIER A (очередь после TIER S):
-    A1 CF7 GraphQL Discovery · A2 CF10 Dependency Vuln (RetireJS-lite) ·
-    A3 CF13 Attack Surface Score (Dashboard) · A4 CF15 AnalyzerPlugin
-    version/context · A5 CF2 Site Map depth+response-type.
+  A1 CF7 GraphQL Discovery — [DONE] 2026-06-13
+      core/graphql_discovery.py — GraphQLDiscovery: пробит CANDIDATE_PATHS
+      (/graphql, /api/graphql, /graphql/v1, …) POST-запросом {__typename};
+      _looks_like_graphql (JSON c data|errors) → endpoint; затем introspection-
+      запрос {__schema...} → _introspection_open. findings (introspection→Medium,
+      просто endpoint→Info, source='graphql-discovery'). Сеть изолирована в _post
+      (инъекция в тестах, I5). Интеграция: security_auditor.audit() (graphql=True
+      по умолчанию, opt-out) → result['graphql'] + summary.graphql/
+      graphql_introspection; GUI tab_security показывает счётчик в статус-строке.
+      tests/test_graphql_discovery.py (8) + security_auditor-интеграция (stubbed).
+
+  A2 CF10 Dependency Vulnerability (RetireJS-lite) — [DONE] 2026-06-13
+      core/dependency_audit.py — ЧИСТЫЙ stdlib: detect_libraries(scripts,html)
+      по regex имя+версия (jquery/angular/react/vue/lodash/bootstrap/moment/
+      handlebars/dompurify/jquery-ui), _VULN_DB с диапазонами (below/at_or_above)
+      и severity; audit()→{libraries(+vulnerabilities), findings(vuln-shape,
+      source='dependency-audit')}; render_html (оффлайн, уязвимые подсвечены).
+      Интеграция: recon_engine.run_recon → result['dependencies']=audit(scripts,
+      html); VulnScanner._check_dependencies вливает findings → risk_score/exec/
+      attack-surface/отчёт. collection_runner — карточка «Dependencies».
+      tests/test_dependency_audit.py (16) + vuln_scanner-интеграция.
+
+  A3 CF13 Attack Surface Score (Dashboard) — [DONE] 2026-06-13
+      attack_surface.surface_score(surface) — взвешенная сумма по категориям
+      (Secrets×5, Findings/SourceMaps×3, Endpoints/Subdomains×2, прочее×1) +
+      score_band(score)→Minimal/Low/Medium/High/Critical. executive_summary
+      .build_summary добавляет metrics.attack_surface_score/_band (reuse
+      build_surface); display_cards отдаёт 'attack_surface'(+band); Dashboard
+      Security Overview получил карточку «Attack Surface». tests: attack_surface
+      (score/band) + dashboard_security (display_cards).
+
+  A4 CF15 AnalyzerPlugin version/context — [DONE] 2026-06-13
+      analyzer_plugins.AnalyzerPlugin.version (default '1.0', контекст = report);
+      AnalyzerRegistry.describe()→[{name,version}]; run_analyzers тегирует
+      findings plugin_version. GUI tab_system показывает «name vX». Обратно-
+      совместимо (run(results) не менялся). tests: test_analyzer_plugins.
+
+  A5 CF2 Site Map depth + response-type — [DONE] 2026-06-13
+      content_capture._fetch → (status, html, content_type); записи site_map
+      получили content_type + depth. site_map.classify_type(MIME)→краткий лейбл
+      (html/json/js/css/image/…); build_tree хранит depth+content_type; summarize
+      → max_depth; render показывает type-чип у листьев + макс. глубину в легенде.
+      tests: test_site_map (classify_type/depth/max_depth/render) + обновлены
+      stubbed _fetch в test_capture_delay/test_site_map.
+
+  ИТОГ TIER S + TIER A: 413 passed, 1 skipped; ruff чист. Без новых зависимостей.
+  ВСЕ TIER S и TIER A из [NEXT GENERATION AUDIT] ЗАКРЫТЫ. Осознанно отложены
+  (архитектурные причины): TIER B (B1 мульти-тип скриншоты, B2 интерактивный
+  граф), TIER C (LLM exec summary, живая secret-валидация), REJECTED (JS AST,
+  CDN-JS граф, облачный AI).
 
 ==============================================================================

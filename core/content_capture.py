@@ -50,13 +50,14 @@ class SiteContentCapture:
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
 
-    def _fetch(self, url: str) -> Tuple[Optional[int], Optional[str]]:
-        """Fetch ``url`` → ``(status, html)``.
+    def _fetch(self, url: str) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+        """Fetch ``url`` → ``(status, html, content_type)``.
 
         ``status`` is the HTTP code the server returned — including 4xx/5xx
         (captured so the site map can colour them) — or ``None`` on a transport
         error/timeout. ``html`` is the decoded body for a successful page, else
-        ``None``.
+        ``None``. ``content_type`` is the response MIME (sans parameters), for
+        the site map's response-type column, or ``None`` when unavailable.
         """
         try:
             session = SessionBuilder(self._profile)
@@ -65,6 +66,7 @@ class SiteContentCapture:
             with opener.open(req, timeout=15) as r:
                 raw = r.read()
                 status = getattr(r, 'status', None) or r.getcode()
+                ctype = (r.headers.get('Content-Type', '') or '').split(';')[0].strip() or None
                 enc = r.headers.get('Content-Encoding', '').lower().strip()
                 if enc == 'gzip' or (not enc and raw[:2] == b'\x1f\x8b'):
                     raw = gzip.decompress(raw)
@@ -73,11 +75,14 @@ class SiteContentCapture:
                         raw = zlib.decompress(raw)
                     except zlib.error:
                         raw = zlib.decompress(raw, -zlib.MAX_WBITS)
-                return status, raw.decode('utf-8', errors='ignore')
+                return status, raw.decode('utf-8', errors='ignore'), ctype
         except HTTPError as e:
-            return e.code, None        # 4xx/5xx — keep the code for the site map
+            ctype = None
+            if getattr(e, 'headers', None):
+                ctype = (e.headers.get('Content-Type', '') or '').split(';')[0].strip() or None
+            return e.code, None, ctype   # 4xx/5xx — keep the code for the site map
         except Exception:
-            return None, None          # transport error / timeout — no status
+            return None, None, None      # transport error / timeout — no status
 
     def _extract_links(self, html: str, base: str) -> List[str]:
         links = re.findall(r'href=["\']([^"\']+)["\']', html)
@@ -128,15 +133,18 @@ class SiteContentCapture:
             if self.progress_callback:
                 self.progress_callback(f"Сканирую: {url}")
 
-            status, html = self._fetch(url)
+            status, html, ctype = self._fetch(url)
+            depth = len([s for s in urlparse(url).path.split('/') if s])
             if not html:
                 result['errors'].append(url)
-                self._site_map.append({'url': url, 'status': status})
+                self._site_map.append({'url': url, 'status': status,
+                                       'content_type': ctype, 'depth': depth})
                 continue
 
             saved = self._save_page(url, html)
             self.captured.append({'url': url, 'file': saved, 'status': status})
-            self._site_map.append({'url': url, 'status': status, 'file': saved})
+            self._site_map.append({'url': url, 'status': status, 'file': saved,
+                                   'content_type': ctype, 'depth': depth})
             result['files'].append(saved)
 
             new_links = self._extract_links(html, url)

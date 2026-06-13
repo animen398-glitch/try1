@@ -51,10 +51,11 @@ class DashboardTabMixin:
 
     # (ключ метрики -> подпись карточки) для Security Overview.
     SECURITY_STATS = [
-        ('risk_score', 'Risk score'),
-        ('secrets',    'Секреты'),
-        ('high',       'High'),
-        ('medium',     'Medium'),
+        ('risk_score',     'Risk score'),
+        ('attack_surface', 'Attack Surface'),
+        ('secrets',        'Секреты'),
+        ('high',           'High'),
+        ('medium',         'Medium'),
     ]
 
     ENDPOINTS_COLUMNS = ["Endpoint", "Count", "Sources", "Patterns"]
@@ -324,6 +325,10 @@ class DashboardTabMixin:
         self.sec_risk_label.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {c['risk_color']};")
         self.sec_stats['risk_score'].setText(c['risk_score'])
+        surface_text = c['attack_surface']
+        if c['available'] and c.get('attack_surface_band') not in ('—', None):
+            surface_text = f"{c['attack_surface']} ({c['attack_surface_band']})"
+        self.sec_stats['attack_surface'].setText(surface_text)
         self.sec_stats['secrets'].setText(c['secrets'])
         self.sec_stats['high'].setText(c['high'])
         self.sec_stats['medium'].setText(c['medium'])

@@ -103,12 +103,19 @@ class SecurityAuditTabMixin:
         self._populate_sourcemap_table(result.get('source_maps', []))
 
         s = result.get('summary', {})
+        gql = s.get('graphql', 0)
+        gql_part = ''
+        if gql:
+            intro = s.get('graphql_introspection', 0)
+            gql_part = (f"  |  GraphQL: {gql}"
+                        + (f" (introspection: {intro})" if intro else ""))
         self.security_status.setText(
             f"Секретов: {s.get('secrets', 0)}  |  "
             f"эндпоинтов: {s.get('endpoints', 0)}  |  "
             f"source maps: {s.get('source_maps', 0)} "
             f"(с исходниками: {s.get('maps_with_content', 0)})  |  "
             f"JS просканировано: {s.get('scanned_scripts', 0)}"
+            f"{gql_part}"
         )
         self._save_target(self.security_url.text().strip())
 

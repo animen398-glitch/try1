@@ -34,10 +34,28 @@ _CORPUS = {
 }
 
 
-def _auditor(corpus=_CORPUS):
-    a = SecurityAuditor()
+def _auditor(corpus=_CORPUS, graphql=False):
+    # GraphQL probing does real POSTs; keep it off for the offline secret/map
+    # tests (it has its own stubbed test below).
+    a = SecurityAuditor(graphql=graphql)
     a._fetch = lambda url: corpus.get(url)   # type: ignore[assignment]
     return a
+
+
+def test_graphql_discovery_folds_into_result(monkeypatch):
+    a = _auditor(graphql=True)
+    # Stub the network: /graphql speaks GraphQL with introspection open.
+    def fake_discover(url):
+        return {'endpoints': [
+            {'url': 'https://t.example.com/graphql', 'graphql': True,
+             'introspection': True}]}
+    monkeypatch.setattr(
+        'core.graphql_discovery.GraphQLDiscovery.discover',
+        lambda self, url: fake_discover(url))
+    result = a.audit('https://t.example.com')
+    assert result['summary']['graphql'] == 1
+    assert result['summary']['graphql_introspection'] == 1
+    assert result['graphql'][0]['url'].endswith('/graphql')
 
 
 def test_audit_collects_secrets_endpoints_and_maps():

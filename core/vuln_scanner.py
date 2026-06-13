@@ -47,6 +47,7 @@ class VulnScanner:
         self._check_referrer_policy(recon_result, findings)
         self._check_frame_options(recon_result, findings)
         self._check_server_disclosure(recon_result, findings)
+        self._check_dependencies(recon_result, findings)
         self._check_sensitive_paths(dynamic_result, findings)
         self._check_cookies(cookie_result, findings)
         self._check_cms_info(recon_result, findings)
@@ -180,6 +181,13 @@ class VulnScanner:
                     'title': f"Server technology disclosed via {k} header",
                     'detail': v[:120],
                 })
+
+    def _check_dependencies(self, recon: Dict, findings: List[Dict]):
+        """Merge known-vulnerable JS library findings from recon's dependency
+        audit (already in finding shape: severity/title/detail/source)."""
+        dep = recon.get('dependencies')
+        if isinstance(dep, dict):
+            findings.extend(dep.get('findings', []))
 
     def _check_cookies(self, cookie_result: Optional[Dict], findings: List[Dict]):
         """Flag insecure cookies from a CookieAuditor result (if provided)."""

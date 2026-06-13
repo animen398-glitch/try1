@@ -31,6 +31,7 @@ from core.attack_surface import build_surface, render_svg as render_surface_svg
 from core.config import PLUGINS_DIR
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
+from core.dependency_audit import render_html as render_dependencies
 from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
 from core.external_tools import KatanaRunner, NucleiRunner
@@ -455,6 +456,14 @@ class CollectionRunner:
         if technologies:
             body_parts.append(card(
                 'Technology Fingerprint', render_technologies(technologies),
+                recon.get('status', '—'),
+            ))
+
+        # Dependencies — detected JS libraries + versions, vulnerable ones flagged.
+        dependencies = rd.get('dependencies')
+        if dependencies and dependencies.get('libraries'):
+            body_parts.append(card(
+                'Dependencies (JS libraries)', render_dependencies(dependencies),
                 recon.get('status', '—'),
             ))
 

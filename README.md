@@ -27,9 +27,9 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Image Extractor | Оригинальное разрешение без водяных знаков; Instagram/соцсети через yt-dlp |
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
-| Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map |
+| Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map + GraphQL-discovery (probe /graphql* + introspection) |
 | Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешние nuclei/katana) |
-| Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down + Security Overview (вердикт риска / секреты / findings из последнего Full Collection) |
+| Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down + Security Overview (вердикт риска / Attack Surface Score / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite) |
 | System | Очередь задач, экспорт данных, системные логи |
 

@@ -83,6 +83,12 @@ def build_summary(report: Dict) -> Dict:
               + _int(status_summary.get('err')))
     pages = _int(capture.get('pages_captured'))
 
+    # Attack surface breadth (reuses the graph categories) — a separate axis
+    # from the risk verdict: how much of the target is exposed/enumerated.
+    from core.attack_surface import build_surface, score_band, surface_score
+    surface = build_surface(report)
+    surface_pts = surface_score(surface)
+
     # Leaked secrets and weak cookies are first-class signals on top of the
     # vuln-weighted score (secrets weigh heaviest — client-side key exposure).
     score = vuln_score + secrets * 5 + weak_cookies * 2
@@ -93,6 +99,8 @@ def build_summary(report: Dict) -> Dict:
         'secrets': secrets, 'weak_cookies': weak_cookies,
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
+        'attack_surface_score': surface_pts,
+        'attack_surface_band': score_band(surface_pts),
     }
 
     key_findings: List[str] = []
@@ -188,7 +196,7 @@ def display_cards(sec: Optional[Dict]) -> Dict:
     if not sec:
         return {'available': False, 'risk_level': '—', 'risk_color': '#888',
                 'risk_score': '0', 'secrets': '0', 'high': '0', 'medium': '0',
-                'source': ''}
+                'attack_surface': '0', 'attack_surface_band': '—', 'source': ''}
     metrics = sec.get('metrics', {})
     level = sec.get('risk_level', '—')
     return {
@@ -199,6 +207,8 @@ def display_cards(sec: Optional[Dict]) -> Dict:
         'secrets': str(metrics.get('secrets', 0)),
         'high': str(metrics.get('high', 0)),
         'medium': str(metrics.get('medium', 0)),
+        'attack_surface': str(metrics.get('attack_surface_score', 0)),
+        'attack_surface_band': str(metrics.get('attack_surface_band', '—')),
         'source': sec.get('_source', ''),
     }
 

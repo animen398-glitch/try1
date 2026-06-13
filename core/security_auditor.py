@@ -20,6 +20,7 @@ from typing import Callable, Dict, List, Optional
 from urllib.parse import urljoin
 
 from core.dynamic_analyzer import extract_js_urls
+from core.graphql_discovery import GraphQLDiscovery
 from core.secret_scanner import SecretScanner
 from core.source_map_parser import SourceMapParser
 from utils.browser_utils import SessionBuilder
@@ -34,12 +35,16 @@ class SecurityAuditor:
     """Fetch a site + its JS and report secrets, endpoints and source maps."""
 
     def __init__(self, profile: str = 'chrome_windows',
-                 max_scripts: int = 25, timeout: int = 12):
+                 max_scripts: int = 25, timeout: int = 12,
+                 graphql: bool = True):
         self._session = SessionBuilder(profile)
         self._scanner = SecretScanner()
         self._smparser = SourceMapParser(self._scanner)
         self.max_scripts = max_scripts
         self.timeout = timeout
+        # Probe conventional GraphQL endpoints + introspection (on by default).
+        self.graphql = graphql
+        self._profile = profile
         self.progress_callback: Optional[Callable] = None
         self._cancel = None
 
@@ -106,7 +111,7 @@ class SecurityAuditor:
 
         result: Dict = {
             'status': 'Error', 'url': url, 'secrets': [], 'endpoints': [],
-            'source_maps': [], 'scanned_scripts': 0, 'summary': {},
+            'source_maps': [], 'graphql': [], 'scanned_scripts': 0, 'summary': {},
         }
 
         self._log(f'[SecurityAudit] Fetching page: {url}')
@@ -145,11 +150,21 @@ class SecurityAuditor:
         result['secrets'] = self._dedup_secrets(secrets)
         result['endpoints'] = list(endpoints.values())
         result['source_maps'] = source_maps
+
+        # GraphQL endpoint discovery + introspection check (opt-out).
+        graphql_eps: List[Dict] = []
+        if self.graphql and not self._cancelled():
+            graphql_eps = self._discover_graphql(url)
+        result['graphql'] = graphql_eps
+
         result['summary'] = {
             'secrets': len(result['secrets']),
             'endpoints': len(result['endpoints']),
             'source_maps': len(source_maps),
             'maps_with_content': sum(1 for m in source_maps if m.get('has_content')),
+            'graphql': len(graphql_eps),
+            'graphql_introspection': sum(1 for g in graphql_eps
+                                         if g.get('introspection')),
             'scanned_scripts': scanned,
         }
         result['status'] = 'Success'
@@ -161,6 +176,16 @@ class SecurityAuditor:
         return result
 
     # --------------------------------------------------------------- helpers
+
+    def _discover_graphql(self, url: str) -> List[Dict]:
+        """Probe conventional GraphQL endpoints; never fatal."""
+        try:
+            disco = GraphQLDiscovery(profile=self._profile, timeout=self.timeout)
+            disco.set_progress_callback(self.progress_callback)
+            return disco.discover(url).get('endpoints', [])
+        except Exception as e:  # noqa: BLE001
+            self._log(f'  ! GraphQL discovery failed: {e}')
+            return []
 
     def _unique_script_srcs(self, html: str, base_url: str) -> List[str]:
         seen: set = set()

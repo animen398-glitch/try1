@@ -77,6 +77,15 @@ def test_display_cards_fills_from_summary(tmp_path):
     assert str(tmp_path) in c['source']
 
 
+def test_display_cards_exposes_attack_surface():
+    from core.executive_summary import display_cards
+    c = display_cards({'risk_level': 'Medium', 'risk_score': 5,
+                       'metrics': {'attack_surface_score': 16,
+                                   'attack_surface_band': 'Medium'}})
+    assert c['attack_surface'] == '16'
+    assert c['attack_surface_band'] == 'Medium'
+
+
 def test_display_cards_empty_state():
     from core.executive_summary import display_cards
     c = display_cards(None)

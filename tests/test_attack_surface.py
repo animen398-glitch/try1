@@ -76,6 +76,30 @@ def test_build_surface_caps_items():
 
 # ── render_svg ──────────────────────────────────────────────────────────────
 
+# ── surface_score / score_band ──────────────────────────────────────────────
+
+def test_surface_score_weights_risk_categories():
+    surface = {'categories': [
+        {'name': 'Secrets', 'count': 2},        # 2 × 5 = 10
+        {'name': 'Technologies', 'count': 3},   # 3 × 1 = 3
+        {'name': 'Findings', 'count': 1},        # 1 × 3 = 3
+    ]}
+    assert asf.surface_score(surface) == 16
+
+
+def test_surface_score_empty_is_zero():
+    assert asf.surface_score({'categories': []}) == 0
+    assert asf.surface_score({}) == 0
+
+
+def test_score_band_thresholds():
+    assert asf.score_band(0) == 'Minimal'
+    assert asf.score_band(3) == 'Low'
+    assert asf.score_band(10) == 'Medium'
+    assert asf.score_band(25) == 'High'
+    assert asf.score_band(40) == 'Critical'
+
+
 def test_render_svg_is_offline_inline():
     surface = asf.build_surface(_report(
         recon={'data': {'cms': ['React']}},
