@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **675 passed, 3 skipped** (678 собрано; сетенезависимые, Qt headless) |
+| Тесты | **691 passed, 3 skipped** (694 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -76,6 +76,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | email_intel | **Email Intelligence (#13 OSINT)**: сбор e-mail адресов из homepage/robots.txt/sitemap.xml (stdlib re); чистая экстракция/классификация (фильтр шума: ассеты, плейсхолдеры, version-строки) → группировка на домене/внешние + по ролям (security/admin/support/sales/…); фетч отделён от экстракции (инъектируемый) → тесты без сети; питает отчёт (карточка) и Scan Diff (секция emails) |
 | employee_intel | **Employee Intelligence (#13 OSINT)**: имена сотрудников со страниц team/about/leadership из структурных источников (JSON-LD `Person` + личные `mailto`, role-фильтр через email_intel); по парам имя↔адрес выводит корпоративный формат e-mail ({first}.{last}, {f}{last}, …) и достраивает вероятные адреса (помечены `inferred`, без догадок без on-domain-доказательств); фетч отделён от чистого roster (инъектируемый) → тесты без сети; питает отчёт (карточка) и Scan Diff (секция employees) |
 | ct_history | **Certificate Transparency History (#13 OSINT)**: история сертификатов домена из crt.sh (то, что subdomain-сканер выбрасывает — временна́я/issuer-метадата): центры сертификации (CA), окна валидности, первое/последнее появление в логах, недавние (≤90 дн.) и wildcard-сертификаты, активные/истёкшие; сетевой fetch отделён от чистого `analyze` (с инъектируемым `now`) → тесты без сети и детерминированы по времени; информационный (в риск-движок не идёт), питает отчёт (карточка) и Scan Diff (секция ct — новый сертификат по crt.sh id) |
+| findings_status | **Findings Management (#14)**: триаж-статусы находок (open/in_progress/fixed/ignored) с устойчивым fingerprint (severity+source+нормализ. title, маскирует волатильные счётчики) и хранением в проекте (`findings.json`); чистые `apply` (мердж скана: новое→open, статус/заметка сохраняются, исчезнувшее помечается present=False), `set_status`, `decorate`, `summarize`; collection_runner синхронит статусы каждый скан ПЕРЕД exec-summary; fixed/ignored **исключаются из риск-движка** (триаж false-positive снижает балл); питает отчёт (карточка). Оффлайн, stdlib only |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
@@ -188,7 +189,13 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
   сертификатов из crt.sh — CA/сроки/первое-последнее появление/недавние+
   wildcard; опц. фаза collection «CT-история», карточка, Scan Diff секция ct).
   **Бандл #13 (DNS + Email + Employee + CT) закрыт.**
-- **#14 Findings Management** — статусы OPEN/IN_PROGRESS/FIXED/IGNORED (оффлайн).
+- **#14 Findings Management — [ГОТОВО]** (`core/findings_status.py`): триаж-
+  статусы OPEN/IN_PROGRESS/FIXED/IGNORED с устойчивым fingerprint, хранение в
+  `Projects/<slug>/findings.json`, авто-синк статусов на каждом скане, карточка
+  в отчёте. FIXED/IGNORED исключаются из риск-движка (build_summary
+  status-aware при наличии статусов; иначе поведение не меняется). Оффлайн.
+  GUI-вкладка для ручного триажа — возможное расширение (статусы сейчас через
+  Project API).
 
 Осознанно вне скоупа (нарушают инварианты по своей природе):
 - **C2 «живая» сетевая secret-валидация** (отправка ключа провайдеру) — dual-use/приватность.

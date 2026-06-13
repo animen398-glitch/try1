@@ -1861,3 +1861,47 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       БАНДЛ #13 (OSINT) ПОЛНОСТЬЮ ЗАКРЫТ: DNS + Email + Employee + CT-история.
 
 ==============================================================================
+
+  ROADMAP #14 — Findings Management — [DONE] 2026-06-13
+      Управление жизненным циклом находок: open/in_progress/fixed/ignored,
+      оффлайн, с хранением в проекте. Иной тип фичи, чем #13 (не recon-фаза, а
+      stateful-триаж над уже найденным) — поэтому НЕ чекбокс/опц.-фаза, а
+      авто-синк состояния. Stdlib only, чистое ядро (I1/I2/I5). Решения по
+      ходу (через AskUserQuestion): (a) GUI — только движок + карточка отчёта,
+      без новой Qt-вкладки (статусы через Project API; вкладка — расширение);
+      (b) риск — fixed/ignored ИСКЛЮЧАЮТСЯ из риск-движка (триаж имеет смысл).
+        1) core/findings_status.py — ЧИСТОЕ ядро: fingerprint(finding) устойчив
+           (severity+source+нормализ. title; _norm_title маскирует волатильные
+           счётчики: «Missing security headers (3)» и «(5)» → один fp). apply(
+           state, findings, now, scan_id) мердж: новое→open, известное хранит
+           статус/заметку + обновляет title/severity/last_seen/last_scan,
+           исчезнувшее present=False (не мутирует вход). set_status (валидирует
+           статус/fingerprint), is_active (не fixed/ignored), decorate (штампует
+           status+fingerprint на находки, unknown→open), summarize (счётчики по
+           статусам + active/present/total), render_html оффлайн.
+        2) core/project.py — findings.json (отдельно от metadata, т.к. может
+           быть крупным): load_findings/save_findings + sync_findings (мердж+
+           сохранение) + set_finding_status (ручной статус). Толерантно к
+           отсутствию/порче (→ {}).
+        3) core/executive_summary.py — build_summary СТАЛ status-aware: ЕСЛИ
+           хоть у одной находки есть 'status' — отбрасывает fixed/ignored и
+           пересчитывает counts через VulnScanner.summarize(active). Guard
+           «any status» оставляет поведение для отчётов/тестов БЕЗ статусов
+           идентичным (нулевой blast-radius).
+        4) core/collection_runner.py — _sync_findings_status(report, project,
+           scan_id) ПЕРЕД build_summary: синк состояния проекта, decorate
+           находок в vulns-фазе статусом, report['findings_status']={summary,
+           state}; карточка «Findings Management» в отчёте. Best-effort (не
+           валит скан).
+        5) tests: test_findings_status.py (12: fingerprint стабильность/различие,
+           apply new-open/preserve-absent/no-mutate, set_status валидация,
+           decorate, is_active+summarize, render offline/empty, build_summary
+           исключает inactive / без статусов не меняется) + test_project (+2:
+           sync+persist+статус переживает re-sync, толерантность к порче) +
+           test_collection_runner (+2: синк персистит+декорирует, карточка).
+        ИТОГ: 691 passed, 3 skipped (694 собрано); ruff чист. Без новых
+        зависимостей.
+      ОСТАЛОСЬ опц. по #14: интерактивная GUI-вкладка ручного триажа (движок и
+      персист готовы; статусы сейчас через Project API).
+
+==============================================================================
