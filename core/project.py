@@ -150,6 +150,18 @@ class Project:
     def scans(self) -> List[Dict]:
         return self.load_metadata().get('scans', [])
 
+    def load_scan_report(self, scan_id: str) -> Optional[Dict]:
+        """Full ``report.json`` of one scan, or ``None`` if absent/corrupt.
+
+        The single place that knows where a scan's report lives (I3) — e.g.
+        ``core.scan_diff`` stays a pure function over the dicts this returns.
+        """
+        path = self.root / 'scans' / scan_id / 'report.json'
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except Exception:
+            return None
+
     def latest_scan(self) -> Optional[Dict]:
         return self.load_metadata().get('latest_scan')
 
