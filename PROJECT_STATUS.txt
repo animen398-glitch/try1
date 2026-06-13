@@ -1376,8 +1376,43 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
            (+1 clear/идемпотентность) + test_dashboard_clear (+2: confirm-
            удаляет / cancel-сохраняет со стабом диалога и tmp-БД).
         Прим.: happy-path сетевых модулей (recon/subdomain) уже покрыт ранее
-        (test_recon_engine/test_subdomain_cache на моках). Осталось маргинальное/
-        заблокированное — см. PROJECT_REPORT §6.
+        (test_recon_engine/test_subdomain_cache на моках).
         ИТОГ: 516 passed, 1 skipped (517 собрано); ruff чист.
+
+  UNBLOCK — Scan Diff subdomains: subdomain-фаза в collection — [DONE] 2026-06-13
+      Закрывает «заблокировано» из PROJECT_REPORT §6 И примечание P3 (collection
+      не запускал subdomain/security фазы → takeovers=0 в его отчётах). Теперь
+      collection умеет опц. subdomain-фазу.
+        1) collection_runner — опц. флаг subdomains=False; _phase_subdomains(url,
+           dir): SubdomainScanner.scan(host, passive=True, brute=False,
+           active=True) (active нужен для takeover-детекта). РЕЗУЛЬТАТ ОБЁРНУТ
+           как {summary:{total,live_count,takeover_candidates}, results:[…]} —
+           ровно та форма, что executive_summary._count_takeovers уже читал
+           (data.summary.takeover_candidates), поэтому риск-движок (P3) ТЕПЕРЬ
+           получает takeover-сигнал из collection без правок. Артефакт
+           subdomains/subdomains.json. Guarded, off по умолчанию (доп. сеть).
+        2) scan_diff — секция 'subdomains' (SECTION_PHASES/_EXTRACTORS/_SET_LIKE):
+           added/removed по хостам из data.results, takeover-кандидаты помечены
+           «⚠ takeover» в подписи; честный skip, если фаза отсутствует в одном
+           из сканов.
+        3) attack_surface.build_surface — категория Subdomains (вес/цвет уже
+           были) из data.results. collection report — карточка «Subdomains»
+           (takeover-кандидаты красным). GUI tab_collection — чекбокс
+           «Субдомены (passive + takeover)» (без gating — пассивные источники
+           всегда доступны).
+        4) tests: test_scan_diff (+2: subdomains added/removed+takeover-флаг,
+           skip; обновлён empty-skipped набор), test_collection_runner (+4:
+           default-off, фаза-обёртка+артефакт, takeover→Critical через
+           build_summary, рендер карточки с takeover), test_attack_surface
+           (+1: категория Subdomains).
+        ИТОГ: 523 passed, 1 skipped (524 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальное перечисление iana.org]: passive-скан
+        нашёл 33 реальных субдомена (hackertarget); граф получил категорию
+        Subdomains(33); риск-движок прочитал takeover-метрику; Scan Diff показал
+        +1/-1 — удалён реальный beta.iana.org, добавлен takeover-хост с флагом
+        ⚠. End-to-end разблокировка подтверждена. RESULT: PASS.
+        Прим.: секция СЕРТИФИКАТОВ в Scan Diff остаётся (collection их не
+        собирает — отдельная фаза по запросу).
 
 ==============================================================================

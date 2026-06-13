@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **516 passed, 1 skipped** (517 собрано; сетенезависимые, Qt headless) |
+| Тесты | **523 passed, 1 skipped** (524 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -64,8 +64,8 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | vuln_scanner / vuln_report | правила уязвимостей + экспорт HTML/JSON/PDF |
 | api_key_extractor / api_dumper | поиск ключей / дамп API-ответов |
 | project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json); `load_scan_report` для diff |
-| scan_diff | **оффлайн-diff двух сканов проекта** (страницы/секреты/тех/зависимости/заголовки/эндпоинты/findings + дельта риска), HTML-отчёт |
-| collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/ |
+| scan_diff | **оффлайн-diff двух сканов проекта** (страницы/субдомены/секреты/тех/зависимости/заголовки/эндпоинты/findings + дельта риска), HTML-отчёт |
+| collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
 | llm_summary | опц. LLM-резюме через **локальный Ollama** (stdlib urllib, graceful, ничего не уходит с машины) |
@@ -155,11 +155,14 @@ TIER S/A/B, и TIER C в безопасных вариантах (C1 — localho
   удалением из registry.db (`DataRegistry.clear()`).
 - [ПОКРЫТО РАНЕЕ] Happy-path сетевых модулей: recon (`test_recon_engine`) и
   subdomain (`test_subdomain_cache`) уже тестируются на моках.
+- [СДЕЛАНО] Scan Diff: секция **субдоменов** разблокирована — в collection
+  добавлена опц. subdomain-фаза (passive + takeover), которая питает Scan Diff,
+  риск-движок (takeover-сигнал) и граф (категория Subdomains).
 
-**Осталось (маргинально / заблокировано):**
+**Осталось (маргинально):**
 - Web-консоль: отмена выполняющегося job'а; job экспорта Vuln-отчёта (избыточен — collection уже даёт полный отчёт).
 - Security Audit: вынести `max_scripts`/таймауты в настройки; конфиг таймаутов dynamic-анализа (низкий спрос).
-- Scan Diff: секция субдоменов/сертификатов — **заблокировано** (collection их пока не собирает).
+- Scan Diff: секция **сертификатов** — collection их пока не собирает (отдельная фаза, по запросу).
 
 ---
 
