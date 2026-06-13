@@ -36,6 +36,8 @@ from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
 from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
+from core.dns_intel import discover as discover_dns
+from core.dns_intel import render_html as render_dns
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.infrastructure import render_html as render_infrastructure
@@ -69,7 +71,7 @@ class CollectionRunner:
                  katana: bool = False, llm: bool = False,
                  llm_model: Optional[str] = None, subdomains: bool = False,
                  certificate: bool = False, openapi: bool = False,
-                 historical: bool = False):
+                 historical: bool = False, dns: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -99,6 +101,9 @@ class CollectionRunner:
         # Opt-in Historical URL intelligence (#12) — archived URLs (Wayback)
         # classified into admin/auth/api/config; feeds report/surface/diff.
         self.historical = historical
+        # Opt-in DNS intelligence (#13) — records + email-auth (SPF/DMARC/DKIM/
+        # CAA); its findings fold into the risk engine.
+        self.dns = dns
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -114,7 +119,8 @@ class CollectionRunner:
                   subdomains: Optional[bool] = None,
                   certificate: Optional[bool] = None,
                   openapi: Optional[bool] = None,
-                  historical: Optional[bool] = None):
+                  historical: Optional[bool] = None,
+                  dns: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -139,6 +145,8 @@ class CollectionRunner:
             self.openapi = openapi
         if historical is not None:
             self.historical = historical
+        if dns is not None:
+            self.dns = dns
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -225,6 +233,10 @@ class CollectionRunner:
         # 7e. Historical URL intelligence (opt-in) → archived URLs classified.
         if self.historical and not self._cancelled(report):
             report['phases']['historical'] = self._phase_historical(url, scan_dir)
+        # 7f. DNS intelligence (opt-in) → records + email-auth; findings fold
+        # into the vuln phase so the risk engine accounts for them.
+        if self.dns and not self._cancelled(report):
+            report['phases']['dns'] = self._phase_dns(url, scan_dir, report)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -532,6 +544,39 @@ class CollectionRunner:
             self._log(f'  Historical intel failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_dns(self, url: str, project_dir: Path, report: Dict) -> Dict:
+        """Resolve DNS + email-auth (opt-in, DoH). Guarded; folds its findings
+        into the vuln phase so the unified risk engine accounts for them."""
+        self._log('[+] DNS intelligence (DoH)…')
+        try:
+            data = discover_dns(url)
+            if data.get('status') != 'Success':
+                self._log('  DNS — записи не найдены')
+                return {'status': data.get('status', 'No records'), 'data': data}
+            out = project_dir / 'dns'
+            out.mkdir(exist_ok=True)
+            (out / 'dns.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            # Fold DNS findings into the vuln phase (same pattern as analyzers),
+            # so summary / executive summary / attack surface include them.
+            added = data.get('findings') or []
+            vulns = report['phases'].get('vulns')
+            if added and isinstance(vulns, dict):
+                findings = vulns.get('findings', []) + added
+                vulns['findings'] = findings
+                vulns['summary'] = VulnScanner.summarize(findings)
+            ea = data.get('email_auth', {})
+            self._log(f"  DNS: SPF={'да' if ea.get('spf') else 'нет'}, "
+                      f"DMARC={ea.get('dmarc') or 'нет'}, "
+                      f"DKIM={len(ea.get('dkim_selectors') or [])}, "
+                      f"findings={len(added)}")
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  DNS intel failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -787,6 +832,13 @@ class CollectionRunner:
             hdata = historical.get('data', {})
             body_parts.append(card('Historical URLs', render_historical(hdata),
                                    historical.get('status', '—')))
+
+        # DNS intelligence (opt-in) — records + email-auth posture.
+        dns = phases.get('dns')
+        if dns:
+            ddata = dns.get('data', {})
+            body_parts.append(card('DNS / Email Auth', render_dns(ddata),
+                                   dns.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})

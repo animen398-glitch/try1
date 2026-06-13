@@ -34,6 +34,7 @@ SECTION_PHASES = {
     'endpoints':    'katana',
     'apis':         'openapi',
     'historical':   'historical',
+    'dns':          'dns',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -47,6 +48,7 @@ SECTION_TITLES = {
     'endpoints':    'Эндпоинты (Katana)',
     'apis':         'API (OpenAPI)',
     'historical':   'Историч. URL (интересные)',
+    'dns':          'DNS / email-auth',
     'findings':     'Findings',
 }
 
@@ -189,6 +191,20 @@ def _extract_historical(report: Dict) -> Optional[Dict]:
     return {str(u): str(u) for u in interesting}
 
 
+def _extract_dns(report: Dict) -> Optional[Dict]:
+    # Compare the email-auth posture field-by-field (like headers): a newly
+    # added SPF, a DMARC policy change, etc.
+    ea = _data(report, 'dns').get('email_auth')
+    if not isinstance(ea, dict):
+        return None
+    return {
+        'SPF': ea.get('spf') or '—',
+        'DMARC': ea.get('dmarc') or '—',
+        'DKIM': ','.join(ea.get('dkim_selectors') or []) or '—',
+        'CAA': 'yes' if ea.get('caa') else 'no',
+    }
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -210,6 +226,7 @@ _EXTRACTORS = {
     'endpoints':    _extract_endpoints,
     'apis':         _extract_openapi,
     'historical':   _extract_historical,
+    'dns':          _extract_dns,
     'findings':     _extract_findings,
 }
 
@@ -233,7 +250,7 @@ def _label(section: str, key, value) -> str:
         ver = value.get('version')
         flag = ' ⚠ vulnerable' if value.get('vulnerable') else ''
         return f'{key}' + (f' {ver}' if ver else '') + flag
-    if section in ('headers', 'certificates'):
+    if section in ('headers', 'certificates', 'dns'):
         return f'{key}: {value}'
     return str(key)
 

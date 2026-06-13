@@ -134,6 +134,14 @@ class FinalReportTabMixin:
             "Тянет архивные URL домена из Wayback Machine и классифицирует их "
             "(старые админки/auth/API/конфиги). Питает отчёт, граф и Scan Diff.")
         opt_row.addWidget(self.collect_historical)
+
+        # Opt-in DNS intelligence (#13) — records + email-auth via DoH.
+        self.collect_dns = QCheckBox("DNS / Email-auth")
+        self.collect_dns.setToolTip(
+            "Резолвит DNS-записи (A/MX/TXT/NS/CAA) и email-auth (SPF/DMARC/DKIM) "
+            "через DNS-over-HTTPS. Находки (нет SPF/DMARC, слабый DMARC, нет CAA) "
+            "идут в риск-движок.")
+        opt_row.addWidget(self.collect_dns)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -258,6 +266,7 @@ class FinalReportTabMixin:
             certificate=self.collect_certificate.isChecked(),
             openapi=self.collect_openapi.isChecked(),
             historical=self.collect_historical.isChecked(),
+            dns=self.collect_dns.isChecked(),
         )
         self._active_collector = runner
 

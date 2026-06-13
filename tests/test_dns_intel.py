@@ -1,0 +1,135 @@
+"""Tests for DNS Intelligence (core/dns_intel.py, roadmap #13 OSINT).
+
+Analysis is pure; DoH lookups are exercised with urlopen_text stubbed and
+discover()/fetch_records with an injected query, so nothing hits the network.
+"""
+
+import json
+
+from core import dns_intel as dns, scan_diff
+
+
+def _records(**kw):
+    base = {t: [] for t in dns.RECORD_TYPES}
+    base['DMARC'] = []
+    base['DKIM'] = {}
+    base.update(kw)
+    return base
+
+
+# ── analyze (pure) ────────────────────────────────────────────────────────────
+
+def test_analyze_healthy_domain_has_no_findings():
+    rec = _records(
+        A=['1.2.3.4'], MX=['10 mail.x.com.'],
+        TXT=['v=spf1 include:_spf.google.com ~all'],
+        DMARC=['v=DMARC1; p=reject; rua=mailto:a@x.com'],
+        DKIM={'google': ['v=DKIM1; k=rsa; p=MIGf...']},
+        CAA=['0 issue "letsencrypt.org"'])
+    out = dns.analyze(rec)
+    assert out['email_auth']['spf'].startswith('v=spf1')
+    assert out['email_auth']['dmarc'] == 'reject'
+    assert out['email_auth']['dkim_selectors'] == ['google']
+    assert out['email_auth']['caa'] is True
+    assert out['findings'] == []
+
+
+def test_analyze_flags_missing_email_auth():
+    out = dns.analyze(_records(A=['1.2.3.4']))
+    titles = {f['title'] for f in out['findings']}
+    assert 'No SPF record' in titles
+    assert 'No DMARC record' in titles
+    assert 'No DKIM selector found' in titles
+    assert 'No CAA record' in titles
+    # the two email-spoofing gaps are Medium
+    sev = {f['title']: f['severity'] for f in out['findings']}
+    assert sev['No SPF record'] == 'Medium' and sev['No DMARC record'] == 'Medium'
+
+
+def test_analyze_weak_dmarc_is_info():
+    out = dns.analyze(_records(
+        TXT=['v=spf1 ~all'], DMARC=['v=DMARC1; p=none'],
+        DKIM={'default': ['v=DKIM1']}, CAA=['0 issue "x"']))
+    titles = {f['title']: f['severity'] for f in out['findings']}
+    assert titles == {'DMARC policy is p=none': 'Info'}
+
+
+# ── fetch_records (injected query) ────────────────────────────────────────────
+
+def test_fetch_records_probes_dmarc_and_dkim_selectors():
+    def q(name, rtype):
+        if name == '_dmarc.x.com' and rtype == 'TXT':
+            return ['v=DMARC1; p=reject']
+        if name == 'google._domainkey.x.com':
+            return ['v=DKIM1; p=abc']
+        if name == 'x.com' and rtype == 'A':
+            return ['1.2.3.4']
+        return []
+    rec = dns.fetch_records('x.com', query=q)
+    assert rec['A'] == ['1.2.3.4']
+    assert rec['DMARC'] == ['v=DMARC1; p=reject']
+    assert rec['DKIM'] == {'google': ['v=DKIM1; p=abc']}
+
+
+# ── _doh_query parsing (network stubbed) ──────────────────────────────────────
+
+def test_doh_query_parses_answer(monkeypatch):
+    payload = {'Status': 0, 'Answer': [
+        {'name': 'x.com.', 'type': 16, 'data': '"v=spf1 ~all"'},
+        {'name': 'x.com.', 'type': 16, 'data': 'plain'}]}
+    monkeypatch.setattr(dns, 'urlopen_text', lambda req, t, **k: json.dumps(payload))
+    out = dns._doh_query('x.com', 'TXT')
+    assert out == ['v=spf1 ~all', 'plain']        # quotes stripped
+
+
+def test_doh_query_empty_on_error(monkeypatch):
+    monkeypatch.setattr(dns, 'urlopen_text',
+                        lambda *a, **k: (_ for _ in ()).throw(OSError('x')))
+    assert dns._doh_query('x.com', 'A') == []
+
+
+# ── discover (injected query) ─────────────────────────────────────────────────
+
+def test_discover_success_and_domain_extraction():
+    def q(name, rtype):
+        return ['1.2.3.4'] if (name == 'x.com' and rtype == 'A') else []
+    out = dns.discover('https://x.com:8443/path', query=q)
+    assert out['status'] == 'Success' and out['domain'] == 'x.com'
+    assert out['records']['A'] == ['1.2.3.4']
+
+
+def test_discover_no_records():
+    out = dns.discover('https://x.com', query=lambda n, t: [])
+    assert out['status'] == 'No records' and out['findings'] == []
+
+
+# ── render_html (offline) ─────────────────────────────────────────────────────
+
+def test_render_html_offline():
+    out = dns.discover('https://x.com',
+                       query=lambda n, t: ['1.2.3.4'] if t == 'A' else [])
+    page = dns.render_html(out)
+    assert '<script' not in page and 'cdn' not in page.lower()
+    assert '1.2.3.4' in page and 'SPF' in page
+
+
+def test_render_html_no_records():
+    assert 'не найдены' in dns.render_html({'status': 'No records'})
+
+
+# ── integration: scan_diff dns section ────────────────────────────────────────
+
+def _report_with_dns(email_auth):
+    return {'phases': {'dns': {'status': 'Success',
+                              'data': {'email_auth': email_auth}}}}
+
+
+def test_scan_diff_reports_email_auth_change():
+    a = _report_with_dns({'spf': None, 'dmarc': None,
+                          'dkim_selectors': [], 'caa': False})
+    b = _report_with_dns({'spf': 'v=spf1 ~all', 'dmarc': 'reject',
+                          'dkim_selectors': ['google'], 'caa': True})
+    d = scan_diff.diff(a, b)
+    changed = {c['key']: (c['a'], c['b']) for c in d['sections']['dns']['changed']}
+    assert changed['DMARC'] == ('—', 'reject')
+    assert changed['SPF'][0] == '—' and changed['SPF'][1].startswith('v=spf1')

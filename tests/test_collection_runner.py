@@ -152,6 +152,46 @@ def test_render_html_historical_card():
     assert "<script" not in html.lower()
 
 
+def test_phase_dns_folds_findings_into_vulns(tmp_path, monkeypatch):
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_dns", lambda url: {
+        "status": "Success", "domain": "x.com",
+        "records": {"A": ["1.2.3.4"]},
+        "email_auth": {"spf": None, "dmarc": None, "dkim_selectors": [],
+                       "caa": False},
+        "findings": [{"severity": "Medium", "title": "No SPF record",
+                      "source": "dns"}]})
+    r = CollectionRunner(dns=True)
+    report = {"url": "https://x.com", "phases": {"vulns": {
+        "status": "Success", "findings": [], "summary": {"high": 0, "medium": 0,
+                                                          "info": 0}}}}
+    phase = r._phase_dns("https://x.com", tmp_path, report)
+    assert phase["status"] == "Success"
+    assert (tmp_path / "dns" / "dns.json").exists()
+    # finding folded into the vuln phase so the risk engine sees it
+    titles = [f["title"] for f in report["phases"]["vulns"]["findings"]]
+    assert "No SPF record" in titles
+    assert report["phases"]["vulns"]["summary"]["medium"] == 1
+
+
+def test_render_html_dns_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"dns": {"status": "Success", "data": {
+            "status": "Success", "records": {"A": ["1.2.3.4"], "MX": [],
+                                             "TXT": [], "AAAA": [], "NS": [],
+                                             "CAA": []},
+            "email_auth": {"spf": "v=spf1 ~all", "dmarc": "reject",
+                           "dkim_selectors": ["google"], "caa": True},
+            "findings": []}}},
+    }
+    html = r._render_html(report)
+    assert "DNS / Email Auth" in html and "1.2.3.4" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary
