@@ -1625,3 +1625,45 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       #9 функционально закрыт на всех поверхностях (core/CLI/GUI/web).
 
 ==============================================================================
+
+  ROADMAP #11 — OpenAPI Discovery — [DONE] 2026-06-13
+      Следующая фаза роадмапа. Вертикальный срез как у subdomains/certificate:
+      ядро + опц. фаза collection + отчёт + граф + Scan Diff + GUI-чекбокс.
+      Инварианты: I1 (stdlib — json; YAML-спеки вне скоупа, нужен сторонний
+      парсер), I5 (сетевой пробинг _fetch_json отделён от чистого parse_spec и
+      инъектируется в discover() → тесты без сети).
+        1) core/openapi_discovery.py — SPEC_PATHS (12 типовых путей: openapi.json/
+           swagger.json/v3-api-docs/…). _fetch_json (SessionBuilder+urlopen_text,
+           attempts=1, None на не-JSON/не-объект). parse_spec(spec) ЧИСТАЯ:
+           OpenAPI 3.x И Swagger 2.0 → {version,title,servers,endpoints[
+           {path,method,summary,tags,deprecated,params}],counts}; _servers
+           (servers[] для 3.x; host+basePath+scheme для 2.0); None если нет
+           version/paths. discover(base_url, fetch=…) пробит root+путь, первая
+           валидная спека → Success+spec_url, иначе Not found. render_html
+           (оффлайн таблица эндпоинтов, без script/CDN).
+        2) core/collection_runner.py — опц. флаг openapi=False; _phase_openapi
+           (guarded, Not-found чистый) пишет openapi/openapi.json; карточка
+           «OpenAPI / API Map» в отчёте.
+        3) core/attack_surface.py — категория 'APIs' ("METHOD /path") + цвет +
+           вес 2 в surface_score.
+        4) core/scan_diff.py — секция 'apis' (фаза openapi, SET_LIKE): added/
+           removed эндпоинтов по "METHOD /path"; _extract_openapi.
+        5) gui/tab_collection.py — чекбокс «OpenAPI / Swagger» → openapi=…
+           в CollectionRunner.
+        6) tests: test_openapi_discovery.py (15: parse 3.x/2.0/reject, discover
+           found/probes-root/not-found/skip-non-spec, render offline/not-found,
+           scan_diff apis added/removed, attack_surface APIs категория) +
+           test_collection_runner (+3: фаза артефакт/not-found/рендер карточки)
+           + test_scan_diff (обновлён empty-skipped набор: +apis).
+        ИТОГ: 606 passed, 3 skipped (609 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальная спека Swagger Petstore]: _fetch_json+
+        parse_spec на https://petstore3.swagger.io/api/v3/openapi.json → OpenAPI
+        3.0.4, 13 путей / 19 эндпоинтов, серверы ['/api/v3'], sample «POST /pet»;
+        discover() сквозь сеть (custom path) → Success, 19 эндпоинтов; render
+        оффлайн. RESULT: PASS.
+      ОСТАЛОСЬ опц. по #11: YAML-спеки (нужен PyYAML — сознательно вне скоупа);
+      web-консоль не включает фазу в свой быстрый collection-job (управляется в
+      GUI/CLI-collection).
+
+==============================================================================

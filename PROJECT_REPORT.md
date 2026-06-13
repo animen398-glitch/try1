@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **592 passed, 3 skipped** (595 собрано; сетенезависимые, Qt headless) |
+| Тесты | **606 passed, 3 skipped** (609 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -70,6 +70,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | monitor | **Continuous Monitoring (P-роадмап #8)**: расписание (daily/weekly/monthly) в metadata.json; `run_due` гоняет Full Collection + авто-Scan Diff против прошлого скана; чистая логика (`compute_next_run`/`is_due`) и тонкий `MonitorScheduler`-тред отделены от инъектируемого раннера (тесты без сети); опц. триггерит alerts |
 | alerts | **Alert Center (#9)**: из авто-diff'а извлекает события (new secret/subdomain/takeover/technology/cert change/risk↑) и шлёт в Telegram/Discord (urllib)/Email (smtplib); строго opt-in, stdlib-only, транспорт инъектируем (тесты без сети); секреты уже замаскированы в diff'е |
 | cert_info | TLS-сертификат хоста (stdlib ssl): fetch + summarize (issuer/срок/SAN/SHA-256) для Scan Diff |
+| openapi_discovery | **OpenAPI Discovery (#11)**: пробинг типовых путей спеки (swagger.json/openapi.json/…) + чистый парсер OpenAPI 3.x/Swagger 2.0 → карта эндпоинтов; фетч (инъектируемый) отделён от парсинга; питает отчёт, граф (категория APIs) и Scan Diff (секция apis) |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
@@ -158,7 +159,11 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
   Завязано в мониторинг (`run_due(alert_config=…)`); поверхности: CLI
   (`test-alert` + `run/watch`), GUI (Настройки → вкладка «Уведомления»: каналы +
   типы + тест), web-консоль (карточка Alert Center: статус без токенов + тест).
-- **#11 OpenAPI Discovery** — swagger.json/openapi.json → карта API.
+- **#11 OpenAPI Discovery — [ГОТОВО]** `core/openapi_discovery.py`: пробинг
+  типовых путей спеки + парсер OpenAPI 3.x/Swagger 2.0 → карта эндпоинтов.
+  Опц. фаза collection (чекбокс «OpenAPI / Swagger»), карточка в отчёте,
+  категория APIs в графе, секция apis в Scan Diff. Stdlib, без новых
+  зависимостей (YAML-спеки вне скоупа — нужен сторонний парсер).
 - **#12 Historical Intelligence** — Wayback / CommonCrawl.
 - **#13 OSINT-модули** — DNS-записи (SPF/DMARC/DKIM/CAA), Email/Employee Intel,
   CT-история (частично есть через subdomain crt.sh).
