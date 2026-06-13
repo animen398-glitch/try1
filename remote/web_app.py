@@ -33,10 +33,10 @@ try:
 except ImportError:
     _FASTAPI_OK = False
 
-from core import monitor
+from core import alerts, monitor
 from core.api_key_extractor import ApiKeyExtractor
 from core.collection_runner import CollectionRunner
-from core.config import OPERATIONS_DB, REGISTRY_DB
+from core.config import OPERATIONS_DB, REGISTRY_DB, load_settings
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.design_analyzer import DesignAnalyzer
@@ -368,6 +368,25 @@ def _monitor_event_text(ev: dict) -> str:
     return f'[monitor] {slug}: {kind}'
 
 
+# ── Alert Center (#9) ──────────────────────────────────────────────────────────
+# The console reports alert status and can fire a test, but does NOT edit channel
+# tokens over the LAN (those are set in the GUI / settings.json). Read-only here.
+
+def _alerts_config() -> dict:
+    cfg = load_settings().get('alerts')
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _alerts_overview() -> dict:
+    """Enabled flag + which channels are configured (no token values)."""
+    cfg = _alerts_config()
+    return {
+        'enabled': bool(cfg.get('enabled')),
+        'channels': [ch.name for ch in alerts.build_channels(cfg)],
+        'types': cfg.get('types') or list(alerts.ALERT_TYPES),
+    }
+
+
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
 
 _DASHBOARD = """\
@@ -469,6 +488,14 @@ margin-right:5px;vertical-align:middle}
     <div class="btns">
       <button class="btn sec" onclick="monStatus()">Status</button>
       <button class="btn sec" id="b-mon-run" onclick="monRun()">Run due now</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Alert Center</div>
+    <div class="btns">
+      <button class="btn sec" onclick="alertStatus()">Status</button>
+      <button class="btn sec" onclick="alertTest()">Send test alert</button>
     </div>
   </div>
 
@@ -660,6 +687,29 @@ async function monRun(){
   }catch(ex){log('Monitor run failed: '+ex.message,'er');setRunning(false);}
 }
 
+async function alertStatus(){
+  try{
+    const r=await fetch('/alerts'); const d=await r.json();
+    log('Alerts: '+(d.enabled?'enabled':'disabled')+' · channels: '
+        +(d.channels.length?d.channels.join(', '):'none')
+        +' · types: '+d.types.join(', '),d.enabled?'data':'wn');
+  }catch(ex){log('Alert status failed: '+ex.message,'er');}
+}
+
+async function alertTest(){
+  log('Sending test alert…','data');
+  try{
+    const r=await fetch('/alerts/test',{method:'POST'});
+    const d=await r.json();
+    if(d.reason) log('Test not sent: '+d.reason,'wn');
+    else{
+      log('Test alert sent to '+d.sent+' channel(s)','ok');
+      (d.results||[]).forEach(x=>log('  '+x.channel+': '+x.status
+          +(x.error?(' — '+x.error):''),x.status==='ok'?'ok':'er'));
+    }
+  }catch(ex){log('Test alert failed: '+ex.message,'er');}
+}
+
 async function showHistory(){
   try{
     const r=await fetch('/history'); const rows=await r.json();
@@ -843,6 +893,23 @@ if _FASTAPI_OK:
         _active_job = 'monitor:run'
         bg.add_task(_run_monitor_due)
         return {'status': 'started', 'job': 'monitor:run'}
+
+    # ── Alert Center (#9) ────────────────────────────────────────────────
+
+    @app.get('/alerts')
+    async def alerts_overview():
+        return JSONResponse(_alerts_overview())
+
+    @app.post('/alerts/test')
+    async def alerts_test():
+        loop = asyncio.get_event_loop()
+        out = await loop.run_in_executor(
+            None, lambda: alerts.send_test(_alerts_config()))
+        if out.get('reason'):
+            await _push(f'[alerts] test not sent: {out["reason"]}', 'wn')
+            return JSONResponse(out, status_code=400)
+        await _push(f'[alerts] test sent to {out["sent"]} channel(s)', 'ok')
+        return out
 
     @app.get('/results')
     async def results():

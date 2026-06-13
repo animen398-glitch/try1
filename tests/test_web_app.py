@@ -244,6 +244,48 @@ def test_monitor_endpoints_with_testclient(monkeypatch, tmp_path):
     assert r.status_code == 404
 
 
+# ── Alert Center surface (#9) ────────────────────────────────────────────────
+
+def test_alerts_overview_reports_channels_without_tokens(monkeypatch):
+    monkeypatch.setattr(wa, "load_settings", lambda: {"alerts": {
+        "enabled": True, "discord": {"webhook_url": "https://d"},
+        "telegram": {"token": "t"}}})   # telegram incomplete -> not a channel
+    ov = wa._alerts_overview()
+    assert ov["enabled"] is True
+    assert ov["channels"] == ["discord"]
+    assert "new_secret" in ov["types"]
+    # no token value leaks into the overview
+    assert "https://d" not in str(ov["channels"])
+
+
+def test_dashboard_exposes_alert_controls():
+    html = wa._DASHBOARD
+    for token in ("alertStatus()", "alertTest()", "/alerts", "/alerts/test"):
+        assert token in html, token
+
+
+def test_alert_endpoints_with_testclient(monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(wa, "load_settings", lambda: {"alerts": {
+        "enabled": True, "discord": {"webhook_url": "https://d"}}})
+    monkeypatch.setattr(wa.alerts, "_http_post", lambda *a, **k: 204)
+    client = TestClient(wa.app)
+
+    assert client.get("/alerts").json()["channels"] == ["discord"]
+    r = client.post("/alerts/test")
+    assert r.status_code == 200 and r.json()["sent"] == 1
+
+    # No channels -> 400 with a reason.
+    monkeypatch.setattr(wa, "load_settings", lambda: {"alerts": {"enabled": True}})
+    r = client.post("/alerts/test")
+    assert r.status_code == 400 and "reason" in r.json()
+
+
 # ── Optional: exercise the live endpoints if a test client is available ──────
 
 def test_endpoints_with_testclient():
