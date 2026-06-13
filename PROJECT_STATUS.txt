@@ -1083,7 +1083,32 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         кладутся под выбранный пользователем output_base (там, где отчёты и
         ожидаются), а не в app-data — ProjectStore принимает base явно.
 
-  P3/P4 (Risk Engine 0–100 / Dashboard cards) — очередь после P2 (reuse
-  executive_summary + Security Overview). P1/P5/P6/P7 — уже закрыты ранее.
+  P3. Unified Risk Engine (0–100) — [DONE] 2026-06-13
+      executive_summary стал ЕДИНЫМ риск-движком (расширение, не второй механизм
+      — I3). Решение: нормализовать в 0–100, СОХРАНИТЬ 5 уровней (Clean = пол
+      «0 находок»).
+        1) risk_100 = min(100, raw×4) — ограниченный 0–100 хедлайн рядом с
+           raw weighted score (raw оставлен для весов/сортировки и обратной
+           совместимости — старые тесты на risk_score зелёные).
+        2) Новые сигналы (читаются ТОЛЬКО если фаза присутствует, иначе 0 →
+           формула/уровни для текущих отчётов не меняются): source-map leaks
+           (security.summary.maps_with_content, вес 5 как у секрета) и subdomain
+           takeover-кандидаты (subdomains.summary.takeover_candidates, вес 8;
+           форсят Critical). + key findings/рекомендации для них.
+        3) Показ: баннер отчёта «<level> · N/100 (raw R)»; display_cards.risk_100;
+           Dashboard риск-метка «Риск: <level> · N/100».
+        4) tests/test_executive_summary +6 (0–100 bounded/scaled, takeover→
+           Critical+вес, source-map вес, signals-absent-default, cards/banner).
+        ИТОГ: 429 passed, 1 skipped; ruff чист. Без новых зависимостей.
+        Прим.: collection-пайплайн пока НЕ запускает subdomain/security-audit
+        фазы → в его отчётах takeovers/source-maps = 0. Движок ГОТОВ их учитывать;
+        источник этих сигналов на Dashboard — открытый вопрос P4 (см. ниже).
+
+  P4. Dashboard 2.0 — частично закрыто (reuse): registry-карточки (субдомены/IP/
+      изображения/видео/паттерны/API endpoints) + Security Overview (risk level +
+      0–100 + Attack Surface + секреты/High/Medium) уже есть. Остаётся решить
+      ОТКУДА Dashboard берёт Takeovers/Source-maps (collection их не даёт) —
+      design-вопрос (агрегировать из DataRegistry/отдельных вкладок vs добавить
+      фазы в collection). P1/P5/P6/P7 — закрыты ранее.
 
 ==============================================================================
