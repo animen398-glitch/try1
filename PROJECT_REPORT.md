@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **571 passed, 2 skipped** (573 собрано; сетенезависимые, Qt headless) |
+| Тесты | **587 passed, 2 skipped** (589 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -67,7 +67,8 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | api_key_extractor / api_dumper | поиск ключей / дамп API-ответов |
 | project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json); `load_scan_report` для diff |
 | scan_diff | **оффлайн-diff двух сканов проекта** (страницы/субдомены/секреты/тех/зависимости/заголовки/TLS-сертификат/эндпоинты/findings + дельта риска), HTML-отчёт |
-| monitor | **Continuous Monitoring (P-роадмап #8)**: расписание (daily/weekly/monthly) в metadata.json; `run_due` гоняет Full Collection + авто-Scan Diff против прошлого скана; чистая логика (`compute_next_run`/`is_due`) и тонкий `MonitorScheduler`-тред отделены от инъектируемого раннера (тесты без сети) |
+| monitor | **Continuous Monitoring (P-роадмап #8)**: расписание (daily/weekly/monthly) в metadata.json; `run_due` гоняет Full Collection + авто-Scan Diff против прошлого скана; чистая логика (`compute_next_run`/`is_due`) и тонкий `MonitorScheduler`-тред отделены от инъектируемого раннера (тесты без сети); опц. триггерит alerts |
+| alerts | **Alert Center (#9)**: из авто-diff'а извлекает события (new secret/subdomain/takeover/technology/cert change/risk↑) и шлёт в Telegram/Discord (urllib)/Email (smtplib); строго opt-in, stdlib-only, транспорт инъектируем (тесты без сети); секреты уже замаскированы в diff'е |
 | cert_info | TLS-сертификат хоста (stdlib ssl): fetch + summarize (issuer/срок/SAN/SHA-256) для Scan Diff |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
@@ -152,8 +153,11 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
   Единая логика (`monitor.enable/disable/status/run_due`) под тремя тонкими
   поверхностями. Осталось опц.: фоновый scheduler внутри GUI/web-процесса
   (сейчас периодический прогон — через `monitor_cli.py watch`).
-- **#9 Alert Center** — уведомления (Telegram/Discord/Email) на дельту из #8.
-  Естественный следующий шаг; единственная фаза с сетевым выходом наружу.
+- **#9 Alert Center — [НАЧАТО/ЯДРО+CLI ГОТОВО]** `core/alerts.py`: события из
+  авто-diff'а → Telegram/Discord/Email (stdlib), строго opt-in, конфиг в
+  settings.json. Завязано в мониторинг (`run_due(alert_config=…)`), CLI
+  `monitor_cli.py test-alert` + `run/watch` шлют. Осталось: GUI/web-поверхность
+  настройки каналов (сейчас — правка `alerts` в settings.json вручную).
 - **#11 OpenAPI Discovery** — swagger.json/openapi.json → карта API.
 - **#12 Historical Intelligence** — Wayback / CommonCrawl.
 - **#13 OSINT-модули** — DNS-записи (SPF/DMARC/DKIM/CAA), Email/Employee Intel,
