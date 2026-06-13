@@ -65,6 +65,17 @@ jobs:
           pip install -r requirements.txt pyinstaller
       - name: Build .exe
         run: pyinstaller build.spec --clean --noconfirm
+      - name: Smoke-run the built .exe
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $proc = Start-Process -FilePath dist/SiteAnalyzer.exe `
+            -ArgumentList '--self-check' -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "self-check failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
+          Write-Host "self-check passed (exit 0)"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
