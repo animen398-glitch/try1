@@ -185,6 +185,65 @@ def test_dashboard_exposes_cancel_control():
     assert 'id="b-cancel"' in html
 
 
+# ── Continuous Monitoring surface (#8) ───────────────────────────────────────
+
+def test_monitor_event_text_formats_kinds():
+    assert 'scan start' in wa._monitor_event_text(
+        {'type': 'scan_start', 'slug': 'x.com'})
+    assert 'first scan' in wa._monitor_event_text(
+        {'type': 'scan_done', 'slug': 'x.com', 'scan_id': '1'})
+    done = wa._monitor_event_text(
+        {'type': 'scan_done', 'slug': 'x.com', 'scan_id': '2', 'diff_line': 'd'})
+    assert 'd' in done and 'first scan' not in done
+    assert 'error' in wa._monitor_event_text(
+        {'type': 'error', 'slug': 'x.com', 'error': 'boom'})
+
+
+def test_dashboard_exposes_monitor_controls():
+    html = wa._DASHBOARD
+    for token in ("monEnable()", "monDisable()", "monStatus()", "monRun()",
+                  "/monitor/enable", "/monitor/disable", "/monitor",
+                  'id="mon-interval"'):
+        assert token in html, token
+
+
+def test_monitor_endpoints_with_testclient(monkeypatch, tmp_path):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+
+    # Point the monitor store at a tmp home so the test is isolated.
+    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    client = TestClient(wa.app)
+
+    # Empty to start.
+    assert client.get("/monitor").json() == []
+
+    # Enable with a bad interval -> 400.
+    r = client.post("/monitor/enable",
+                    json={"url": "https://x.com", "interval": "hourly"})
+    assert r.status_code == 400
+
+    # Enable properly.
+    r = client.post("/monitor/enable",
+                    json={"url": "https://x.com", "interval": "daily"})
+    assert r.status_code == 200 and r.json()["slug"] == "x.com"
+
+    rows = client.get("/monitor").json()
+    assert [m["slug"] for m in rows] == ["x.com"] and rows[0]["enabled"] is True
+
+    # Disable.
+    r = client.post("/monitor/disable", json={"url": "https://x.com"})
+    assert r.status_code == 200 and r.json()["disabled"] is True
+    assert client.get("/monitor").json()[0]["enabled"] is False
+
+    # Disable unknown -> 404.
+    r = client.post("/monitor/disable", json={"url": "https://nope.com"})
+    assert r.status_code == 404
+
+
 # ── Optional: exercise the live endpoints if a test client is available ──────
 
 def test_endpoints_with_testclient():

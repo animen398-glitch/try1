@@ -148,6 +148,46 @@ class _SecurityWorker(QObject):
             self.error.emit(str(e))
 
 
+class _MonitorWorker(QObject):
+    """Thread worker that runs all due monitored projects once (monitor.run_due).
+
+    Continuous Monitoring's heavy step is a Full Collection per due project, so
+    it runs off-thread; monitor events are forwarded to the GUI log as text."""
+    log_message = pyqtSignal(str)
+    finished    = pyqtSignal(dict)
+    error       = pyqtSignal(str)
+
+    def __init__(self, store):
+        super().__init__()
+        self._store = store
+
+    @staticmethod
+    def _event_line(ev: dict) -> str:
+        slug = ev.get('slug', '')
+        kind = ev.get('type')
+        if kind == 'scan_start':
+            return f'[monitor] {slug}: сканирую…'
+        if kind == 'diff':
+            return f'[monitor] {slug}: {ev.get("line", "")}'
+        if kind == 'scan_done':
+            line = ev.get('diff_line')
+            return (f'[monitor] {slug}: готово {ev.get("scan_id", "")}'
+                    + (f' · {line}' if line else ' (первый скан)'))
+        if kind in ('error', 'diff_error'):
+            return f'[monitor] {slug}: {kind}: {ev.get("error", "")}'
+        return f'[monitor] {slug}: {kind}'
+
+    def run(self):
+        try:
+            from core import monitor
+            results = monitor.run_due(
+                self._store,
+                on_event=lambda ev: self.log_message.emit(self._event_line(ev)))
+            self.finished.emit({'ran': len(results), 'results': results})
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class _TaskHandle:
     """Strong-reference holder for one (worker, thread) pair.
 

@@ -26,6 +26,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional
 
+from core.project import project_slug
 from core.scan_diff import write_diff_report
 
 # Supported cadences. Monthly is calendar-aware (see ``_add_month``), the others
@@ -92,6 +93,44 @@ def is_due(monitor: Optional[Dict], now: Optional[datetime] = None) -> bool:
         return now >= datetime.fromisoformat(nxt)
     except (ValueError, TypeError):
         return True
+
+
+# ── schedule management (one source of truth for CLI / web / GUI) ─────────────
+
+def enable(store, url: str, interval: str) -> Dict:
+    """Turn monitoring on for ``url`` at ``interval`` (creates the project)."""
+    project = store.get_or_create(url)
+    sched = make_schedule(interval)
+    project.set_monitor(sched)
+    return {'slug': project.slug, 'url': url, 'schedule': sched}
+
+
+def disable(store, url: str) -> Dict:
+    """Turn monitoring off for ``url`` (keeps the schedule, flips enabled off)."""
+    project = store.get(project_slug(url))
+    if project is None:
+        return {'error': f'no project for {url}'}
+    mon = project.get_monitor()
+    if not mon:
+        return {'error': f'{project.slug} is not monitored'}
+    mon['enabled'] = False
+    project.set_monitor(mon)
+    return {'slug': project.slug, 'disabled': True}
+
+
+def status(store) -> List[Dict]:
+    """Every monitored project's schedule, newest-updated first (for display)."""
+    rows: List[Dict] = []
+    for meta in store.list_projects():
+        mon = meta.get('monitor')
+        if not isinstance(mon, dict):
+            continue
+        rows.append({
+            'slug': meta.get('slug'), 'url': meta.get('url'),
+            'enabled': mon.get('enabled'), 'interval': mon.get('interval'),
+            'last_run': mon.get('last_run'), 'next_run': mon.get('next_run'),
+        })
+    return rows
 
 
 # ── run engine (heavy step injectable) ────────────────────────────────────────

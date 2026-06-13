@@ -87,6 +87,40 @@ def test_monitor_survives_record_scan(tmp_path):
     assert len(project.scans()) == 1
 
 
+# ── schedule management helpers (shared by CLI / web / GUI) ───────────────────
+
+def test_enable_creates_project_and_schedule(tmp_path):
+    store = ProjectStore(tmp_path)
+    out = monitor.enable(store, 'https://example.com', 'weekly')
+    assert out['slug'] == 'example.com'
+    assert out['schedule']['interval'] == 'weekly'
+    assert store.get('example.com').get_monitor()['enabled'] is True
+
+
+def test_disable_flips_enabled_off(tmp_path):
+    store = ProjectStore(tmp_path)
+    monitor.enable(store, 'https://example.com', 'daily')
+    out = monitor.disable(store, 'https://example.com')
+    assert out['disabled'] is True
+    assert store.get('example.com').get_monitor()['enabled'] is False
+
+
+def test_disable_unknown_or_unmonitored(tmp_path):
+    store = ProjectStore(tmp_path)
+    assert 'error' in monitor.disable(store, 'https://nope.com')
+    store.get_or_create('https://plain.com')   # exists but never monitored
+    assert 'error' in monitor.disable(store, 'https://plain.com')
+
+
+def test_status_lists_only_monitored(tmp_path):
+    store = ProjectStore(tmp_path)
+    monitor.enable(store, 'https://watched.com', 'monthly')
+    store.get_or_create('https://unwatched.com')
+    rows = monitor.status(store)
+    assert [r['slug'] for r in rows] == ['watched.com']
+    assert rows[0]['interval'] == 'monthly' and rows[0]['enabled'] is True
+
+
 # ── run engine with an injected (offline) collection step ─────────────────────
 
 def _fake_run_fn(project, pages_by_scan):

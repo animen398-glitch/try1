@@ -33,6 +33,7 @@ try:
 except ImportError:
     _FASTAPI_OK = False
 
+from core import monitor
 from core.api_key_extractor import ApiKeyExtractor
 from core.collection_runner import CollectionRunner
 from core.config import OPERATIONS_DB, REGISTRY_DB
@@ -342,6 +343,31 @@ def _registry_data(limit: int = 50) -> dict:
         return {'summary': {}, 'records': [], 'error': str(e)}
 
 
+# ── Continuous Monitoring (#8) ─────────────────────────────────────────────────
+# Thin wrappers over core.monitor (single source of truth, shared with the CLI
+# and GUI). All bound to the same project store the jobs use.
+
+def _monitor_store() -> ProjectStore:
+    return ProjectStore(Path.home() / 'SiteAnalyzer')
+
+
+def _monitor_event_text(ev: dict) -> str:
+    """Render a monitor run event for the live console feed."""
+    slug = ev.get('slug', '')
+    kind = ev.get('type')
+    if kind == 'scan_start':
+        return f'[monitor] {slug}: scan start'
+    if kind == 'diff':
+        return f'[monitor] {slug}: {ev.get("line", "")}'
+    if kind == 'scan_done':
+        line = ev.get('diff_line')
+        return (f'[monitor] {slug}: done {ev.get("scan_id", "")}'
+                + (f' · {line}' if line else ' (first scan)'))
+    if kind in ('error', 'diff_error'):
+        return f'[monitor] {slug}: {kind}: {ev.get("error", "")}'
+    return f'[monitor] {slug}: {kind}'
+
+
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
 
 _DASHBOARD = """\
@@ -373,6 +399,9 @@ letter-spacing:.06em;margin-bottom:10px}
 input[type=text]{flex:1;min-width:0;background:var(--bg);border:1px solid var(--br);
 border-radius:6px;color:var(--tx);padding:8px 11px;font-size:.88rem;outline:none}
 input[type=text]:focus{border-color:var(--ac)}
+select{background:var(--bg);border:1px solid var(--br);border-radius:6px;
+color:var(--tx);padding:8px 11px;font-size:.88rem;outline:none}
+select:focus{border-color:var(--ac)}
 .btn{background:var(--ac);color:#0d1117;border:none;border-radius:6px;
 padding:7px 14px;font-size:.85rem;font-weight:600;cursor:pointer;
 white-space:nowrap;transition:opacity .15s}
@@ -423,6 +452,23 @@ margin-right:5px;vertical-align:middle}
       <button class="btn er" id="b-clr" onclick="clr()">Clear</button>
       <button class="btn sec" onclick="showHistory()">History</button>
       <button class="btn sec" onclick="showData()">Data</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Continuous Monitoring</div>
+    <div class="row">
+      <select id="mon-interval">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+      <button class="btn" onclick="monEnable()">Watch</button>
+      <button class="btn sec" onclick="monDisable()">Unwatch</button>
+    </div>
+    <div class="btns">
+      <button class="btn sec" onclick="monStatus()">Status</button>
+      <button class="btn sec" id="b-mon-run" onclick="monRun()">Run due now</button>
     </div>
   </div>
 
@@ -565,6 +611,55 @@ async function cancelJob(){
   }catch(ex){log('Cancel failed: '+ex.message,'er');}
 }
 
+async function monEnable(){
+  const url=document.getElementById('url').value.trim();
+  if(!url){log('Enter a URL first','wn');return;}
+  const interval=document.getElementById('mon-interval').value;
+  try{
+    const r=await fetch('/monitor/enable',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url,interval})});
+    const d=await r.json();
+    if(d.error) log(d.error,'er');
+    else log('Watching '+d.slug+' ('+interval+'). Next: '+d.schedule.next_run,'ok');
+  }catch(ex){log('Enable failed: '+ex.message,'er');}
+}
+
+async function monDisable(){
+  const url=document.getElementById('url').value.trim();
+  if(!url){log('Enter a URL first','wn');return;}
+  try{
+    const r=await fetch('/monitor/disable',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({url})});
+    const d=await r.json();
+    if(d.error) log(d.error,'er');
+    else log('Stopped watching '+d.slug,'wn');
+  }catch(ex){log('Disable failed: '+ex.message,'er');}
+}
+
+async function monStatus(){
+  try{
+    const r=await fetch('/monitor'); const rows=await r.json();
+    if(!rows.length){log('No monitored projects','data');return;}
+    log('Monitored: '+rows.length+' project(s)','data');
+    rows.forEach(m=>log('['+(m.enabled?'on':'off')+'] '+m.slug+' · '+m.interval
+        +' · next: '+(m.next_run||'—')+' · last: '+(m.last_run||'—'),
+        m.enabled?'info':'wn'));
+  }catch(ex){log('Status failed: '+ex.message,'er');}
+}
+
+async function monRun(){
+  setRunning(true);
+  log('Running due monitor scans…','data');
+  try{
+    const r=await fetch('/monitor/run',{method:'POST'});
+    const d=await r.json();
+    if(d.error){log(d.error,'er');setRunning(false);}
+    else log('Monitor run started','ok');
+  }catch(ex){log('Monitor run failed: '+ex.message,'er');setRunning(false);}
+}
+
 async function showHistory(){
   try{
     const r=await fetch('/history'); const rows=await r.json();
@@ -690,6 +785,64 @@ if _FASTAPI_OK:
             return JSONResponse(result, status_code=409)
         await _push(f"[{result['job']}] cancel requested — stopping…", 'wn')
         return result
+
+    # ── Continuous Monitoring (#8) ───────────────────────────────────────
+
+    class MonitorRequest(BaseModel):
+        url: str
+        interval: str = 'daily'
+
+    @app.get('/monitor')
+    async def monitor_status():
+        return JSONResponse(monitor.status(_monitor_store()))
+
+    @app.post('/monitor/enable')
+    async def monitor_enable(body: MonitorRequest):
+        if body.interval not in monitor.INTERVALS:
+            return JSONResponse(
+                {'error': f'interval must be one of {monitor.INTERVALS}'},
+                status_code=400)
+        out = monitor.enable(_monitor_store(), body.url, body.interval)
+        await _push(f'[monitor] watching {out["slug"]} ({body.interval})', 'ok')
+        return out
+
+    @app.post('/monitor/disable')
+    async def monitor_disable(body: TargetRequest):
+        out = monitor.disable(_monitor_store(), body.url)
+        if 'error' in out:
+            return JSONResponse(out, status_code=404)
+        await _push(f'[monitor] stopped watching {out["slug"]}', 'wn')
+        return out
+
+    async def _run_monitor_due():
+        global _active_job
+        loop = asyncio.get_event_loop()
+        await _push('[monitor] running due scans…')
+        try:
+            def on_event(ev):
+                asyncio.run_coroutine_threadsafe(
+                    _push(_monitor_event_text(ev),
+                          'er' if 'error' in ev.get('type', '') else 'info'),
+                    loop)
+
+            results = await loop.run_in_executor(
+                None, lambda: monitor.run_due(_monitor_store(), on_event=on_event))
+            await _push(f'[monitor] ran {len(results)} due project(s)', 'ok',
+                        'result', {'ran': len(results)})
+        except Exception as e:
+            await _push(f'[monitor] error: {e}', 'er', 'error')
+        finally:
+            _active_job = None
+
+    @app.post('/monitor/run')
+    async def monitor_run(bg: BackgroundTasks):
+        global _active_job
+        busy = _check_busy()
+        if busy:
+            return busy
+        _active_job = 'monitor:run'
+        bg.add_task(_run_monitor_due)
+        return {'status': 'started', 'job': 'monitor:run'}
 
     @app.get('/results')
     async def results():

@@ -22,45 +22,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core import monitor
-from core.project import ProjectStore, project_slug
+from core.project import ProjectStore
 
 DEFAULT_BASE = Path.home() / 'SiteAnalyzer'
 
 
-# ── command functions (pure-ish: take a store, return data) ───────────────────
+# ── command functions (thin wrappers over core.monitor: take a store) ─────────
 
 def cmd_enable(store: ProjectStore, url: str, interval: str) -> dict:
     """Turn monitoring on for ``url`` at ``interval`` (creates the project)."""
-    project = store.get_or_create(url)
-    sched = monitor.make_schedule(interval)
-    project.set_monitor(sched)
-    return {'slug': project.slug, 'url': url, 'schedule': sched}
+    return monitor.enable(store, url, interval)
 
 
 def cmd_disable(store: ProjectStore, url: str) -> dict:
     """Turn monitoring off for ``url`` (keeps the schedule but disabled)."""
-    project = store.get(project_slug(url))
-    if project is None:
-        return {'error': f'no project for {url}'}
-    mon = project.get_monitor()
-    if not mon:
-        return {'error': f'{project.slug} is not monitored'}
-    mon['enabled'] = False
-    project.set_monitor(mon)
-    return {'slug': project.slug, 'disabled': True}
+    return monitor.disable(store, url)
 
 
 def cmd_status(store: ProjectStore) -> list:
     """Every monitored project's schedule, for display."""
-    rows = []
-    for meta in store.list_projects():
-        mon = meta.get('monitor')
-        if not mon:
-            continue
-        rows.append({'slug': meta.get('slug'), 'url': meta.get('url'),
-                     'enabled': mon.get('enabled'), 'interval': mon.get('interval'),
-                     'last_run': mon.get('last_run'), 'next_run': mon.get('next_run')})
-    return rows
+    return monitor.status(store)
 
 
 def cmd_run(store: ProjectStore, on_event=None) -> list:

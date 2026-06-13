@@ -13,13 +13,14 @@ from PyQt5.QtWidgets import (
     QProgressBar, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from core import monitor
 from core.collection_runner import CollectionRunner
 from core.executive_summary import RISK_COLORS
 from core.features import has_katana, has_nuclei, has_playwright
 from core.project import ProjectStore
 from core.scan_diff import write_diff_report
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
-from gui.workers import _CollectionWorker
+from gui.workers import _CollectionWorker, _MonitorWorker
 
 
 class FinalReportTabMixin:
@@ -166,6 +167,41 @@ class FinalReportTabMixin:
         layout.addWidget(diff_grp)
         self._refresh_diff_projects()
 
+        # Continuous Monitoring (#8) — manage a project's watch schedule and run
+        # all due scans now. Thin UI over core.monitor (same store as Scan Diff).
+        mon_grp = SectionGroupBox("Continuous Monitoring — расписание + авто-diff")
+        mg = QHBoxLayout()
+        mg.addWidget(QLabel("Проект:"))
+        self.monitor_project = QComboBox()
+        self.monitor_project.setMinimumWidth(160)
+        self.monitor_project.currentIndexChanged.connect(
+            self._on_monitor_project_changed)
+        mg.addWidget(self.monitor_project)
+        mg.addWidget(QLabel("Интервал:"))
+        self.monitor_interval = QComboBox()
+        for label, val in (("Ежедневно", "daily"), ("Еженедельно", "weekly"),
+                           ("Ежемесячно", "monthly")):
+            self.monitor_interval.addItem(label, val)
+        mg.addWidget(self.monitor_interval)
+        self.btn_monitor_enable = StyledButton("Включить")
+        self.btn_monitor_enable.clicked.connect(self._enable_monitor)
+        mg.addWidget(self.btn_monitor_enable)
+        self.btn_monitor_disable = StyledButton("Выключить", style='secondary')
+        self.btn_monitor_disable.clicked.connect(self._disable_monitor)
+        mg.addWidget(self.btn_monitor_disable)
+        self.btn_monitor_run = StyledButton("Запустить готовые", style='secondary')
+        self.btn_monitor_run.clicked.connect(self._run_monitor_due)
+        mg.addWidget(self.btn_monitor_run)
+        mg.addStretch()
+        mon_outer = QVBoxLayout()
+        mon_outer.addLayout(mg)
+        self.monitor_status = QLabel("Не отслеживается")
+        self.monitor_status.setStyleSheet("color:#8b949e;font-size:11px;")
+        mon_outer.addWidget(self.monitor_status)
+        mon_grp.setLayout(mon_outer)
+        layout.addWidget(mon_grp)
+        self._refresh_monitor_projects()
+
         res_grp = SectionGroupBox("Прогресс сбора")
         res_layout = QVBoxLayout()
         self.collect_progress = QProgressBar()
@@ -287,6 +323,7 @@ class FinalReportTabMixin:
         # The finished scan is now indexed — make it comparable right away.
         try:
             self._refresh_diff_projects()
+            self._refresh_monitor_projects()
         except Exception:
             pass
 
@@ -366,3 +403,101 @@ class FinalReportTabMixin:
             self.collect_log.append_info(f"Отчёт diff: {path}")
             if Path(path).exists():
                 webbrowser.open(Path(path).as_uri())
+
+    # ── Continuous Monitoring (#8) ─────────────────────────────────────────────
+
+    def _refresh_monitor_projects(self):
+        """Repopulate the monitoring project combo from <output>/Projects/."""
+        current = self.monitor_project.currentData()
+        self.monitor_project.blockSignals(True)
+        self.monitor_project.clear()
+        try:
+            for meta in self._diff_store().list_projects():
+                self.monitor_project.addItem(meta.get('slug', '?'), meta.get('slug'))
+        except Exception:
+            pass
+        idx = self.monitor_project.findData(current)
+        if idx >= 0:
+            self.monitor_project.setCurrentIndex(idx)
+        self.monitor_project.blockSignals(False)
+        self._on_monitor_project_changed()
+
+    def _on_monitor_project_changed(self):
+        """Reflect the selected project's schedule in the status label."""
+        slug = self.monitor_project.currentData()
+        project = self._diff_store().get(slug) if slug else None
+        mon = project.get_monitor() if project else None
+        if not mon:
+            self.monitor_status.setText("Не отслеживается")
+            return
+        state = "вкл" if mon.get('enabled') else "выкл"
+        self.monitor_status.setText(
+            f"[{state}] {mon.get('interval', '?')} · "
+            f"следующий: {mon.get('next_run', '—')} · "
+            f"последний: {mon.get('last_run', '—')}")
+        # Keep the interval combo in sync with the stored schedule.
+        idx = self.monitor_interval.findData(mon.get('interval'))
+        if idx >= 0:
+            self.monitor_interval.setCurrentIndex(idx)
+
+    def _monitor_target_url(self):
+        """The URL to (un)watch: the selected project's, else the URL field."""
+        slug = self.monitor_project.currentData()
+        if slug:
+            project = self._diff_store().get(slug)
+            if project is not None:
+                return project.load_metadata().get('url') or slug
+        return self.collect_url.text().strip()
+
+    def _enable_monitor(self):
+        url = self._monitor_target_url()
+        if not url:
+            QMessageBox.warning(self, "Monitoring",
+                                "Выберите проект или укажите URL")
+            return
+        interval = self.monitor_interval.currentData()
+        out = monitor.enable(self._diff_store(), url, interval)
+        self.collect_log.append_success(
+            f"Мониторинг включён: {out['slug']} ({interval}); "
+            f"первый запуск: {out['schedule']['next_run']}")
+        self._refresh_monitor_projects()
+
+    def _disable_monitor(self):
+        url = self._monitor_target_url()
+        if not url:
+            QMessageBox.warning(self, "Monitoring",
+                                "Выберите проект или укажите URL")
+            return
+        out = monitor.disable(self._diff_store(), url)
+        if out.get('error'):
+            QMessageBox.warning(self, "Monitoring", out['error'])
+            return
+        self.collect_log.append_warning(f"Мониторинг выключен: {out['slug']}")
+        self._refresh_monitor_projects()
+
+    def _run_monitor_due(self):
+        """Run all due monitored projects now (Full Collection + auto-diff)."""
+        self.collect_log.append_info("Запускаю готовые мониторинг-сканы…")
+        self.collect_progress.setRange(0, 0)
+        self.collect_progress.setVisible(True)
+        self._set_busy(True)
+        worker = _MonitorWorker(self._diff_store())
+        self._start_task(
+            worker,
+            on_finished=self._on_monitor_run_done,
+            on_error=lambda e: (self._set_busy(False),
+                                self.collect_progress.setVisible(False),
+                                QMessageBox.critical(self, "Monitoring Error", e)),
+            signals=[(worker.log_message, self._on_collection_log)],
+        )
+
+    def _on_monitor_run_done(self, result: dict):
+        self._set_busy(False)
+        self.collect_progress.setVisible(False)
+        self.collect_log.append_success(
+            f"Мониторинг: запущено проектов — {result.get('ran', 0)}")
+        try:
+            self._refresh_diff_projects()
+            self._refresh_monitor_projects()
+        except Exception:
+            pass
