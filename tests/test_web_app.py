@@ -1,5 +1,7 @@
 """Tests for the web console job registry and (optionally) its HTTP endpoints."""
 
+import threading
+
 import pytest
 
 import remote.web_app as wa
@@ -132,6 +134,57 @@ def test_dashboard_has_history_and_report():
     assert "showData()" in html and "/data" in html
 
 
+# ── Cancellation (P-backlog: stop a running web-console job) ─────────────────
+
+class _FakeCancellable:
+    def __init__(self):
+        self.cancelled = False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+def _reset_cancel_state():
+    wa._active_job = None
+    wa._active_cancellable = None
+
+
+def test_request_cancel_no_job_running():
+    _reset_cancel_state()
+    assert wa._request_cancel() == {"error": "no job running"}
+
+
+def test_request_cancel_job_not_cancellable():
+    _reset_cancel_state()
+    wa._active_job = "recon"          # registered nothing cancellable
+    out = wa._request_cancel()
+    assert "not cancellable" in out["error"]
+    _reset_cancel_state()
+
+
+def test_request_cancel_signals_registered_engine():
+    _reset_cancel_state()
+    wa._active_job = "collection"
+    engine = _FakeCancellable()
+    wa._register_cancellable(engine)
+    out = wa._request_cancel()
+    assert out == {"status": "cancelling", "job": "collection"}
+    assert engine.cancelled is True
+    _reset_cancel_state()
+
+
+def test_event_canceller_sets_the_event():
+    ev = threading.Event()
+    wa._EventCanceller(ev).cancel()
+    assert ev.is_set()
+
+
+def test_dashboard_exposes_cancel_control():
+    html = wa._DASHBOARD
+    assert "cancelJob()" in html and "/cancel" in html
+    assert 'id="b-cancel"' in html
+
+
 # ── Optional: exercise the live endpoints if a test client is available ──────
 
 def test_endpoints_with_testclient():
@@ -152,3 +205,8 @@ def test_endpoints_with_testclient():
 
     r = client.post("/run/does-not-exist", json={"url": "https://x"})
     assert r.status_code == 404
+
+    # No job running → /cancel reports cleanly with 409.
+    _reset_cancel_state()
+    r = client.post("/cancel")
+    assert r.status_code == 409 and "no job running" in r.json()["error"]

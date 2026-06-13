@@ -11,6 +11,7 @@ import asyncio
 import json
 import socket
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -57,6 +58,43 @@ _REPORT_BASE = (Path.home() / 'SiteAnalyzer').resolve()
 _log_queue: asyncio.Queue = asyncio.Queue()
 _job_results: Dict[str, dict] = {}
 _active_job: Optional[str] = None
+# The currently running job's cancellable engine, if it exposes ``cancel()``
+# (e.g. a CollectionRunner). Long jobs register one so /cancel can stop them.
+_active_cancellable: Optional[object] = None
+
+
+class _EventCanceller:
+    """Adapts a ``threading.Event`` (cancel-signal style) to a ``cancel()`` call,
+    so engines that take a cancel Event register uniformly alongside those that
+    expose ``cancel()`` directly."""
+
+    def __init__(self, event):
+        self._event = event
+
+    def cancel(self):
+        self._event.set()
+
+
+def _register_cancellable(obj) -> None:
+    """A running job registers its cancellable engine here (best-effort)."""
+    global _active_cancellable
+    _active_cancellable = obj
+
+
+def _request_cancel() -> dict:
+    """Signal the active job to stop, if it registered a cancellable engine.
+
+    Returns ``{status, job}`` when a cancel was signalled, or ``{error}``. The
+    engine (e.g. CollectionRunner) polls the signal and stops at its next safe
+    point — cooperative, never a hard kill. Pure over module state, so the
+    endpoint stays a thin wrapper and this is unit-testable."""
+    if not _active_job:
+        return {'error': 'no job running'}
+    obj = _active_cancellable
+    if obj is None or not hasattr(obj, 'cancel'):
+        return {'error': f'job {_active_job} is not cancellable'}
+    obj.cancel()
+    return {'status': 'cancelling', 'job': _active_job}
 
 
 async def _push(msg: str, level: str = 'info', msg_type: str = 'log', data: Optional[dict] = None):
@@ -87,6 +125,7 @@ def _run_recon(url: str, push: Callable) -> dict:
 def _run_subdomain(url: str, push: Callable) -> dict:
     domain = urlparse(url if '://' in url else 'https://' + url).netloc or url
     scanner = SubdomainScanner()
+    _register_cancellable(scanner)   # scanner.cancel() stops at next checkpoint
     return scanner.scan(
         domain,
         on_found=lambda e: push(f"found: {e['subdomain']}"),
@@ -162,6 +201,10 @@ def _run_security(url: str, push: Callable) -> dict:
         registry = None
     auditor = SecurityAuditor(data_registry=registry)
     auditor.set_progress_callback(lambda m: push(m))
+    # SecurityAuditor cancels via a threading.Event, so adapt it to cancel().
+    cancel_event = threading.Event()
+    auditor.set_cancel_event(cancel_event)
+    _register_cancellable(_EventCanceller(cancel_event))
     return auditor.audit(url)
 
 
@@ -198,6 +241,7 @@ def _run_design(url: str, push: Callable) -> dict:
 def _run_collection(url: str, push: Callable) -> dict:
     runner = CollectionRunner(max_pages=20)
     runner.set_progress_callback(lambda m: push(m))
+    _register_cancellable(runner)   # runner.cancel() stops at next phase boundary
     res = runner.run(url, str(Path.home() / 'SiteAnalyzer'))
     # Compact summary (full per-phase data is on disk in report.json).
     return {
@@ -335,6 +379,7 @@ white-space:nowrap;transition:opacity .15s}
 .btn:hover{opacity:.82}.btn:disabled{opacity:.38;cursor:not-allowed}
 .btn.sec{background:var(--sf);color:var(--tx);border:1px solid var(--br)}
 .btn.ok{background:var(--ok)}.btn.er{background:var(--er)}
+.btn.wn{background:var(--wn);color:#0d1117}
 .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .console{background:#010409;border:1px solid var(--br);border-radius:6px;
 padding:10px;font-family:Consolas,Monaco,monospace;font-size:.76rem;
@@ -374,6 +419,7 @@ margin-right:5px;vertical-align:middle}
       <input type="text" id="url" placeholder="https://example.com">
     </div>
     <div class="btns" id="jobbtns">
+      <button class="btn wn" id="b-cancel" onclick="cancelJob()" disabled>Cancel</button>
       <button class="btn er" id="b-clr" onclick="clr()">Clear</button>
       <button class="btn sec" onclick="showHistory()">History</button>
       <button class="btn sec" onclick="showData()">Data</button>
@@ -417,8 +463,11 @@ function setConn(ok){
   stxt.textContent=ok?'Connected':'Disconnected';
 }
 
-function setBusy(v){
+function setRunning(v){
+  // Disable job buttons while one runs; enable Cancel only then. Driven by the
+  // real job lifecycle (SSE result/error), not a fixed timeout.
   document.querySelectorAll('#jobbtns .btn.sec').forEach(b=>{b.disabled=v;});
+  const c=document.getElementById('b-cancel'); if(c) c.disabled=!v;
 }
 
 async function loadJobs(){
@@ -485,8 +534,8 @@ function sse(){
     try{
       const d=JSON.parse(e.data);
       if(d.type==='log') log(d.message,d.level||'info');
-      else if(d.type==='result'){log(d.message,'ok');if(d.data)metrics(d.data);}
-      else if(d.type==='error') log(d.message,'er');
+      else if(d.type==='result'){log(d.message,'ok');if(d.data)metrics(d.data);setRunning(false);}
+      else if(d.type==='error'){log(d.message,'er');setRunning(false);}
     }catch(ex){}
   };
 }
@@ -494,17 +543,26 @@ function sse(){
 async function go(name){
   const url=document.getElementById('url').value.trim();
   if(!url){log('Enter a URL first','wn');return;}
-  setBusy(true);
+  setRunning(true);
   log('Sending '+name+' request for: '+url,'data');
   try{
     const r=await fetch('/run/'+name,{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({url})});
     const d=await r.json();
-    if(d.error) log(d.error,'er');
+    if(d.error){log(d.error,'er');setRunning(false);}
     else log('Job started: '+d.job_id,'ok');
-  }catch(ex){log('Request failed: '+ex.message,'er');}
-  setTimeout(()=>setBusy(false),1500);
+  }catch(ex){log('Request failed: '+ex.message,'er');setRunning(false);}
+}
+
+async function cancelJob(){
+  log('Cancelling current job…','wn');
+  try{
+    const r=await fetch('/cancel',{method:'POST'});
+    const d=await r.json();
+    if(d.error) log(d.error,'er');
+    else log('Cancel signalled for: '+d.job,'wn');
+  }catch(ex){log('Cancel failed: '+ex.message,'er');}
 }
 
 async function showHistory(){
@@ -582,7 +640,7 @@ if _FASTAPI_OK:
     # ── Generic background runner ────────────────────────────────────────
 
     async def _run_job(name: str, url: str, job_id: str):
-        global _active_job
+        global _active_job, _active_cancellable
         loop = asyncio.get_event_loop()
         label = JOBS[name]['label']
         await _push(f'[{label}] start: {url}')
@@ -599,6 +657,7 @@ if _FASTAPI_OK:
             await _push(f'[{label}] error: {e}', 'er', 'error')
         finally:
             _active_job = None
+            _active_cancellable = None
 
     # ── Endpoints ────────────────────────────────────────────────────────
 
@@ -623,6 +682,14 @@ if _FASTAPI_OK:
         _active_job = name
         bg.add_task(_run_job, name, body.url, job_id)
         return {'job_id': job_id, 'job': name, 'url': body.url, 'status': 'started'}
+
+    @app.post('/cancel')
+    async def cancel():
+        result = _request_cancel()
+        if 'error' in result:
+            return JSONResponse(result, status_code=409)
+        await _push(f"[{result['job']}] cancel requested — stopping…", 'wn')
+        return result
 
     @app.get('/results')
     async def results():
