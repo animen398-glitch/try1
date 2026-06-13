@@ -45,6 +45,9 @@ DEFAULT_SETTINGS = {
     'user_agent_profile': 'chrome_windows',
     'auto_compress': False,
     'compression_format': 'zip',
+    # Alert Center (#9) — opt-in; off until a channel is configured. See
+    # core.alerts for the full shape (telegram/discord/email + types filter).
+    'alerts': {'enabled': False},
 }
 
 MAX_TARGETS = 100

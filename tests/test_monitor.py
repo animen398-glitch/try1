@@ -208,6 +208,48 @@ def test_run_due_runs_only_enabled_and_due(tmp_path):
     assert [s['slug'] for s in summaries] == ['due.com']
 
 
+def test_run_project_fires_alerts_on_diff(tmp_path, monkeypatch):
+    # Second scan adds a page-less diff with a new subdomain → an alert.
+    from core import alerts
+    sent = []
+    monkeypatch.setattr(alerts, '_http_post',
+                        lambda *a, **k: (sent.append(1), 200)[1])
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+
+    def run_fn_factory(subs_by_scan):
+        state = {'i': 0}
+
+        def run(url):
+            sid = ['20260613_010000', '20260614_010000'][state['i']]
+            subs = subs_by_scan[state['i']]
+            state['i'] += 1
+            sd = project.start_scan(sid)
+            report = {
+                'url': url, 'status': 'Success', 'scan_id': sid,
+                'phases': {'subdomains': {'status': 'Success', 'data': {
+                    'results': [{'subdomain': s} for s in subs]}}},
+                'executive_summary': {'risk_level': 'Low', 'risk_100': 1,
+                                      'metrics': {'risk_100': 1}},
+            }
+            (sd / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+            project.record_scan(sd, report)
+            return report
+        return run
+
+    run_fn = run_fn_factory([['a.x.com'], ['a.x.com', 'b.x.com']])
+    alert_config = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+
+    monitor.run_project(project, run_fn, now=datetime(2026, 6, 13, 10, 0),
+                        alert_config=alert_config)
+    out = monitor.run_project(project, run_fn, now=datetime(2026, 6, 14, 10, 0),
+                              alert_config=alert_config)
+    assert out['alerts']['alerts'] == 1      # one new subdomain
+    assert out['alerts']['sent'] == 1
+    assert sent == [1]
+
+
 def test_run_project_survives_failing_run_fn(tmp_path):
     project = ProjectStore(tmp_path).get_or_create('https://x.com')
     project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))

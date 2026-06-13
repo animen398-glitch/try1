@@ -152,12 +152,15 @@ def _default_run_fn(base: str) -> Callable[[str], Dict]:
 
 def run_project(project, run_fn: Callable[[str], Dict],
                 now: Optional[datetime] = None,
-                on_event: Optional[Callable[[Dict], None]] = None) -> Dict:
+                on_event: Optional[Callable[[Dict], None]] = None,
+                alert_config: Optional[Dict] = None) -> Dict:
     """Run one monitored project's scan + auto-diff and advance its schedule.
 
     ``run_fn(url)`` performs the Full Collection and records the new scan into
     the project (the real one does; tests inject a fake). Returns a summary
     ``{slug, url, scan_id, prev_scan_id, diff_line, diff_html, status, error}``.
+    When ``alert_config`` is set (Alert Center, #9), alertable changes in the
+    auto-diff are dispatched and summarized under ``alerts``.
     """
     now = now or datetime.now()
     meta = project.load_metadata()
@@ -175,7 +178,8 @@ def run_project(project, run_fn: Callable[[str], Dict],
 
     result: Dict = {'slug': slug, 'url': url, 'scan_id': None,
                     'prev_scan_id': prev_id, 'diff_line': None,
-                    'diff_html': None, 'status': 'Success', 'error': None}
+                    'diff_html': None, 'alerts': None,
+                    'status': 'Success', 'error': None}
     emit('scan_start', url=url, prev_scan_id=prev_id)
     try:
         report = run_fn(url)
@@ -197,6 +201,10 @@ def run_project(project, run_fn: Callable[[str], Dict],
             result['diff_line'] = out['line']
             result['diff_html'] = out['html_path']
             emit('diff', prev_scan_id=prev_id, scan_id=new_id, line=out['line'])
+            # Alert Center (#9): dispatch alertable changes from this diff.
+            if alert_config:
+                result['alerts'] = _dispatch_alerts(slug, out['diff'],
+                                                    alert_config, emit)
         except Exception as e:   # noqa: BLE001 — a failed diff must not fail the run
             result['error'] = f'diff failed: {e}'
             emit('diff_error', error=str(e))
@@ -204,6 +212,17 @@ def run_project(project, run_fn: Callable[[str], Dict],
     _advance_schedule(project, new_id, now)
     emit('scan_done', scan_id=new_id, diff_line=result['diff_line'])
     return result
+
+
+def _dispatch_alerts(slug: str, diff: Dict, alert_config: Dict, emit) -> Dict:
+    """Send alerts for a diff (lazy import keeps monitor's network surface
+    opt-in: core.alerts is only pulled in when alerts are actually configured)."""
+    from core import alerts
+    summary = alerts.notify(alert_config, slug, diff)
+    if summary.get('alerts'):
+        emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
+             reason=summary.get('reason'))
+    return summary
 
 
 def _advance_schedule(project, scan_id: Optional[str], now: datetime) -> None:
@@ -223,12 +242,14 @@ def _advance_schedule(project, scan_id: Optional[str], now: datetime) -> None:
 
 def run_due(store, now: Optional[datetime] = None,
             run_fn: Optional[Callable[[str], Dict]] = None,
-            on_event: Optional[Callable[[Dict], None]] = None) -> List[Dict]:
+            on_event: Optional[Callable[[Dict], None]] = None,
+            alert_config: Optional[Dict] = None) -> List[Dict]:
     """Run every project in ``store`` whose schedule is enabled and due.
 
     ``run_fn`` is the heavy collection step; when omitted the real pipeline is
-    used (bound to the store's base). Returns one ``run_project`` summary per
-    project that ran (empty when nothing is due)."""
+    used (bound to the store's base). ``alert_config`` (Alert Center, #9) is
+    passed through so each diff can fire notifications. Returns one
+    ``run_project`` summary per project that ran (empty when nothing is due)."""
     now = now or datetime.now()
     run_fn = run_fn or _default_run_fn(str(store.root.parent))
     summaries: List[Dict] = []
@@ -239,7 +260,8 @@ def run_due(store, now: Optional[datetime] = None,
             continue
         if is_due(project.get_monitor(), now):
             summaries.append(run_project(project, run_fn, now=now,
-                                         on_event=on_event))
+                                         on_event=on_event,
+                                         alert_config=alert_config))
     return summaries
 
 
@@ -254,11 +276,13 @@ class MonitorScheduler:
 
     def __init__(self, store, check_interval: float = 3600.0,
                  run_fn: Optional[Callable[[str], Dict]] = None,
-                 on_event: Optional[Callable[[Dict], None]] = None):
+                 on_event: Optional[Callable[[Dict], None]] = None,
+                 alert_config: Optional[Dict] = None):
         self.store = store
         self.check_interval = check_interval
         self.run_fn = run_fn
         self.on_event = on_event
+        self.alert_config = alert_config
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -268,7 +292,7 @@ class MonitorScheduler:
     def tick(self, now: Optional[datetime] = None) -> List[Dict]:
         """One check pass — public so callers/tests can trigger it directly."""
         return run_due(self.store, now=now, run_fn=self.run_fn,
-                       on_event=self.on_event)
+                       on_event=self.on_event, alert_config=self.alert_config)
 
     def start(self) -> None:
         if self.running():
