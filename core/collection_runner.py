@@ -43,6 +43,7 @@ from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
 from core.screenshot import ScreenshotCapturer
 from core.screenshot import select_targets as select_screenshot_targets
+from core.subdomain_scanner import SubdomainScanner
 from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
@@ -61,7 +62,7 @@ class CollectionRunner:
                  cookies: Optional[str] = None, capture_delay: float = 0.5,
                  screenshots: bool = False, nuclei: bool = False,
                  katana: bool = False, llm: bool = False,
-                 llm_model: Optional[str] = None):
+                 llm_model: Optional[str] = None, subdomains: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -77,6 +78,10 @@ class CollectionRunner:
         # (off by default — the verdict never depends on a model being present).
         self.llm = llm
         self.llm_model = llm_model
+        # Opt-in subdomain enumeration (passive + active takeover detection) —
+        # feeds the risk engine's takeover signal and the Scan Diff subdomain
+        # section. Off by default (it does extra network).
+        self.subdomains = subdomains
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -88,7 +93,8 @@ class CollectionRunner:
                   nuclei: Optional[bool] = None,
                   katana: Optional[bool] = None,
                   llm: Optional[bool] = None,
-                  llm_model: Optional[str] = None):
+                  llm_model: Optional[str] = None,
+                  subdomains: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -105,6 +111,8 @@ class CollectionRunner:
             self.llm = llm
         if llm_model is not None:
             self.llm_model = llm_model
+        if subdomains is not None:
+            self.subdomains = subdomains
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -178,6 +186,10 @@ class CollectionRunner:
         # 7. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
             report['phases']['vulns'] = self._phase_vulns(report, scan_dir)
+        # 7b. Subdomain enumeration (opt-in) → feeds the takeover risk signal
+        # and the Scan Diff subdomain section.
+        if self.subdomains and not self._cancelled(report):
+            report['phases']['subdomains'] = self._phase_subdomains(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -375,6 +387,42 @@ class CollectionRunner:
                     'findings_added': len(added), 'errors': errs}
         except Exception as e:
             self._log(f'  Analyzer plugins failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_subdomains(self, url: str, project_dir: Path) -> Dict:
+        """Enumerate subdomains (passive sources + active takeover detection).
+
+        Wraps the scanner result as ``{summary, results}`` so the executive
+        summary finds takeover candidates at ``data.summary.takeover_candidates``
+        (the shape the unified risk engine already reads) and Scan Diff reads the
+        host list at ``data.results``. Guarded — a failure never sinks the scan.
+        """
+        from urllib.parse import urlparse
+        self._log('[+] Subdomain enumeration…')
+        try:
+            host = urlparse(url).netloc.split(':')[0] or url
+            scanner = SubdomainScanner()
+            result = scanner.scan(host, passive=True, brute=False, active=True,
+                                  use_cache=True)
+            data = {
+                'summary': {
+                    'total': result.get('total', 0),
+                    'live_count': result.get('live_count', 0),
+                    'takeover_candidates': result.get('takeover_candidates', []),
+                },
+                'results': result.get('results', []),
+            }
+            self._log(f"  Subdomains: {data['summary']['total']} found, "
+                      f"{len(data['summary']['takeover_candidates'])} takeover candidate(s)")
+            out = project_dir / 'subdomains'
+            out.mkdir(exist_ok=True)
+            (out / 'subdomains.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            return {'status': result.get('status', 'Success'), 'data': data}
+        except Exception as e:
+            self._log(f'  Subdomain enumeration failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_katana(self, url: str) -> Dict:

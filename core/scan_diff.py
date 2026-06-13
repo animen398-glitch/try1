@@ -25,6 +25,7 @@ from core.executive_summary import RISK_COLORS
 # when the collection pipeline gains new phases, e.g. subdomains).
 SECTION_PHASES = {
     'pages':        'capture',
+    'subdomains':   'subdomains',
     'secrets':      'api',
     'technologies': 'recon',
     'dependencies': 'recon',
@@ -34,6 +35,7 @@ SECTION_PHASES = {
 }
 SECTION_TITLES = {
     'pages':        'Страницы (Site Map)',
+    'subdomains':   'Субдомены',
     'secrets':      'Секреты / ключи',
     'technologies': 'Технологии',
     'dependencies': 'Зависимости (JS)',
@@ -79,6 +81,19 @@ def _extract_pages(report: Dict) -> Optional[Dict]:
     return {e.get('url'): {'status': e.get('status'),
                            'type': e.get('content_type')}
             for e in site_map if isinstance(e, dict) and e.get('url')}
+
+
+def _extract_subdomains(report: Dict) -> Optional[Dict]:
+    results = _data(report, 'subdomains').get('results')
+    if not isinstance(results, list):
+        return None
+    out: Dict[str, str] = {}
+    for e in results:
+        if isinstance(e, dict) and e.get('subdomain'):
+            host = str(e['subdomain'])
+            # Flag takeover candidates in the displayed label.
+            out[host] = f'{host} ⚠ takeover' if e.get('takeover') else host
+    return out
 
 
 def _extract_secrets(report: Dict) -> Optional[Dict]:
@@ -152,6 +167,7 @@ def _extract_findings(report: Dict) -> Optional[Dict]:
 
 _EXTRACTORS = {
     'pages':        _extract_pages,
+    'subdomains':   _extract_subdomains,
     'secrets':      _extract_secrets,
     'technologies': _extract_technologies,
     'dependencies': _extract_dependencies,
@@ -162,7 +178,7 @@ _EXTRACTORS = {
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
-_SET_LIKE = {'secrets', 'endpoints', 'findings'}
+_SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'findings'}
 
 
 def _label(section: str, key, value) -> str:

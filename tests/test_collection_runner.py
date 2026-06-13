@@ -22,6 +22,45 @@ def test_cancel_sets_event():
     assert report["cancelled"] is True
 
 
+def test_default_collection_has_subdomains_off():
+    assert CollectionRunner().subdomains is False
+
+
+def test_phase_subdomains_wraps_scanner_result(tmp_path, monkeypatch):
+    """The phase shapes the scanner output as {summary, results} so the risk
+    engine finds takeover_candidates and Scan Diff finds the host list."""
+    from core.subdomain_scanner import SubdomainScanner
+    monkeypatch.setattr(
+        SubdomainScanner, "scan",
+        lambda self, host, **kw: {
+            "status": "Success", "domain": host, "total": 2,
+            "live_count": 1, "takeover_candidates": ["bad.x.com"],
+            "results": [{"subdomain": "bad.x.com", "takeover": True},
+                        {"subdomain": "ok.x.com"}]})
+    r = CollectionRunner(subdomains=True)
+    phase = r._phase_subdomains("https://x.com", tmp_path)
+
+    assert phase["status"] == "Success"
+    # Shape the unified risk engine already reads (P3): data.summary.takeover…
+    assert phase["data"]["summary"]["takeover_candidates"] == ["bad.x.com"]
+    assert {e["subdomain"] for e in phase["data"]["results"]} == {
+        "bad.x.com", "ok.x.com"}
+    # Artefact written for the scan directory.
+    assert (tmp_path / "subdomains" / "subdomains.json").exists()
+
+
+def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
+    # With a takeover candidate present, the executive summary escalates.
+    from core.executive_summary import build_summary
+    report = {"url": "https://x.com", "phases": {
+        "subdomains": {"status": "Success", "data": {"summary": {
+            "total": 1, "takeover_candidates": ["bad.x.com"]},
+            "results": [{"subdomain": "bad.x.com", "takeover": True}]}}}}
+    summary = build_summary(report)
+    assert summary["metrics"]["takeovers"] == 1
+    assert summary["risk_level"] == "Critical"      # a takeover forces Critical
+
+
 def test_render_html_contains_phase_sections():
     r = CollectionRunner()
     report = {

@@ -8,7 +8,7 @@ from core.scan_diff import diff, render_html, summarize_line
 
 def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
             deps=None, headers=None, sec_headers=None, endpoints=None,
-            findings=None, level='Low', risk_100=4):
+            findings=None, level='Low', risk_100=4, subdomains=None):
     """A minimal but shape-faithful collection report."""
     phases = {
         'capture': {'status': 'Success',
@@ -28,6 +28,9 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
     if endpoints is not None:
         phases['katana'] = {'status': 'Success',
                             'data': {'endpoints': endpoints}}
+    if subdomains is not None:
+        phases['subdomains'] = {'status': 'Success',
+                                'data': {'results': subdomains}}
     return {
         'scan_id': scan_id, 'finished_at': f'2026-06-13T0{1 if scan_id == "A" else 2}:00:00',
         'phases': phases,
@@ -103,6 +106,24 @@ def test_findings_added():
     assert sec['removed'] == []
 
 
+def test_subdomains_added_removed_with_takeover_flag():
+    a = _report('A', subdomains=[{'subdomain': 'old.x.com'},
+                                 {'subdomain': 'keep.x.com'}])
+    b = _report('B', subdomains=[{'subdomain': 'keep.x.com'},
+                                 {'subdomain': 'new.x.com', 'takeover': True}])
+    sec = diff(a, b)['sections']['subdomains']
+    assert sec['added'] == ['new.x.com ⚠ takeover']   # takeover flagged
+    assert sec['removed'] == ['old.x.com']
+
+
+def test_subdomains_skipped_when_phase_absent_in_one():
+    a = _report('A', subdomains=[{'subdomain': 'a.x.com'}])
+    b = _report('B')                       # no subdomain phase in B
+    d = diff(a, b)
+    assert 'subdomains' not in d['sections']
+    assert 'subdomains' in d['skipped']
+
+
 def test_endpoints_compared_when_katana_ran_in_both():
     a = _report('A', endpoints=['https://x/api/v1'])
     b = _report('B', endpoints=['https://x/api/v1', 'https://x/api/v2'])
@@ -161,9 +182,9 @@ def test_risk_headline_and_summary_line():
 def test_tolerates_empty_reports():
     d = diff({}, {})
     assert d['sections'] == {}
-    assert set(d['skipped']) == {'pages', 'secrets', 'technologies',
-                                 'dependencies', 'headers', 'endpoints',
-                                 'findings'}
+    assert set(d['skipped']) == {'pages', 'subdomains', 'secrets',
+                                 'technologies', 'dependencies', 'headers',
+                                 'endpoints', 'findings'}
     assert d['is_empty'] is True
 
 
