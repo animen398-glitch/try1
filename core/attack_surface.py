@@ -30,6 +30,7 @@ _CATEGORY_COLORS = {
     'Infrastructure': '#6a1b9a',
     'Subdomains': '#00838f',
     'Endpoints': '#5d4037',
+    'APIs': '#00695c',
     'Source Maps': '#ad1457',
 }
 _DEFAULT_COLOR = '#555'
@@ -65,6 +66,7 @@ def build_surface(report: Dict) -> Dict:
     api = data('api')
     capture = data('capture')
     katana = data('katana')
+    openapi = data('openapi')
     subdomains = data('subdomains')
     vulns = phases.get('vulns', {})
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
@@ -110,12 +112,19 @@ def build_surface(report: Dict) -> Dict:
     sub_items = [e.get('subdomain', '') for e in sub_results
                  if isinstance(e, dict)]
 
+    # APIs: discovered OpenAPI endpoints ("METHOD /path"), opt-in phase only.
+    api_endpoints = openapi.get('endpoints') if isinstance(
+        openapi.get('endpoints'), list) else []
+    api_items = [f"{e.get('method', '')} {e.get('path', '')}".strip()
+                 for e in api_endpoints if isinstance(e, dict)]
+
     candidates = [
         _category('Technologies', tech_items),
         _category('Infrastructure', infra_items),
         _category('Secrets', secret_items),
         _category('Subdomains', sub_items),
         _category('Endpoints', katana.get('endpoints') or []),
+        _category('APIs', api_items),
         _category('Pages', page_items),
         _category('Findings', [f.get('title', '') for f in findings]),
     ]
@@ -127,7 +136,8 @@ def build_surface(report: Dict) -> Dict:
 # (secrets, findings, source maps) count for more than mere breadth (pages/tech).
 _SCORE_WEIGHTS = {
     'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'Endpoints': 2,
-    'Subdomains': 2, 'Technologies': 1, 'Infrastructure': 1, 'Pages': 1,
+    'APIs': 2, 'Subdomains': 2, 'Technologies': 1, 'Infrastructure': 1,
+    'Pages': 1,
 }
 
 

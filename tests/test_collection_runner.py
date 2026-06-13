@@ -82,6 +82,48 @@ def test_render_html_certificate_card():
     assert "<script" not in html.lower()
 
 
+def test_phase_openapi_writes_artifact(tmp_path, monkeypatch):
+    """The opt-in OpenAPI phase wraps discover() and writes openapi.json."""
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_openapi", lambda url: {
+        "status": "Success", "spec_url": f"{url}/openapi.json",
+        "version": "3.0.0", "title": "API", "servers": [],
+        "endpoints": [{"method": "GET", "path": "/u"}],
+        "counts": {"paths": 1, "endpoints": 1}})
+    r = CollectionRunner(openapi=True)
+    phase = r._phase_openapi("https://x.com", tmp_path)
+    assert phase["status"] == "Success"
+    assert phase["data"]["counts"]["endpoints"] == 1
+    assert (tmp_path / "openapi" / "openapi.json").exists()
+
+
+def test_phase_openapi_not_found_is_clean(tmp_path, monkeypatch):
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_openapi", lambda url: {
+        "status": "Not found", "spec_url": None, "endpoints": [],
+        "counts": {"paths": 0, "endpoints": 0}})
+    phase = CollectionRunner(openapi=True)._phase_openapi("https://x.com", tmp_path)
+    assert phase["status"] == "Not found"
+    assert not (tmp_path / "openapi" / "openapi.json").exists()
+
+
+def test_render_html_openapi_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"openapi": {"status": "Success", "data": {
+            "status": "Success", "spec_url": "https://x/openapi.json",
+            "version": "3.0.0", "title": "Demo", "servers": [],
+            "endpoints": [{"method": "GET", "path": "/users", "summary": "List",
+                           "tags": [], "deprecated": False, "params": 0}],
+            "counts": {"paths": 1, "endpoints": 1}}}},
+    }
+    html = r._render_html(report)
+    assert "OpenAPI / API Map" in html and "/users" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

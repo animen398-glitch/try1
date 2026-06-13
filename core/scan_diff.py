@@ -32,6 +32,7 @@ SECTION_PHASES = {
     'headers':      'recon',
     'certificates': 'certificate',
     'endpoints':    'katana',
+    'apis':         'openapi',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -43,6 +44,7 @@ SECTION_TITLES = {
     'headers':      'HTTP-заголовки',
     'certificates': 'TLS-сертификат',
     'endpoints':    'Эндпоинты (Katana)',
+    'apis':         'API (OpenAPI)',
     'findings':     'Findings',
 }
 
@@ -164,6 +166,18 @@ def _extract_endpoints(report: Dict) -> Optional[Dict]:
     return {str(u): str(u) for u in endpoints}
 
 
+def _extract_openapi(report: Dict) -> Optional[Dict]:
+    endpoints = _data(report, 'openapi').get('endpoints')
+    if not isinstance(endpoints, list):
+        return None
+    out: Dict[str, str] = {}
+    for e in endpoints:
+        if isinstance(e, dict) and e.get('path'):
+            key = f"{e.get('method', '')} {e['path']}".strip()
+            out[key] = key
+    return out
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -183,12 +197,13 @@ _EXTRACTORS = {
     'headers':      _extract_headers,
     'certificates': _extract_certificate,
     'endpoints':    _extract_endpoints,
+    'apis':         _extract_openapi,
     'findings':     _extract_findings,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
-_SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'findings'}
+_SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'findings'}
 
 
 def _label(section: str, key, value) -> str:

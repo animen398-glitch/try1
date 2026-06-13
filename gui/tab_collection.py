@@ -120,6 +120,13 @@ class FinalReportTabMixin:
             "Снимает TLS-сертификат хоста (issuer/срок/SAN/отпечаток). "
             "Scan Diff покажет смену сертификата между сканами.")
         opt_row.addWidget(self.collect_certificate)
+
+        # Opt-in OpenAPI/Swagger discovery (#11) — probes for an API spec.
+        self.collect_openapi = QCheckBox("OpenAPI / Swagger")
+        self.collect_openapi.setToolTip(
+            "Ищет спеку API (swagger.json/openapi.json/…) и строит карту "
+            "эндпоинтов. Питает отчёт, граф (категория APIs) и Scan Diff.")
+        opt_row.addWidget(self.collect_openapi)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -242,6 +249,7 @@ class FinalReportTabMixin:
             llm_model=self.settings.get('ollama_model') or None,
             subdomains=self.collect_subdomains.isChecked(),
             certificate=self.collect_certificate.isChecked(),
+            openapi=self.collect_openapi.isChecked(),
         )
         self._active_collector = runner
 

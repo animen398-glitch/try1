@@ -38,6 +38,8 @@ from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.infrastructure import render_html as render_infrastructure
 from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
+from core.openapi_discovery import discover as discover_openapi
+from core.openapi_discovery import render_html as render_openapi
 from core.llm_summary import generate_narrative as generate_llm_narrative
 from core.project import ProjectStore, project_slug
 from core.recon_engine import ReconEngine
@@ -64,7 +66,7 @@ class CollectionRunner:
                  screenshots: bool = False, nuclei: bool = False,
                  katana: bool = False, llm: bool = False,
                  llm_model: Optional[str] = None, subdomains: bool = False,
-                 certificate: bool = False):
+                 certificate: bool = False, openapi: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -88,6 +90,9 @@ class CollectionRunner:
         # section (renewal / issuer / SAN changes). Off by default (extra TLS
         # handshake).
         self.certificate = certificate
+        # Opt-in OpenAPI/Swagger discovery (#11) — probes for an API spec and
+        # maps its endpoints; feeds the report, attack surface, and Scan Diff.
+        self.openapi = openapi
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -101,7 +106,8 @@ class CollectionRunner:
                   llm: Optional[bool] = None,
                   llm_model: Optional[str] = None,
                   subdomains: Optional[bool] = None,
-                  certificate: Optional[bool] = None):
+                  certificate: Optional[bool] = None,
+                  openapi: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -122,6 +128,8 @@ class CollectionRunner:
             self.subdomains = subdomains
         if certificate is not None:
             self.certificate = certificate
+        if openapi is not None:
+            self.openapi = openapi
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -202,6 +210,9 @@ class CollectionRunner:
         # 7c. TLS certificate (opt-in) → Scan Diff certificate section.
         if self.certificate and not self._cancelled(report):
             report['phases']['certificate'] = self._phase_certificate(url, scan_dir)
+        # 7d. OpenAPI/Swagger discovery (opt-in) → API map for report/surface/diff.
+        if self.openapi and not self._cancelled(report):
+            report['phases']['openapi'] = self._phase_openapi(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -463,6 +474,30 @@ class CollectionRunner:
             self._log(f'  Certificate capture failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_openapi(self, url: str, project_dir: Path) -> Dict:
+        """Probe for an OpenAPI/Swagger spec and map its endpoints (opt-in).
+
+        Guarded; a missing spec is a clean 'Not found', never an error. Writes
+        openapi/openapi.json so Scan Diff can compare the endpoint set."""
+        self._log('[+] OpenAPI discovery…')
+        try:
+            data = discover_openapi(url)
+            if data.get('status') == 'Success':
+                out = project_dir / 'openapi'
+                out.mkdir(exist_ok=True)
+                (out / 'openapi.json').write_text(
+                    json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                    encoding='utf-8',
+                )
+                self._log(f"  OpenAPI: {data['counts']['endpoints']} эндпоинтов "
+                          f"({data.get('spec_url', '')})")
+                return {'status': 'Success', 'data': data}
+            self._log('  OpenAPI — спека не найдена')
+            return {'status': 'Not found', 'data': data}
+        except Exception as e:
+            self._log(f'  OpenAPI discovery failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -704,6 +739,13 @@ class CollectionRunner:
                          f'{e(katana.get("reason", "—"))}</p>')
             body_parts.append(card('Katana Endpoints', kbody,
                                    katana.get('status', '—')))
+
+        # OpenAPI / Swagger (opt-in) — discovered API map.
+        openapi = phases.get('openapi')
+        if openapi:
+            odata = openapi.get('data', {})
+            body_parts.append(card('OpenAPI / API Map', render_openapi(odata),
+                                   openapi.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})
