@@ -10,13 +10,13 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **535 passed, 1 skipped** (536 собрано; сетенезависимые, Qt headless) |
+| Тесты | **536 passed, 1 skipped** (537 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
 | Своих модулей / тест-файлов | 80 (core 40 / utils 17 / gui 22 / remote 1) / 65 |
-| CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build |
+| CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build **+ smoke-run собранного .exe (`--self-check`)** |
 | Git | ветка `master`, синхронна с `origin/master`; платформенные фичи P1–P12 закоммичены и запушены |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
@@ -162,6 +162,10 @@ TIER S/A/B, и TIER C в безопасных вариантах (C1 — localho
 - [СДЕЛАНО] Scan Diff: секция **сертификатов** разблокирована — опц. TLS-cert-
   фаза (`core/cert_info.py`, stdlib ssl) пишет issuer/срок/SAN/отпечаток;
   Scan Diff показывает смену сертификата (renewal/issuer/SAN) между сканами.
+
+- [СДЕЛАНО] Харднинг: CI smoke-запускает собранный .exe (`main.py --self-check`
+  строит окно headless и выходит 0) — ловит PyInstaller-регрессии (потерянный
+  hidden-import / data-файл), которые юнит-тесты на исходниках не видят.
 
 **Осталось (маргинально):**
 - Web-консоль: отмена выполняющегося job'а; job экспорта Vuln-отчёта (избыточен — collection уже даёт полный отчёт).
