@@ -1449,3 +1449,30 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
   эндпоинты, findings. Оба «заблокировано» закрыты.
 
 ==============================================================================
+
+  POLISH — Web-консоль: отмена выполняющегося job'а — [DONE] 2026-06-13
+      Закрывает маргинальный пункт из PROJECT_REPORT §6 («Осталось»). Раньше
+      длинный job в LAN-консоли нельзя было остановить, не убив сервер.
+      Кооперативная отмена, не жёсткий kill (инвариант: останов на безопасной
+      границе фазы/чекпоинта).
+        1) remote/web_app.py — модульное состояние _active_cancellable + helpers:
+           _register_cancellable(obj) (job регистрирует свой движок),
+           _request_cancel() (ЧИСТЫЙ над состоянием → {status,job} или {error};
+           тонкий шов для эндпоинта и юнит-тестов), _EventCanceller (адаптер
+           threading.Event → cancel() для движков с cancel-Event).
+        2) Регистрация в раннерах: _run_collection (CollectionRunner.cancel()),
+           _run_subdomain (SubdomainScanner.cancel()), _run_security
+           (SecurityAuditor.set_cancel_event + _EventCanceller). _run_job
+           сбрасывает _active_cancellable в finally рядом с _active_job.
+        3) Эндпоинт POST /cancel → _request_cancel(); 409 при error (нет job /
+           не отменяем), иначе пушит 'wn'-лог в SSE. Прочие job'ы (recon и т.п.)
+           честно отвечают «not cancellable».
+        4) UI — кнопка Cancel (.btn.wn), активна ТОЛЬКО во время выполнения.
+           setBusy→setRunning: состояние ведётся по реальному жизненному циклу
+           (SSE result/error снимают «running»), убран таймаут-хак 1.5с.
+        5) tests: test_web_app (+5: no-job/not-cancellable/signals-engine,
+           _EventCanceller, dashboard-control; +assert в testclient на 409).
+        ИТОГ: 541 passed, 1 skipped (542 собрано); ruff чист. Без новых
+        зависимостей.
+
+==============================================================================
