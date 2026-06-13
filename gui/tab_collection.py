@@ -104,6 +104,14 @@ class FinalReportTabMixin:
             "Требует запущенного Ollama на localhost:11434 "
             "(иначе фаза пропускается; вердикт риска детерминированный в любом случае)")
         opt_row.addWidget(self.collect_llm)
+
+        # Opt-in subdomain enumeration (passive sources + takeover detection).
+        # No binary needed (passive HTTP sources), so a plain checkbox.
+        self.collect_subdomains = QCheckBox("Субдомены (passive + takeover)")
+        self.collect_subdomains.setToolTip(
+            "Перечисление субдоменов (crt.sh/HackerTarget/… + активная проверка "
+            "takeover). Доп. сетевые запросы; питает риск-движок и Scan Diff.")
+        opt_row.addWidget(self.collect_subdomains)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -189,6 +197,7 @@ class FinalReportTabMixin:
             katana=self.collect_katana.isChecked(),
             llm=self.collect_llm.isChecked(),
             llm_model=self.settings.get('ollama_model') or None,
+            subdomains=self.collect_subdomains.isChecked(),
         )
         self._active_collector = runner
 

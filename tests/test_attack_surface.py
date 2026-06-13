@@ -49,6 +49,14 @@ def test_build_surface_merges_technologies_and_infra_chain():
         '1.2.3.4', 'AS13335 Cloudflare', 'Cloudflare']
 
 
+def test_build_surface_includes_subdomains_when_phase_ran():
+    report = _report(subdomains={'data': {'results': [
+        {'subdomain': 'a.ex.com'}, {'subdomain': 'b.ex.com'}]}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Subdomains']['count'] == 2
+    assert set(names['Subdomains']['items']) == {'a.ex.com', 'b.ex.com'}
+
+
 def test_build_surface_omits_empty_categories():
     surface = asf.build_surface(_report(recon={'data': {'cms': ['Vue']}}))
     names = [c['name'] for c in surface['categories']]

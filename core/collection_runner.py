@@ -601,6 +601,31 @@ class CollectionRunner:
                 'Site Map', render_site_map(site_map), cap.get('status', '—'),
             ))
 
+        # Subdomains (opt-in enumeration) — list with takeover candidates flagged.
+        subdomains = phases.get('subdomains')
+        if subdomains:
+            sdata = subdomains.get('data', {})
+            results = sdata.get('results', [])
+            summ = sdata.get('summary', {})
+            takeovers = set(summ.get('takeover_candidates', []))
+            if results:
+                items = ''.join(
+                    f'<li style="margin:1px 0;{"color:#c62828;font-weight:bold;" if h.get("subdomain") in takeovers else ""}">'
+                    f'{e(str(h.get("subdomain", "")))}'
+                    f'{" ⚠ takeover" if h.get("subdomain") in takeovers else ""}</li>'
+                    for h in results[:40])
+                sbody = (f'<p style="font-size:13px;">Субдоменов: '
+                         f'<b>{e(str(summ.get("total", len(results))))}</b>, '
+                         f'takeover-кандидатов: '
+                         f'<b>{e(str(len(takeovers)))}</b></p>'
+                         f'<ul style="font-size:12px;color:#444;margin:6px 0;'
+                         f'max-height:240px;overflow:auto;">{items}</ul>')
+            else:
+                sbody = (f'<p style="font-size:13px;color:#999;">'
+                         f'{e(subdomains.get("reason", "субдомены не найдены"))}</p>')
+            body_parts.append(card('Subdomains', sbody,
+                                   subdomains.get('status', '—')))
+
         # Katana endpoints (opt-in external crawl).
         katana = phases.get('katana')
         if katana:

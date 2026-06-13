@@ -49,6 +49,23 @@ def test_phase_subdomains_wraps_scanner_result(tmp_path, monkeypatch):
     assert (tmp_path / "subdomains" / "subdomains.json").exists()
 
 
+def test_render_html_subdomains_card_flags_takeover():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"subdomains": {"status": "Success", "data": {
+            "summary": {"total": 2, "takeover_candidates": ["bad.x.com"]},
+            "results": [{"subdomain": "bad.x.com", "takeover": True},
+                        {"subdomain": "ok.x.com"}]}}},
+    }
+    html = r._render_html(report)
+    assert "Subdomains" in html
+    assert "bad.x.com" in html and "ok.x.com" in html
+    assert "takeover" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

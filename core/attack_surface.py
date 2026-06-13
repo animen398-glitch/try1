@@ -65,6 +65,7 @@ def build_surface(report: Dict) -> Dict:
     api = data('api')
     capture = data('capture')
     katana = data('katana')
+    subdomains = data('subdomains')
     vulns = phases.get('vulns', {})
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
 
@@ -103,10 +104,17 @@ def build_surface(report: Dict) -> Dict:
     if infra.get('provider'):
         infra_items.append(str(infra['provider']))
 
+    # Subdomains: the enumerated hosts (present only when the opt-in phase ran).
+    sub_results = subdomains.get('results') if isinstance(
+        subdomains.get('results'), list) else []
+    sub_items = [e.get('subdomain', '') for e in sub_results
+                 if isinstance(e, dict)]
+
     candidates = [
         _category('Technologies', tech_items),
         _category('Infrastructure', infra_items),
         _category('Secrets', secret_items),
+        _category('Subdomains', sub_items),
         _category('Endpoints', katana.get('endpoints') or []),
         _category('Pages', page_items),
         _category('Findings', [f.get('title', '') for f in findings]),
