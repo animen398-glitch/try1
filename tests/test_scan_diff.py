@@ -216,7 +216,7 @@ def test_tolerates_empty_reports():
     assert set(d['skipped']) == {'pages', 'subdomains', 'secrets',
                                  'technologies', 'dependencies', 'headers',
                                  'certificates', 'endpoints', 'apis',
-                                 'historical', 'dns', 'findings'}
+                                 'historical', 'dns', 'emails', 'findings'}
     assert d['is_empty'] is True
 
 

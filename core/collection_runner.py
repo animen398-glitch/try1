@@ -38,6 +38,8 @@ from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.dns_intel import discover as discover_dns
 from core.dns_intel import render_html as render_dns
+from core.email_intel import discover as discover_emails
+from core.email_intel import render_html as render_emails
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.infrastructure import render_html as render_infrastructure
@@ -71,7 +73,8 @@ class CollectionRunner:
                  katana: bool = False, llm: bool = False,
                  llm_model: Optional[str] = None, subdomains: bool = False,
                  certificate: bool = False, openapi: bool = False,
-                 historical: bool = False, dns: bool = False):
+                 historical: bool = False, dns: bool = False,
+                 emails: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -104,6 +107,9 @@ class CollectionRunner:
         # Opt-in DNS intelligence (#13) — records + email-auth (SPF/DMARC/DKIM/
         # CAA); its findings fold into the risk engine.
         self.dns = dns
+        # Opt-in Email intelligence (#13) — harvest + group exposed addresses
+        # (homepage/robots/sitemap); feeds report + Scan Diff.
+        self.emails = emails
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -120,7 +126,8 @@ class CollectionRunner:
                   certificate: Optional[bool] = None,
                   openapi: Optional[bool] = None,
                   historical: Optional[bool] = None,
-                  dns: Optional[bool] = None):
+                  dns: Optional[bool] = None,
+                  emails: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -147,6 +154,8 @@ class CollectionRunner:
             self.historical = historical
         if dns is not None:
             self.dns = dns
+        if emails is not None:
+            self.emails = emails
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -237,6 +246,9 @@ class CollectionRunner:
         # into the vuln phase so the risk engine accounts for them.
         if self.dns and not self._cancelled(report):
             report['phases']['dns'] = self._phase_dns(url, scan_dir, report)
+        # 7g. Email intelligence (opt-in) → harvested + grouped addresses.
+        if self.emails and not self._cancelled(report):
+            report['phases']['emails'] = self._phase_emails(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -577,6 +589,28 @@ class CollectionRunner:
             self._log(f'  DNS intel failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_emails(self, url: str, project_dir: Path) -> Dict:
+        """Harvest + group exposed e-mail addresses (opt-in). Guarded; an empty
+        harvest is a clean 'No emails'. Writes emails/emails.json."""
+        self._log('[+] Email intelligence…')
+        try:
+            data = discover_emails(url)
+            if data.get('status') != 'Success':
+                self._log('  Email — адреса не найдены')
+                return {'status': data.get('status', 'No emails'), 'data': data}
+            out = project_dir / 'emails'
+            out.mkdir(exist_ok=True)
+            (out / 'emails.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            self._log(f"  Email: {data['total']} адресов "
+                      f"(на домене {len(data['on_domain'])})")
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Email intel failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -839,6 +873,13 @@ class CollectionRunner:
             ddata = dns.get('data', {})
             body_parts.append(card('DNS / Email Auth', render_dns(ddata),
                                    dns.get('status', '—')))
+
+        # Email intelligence (opt-in) — harvested + grouped addresses.
+        emails = phases.get('emails')
+        if emails:
+            edata = emails.get('data', {})
+            body_parts.append(card('Email Intelligence', render_emails(edata),
+                                   emails.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})

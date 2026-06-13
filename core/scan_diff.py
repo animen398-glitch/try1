@@ -35,6 +35,7 @@ SECTION_PHASES = {
     'apis':         'openapi',
     'historical':   'historical',
     'dns':          'dns',
+    'emails':       'emails',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -49,6 +50,7 @@ SECTION_TITLES = {
     'apis':         'API (OpenAPI)',
     'historical':   'Историч. URL (интересные)',
     'dns':          'DNS / email-auth',
+    'emails':       'E-mail адреса',
     'findings':     'Findings',
 }
 
@@ -205,6 +207,14 @@ def _extract_dns(report: Dict) -> Optional[Dict]:
     }
 
 
+def _extract_emails(report: Dict) -> Optional[Dict]:
+    data = _data(report, 'emails')
+    if 'on_domain' not in data and 'external' not in data:
+        return None
+    addrs = (data.get('on_domain') or []) + (data.get('external') or [])
+    return {str(a): str(a) for a in addrs}
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -227,13 +237,14 @@ _EXTRACTORS = {
     'apis':         _extract_openapi,
     'historical':   _extract_historical,
     'dns':          _extract_dns,
+    'emails':       _extract_emails,
     'findings':     _extract_findings,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
 _SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'historical',
-             'findings'}
+             'emails', 'findings'}
 
 
 def _label(section: str, key, value) -> str:

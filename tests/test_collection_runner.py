@@ -192,6 +192,33 @@ def test_render_html_dns_card():
     assert "<script" not in html.lower()
 
 
+def test_phase_emails_writes_artifact(tmp_path, monkeypatch):
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_emails", lambda url: {
+        "status": "Success", "domain": "x.com", "sources": ["homepage"],
+        "total": 2, "on_domain": ["info@x.com"], "external": ["ceo@gmail.com"],
+        "roles": {"info": ["info@x.com"], "personal": ["ceo@gmail.com"]}})
+    r = CollectionRunner(emails=True)
+    phase = r._phase_emails("https://x.com", tmp_path)
+    assert phase["status"] == "Success" and phase["data"]["total"] == 2
+    assert (tmp_path / "emails" / "emails.json").exists()
+
+
+def test_render_html_emails_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"emails": {"status": "Success", "data": {
+            "status": "Success", "total": 1, "sources": ["homepage"],
+            "on_domain": ["info@x.com"], "external": [],
+            "roles": {"info": ["info@x.com"]}}}},
+    }
+    html = r._render_html(report)
+    assert "Email Intelligence" in html and "info@x.com" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

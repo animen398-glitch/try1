@@ -142,6 +142,13 @@ class FinalReportTabMixin:
             "через DNS-over-HTTPS. Находки (нет SPF/DMARC, слабый DMARC, нет CAA) "
             "идут в риск-движок.")
         opt_row.addWidget(self.collect_dns)
+
+        # Opt-in email intelligence (#13) — harvest exposed addresses.
+        self.collect_emails = QCheckBox("Email-разведка")
+        self.collect_emails.setToolTip(
+            "Собирает e-mail адреса (homepage/robots.txt/sitemap.xml) и "
+            "группирует по ролям (security/admin/support/…) и домену.")
+        opt_row.addWidget(self.collect_emails)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -267,6 +274,7 @@ class FinalReportTabMixin:
             openapi=self.collect_openapi.isChecked(),
             historical=self.collect_historical.isChecked(),
             dns=self.collect_dns.isChecked(),
+            emails=self.collect_emails.isChecked(),
         )
         self._active_collector = runner
 
