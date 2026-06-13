@@ -1,7 +1,8 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-13 (Platform P1–P8: Project Workspace / Unified Risk
-  Engine 0–100 / Dashboard 2.0 / Scan Diff; тесты ~457)
+  Дата отчёта: 2026-06-13 (Platform P1–P8 + P9 Multi-page Screenshots
+  (TIER B1); Project Workspace / Risk Engine 0–100 / Dashboard 2.0 / Scan
+  Diff / мульти-скриншоты; тесты ~467)
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -943,7 +944,7 @@ G3. ПРИОРИТИЗАЦИЯ НОВОГО
   A5. CF2 Site Map depth + response-type.
 
 ## TIER B (полезно, опционально)
-  B1. CF4 мульти-тип скриншоты (login/admin/dashboard).
+  B1. CF4 мульти-тип скриншоты (login/admin/dashboard).  [DONE] (см. P9 ниже)
   B2. CF1 интерактивность графа — только если найдётся оффлайн-способ.
 
 ## TIER C (низкий ROI)
@@ -1182,5 +1183,45 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         оффлайн-контракт соблюдён. Код Scan Diff прошёл живой прогон без правок.
         Маскирование секретов в этом прогоне не задействовано (ни один сайт не
         слил ключей) — оно детерминированно покрыто юнит-тестом.
+
+  P9. Multi-page Screenshots (TIER B1 / CF4) — [DONE] 2026-06-13
+      Расширение M1 (homepage screenshot) до Aquatone-style мульти-страничного
+      снимка: home + ключевые страницы (login/admin/dashboard/account/register/
+      api). Опц., gated на Playwright (инвариант I1, как M1); НЕ OCR/«intelligence»
+      (та часть REJECTED, R3). Инварианты I1–I5 соблюдены.
+        1) core/screenshot.py — ЧИСТЫЕ stdlib-функции (тестируемы без браузера,
+           I5): classify_url(url)→лейбл типа страницы по ключевым словам в
+           path/query (ассеты css/img/js не матчатся → исключаются сами);
+           select_targets(report)→[{label,url,probed}] — homepage первым, затем
+           crawled-страницы из site_map (фаза capture, без нового краулинга),
+           классифицированные по типу, затем bounded-probe общих чувствительных
+           путей (COMMON_PATHS: /login,/admin,/dashboard); дедуп по label И url,
+           кап DEFAULT_MAX_SHOTS=6, детерминирован. ScreenshotCapturer.capture_many
+           (targets, out_dir) — переиспользует capture() (единый browser-путь),
+           по строке на страницу {label,url,status,http_status,path,rel_path?,
+           error?,probed}; rel_path (forward-slash) только для успешных →
+           оффлайн-safe <img> (I2); пустой список без Playwright.
+        2) collection_runner._phase_screenshot(url, scan_dir, report) — выбирает
+           цели из УЖЕ собранного report (site_map) и capture_many; сохраняет
+           top-level rel_path (homepage) для обратной совместимости старых
+           читателей отчёта. Рендер: ГАЛЕРЕЯ — по одному подписанному <img> на
+           тип страницы, для упавшего probe — плитка «недоступно · HTTP nnn»
+           (не битая картинка), всё оффлайн. Дефолтный пайплайн не меняется
+           (screenshots=False).
+        3) GUI tab_collection — чекбокс переименован в «Скриншоты ключевых
+           страниц (Playwright)» (та же upfront-деградация без Playwright).
+        4) tests/test_screenshot.py (+11): classify_url по типам/ассеты-None,
+           select_targets (homepage-первым, дедуп label, probe общих путей,
+           probe пропускает виденный label, max_shots, нет homepage→[]),
+           capture_many (строка на цель + 403-probe без rel_path, пусто без
+           Playwright), фаза мульти-success + all-failed→Error, рендер галереи +
+           легаси-форма (одиночный rel_path).
+        ИТОГ: 467 passed, 1 skipped; ruff чист. Без новых зависимостей.
+        [LIVE TEST — 2026-06-13, реальный Chromium на github.com]: краул нашёл
+        /login (классифицирован как login); select_targets дал home + login
+        (из site_map) + admin/dashboard (probe общих путей); реальный браузер
+        снял все 4 PNG разного размера (home 1.7MB, login/dashboard по 19KB —
+        github редиректит /dashboard→/login без авторизации, admin 259KB).
+        Мульти-страничный путь подтверждён end-to-end без правок кода.
 
 ==============================================================================
