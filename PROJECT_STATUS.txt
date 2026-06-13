@@ -1,8 +1,9 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-13 (Platform P1–P11; Project Workspace / Risk Engine
+  Дата отчёта: 2026-06-13 (Platform P1–P12; Project Workspace / Risk Engine
   0–100 / Dashboard 2.0 / Scan Diff / мульти-скриншоты (B1) / интерактивный
-  attack-surface граф (B2) / LLM-резюме на локальном Ollama (C1); тесты ~487)
+  attack-surface граф (B2) / LLM-резюме на локальном Ollama (C1) / оффлайн-
+  валидация формата секретов (C2); тесты ~504)
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -951,8 +952,10 @@ G3. ПРИОРИТИЗАЦИЯ НОВОГО
 ## TIER C (низкий ROI)
   C1. CF3 LLM exec summary (Ollama).  [DONE] — по явному opt-in пользователя,
       строго localhost + graceful-деградация, см. P11 ниже.
-  C2. CF9 живая secret-валидация.  [ОТЛОЖЕНО] — шлёт секреты наружу по сети
-      (dual-use/приватность), требует отдельного явного opt-in-решения.
+  C2. CF9 secret-валидация.  [DONE как ОФФЛАЙН-ВАРИАНТ] — по явному выбору
+      пользователя реализована СТРУКТУРНАЯ оффлайн-валидация формата (без сети,
+      секреты не покидают машину), см. P12. ЖИВАЯ сетевая валидация (отправка
+      ключа провайдеру) ОСТАЁТСЯ вне скоупа — dual-use/приватность.
 
 ## REJECTED
   R1. CF8 JS AST (тяжёлый парсер ради маржи).  R2. CF1 через CDN-JS (Cytoscape)
@@ -1306,5 +1309,42 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         Прим.: C2 (живая secret-валидация) ОСТАЁТСЯ отложенной — она шлёт сами
         секреты наружу по сети (dual-use/приватность), это отдельное явное
         решение, не покрытое текущим opt-in.
+
+  P12. Secret Format Validation — структурная ОФФЛАЙН-валидация (TIER C2 / CF9)
+       — [DONE] 2026-06-13
+      Реализован БЕЗОПАСНЫЙ вариант C2 по явному выбору пользователя: проверка
+      ФОРМАТА найденных секретов целиком оффлайн. Сеть НЕ задействуется, секрет
+      НИКОГДА не покидает машину — «живая» валидация (отправка ключа провайдеру)
+      сознательно вне скоупа (dual-use/приватность). Инварианты I1/I2/I5.
+        1) core/secret_validator.py — ЧИСТЫЙ stdlib (base64/json/re):
+           validate(type, value)→{status: valid_format|invalid_format|
+           unverifiable, reason}. Точные vendor-форматы (AWS/Stripe/Twilio/
+           GitHub/Google/npm/SendGrid/Slack/Mailgun) через fullmatch; РЕАЛЬНОЕ
+           декодирование: JWT — base64url-заголовок → JSON с alg; Authorization
+           Basic — base64 → пара user:pass; Generic API Key/Secret — отсев
+           плейсхолдеров (your/example/changeme/последовательности) и низко-
+           энтропийных значений. Неизвестные типы → unverifiable. НИКОГДА не
+           бросает. summarize(findings)→счёт по статусам.
+        2) secret_scanner.scan_text — к КАЖДОЙ находке добавлено поле
+           'validation' (единый источник → все потребители: dynamic, source-map,
+           Security Audit получают вердикт формата единообразно). Форма находки
+           расширена аддитивно (старые тесты по ключам не сломаны).
+        3) security_auditor.summary — secrets_valid_format/secrets_invalid_format
+           (через summarize). GUI tab_security — колонка «Format» (✓/✗/—
+           c reason в тултипе) + счётчик «формат ок: N» в статус-строке.
+        4) tests/test_secret_validator.py (15: точные форматы, JWT-декод/битый/
+           число-сегментов, Basic user:pass/без-двоеточия, плейсхолдер/низкая-
+           энтропия/правдоподобный, unknown→unverifiable, не-бросает-на-мусоре,
+           summarize, scan_text-attaches, GUI-колонка) + test_security_auditor
+           (+1: summary-счётчики на реальном корпусе).
+        ИТОГ: 504 passed, 1 skipped (505 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13]: (1) реальный SecurityAudit github.com — 25
+        скриптов, 0 секретов (чистый сайт), новые поля summary на месте, все
+        находки несут validation, пайплайн graceful. (2) оффлайн-дискриминация
+        на реалистичных образцах: AWS valid vs too-short invalid; JWT alg=HS256
+        valid vs битый base64 invalid; Basic user:pass valid vs без-двоеточия
+        invalid; плейсхолдер invalid vs правдоподобный ключ valid; Private Key
+        → unverifiable. Ни один провайдер не запрошен. RESULT: PASS.
 
 ==============================================================================
