@@ -42,3 +42,47 @@ def test_clear_does_not_trigger_reload_on_tab_return(qapp):
                       if w.tabs.widget(i) is w._dashboard_widget)
     w._on_tab_changed(dash_index)
     assert calls == []                    # очищенный вид не перезагружается сам
+
+
+# ── 'Очистить БД…' — destructive purge gated by a confirmation dialog ────────
+
+def _seed_registry(monkeypatch, tmp_path, n=2):
+    import gui.tab_dashboard as td
+    from core.registry import DataRegistry
+    db = tmp_path / "registry.db"
+    monkeypatch.setattr(td, "REGISTRY_DB", db)
+    reg = DataRegistry(db_path=str(db))
+    for i in range(n):
+        reg.add_record("s", "subdomain", f"h{i}.x.com")
+    return td, db
+
+
+def test_purge_registry_confirm_deletes_db(qapp, tmp_path, monkeypatch):
+    from PyQt5.QtWidgets import QMessageBox
+
+    from core.registry import DataRegistry
+    td, db = _seed_registry(monkeypatch, tmp_path, n=2)
+    monkeypatch.setattr(td.QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.Yes))
+
+    w = _populated_window(qapp)
+    w._purge_registry()
+
+    assert DataRegistry(db_path=str(db)).count() == 0      # really deleted
+    assert "удалено записей: 2" in w.dash_status.text()
+    assert w.dashboard_table.rowCount() == 0               # view also cleared
+
+
+def test_purge_registry_cancel_keeps_db(qapp, tmp_path, monkeypatch):
+    from PyQt5.QtWidgets import QMessageBox
+
+    from core.registry import DataRegistry
+    td, db = _seed_registry(monkeypatch, tmp_path, n=3)
+    monkeypatch.setattr(td.QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.No))
+
+    w = _populated_window(qapp)
+    w._purge_registry()
+
+    assert DataRegistry(db_path=str(db)).count() == 3      # untouched
+    assert "удалено" not in w.dash_status.text()

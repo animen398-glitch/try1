@@ -39,3 +39,16 @@ def test_dashboard_stats_keys_exist_in_summary(tmp_path):
     summary = DataViewer(registry=_registry(tmp_path)).get_summary()
     for key, _label in DashboardTabMixin.DASHBOARD_STATS:
         assert key in summary, f'Dashboard card {key!r} has no summary source'
+
+
+def test_registry_clear_removes_all_records(tmp_path):
+    reg = _registry(tmp_path)
+    reg.add_record('s', 'subdomain', 'a.ex.com')
+    reg.add_record('s', 'source_map', 'https://ex.com/app.js.map')
+    assert reg.count() == 2
+
+    removed = reg.clear()
+    assert removed == 2
+    assert reg.count() == 0
+    # Idempotent: clearing an empty registry removes nothing and doesn't error.
+    assert reg.clear() == 0

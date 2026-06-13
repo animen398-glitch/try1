@@ -10,7 +10,7 @@ import json
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QLineEdit, QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.config import load_settings
@@ -70,17 +70,24 @@ class DashboardTabMixin:
 
         ctrl = QHBoxLayout()
         self.dash_status = QLabel("Всего записей: 0")
-        btn_clear = StyledButton("Очистить", style='secondary')
+        btn_clear = StyledButton("Очистить вид", style='secondary')
         btn_clear.setToolTip(
             "Очищает таблицы и счётчики в интерфейсе.\n"
             "Данные в registry.db не затрагиваются — «Обновить» вернёт их."
         )
         btn_clear.clicked.connect(self._clear_dashboard)
+        btn_purge = StyledButton("Очистить БД…", style='secondary')
+        btn_purge.setToolTip(
+            "УДАЛЯЕТ все записи из registry.db безвозвратно.\n"
+            "Запрашивает подтверждение перед удалением."
+        )
+        btn_purge.clicked.connect(self._purge_registry)
         btn_update = StyledButton("Обновить", style='secondary')
         btn_update.clicked.connect(self._refresh_dashboard)
         ctrl.addWidget(self.dash_status)
         ctrl.addStretch()
         ctrl.addWidget(btn_clear)
+        ctrl.addWidget(btn_purge)
         ctrl.addWidget(btn_update)
         layout.addLayout(ctrl)
 
@@ -263,6 +270,34 @@ class DashboardTabMixin:
         self._endpoint_filter = None
         self._update_activity_title()
         self.dash_status.setText("Очищено — БД не затронута")
+
+    def _purge_registry(self):
+        """Безвозвратно удалить ВСЕ записи из registry.db — после подтверждения.
+
+        Это деструктивное действие (в отличие от «Очистить вид»), поэтому оно
+        всегда проходит через диалог подтверждения с дефолтом «Нет». На «Да»
+        очищает БД, затем сбрасывает и вид.
+        """
+        from core.registry import DataRegistry
+        try:
+            total = DataRegistry(db_path=str(REGISTRY_DB)).count()
+        except Exception:
+            total = '?'
+        reply = QMessageBox.question(
+            self, "Очистить базу данных",
+            f"Удалить ВСЕ записи реестра ({total}) из registry.db?\n"
+            "Действие необратимо.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            removed = DataRegistry(db_path=str(REGISTRY_DB)).clear()
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка",
+                                 f"Не удалось очистить БД: {e}")
+            return
+        self._clear_dashboard()
+        self.dash_status.setText(f"БД очищена — удалено записей: {removed}")
 
     def _refresh_dashboard(self):
         if self._dashboard_loading:

@@ -74,6 +74,17 @@ class DataRegistry(SQLiteStore):
             ).fetchone()
             return self._row_to_dict(row)
 
+    def clear(self) -> int:
+        """Удалить ВСЕ записи реестра. Возвращает число удалённых строк.
+
+        Деструктивно и необратимо — вызывающая сторона ОБЯЗАНА подтвердить
+        действие у пользователя (Dashboard делает это через диалог). Сам счётчик
+        AUTOINCREMENT не сбрасывается, что нормально для журнала."""
+        with self._connect() as conn:
+            n = conn.execute('SELECT COUNT(*) AS n FROM records').fetchone()['n']
+            conn.execute('DELETE FROM records')
+            return n
+
     def count(self, data_type: Optional[str] = None) -> int:
         with self._connect() as conn:
             if data_type is None:
