@@ -1412,7 +1412,40 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         Subdomains(33); риск-движок прочитал takeover-метрику; Scan Diff показал
         +1/-1 — удалён реальный beta.iana.org, добавлен takeover-хост с флагом
         ⚠. End-to-end разблокировка подтверждена. RESULT: PASS.
-        Прим.: секция СЕРТИФИКАТОВ в Scan Diff остаётся (collection их не
-        собирает — отдельная фаза по запросу).
+
+  UNBLOCK — Scan Diff certificates: TLS-cert-фаза в collection — [DONE] 2026-06-13
+      Закрывает последнее «заблокировано» из PROJECT_REPORT §6 (collection не
+      собирал сертификаты). Инварианты I1 (stdlib ssl, без зависимостей)/I5
+      (сетевой fetch отделён от чистого парсера).
+        1) core/cert_info.py — fetch_certificate(host,port): ОДИН TLS-handshake
+           (сначала с проверкой → богатые поля; фолбэк без проверки → хотя бы
+           DER-отпечаток для self-signed/expired), НИКОГДА не бросает (None при
+           сбое). summarize_cert(parsed, der) — ЧИСТЫЙ парсер: subject/issuer
+           (_name_str уплощает RDN), not_before/not_after, serial, sans (DNS-
+           SAN'ы), fingerprint_sha256 (hashlib по DER). Сетевой шов отделён от
+           парсера → парсер тестируется без сокета.
+        2) collection_runner — опц. флаг certificate=False; _phase_certificate
+           (https-only, guarded) пишет плоский cert-summary в data + артефакт
+           security/certificate.json.
+        3) scan_diff — секция 'certificates' (маппится на фазу 'certificate'),
+           сравнение ПО ПОЛЯМ как у заголовков: renewal → changed serial/
+           not_after/fingerprint, новый SAN → added; честный skip при отсутствии
+           фазы в одном скане. _label: certificates в headers-стиле.
+        4) GUI tab_collection — чекбокс «TLS-сертификат». collection report —
+           карточка «TLS Certificate» (поля, экранировано, оффлайн).
+        5) tests: test_cert_info.py (12: summarize поля/DER-only/пусто/нет-SAN;
+           фаза http-skip/stub-success/no-cert-error/default-off) + test_scan_diff
+           (+3: renewal-changed/added-SAN/skip; обновлён empty-skipped набор) +
+           test_collection_runner (+1: рендер карточки с экранированием).
+        ИТОГ: 535 passed, 1 skipped (536 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный сертификат example.com]: снят реальный
+        cert (issuer «Cloudflare TLS Issuing ECC CA 3», SANs *.example.com/
+        example.com, SHA-256, срок); Scan Diff против «обновлённого» показал 3
+        changed-поля (fingerprint/not_after/serial). RESULT: PASS.
+
+  ИТОГ: Scan Diff (P8) теперь покрывает ВСЕ секции из исходного промпта C —
+  страницы, субдомены, секреты, технологии, зависимости, заголовки, СЕРТИФИКАТЫ,
+  эндпоинты, findings. Оба «заблокировано» закрыты.
 
 ==============================================================================
