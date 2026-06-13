@@ -250,6 +250,44 @@ def test_render_html_employees_card():
     assert "<script" not in html.lower()
 
 
+def test_phase_ct_writes_artifact(tmp_path, monkeypatch):
+    import core.collection_runner as cr
+    monkeypatch.setattr(cr, "discover_ct", lambda url: {
+        "status": "Success", "domain": "x.com", "total_certs": 2,
+        "name_count": 2, "names": ["x.com", "www.x.com"],
+        "issuers": [{"ca": "Let's Encrypt", "count": 2}],
+        "first_seen": "2024-01-01T00:00:00", "last_seen": "2024-05-01T00:00:00",
+        "recent_count": 1, "active_count": 1, "expired_count": 1,
+        "wildcards": [], "certs": [{"id": 1, "issuer": "Let's Encrypt",
+                                    "not_before": "2024-05-01T00:00:00",
+                                    "not_after": "2024-08-01T00:00:00",
+                                    "names": ["x.com"], "wildcard": False}]})
+    r = CollectionRunner(ct=True)
+    phase = r._phase_ct("https://x.com", tmp_path)
+    assert phase["status"] == "Success" and phase["data"]["total_certs"] == 2
+    assert (tmp_path / "ct" / "ct_history.json").exists()
+
+
+def test_render_html_ct_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"ct": {"status": "Success", "data": {
+            "status": "Success", "total_certs": 1, "name_count": 1,
+            "names": ["x.com"], "issuers": [{"ca": "Let's Encrypt", "count": 1}],
+            "first_seen": "2024-05-01T00:00:00", "last_seen": "2024-05-01T00:00:00",
+            "recent_count": 1, "active_count": 1, "expired_count": 0,
+            "wildcards": [], "certs": [{"id": 1, "issuer": "Let's Encrypt",
+                                        "not_before": "2024-05-01T00:00:00",
+                                        "not_after": "2024-08-01T00:00:00",
+                                        "names": ["x.com"], "wildcard": False}]}}},
+    }
+    html = r._render_html(report)
+    assert "Certificate Transparency" in html and "Encrypt" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

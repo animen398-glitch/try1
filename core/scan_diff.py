@@ -37,6 +37,7 @@ SECTION_PHASES = {
     'dns':          'dns',
     'emails':       'emails',
     'employees':    'employees',
+    'ct':           'ct',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -53,6 +54,7 @@ SECTION_TITLES = {
     'dns':          'DNS / email-auth',
     'emails':       'E-mail адреса',
     'employees':    'Сотрудники',
+    'ct':           'CT-сертификаты',
     'findings':     'Findings',
 }
 
@@ -230,6 +232,22 @@ def _extract_employees(report: Dict) -> Optional[Dict]:
     return out
 
 
+def _extract_ct(report: Dict) -> Optional[Dict]:
+    # A newly logged certificate (by crt.sh id) is the signal worth surfacing
+    # between scans — labelled by issue date, CA and the names it covers.
+    certs = _data(report, 'ct').get('certs')
+    if not isinstance(certs, list):
+        return None
+    out: Dict[str, str] = {}
+    for c in certs:
+        if isinstance(c, dict) and c.get('id') is not None:
+            date = str(c.get('not_before') or '')[:10] or '?'
+            issuer = str(c.get('issuer') or '')
+            names = ', '.join(c.get('names') or [])
+            out[str(c['id'])] = f'{date} · {issuer}: {names}'.strip(' :')
+    return out
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -254,13 +272,14 @@ _EXTRACTORS = {
     'dns':          _extract_dns,
     'emails':       _extract_emails,
     'employees':    _extract_employees,
+    'ct':           _extract_ct,
     'findings':     _extract_findings,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
 _SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'historical',
-             'emails', 'employees', 'findings'}
+             'emails', 'employees', 'ct', 'findings'}
 
 
 def _label(section: str, key, value) -> str:

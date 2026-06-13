@@ -157,6 +157,14 @@ class FinalReportTabMixin:
             "JSON-LD Person + личные mailto), выводит корпоративный формат "
             "e-mail и достраивает вероятные адреса.")
         opt_row.addWidget(self.collect_employees)
+
+        # Opt-in CT history (#13) — certificate-transparency timeline (crt.sh).
+        self.collect_ct = QCheckBox("CT-история")
+        self.collect_ct.setToolTip(
+            "История сертификатов домена из Certificate Transparency (crt.sh): "
+            "центры сертификации, сроки, первое/последнее появление, недавние и "
+            "wildcard-сертификаты. Новые сертификаты видны в Scan Diff.")
+        opt_row.addWidget(self.collect_ct)
         opt_row.addStretch()
         g.addLayout(opt_row)
 
@@ -284,6 +292,7 @@ class FinalReportTabMixin:
             dns=self.collect_dns.isChecked(),
             emails=self.collect_emails.isChecked(),
             employees=self.collect_employees.isChecked(),
+            ct=self.collect_ct.isChecked(),
         )
         self._active_collector = runner
 

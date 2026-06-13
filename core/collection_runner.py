@@ -42,6 +42,8 @@ from core.email_intel import discover as discover_emails
 from core.email_intel import render_html as render_emails
 from core.employee_intel import discover as discover_employees
 from core.employee_intel import render_html as render_employees
+from core.ct_history import discover as discover_ct
+from core.ct_history import render_html as render_ct
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.infrastructure import render_html as render_infrastructure
@@ -76,7 +78,8 @@ class CollectionRunner:
                  llm_model: Optional[str] = None, subdomains: bool = False,
                  certificate: bool = False, openapi: bool = False,
                  historical: bool = False, dns: bool = False,
-                 emails: bool = False, employees: bool = False):
+                 emails: bool = False, employees: bool = False,
+                 ct: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -115,6 +118,9 @@ class CollectionRunner:
         # Opt-in Employee intelligence (#13) — named people from team/about
         # pages + inferred corporate e-mail scheme; feeds report + Scan Diff.
         self.employees = employees
+        # Opt-in CT history (#13) — certificate-transparency timeline (crt.sh):
+        # issuers/validity/first-last-seen; feeds report + Scan Diff (new certs).
+        self.ct = ct
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -133,7 +139,8 @@ class CollectionRunner:
                   historical: Optional[bool] = None,
                   dns: Optional[bool] = None,
                   emails: Optional[bool] = None,
-                  employees: Optional[bool] = None):
+                  employees: Optional[bool] = None,
+                  ct: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -164,6 +171,8 @@ class CollectionRunner:
             self.emails = emails
         if employees is not None:
             self.employees = employees
+        if ct is not None:
+            self.ct = ct
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -260,6 +269,9 @@ class CollectionRunner:
         # 7h. Employee intelligence (opt-in) → named people + e-mail scheme.
         if self.employees and not self._cancelled(report):
             report['phases']['employees'] = self._phase_employees(url, scan_dir)
+        # 7i. CT history (opt-in) → certificate-transparency timeline (crt.sh).
+        if self.ct and not self._cancelled(report):
+            report['phases']['ct'] = self._phase_ct(url, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -647,6 +659,30 @@ class CollectionRunner:
             self._log(f'  Employee intel failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_ct(self, url: str, project_dir: Path) -> Dict:
+        """Pull the domain's CT history from crt.sh (opt-in). Guarded; an empty
+        log is a clean 'No certificates'. Writes ct/ct_history.json."""
+        self._log('[+] CT history…')
+        try:
+            data = discover_ct(url)
+            if data.get('status') != 'Success':
+                self._log('  CT — сертификаты не найдены')
+                return {'status': data.get('status', 'No certificates'),
+                        'data': data}
+            out = project_dir / 'ct'
+            out.mkdir(exist_ok=True)
+            (out / 'ct_history.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            self._log(f"  CT: {data['total_certs']} сертификатов "
+                      f"(имён {data['name_count']}, "
+                      f"CA {len(data['issuers'])})")
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  CT history failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -924,6 +960,13 @@ class CollectionRunner:
             body_parts.append(card('Employee Intelligence',
                                    render_employees(empdata),
                                    employees.get('status', '—')))
+
+        # CT history (opt-in) — certificate-transparency timeline.
+        ct = phases.get('ct')
+        if ct:
+            ctdata = ct.get('data', {})
+            body_parts.append(card('Certificate Transparency',
+                                   render_ct(ctdata), ct.get('status', '—')))
 
         # Clone
         clone = phases.get('clone', {})

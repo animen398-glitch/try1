@@ -217,7 +217,7 @@ def test_tolerates_empty_reports():
                                  'technologies', 'dependencies', 'headers',
                                  'certificates', 'endpoints', 'apis',
                                  'historical', 'dns', 'emails', 'employees',
-                                 'findings'}
+                                 'ct', 'findings'}
     assert d['is_empty'] is True
 
 
