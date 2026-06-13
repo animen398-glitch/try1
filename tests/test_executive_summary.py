@@ -63,6 +63,58 @@ def test_low_band():
     assert s['risk_level'] == 'Low'
 
 
+# ── unified 0–100 score + new signals (P3) ──────────────────────────────────
+
+def test_risk_100_is_bounded_and_scaled():
+    # raw 5 (one secret) → 20/100; clean → 0/100.
+    assert es.build_summary(_report(secrets=1))['risk_100'] == 20
+    assert es.build_summary(_report())['risk_100'] == 0
+    # Saturates at 100 for a very high raw score.
+    big = es.build_summary(_report(high=5, risk_score=40, secrets=3))
+    assert big['risk_100'] == 100
+
+
+def test_risk_100_in_metrics_and_cards():
+    s = es.build_summary(_report(weak_cookies=2))     # raw 4 → 16/100
+    assert s['metrics']['risk_100'] == 16
+    c = es.display_cards(s)
+    assert c['risk_100'] == '16'
+
+
+def test_takeover_signal_forces_critical_and_weights():
+    report = _report(high=0, risk_score=0)
+    report['phases']['subdomains'] = {
+        'data': {'summary': {'takeover_candidates': [
+            {'subdomain': 'x.ex.com'}, {'subdomain': 'y.ex.com'}]}}}
+    s = es.build_summary(report)
+    assert s['risk_level'] == 'Critical'              # takeover → Critical
+    assert s['metrics']['takeovers'] == 2
+    assert s['risk_score'] == 16                       # 2 × 8
+    assert any('takeover' in r.lower() for r in s['recommendations'])
+
+
+def test_source_map_leak_signal_weights_like_secret():
+    report = _report()
+    report['phases']['security'] = {
+        'data': {'summary': {'maps_with_content': 2}}}
+    s = es.build_summary(report)
+    assert s['metrics']['source_map_leaks'] == 2
+    assert s['risk_score'] == 10                        # 2 × 5
+    assert any('source map' in r.lower() for r in s['recommendations'])
+
+
+def test_new_signals_absent_by_default():
+    s = es.build_summary(_report(secrets=1))
+    assert s['metrics']['takeovers'] == 0
+    assert s['metrics']['source_map_leaks'] == 0
+    assert s['risk_score'] == 5                         # unchanged formula
+
+
+def test_render_html_shows_0_100_headline():
+    out = es.render_html(es.build_summary(_report(secrets=1, high=2, risk_score=10)))
+    assert '/100' in out
+
+
 # ── findings & recommendations ──────────────────────────────────────────────
 
 def test_recommendations_track_signals():

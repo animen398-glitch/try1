@@ -42,10 +42,11 @@ def _int(value) -> int:
         return 0
 
 
-def _risk_level(score: int, high: int, secrets: int) -> str:
+def _risk_level(score: int, high: int, secrets: int, takeovers: int = 0) -> str:
     """Map weighted signals to a verdict. Thresholds are intentionally simple
-    and fixed so the verdict is reproducible and easy to reason about."""
-    if secrets > 0 or high >= 3 or score >= 20:
+    and fixed so the verdict is reproducible and easy to reason about. Leaked
+    secrets and subdomain takeovers are both clear-cut Critical signals."""
+    if secrets > 0 or takeovers > 0 or high >= 3 or score >= 20:
         return 'Critical'
     if high >= 1 or score >= 10:
         return 'High'
@@ -54,6 +55,28 @@ def _risk_level(score: int, high: int, secrets: int) -> str:
     if score >= 1:
         return 'Low'
     return 'Clean'
+
+
+# A raw weighted score of 25 already means a serious, Critical-grade target, so
+# the 0–100 scale saturates there (×4). The normalised score is the platform's
+# single headline risk number; the raw score stays for weighting/sorting.
+_SCORE_TO_100 = 4
+_SCORE_100_CEILING = 100
+
+
+def _count_takeovers(report: Dict) -> int:
+    """Subdomain-takeover candidates, if a subdomain phase is present."""
+    sub = _phase_data(report, 'subdomains')
+    summary = sub.get('summary', {}) if isinstance(sub, dict) else {}
+    tc = summary.get('takeover_candidates')
+    return len(tc) if isinstance(tc, list) else _int(tc)
+
+
+def _count_sourcemap_leaks(report: Dict) -> int:
+    """Source maps that exposed original source, if a security phase is present."""
+    sec = _phase_data(report, 'security')
+    summary = sec.get('summary', {}) if isinstance(sec, dict) else {}
+    return _int(summary.get('maps_with_content'))
 
 
 def build_summary(report: Dict) -> Dict:
@@ -77,6 +100,10 @@ def build_summary(report: Dict) -> Dict:
     vuln_score = _int(vsum.get('risk_score'))
     secrets = _int(api.get('keys_found'))
     weak_cookies = _int(cookies.get('weak'))
+    # Unified risk engine: pull every available security signal (Security Audit
+    # source maps + subdomain takeovers are zero unless those phases ran).
+    source_map_leaks = _count_sourcemap_leaks(report)
+    takeovers = _count_takeovers(report)
 
     status_summary = capture.get('status_summary', {}) or {}
     non_ok = (_int(status_summary.get('4xx')) + _int(status_summary.get('5xx'))
@@ -90,15 +117,21 @@ def build_summary(report: Dict) -> Dict:
     surface_pts = surface_score(surface)
 
     # Leaked secrets and weak cookies are first-class signals on top of the
-    # vuln-weighted score (secrets weigh heaviest — client-side key exposure).
-    score = vuln_score + secrets * 5 + weak_cookies * 2
-    level = _risk_level(score, high, secrets)
+    # vuln-weighted score (secrets weigh heaviest — client-side key exposure;
+    # source-map leaks weigh like secrets; a takeover is the single worst hop).
+    score = (vuln_score + secrets * 5 + weak_cookies * 2
+             + source_map_leaks * 5 + takeovers * 8)
+    level = _risk_level(score, high, secrets, takeovers)
+    # Bounded 0–100 headline (the platform's single risk number).
+    risk_100 = min(_SCORE_100_CEILING, score * _SCORE_TO_100)
 
     metrics = {
         'high': high, 'medium': medium, 'info': info,
         'secrets': secrets, 'weak_cookies': weak_cookies,
+        'source_map_leaks': source_map_leaks, 'takeovers': takeovers,
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
+        'risk_100': risk_100,
         'attack_surface_score': surface_pts,
         'attack_surface_band': score_band(surface_pts),
     }
@@ -106,6 +139,10 @@ def build_summary(report: Dict) -> Dict:
     key_findings: List[str] = []
     if secrets:
         key_findings.append(f'Утечки секретов/ключей: {secrets}')
+    if takeovers:
+        key_findings.append(f'Кандидаты на subdomain takeover: {takeovers}')
+    if source_map_leaks:
+        key_findings.append(f'Source maps с исходным кодом: {source_map_leaks}')
     if high:
         key_findings.append(f'Высокосерьёзных уязвимостей: {high}')
     if medium:
@@ -126,6 +163,14 @@ def build_summary(report: Dict) -> Dict:
         recommendations.append(
             f'Отозвать и заменить {secrets} утёкших ключ(а/ей); '
             f'убрать секреты из клиентского кода.')
+    if takeovers:
+        recommendations.append(
+            f'Срочно проверить {takeovers} субдомен(а/ов) на takeover: '
+            f'удалить висячие DNS-записи или вернуть контроль над ресурсом.')
+    if source_map_leaks:
+        recommendations.append(
+            f'Убрать {source_map_leaks} публичных source map с исходниками '
+            f'(или ограничить доступ) — они раскрывают оригинальный код.')
     if high:
         recommendations.append(
             f'Устранить {high} высокосерьёзных замечани(я/й) '
@@ -145,7 +190,8 @@ def build_summary(report: Dict) -> Dict:
 
     return {
         'risk_level': level,
-        'risk_score': score,
+        'risk_score': score,        # raw weighted score (weighting / sorting)
+        'risk_100': risk_100,       # bounded 0–100 headline
         'metrics': metrics,
         'key_findings': key_findings,
         'top_findings': top_findings,
@@ -195,15 +241,18 @@ def display_cards(sec: Optional[Dict]) -> Dict:
     """
     if not sec:
         return {'available': False, 'risk_level': '—', 'risk_color': '#888',
-                'risk_score': '0', 'secrets': '0', 'high': '0', 'medium': '0',
-                'attack_surface': '0', 'attack_surface_band': '—', 'source': ''}
+                'risk_score': '0', 'risk_100': '0', 'secrets': '0',
+                'high': '0', 'medium': '0', 'attack_surface': '0',
+                'attack_surface_band': '—', 'source': ''}
     metrics = sec.get('metrics', {})
     level = sec.get('risk_level', '—')
+    risk_100 = sec.get('risk_100', metrics.get('risk_100', 0))
     return {
         'available': True,
         'risk_level': level,
         'risk_color': RISK_COLORS.get(level, '#888'),
         'risk_score': str(sec.get('risk_score', 0)),
+        'risk_100': str(risk_100),
         'secrets': str(metrics.get('secrets', 0)),
         'high': str(metrics.get('high', 0)),
         'medium': str(metrics.get('medium', 0)),
@@ -219,14 +268,17 @@ def render_html(summary: Dict) -> str:
     level = summary.get('risk_level', 'Clean')
     color = RISK_COLORS.get(level, '#555')
     score = summary.get('risk_score', 0)
+    risk_100 = summary.get('risk_100',
+                           summary.get('metrics', {}).get('risk_100', 0))
 
     banner = (
         f'<div style="background:{color};color:#fff;border-radius:6px;'
         f'padding:12px 16px;margin:8px 0;">'
         f'<span style="font-size:13px;opacity:.85;">Общий риск</span><br>'
         f'<span style="font-size:22px;font-weight:bold;">{e(level)}</span>'
-        f'<span style="font-size:14px;opacity:.9;"> · risk score '
-        f'{e(str(score))}</span></div>'
+        f'<span style="font-size:16px;opacity:.95;"> · {e(str(risk_100))}/100</span>'
+        f'<span style="font-size:13px;opacity:.8;"> (raw {e(str(score))})</span>'
+        f'</div>'
     )
 
     def bullets(items, empty_note=''):

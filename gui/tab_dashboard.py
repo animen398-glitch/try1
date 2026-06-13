@@ -319,7 +319,8 @@ class DashboardTabMixin:
         it when no Full Collection report exists yet). Thin setter — all
         formatting/routing lives in core.executive_summary.display_cards."""
         c = display_cards(sec)
-        risk_text = (f"Риск: {c['risk_level']}" if c['available']
+        risk_text = (f"Риск: {c['risk_level']} · {c['risk_100']}/100"
+                     if c['available']
                      else "Риск: — (нет отчётов Full Collection)")
         self.sec_risk_label.setText(risk_text)
         self.sec_risk_label.setStyleSheet(
