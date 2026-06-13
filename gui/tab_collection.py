@@ -9,13 +9,15 @@ import webbrowser
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QProgressBar, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from core.collection_runner import CollectionRunner
 from core.executive_summary import RISK_COLORS
 from core.features import has_katana, has_nuclei, has_playwright
+from core.project import ProjectStore
+from core.scan_diff import write_diff_report
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from gui.workers import _CollectionWorker
 
@@ -112,6 +114,33 @@ class FinalReportTabMixin:
         g.addLayout(btn_row)
         grp.setLayout(g)
         layout.addWidget(grp)
+
+        # Scan Diff — compare two scans of a project (reads what the project
+        # workspace already stores; all logic in core.scan_diff, thin UI here).
+        diff_grp = SectionGroupBox("Scan Diff — что изменилось между сканами")
+        dg = QHBoxLayout()
+        dg.addWidget(QLabel("Проект:"))
+        self.diff_project = QComboBox()
+        self.diff_project.setMinimumWidth(160)
+        self.diff_project.currentIndexChanged.connect(self._on_diff_project_changed)
+        dg.addWidget(self.diff_project)
+        dg.addWidget(QLabel("Скан A:"))
+        self.diff_scan_a = QComboBox()
+        dg.addWidget(self.diff_scan_a)
+        dg.addWidget(QLabel("Скан B:"))
+        self.diff_scan_b = QComboBox()
+        dg.addWidget(self.diff_scan_b)
+        btn_diff_refresh = StyledButton("Обновить", style='secondary')
+        btn_diff_refresh.clicked.connect(self._refresh_diff_projects)
+        dg.addWidget(btn_diff_refresh)
+        self.btn_scan_diff = StyledButton("Сравнить")
+        self.btn_scan_diff.setEnabled(False)
+        self.btn_scan_diff.clicked.connect(self._run_scan_diff)
+        dg.addWidget(self.btn_scan_diff)
+        dg.addStretch()
+        diff_grp.setLayout(dg)
+        layout.addWidget(diff_grp)
+        self._refresh_diff_projects()
 
         res_grp = SectionGroupBox("Прогресс сбора")
         res_layout = QVBoxLayout()
@@ -227,7 +256,85 @@ class FinalReportTabMixin:
             self.collect_log.append_success(f"Отчёт: {self._collection_report}")
             self.btn_collect_report.setEnabled(True)
 
+        # The finished scan is now indexed — make it comparable right away.
+        try:
+            self._refresh_diff_projects()
+        except Exception:
+            pass
+
     def _open_collection_report(self):
         path = getattr(self, '_collection_report', None)
         if path and Path(path).exists():
             webbrowser.open(Path(path).as_uri())
+
+    # ── Scan Diff ────────────────────────────────────────────────────────────
+
+    def _diff_store(self) -> ProjectStore:
+        base = (self.collect_dir.text().strip()
+                or self.settings.get('output_dir', '')
+                or str(Path.home() / 'SiteAnalyzer'))
+        return ProjectStore(base)
+
+    def _refresh_diff_projects(self):
+        """Repopulate the project combo from <output>/Projects/ (disk-only,
+        bounded: list_projects reads one metadata.json per project)."""
+        current = self.diff_project.currentText()
+        self.diff_project.blockSignals(True)
+        self.diff_project.clear()
+        try:
+            for meta in self._diff_store().list_projects():
+                self.diff_project.addItem(
+                    f"{meta.get('slug', '?')} ({meta.get('scan_count', 0)})",
+                    meta.get('slug'))
+        except Exception:
+            pass    # an unreadable store just leaves the combo empty
+        idx = self.diff_project.findText(current)
+        if idx >= 0:
+            self.diff_project.setCurrentIndex(idx)
+        self.diff_project.blockSignals(False)
+        self._on_diff_project_changed()
+
+    def _on_diff_project_changed(self):
+        """Fill the scan combos for the selected project; the compare button
+        only lights up once there are two scans to compare."""
+        self.diff_scan_a.clear()
+        self.diff_scan_b.clear()
+        slug = self.diff_project.currentData()
+        project = self._diff_store().get(slug) if slug else None
+        ids = [s.get('id') for s in (project.scans() if project else [])
+               if s.get('id')]
+        self.diff_scan_a.addItems(ids)
+        self.diff_scan_b.addItems(ids)
+        if len(ids) >= 2:
+            # Sensible default: previous scan → latest scan.
+            self.diff_scan_a.setCurrentIndex(len(ids) - 2)
+            self.diff_scan_b.setCurrentIndex(len(ids) - 1)
+        self.btn_scan_diff.setEnabled(len(ids) >= 2)
+        self.btn_scan_diff.setToolTip(
+            '' if len(ids) >= 2 else 'Нужно минимум два скана проекта')
+
+    def _run_scan_diff(self):
+        slug = self.diff_project.currentData()
+        id_a = self.diff_scan_a.currentText()
+        id_b = self.diff_scan_b.currentText()
+        if not slug or not id_a or not id_b:
+            return
+        if id_a == id_b:
+            QMessageBox.warning(self, "Scan Diff", "Выберите два разных скана")
+            return
+        project = self._diff_store().get(slug)
+        if project is None:
+            QMessageBox.warning(self, "Scan Diff", f"Проект {slug} не найден")
+            return
+        self.collect_log.append_info(f"Scan Diff: {slug} {id_a} → {id_b}…")
+        self._run_async(lambda: write_diff_report(project, id_a, id_b),
+                        self._on_scan_diff_done)
+
+    def _on_scan_diff_done(self, result: dict):
+        self._set_busy(False)
+        self.collect_log.append_success(f"Diff: {result.get('line', '')}")
+        path = result.get('html_path')
+        if path:
+            self.collect_log.append_info(f"Отчёт diff: {path}")
+            if Path(path).exists():
+                webbrowser.open(Path(path).as_uri())

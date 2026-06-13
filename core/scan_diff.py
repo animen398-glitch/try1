@@ -286,6 +286,32 @@ def summarize_line(d: Dict) -> str:
     return ' · '.join(parts + [risk_str])
 
 
+def write_diff_report(project, id_a: str, id_b: str) -> Dict:
+    """Load two of a project's scans, diff them and write the offline HTML
+    into the project's ``reports/`` folder (its first real tenant).
+
+    Returns ``{'diff', 'html_path', 'line'}``. Raises ``ValueError`` when a
+    scan's report is missing/corrupt — the caller shows the message as-is.
+    Disk-only (no network); called from a GUI worker so the UI stays thin (I4).
+    """
+    report_a = project.load_scan_report(id_a)
+    report_b = project.load_scan_report(id_b)
+    for scan_id, rep in ((id_a, report_a), (id_b, report_b)):
+        if rep is None:
+            raise ValueError(f'Скан {scan_id}: report.json не найден или битый')
+    # The report carries its own scan_id, but trust the directory name the
+    # user picked (legacy reports may predate the field).
+    report_a.setdefault('scan_id', id_a)
+    report_b.setdefault('scan_id', id_b)
+
+    d = diff(report_a, report_b)
+    out_dir = project.root / 'reports'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    html_path = out_dir / f'diff_{id_a}_vs_{id_b}.html'
+    html_path.write_text(render_html(d), encoding='utf-8')
+    return {'diff': d, 'html_path': str(html_path), 'line': summarize_line(d)}
+
+
 # ── offline HTML report ──────────────────────────────────────────────────────
 
 def render_html(d: Dict) -> str:
