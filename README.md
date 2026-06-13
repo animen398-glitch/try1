@@ -28,7 +28,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map + GraphQL-discovery (probe /graphql* + introspection) |
-| Final Report & Collection | «Run Full Collection» — прогон всех модулей в единую директорию + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешние nuclei/katana) |
+| Final Report & Collection | «Run Full Collection» — прогон всех модулей в один скан проекта (`Projects/<домен>/scans/<timestamp>/`) + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешние nuclei/katana) |
 | Dashboard | Сводка реестра, дедуп API-эндпоинтов, drill-down + Security Overview (вердикт риска / Attack Surface Score / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite) |
 | System | Очередь задач, экспорт данных, системные логи |
@@ -97,6 +97,23 @@ tests/                   # pytest-набор
 running» и позволяет запускать несколько задач параллельно. Длительные задачи
 (capture/clone/collection) поддерживают кооперативную отмену; число активных
 задач отображается в статус-баре.
+
+## Проекты (Project Workspace)
+
+Каждый запуск **Full Collection** — это таймстамп-скан внутри постоянного
+проекта цели. Под выбранной директорией вывода создаётся:
+
+```
+Projects/<домен>/
+  scans/<timestamp>/   # отдельный скан (recon/ api/ capture/ … report.html)
+  reports/  screenshots/  exports/  history/
+  metadata.json        # индекс всех сканов + последний вердикт риска
+```
+
+`core/project.py` (`Project` / `ProjectStore`) — единственный источник правды по
+сканам проекта; внутренняя раскладка скана не изменилась (обратная
+совместимость). `metadata.json` хранит для каждого скана risk level/score,
+attack-surface score, число секретов/находок — основа для Dashboard и истории.
 
 ## Внешние плагины (вкладки)
 

@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **413 passed, 1 skipped** (сетенезависимые, Qt headless) |
+| Тесты | **423 passed, 1 skipped** (сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -60,7 +60,8 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | cookie_auditor | аудит флагов HttpOnly/Secure/SameSite |
 | vuln_scanner / vuln_report | правила уязвимостей + экспорт HTML/JSON/PDF |
 | api_key_extractor / api_dumper | поиск ключей / дамп API-ответов |
-| collection_runner | «Full Collection» — все фазы в одну директорию |
+| project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json) |
+| collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/ |
 | site_map | дерево путей сайта по HTTP-статусам (визуальная карта) |
 | executive_summary | детерминир. вердикт риска + рекомендации над фазами (без LLM) |
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |

@@ -1,5 +1,8 @@
 """Tests for CollectionRunner pure helpers (no pipeline / network)."""
 
+import json
+from pathlib import Path
+
 from core.collection_runner import CollectionRunner, _domain_slug
 
 
@@ -63,6 +66,50 @@ def test_render_html_includes_security_sections():
     assert "Vulnerabilities" in html
     assert "risk score" in html
     assert "Weak cookie sid" in html
+
+
+def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
+    """run() nests the scan under Projects/<slug>/scans/<id>/ and indexes it in
+    metadata.json — with every network phase stubbed (fully offline)."""
+    r = CollectionRunner()
+
+    # Stub each phase so no network/Qt is touched; minimal canned data.
+    monkeypatch.setattr(r, '_phase_recon',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'ip': '1.2.3.4', 'cms': []}})
+    monkeypatch.setattr(r, '_phase_api',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'keys_found': 0}})
+    monkeypatch.setattr(r, '_phase_capture',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'pages_captured': 0, 'errors': []}})
+    monkeypatch.setattr(r, '_phase_images',
+                        lambda url, d: {'status': 'Skipped'})
+    monkeypatch.setattr(r, '_phase_cookies',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'total': 0, 'weak': 0}})
+    monkeypatch.setattr(r, '_phase_vulns',
+                        lambda report, d: {'status': 'Success',
+                                           'summary': {'high': 0, 'medium': 0,
+                                                       'info': 0, 'risk_score': 0},
+                                           'findings': []})
+
+    result = r.run('https://example.com', str(tmp_path))
+
+    project_root = Path(result['project_root'])
+    scan_dir = Path(result['project_dir'])
+    assert project_root == tmp_path / 'Projects' / 'example.com'
+    assert scan_dir.parent == project_root / 'scans'
+    # The scan's own report still lives inside the scan dir (layout unchanged).
+    assert (scan_dir / 'report.html').exists()
+    assert (scan_dir / 'report.json').exists()
+
+    # The scan is indexed in the project metadata + history.
+    meta = json.loads((project_root / 'metadata.json').read_text('utf-8'))
+    assert meta['scan_count'] == 1
+    assert meta['latest_scan']['id'] == result['scan_id']
+    assert result['project_scan']['status'] == 'Success'
+    assert (project_root / 'history' / f"{result['scan_id']}.json").exists()
 
 
 def test_render_html_escapes_values():

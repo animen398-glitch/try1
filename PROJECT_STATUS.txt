@@ -1047,3 +1047,43 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
   CDN-JS граф, облачный AI).
 
 ==============================================================================
+  [PLATFORM ROADMAP 2026]  —  2026-06-13
+  «Tools → Platform». Аудит как Principal Architect: бОльшая часть 7-фазного
+  роадмапа УЖЕ закрыта (P1 стабилизация, P5 reporting, P6 visualization, P7
+  external bins — done; P3/P4 частично — reuse executive_summary/Dashboard).
+  Единственная по-настоящему НОВАЯ архитектурная часть — P2 Project Workspace.
+==============================================================================
+
+  P2. Project Workspace — [DONE] 2026-06-13
+      Модель «проект владеет таймстамп-сканами» (обратносовместимо: внутренняя
+      раскладка скана не изменилась, просто вложена глубже — ни один читатель
+      report.html/json не сломан). Инварианты I1/I2/I3/I4/I5 соблюдены.
+        1) core/project.py — ЧИСТЫЙ stdlib: project_slug(url) (ЕДИНЫЙ источник
+           слага — collection_runner._domain_slug теперь делегирует сюда, дубль
+           устранён); Project (root + scans/reports/screenshots/exports/history/
+           + metadata.json): ensure() скелет, start_scan(stamp)→scans/<id>/,
+           record_scan(scan_dir, report)→индекс в metadata.json (идемпотентно по
+           id) + history/<id>.json снапшот (risk_level/score/attack_surface/
+           secrets/high/medium); ProjectStore(base)→<base>/Projects/: get_or_create
+           (url), get(slug), list_projects() (newest-updated first). metadata.json —
+           единый источник правды по сканам проекта (I3).
+        2) collection_runner.run → ProjectStore(output_base).get_or_create(url) +
+           project.start_scan(stamp); все фазы пишут в scan_dir
+           (Projects/<slug>/scans/<stamp>/); после отчёта record_scan индексирует
+           скан (guarded — индекс не рушит скан). report получил project_root/
+           scan_id/project_scan (project_dir по-прежнему = scan_dir, backward-compat).
+           Каталоги output_base у web (~/SiteAnalyzer) и GUI не изменились →
+           Projects/ вкладывается под них, web-сервер отчётов продолжает работать.
+        3) GUI tab_collection — лог показывает «Проект:»/«Скан #id» (тонкий слой).
+        4) tests/test_project.py (10) + test_collection_runner offline-интеграция
+           run() (фазы застаблены, проверка раскладки Projects/<slug>/scans/<id>/
+           + metadata + history). dir-локатор as_posix() (портируемо Win/Unix).
+        ИТОГ: 423 passed, 1 skipped; ruff чист. Без новых зависимостей.
+        Прим.: PathManager.get_workspace_path остаётся доступен, но проекты
+        кладутся под выбранный пользователем output_base (там, где отчёты и
+        ожидаются), а не в app-data — ProjectStore принимает base явно.
+
+  P3/P4 (Risk Engine 0–100 / Dashboard cards) — очередь после P2 (reuse
+  executive_summary + Security Overview). P1/P5/P6/P7 — уже закрыты ранее.
+
+==============================================================================

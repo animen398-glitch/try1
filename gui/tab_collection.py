@@ -200,6 +200,13 @@ class FinalReportTabMixin:
             self.collect_log.append_success(
                 f"Сбор завершён — успешных фаз: {ok}/{len(phases)}"
             )
+        # Project workspace context — this scan lives inside a durable project.
+        project_root = result.get('project_root')
+        if project_root:
+            scan_meta = result.get('project_scan') or {}
+            self.collect_log.append_info(f"Проект: {project_root}")
+            self.collect_log.append_info(
+                f"Скан #{scan_meta.get('id', result.get('scan_id', ''))}")
         self.collect_log.append_info(f"Директория: {result.get('project_dir', '')}")
 
         # Executive summary — risk verdict + top recommendation up front.

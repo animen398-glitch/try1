@@ -18,12 +18,10 @@ Layout produced under <base>/<domain>_<timestamp>/:
 
 import html
 import json
-import re
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Optional
-from urllib.parse import urlparse
 
 from core.analyzer_plugins import discover_analyzers, run_analyzers
 from core.api_key_extractor import ApiKeyExtractor
@@ -37,6 +35,7 @@ from core.executive_summary import render_html as render_exec_summary
 from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.infrastructure import render_html as render_infrastructure
+from core.project import ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
 from core.screenshot import ScreenshotCapturer
@@ -47,9 +46,8 @@ from utils.image_processor import ImageExtractor
 
 
 def _domain_slug(url: str) -> str:
-    netloc = urlparse(url).netloc or url.split('/')[0]
-    slug = re.sub(r'^www\.', '', netloc)
-    return re.sub(r'[^\w.-]', '_', slug) or 'site'
+    """Backward-compatible alias — the canonical slug lives in core.project."""
+    return project_slug(url)
 
 
 class CollectionRunner:
@@ -122,48 +120,55 @@ class CollectionRunner:
 
         domain = _domain_slug(url)
         stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        project_dir = Path(output_base).expanduser() / f'{domain}_{stamp}'
-        project_dir.mkdir(parents=True, exist_ok=True)
+
+        # Project workspace: each run is a timestamped scan inside the target's
+        # durable project folder (Projects/<slug>/scans/<stamp>/). The scan's
+        # internal layout is unchanged, so every existing reader keeps working.
+        project = ProjectStore(output_base).get_or_create(url)
+        scan_dir = project.start_scan(stamp)
 
         report: Dict = {
             'url': url,
             'domain': domain,
+            'scan_id': stamp,
             'started_at': datetime.now().isoformat(timespec='seconds'),
-            'project_dir': str(project_dir),
+            'project_dir': str(scan_dir),       # backward-compatible: scan dir
+            'project_root': str(project.root),
             'phases': {},
         }
 
-        self._log(f'Проект: {project_dir}')
+        self._log(f'Проект: {project.root}')
+        self._log(f'Скан:   {scan_dir}')
 
         # 1. Recon
         if not self._cancelled(report):
-            report['phases']['recon'] = self._phase_recon(url, project_dir)
+            report['phases']['recon'] = self._phase_recon(url, scan_dir)
         # 2. API key scan
         if not self._cancelled(report):
-            report['phases']['api'] = self._phase_api(url, project_dir)
+            report['phases']['api'] = self._phase_api(url, scan_dir)
         # 3. Capture (frontend)
-        capture_dir = project_dir / 'capture'
+        capture_dir = scan_dir / 'capture'
         if not self._cancelled(report):
             report['phases']['capture'] = self._phase_capture(url, capture_dir)
         # 4. Clone (frontend) — only if capture produced pages
         if not self._cancelled(report):
-            report['phases']['clone'] = self._phase_clone(capture_dir, project_dir,
+            report['phases']['clone'] = self._phase_clone(capture_dir, scan_dir,
                                                           report['phases'].get('capture', {}))
         # 5. Images (media)
         if not self._cancelled(report):
-            report['phases']['images'] = self._phase_images(url, project_dir)
+            report['phases']['images'] = self._phase_images(url, scan_dir)
         # 6. Cookie security audit
         if not self._cancelled(report):
-            report['phases']['cookies'] = self._phase_cookies(url, project_dir)
+            report['phases']['cookies'] = self._phase_cookies(url, scan_dir)
         # 7. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
-            report['phases']['vulns'] = self._phase_vulns(report, project_dir)
+            report['phases']['vulns'] = self._phase_vulns(report, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
         # 8b. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
         if self.screenshots and not self._cancelled(report):
-            report['phases']['screenshot'] = self._phase_screenshot(url, project_dir)
+            report['phases']['screenshot'] = self._phase_screenshot(url, scan_dir)
         # 9. Analyzer plugins (user-supplied) — see the whole report; their
         # findings fold into vulns so the summary/exec/graph reflect them.
         if not self._cancelled(report):
@@ -176,17 +181,25 @@ class CollectionRunner:
         report['executive_summary'] = build_summary(report)
 
         # Reports
-        json_path = project_dir / 'report.json'
+        json_path = scan_dir / 'report.json'
         json_path.write_text(
             json.dumps(report, indent=2, ensure_ascii=False, default=str),
             encoding='utf-8',
         )
-        html_path = project_dir / 'report.html'
+        html_path = scan_dir / 'report.html'
         html_path.write_text(self._render_html(report), encoding='utf-8')
 
         report['report_json'] = str(json_path)
         report['report_html'] = str(html_path)
         report['status'] = 'Cancelled' if report.get('cancelled') else 'Success'
+
+        # Index this scan in the project (metadata.json + history snapshot) so
+        # the project remembers its verdict/metrics across runs.
+        try:
+            report['project_scan'] = project.record_scan(scan_dir, report)
+        except Exception as e:  # noqa: BLE001 — indexing must not fail the scan
+            self._log(f'  ! project index failed: {e}')
+
         self._log(f'Отчёт: {html_path}')
         return report
 
