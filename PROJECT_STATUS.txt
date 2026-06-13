@@ -1,8 +1,8 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-13 (Platform P1–P10; Project Workspace / Risk Engine
+  Дата отчёта: 2026-06-13 (Platform P1–P11; Project Workspace / Risk Engine
   0–100 / Dashboard 2.0 / Scan Diff / мульти-скриншоты (B1) / интерактивный
-  attack-surface граф (B2); тесты ~474)
+  attack-surface граф (B2) / LLM-резюме на локальном Ollama (C1); тесты ~487)
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -949,7 +949,10 @@ G3. ПРИОРИТИЗАЦИЯ НОВОГО
       [DONE] — найден чистый CSS-способ (:target/:hover), см. P10 ниже.
 
 ## TIER C (низкий ROI)
-  C1. CF3 LLM exec summary (Ollama).  C2. CF9 живая secret-валидация.
+  C1. CF3 LLM exec summary (Ollama).  [DONE] — по явному opt-in пользователя,
+      строго localhost + graceful-деградация, см. P11 ниже.
+  C2. CF9 живая secret-валидация.  [ОТЛОЖЕНО] — шлёт секреты наружу по сети
+      (dual-use/приватность), требует отдельного явного opt-in-решения.
 
 ## REJECTED
   R1. CF8 JS AST (тяжёлый парсер ради маржи).  R2. CF1 через CDN-JS (Cytoscape)
@@ -1255,5 +1258,53 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         отчёте 4 узла (technologies/infrastructure/pages/findings) кликабельны
         и связаны с панелями по id; :target/:hover CSS на месте; ни <script>,
         ни <link>, ни url() — оффлайн-контракт подтверждён. RESULT: PASS.
+
+  P11. LLM Executive Summary — локальный Ollama (TIER C1 / CF3) — [DONE] 2026-06-13
+      Ранее осознанно отложен (LOW/TIER C — недетерминизм/I5, новый рантайм).
+      Реализован ПО ЯВНОМУ OPT-IN ПОЛЬЗОВАТЕЛЯ под жёсткими ограничениями,
+      сохраняющими инварианты настолько, насколько возможно:
+        • I1 — без новой pip-зависимости (stdlib urllib); Ollama опционален.
+        • I2 — отчёт остаётся оффлайн: LLM зовётся на LOCALHOST во время скана,
+          текст ЗАПЕКАЕТСЯ в report.html/json статикой (localhost ≠ CDN; нет
+          <script>). Ничего не уходит с машины (нет облака/ключей).
+        • I3 — детерминированный build_summary остаётся ЕДИНСТВЕННЫМ авторитетом
+          вердикта (risk_level/risk_100/метрики); LLM только НАРРАТИВИТ прозу,
+          не считает второй скор. Промпт прямо инструктирует «не менять вердикт».
+        • I5 — единственный сетевой шов (_post) изолирован и стабится; текст
+          модели НИКОГДА не ассертится в тестах (он недетерминирован).
+        1) core/llm_summary.py — available(endpoint,timeout) (probe /api/tags
+           localhost; любой сбой→False, graceful); build_prompt(summary) —
+           ЧИСТЫЙ детерминированный промпт из уже посчитанного summary;
+           generate_narrative(...)→{status: Unavailable|Error|Success, narrative,
+           model} — НИКОГДА не бросает и не блокирует отчёт; _post — изолированный
+           urllib POST на /api/generate (stream:false).
+        2) executive_summary.render_html — секция «AI-резюме (локальный Ollama ·
+           model; вердикт выше — детерминированный)» ПОД авторитетным вердиктом,
+           экранирована; отсутствует, если нарратива нет (отчёты без Ollama не
+           меняются).
+        3) collection_runner — opt-in llm/llm_model; после build_summary (он
+           остаётся нетронут) _attach_llm_narrative best-effort добавляет
+           summary['narrative'] только при Success; нарратив попадает в
+           report.json+html. features.has_ollama() — делегат в available()
+           (НЕ в OPTIONAL_FEATURES — там детект без сети мгновенный). GUI
+           tab_collection — чекбокс «AI-резюме (локальный Ollama)»: всегда
+           включён с подсказкой (Ollama — сервис, не бинарь; сборка вкладки без
+           сетевого I/O, деградация на рантайме → фаза Skipped).
+        4) tests/test_llm_summary.py (16): build_prompt детерминизм/grounding/
+           толерантность; available True-на-2xx/False-на-сбое; generate
+           Unavailable/Success(stub _post)/Error-на-пустой/не-бросает-на-сбое;
+           render показывает/прячет нарратив + экранирование; collection
+           attach-без-изменения-вердикта/graceful-Unavailable/дефолт-off;
+           features.has_ollama делегирует.
+        ИТОГ: 487 passed, 1 skipped (488 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, graceful-деградация на реальном example.com]:
+        Ollama не запущен → фаза залогировала «AI-резюме пропущено (Unavailable)»,
+        отчёт собрался чисто с детерминированным вердиктом (Medium · 16/100)
+        нетронутым, без нарратива, без краша, оффлайн (нет <script>). RESULT:
+        PASS. Success-путь (Ollama up) покрыт юнит-тестом со стабом _post.
+        Прим.: C2 (живая secret-валидация) ОСТАЁТСЯ отложенной — она шлёт сами
+        секреты наружу по сети (dual-use/приватность), это отдельное явное
+        решение, не покрытое текущим opt-in.
 
 ==============================================================================
