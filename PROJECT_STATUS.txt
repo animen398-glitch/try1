@@ -1,7 +1,7 @@
 ==============================================================================
   PROJECT STATUS — Advanced Site Analyzer
-  Дата отчёта: 2026-06-12 (Next-Gen HIGH VALUE H1–H4: Site Map / Executive
-  Summary / Dashboard Security Overview / Reporting 2.0; тесты ~303)
+  Дата отчёта: 2026-06-13 (Platform P1–P8: Project Workspace / Unified Risk
+  Engine 0–100 / Dashboard 2.0 / Scan Diff; тесты ~457)
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -1128,5 +1128,46 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
   ✅ ранее · P6 (Visualization) ✅ ранее · P7 (Optional integrations: nuclei/
   katana/amass) ✅ ранее (Ollama — осознанно TIER C, нарушает детерминизм I5).
   Весь 7-фазный роадмап закрыт. Без новых зависимостей на всём протяжении.
+
+  P8. Scan Diff — сравнение двух сканов проекта — [DONE] 2026-06-13
+      Надстройка над P2 (Project Workspace уже хранит scans/<id>/report.json):
+      что изменилось на цели между двумя Full Collection. Инварианты I1–I5.
+        1) core/scan_diff.py — ЧИСТЫЙ stdlib: diff(report_a, report_b) — чистая
+           детерминированная функция над двумя report-dict; секции pages
+           (site_map: статус/тип), secrets (api.details, значения МАСКИРУЮТСЯ —
+           полный ключ не попадает в diff-артефакт), technologies (cms ∪
+           tech_fingerprint, смена версий), dependencies (версии + появившиеся
+           vuln-флаги), headers (server ∪ security), endpoints (katana),
+           findings — added/removed/changed + риск-хедлайн (level + 0–100 из
+           P3). ЧЕСТНОСТЬ: секция сравнивается ТОЛЬКО если её фаза Success в
+           ОБОИХ сканах, иначе → skipped с причиной (упавшая/легаси-фаза не
+           выдаётся за «всё удалено»). SECTION_PHASES — единая точка расширения
+           (будущая subdomain-фаза добавится строкой). render_html(diff) —
+           самодостаточная оффлайн-страница (inline-CSS, без JS/CDN, I2;
+           added зелёным / removed красным / changed жёлтым «a → b», риск-чипы
+           A→B цветами RISK_COLORS); summarize_line(diff) — однострочная сводка
+           для GUI-лога. write_diff_report(project, id_a, id_b) — load → diff →
+           Projects/<slug>/reports/diff_<A>_vs_<B>.html (первый реальный
+           потребитель папки reports/ из P2).
+        2) core/project.py — Project.load_scan_report(scan_id): единственный
+           читатель scans/<id>/report.json (I3); scan_diff остаётся чистым.
+        3) GUI tab_collection (тонкий слой, I4): блок «Scan Diff» — комбо
+           Проект (ProjectStore.list_projects по output-папке) + Скан A/B (из
+           metadata, дефолт: предпоследний → последний), кнопка «Сравнить»
+           disabled при <2 сканов (upfront-деградация); diff в воркере через
+           _run_async, отчёт открывается в браузере, сводка в лог; список
+           проектов авто-обновляется после завершения сбора.
+        4) tests/test_scan_diff.py (17: added/removed/changed по каждой секции,
+           маскирование секретов, skip упавшей/отсутствующей/легаси-фазы,
+           идентичные сканы → is_empty, пустые отчёты, оффлайн-рендер +
+           экранирование, roundtrip через Project) + tests/test_scan_diff_gui.py
+           (6: write_diff_report пишет HTML в reports/, ValueError на битый
+           скан; headless Qt: наполнение комбо, дефолт A/B, гейтинг кнопки,
+           толерантность к пустой папке).
+        ИТОГ: 456 passed, 1 skipped (457 собрано); ruff чист. Без новых
+        зависимостей. report.html/report.json существующих сканов НЕ менялись (diff только
+        читает их); субдомены/сертификаты в diff не входят — collection-
+        пайплайн их не собирает (зафиксировано в P3) — секция добавится при
+        появлении фазы.
 
 ==============================================================================

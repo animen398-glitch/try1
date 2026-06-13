@@ -28,7 +28,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map + GraphQL-discovery (probe /graphql* + introspection) |
-| Final Report & Collection | «Run Full Collection» — прогон всех модулей в один скан проекта (`Projects/<домен>/scans/<timestamp>/`) + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешние nuclei/katana) |
+| Final Report & Collection | «Run Full Collection» — прогон всех модулей в один скан проекта (`Projects/<домен>/scans/<timestamp>/`) + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + граф атак-поверхности (SVG) + визуальная карта сайта по HTTP-статусам + опц. скриншот через Playwright + опц. внешние nuclei/katana) + Scan Diff двух сканов проекта |
 | Dashboard | Сводка реестра (субдомены / IP / медиа / API / **takeover-кандидаты** / **source maps**) с дедупом эндпоинтов и drill-down + Security Overview (вердикт риска + **0–100** / Attack Surface Score / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite) |
 | System | Очередь задач, экспорт данных, системные логи |
@@ -114,6 +114,18 @@ Projects/<домен>/
 сканам проекта; внутренняя раскладка скана не изменилась (обратная
 совместимость). `metadata.json` хранит для каждого скана risk level/score,
 attack-surface score, число секретов/находок — основа для Dashboard и истории.
+
+### Scan Diff — что изменилось между сканами
+
+На вкладке Final Report & Collection: выберите проект и два его скана →
+«Сравнить». `core/scan_diff.py` (чистый stdlib, оффлайн) сравнивает два
+`report.json`: новые/удалённые/изменённые **страницы** (статус/тип),
+**секреты** (значения маскируются), **технологии** (вкл. смену версий),
+**JS-зависимости** (вкл. появившиеся уязвимости), **HTTP-заголовки**,
+**эндпоинты katana** и **findings**, плюс дельта риска `Low 4/100 → High
+40/100`. Секция сравнивается только если её фаза успешна в обоих сканах
+(упавшая фаза не выдаётся за «всё удалено»). Результат —
+`Projects/<домен>/reports/diff_<A>_vs_<B>.html` (inline-CSS, без JS).
 
 ## Внешние плагины (вкладки)
 
