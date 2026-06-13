@@ -124,6 +124,30 @@ class _CollectionWorker(QObject):
             self.error.emit(str(e))
 
 
+class _SecurityWorker(QObject):
+    """Thread worker for SecurityAuditor with thread-safe progress routing.
+
+    The auditor already supports cooperative cancellation (set_cancel_event) and
+    progress logging; this just forwards its log messages to a Qt signal so the
+    GUI can show progress without touching widgets from the worker thread."""
+    log_message = pyqtSignal(str)
+    finished    = pyqtSignal(dict)
+    error       = pyqtSignal(str)
+
+    def __init__(self, auditor, url: str):
+        super().__init__()
+        self._auditor = auditor
+        self._url = url
+
+    def run(self):
+        try:
+            self._auditor.set_progress_callback(lambda msg: self.log_message.emit(msg))
+            result = self._auditor.audit(self._url)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class _TaskHandle:
     """Strong-reference holder for one (worker, thread) pair.
 
