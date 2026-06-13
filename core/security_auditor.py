@@ -22,6 +22,7 @@ from urllib.parse import urljoin
 from core.dynamic_analyzer import extract_js_urls
 from core.graphql_discovery import GraphQLDiscovery
 from core.secret_scanner import SecretScanner
+from core.secret_validator import summarize as summarize_validation
 from core.source_map_parser import SourceMapParser
 from utils.browser_utils import SessionBuilder
 
@@ -161,8 +162,13 @@ class SecurityAuditor:
             graphql_eps = self._discover_graphql(url)
         result['graphql'] = graphql_eps
 
+        sec_validation = summarize_validation(result['secrets'])
         result['summary'] = {
             'secrets': len(result['secrets']),
+            # Offline format check (no network): how many leaked values are
+            # structurally well-formed vs placeholders/malformed.
+            'secrets_valid_format': sec_validation['valid_format'],
+            'secrets_invalid_format': sec_validation['invalid_format'],
             'endpoints': len(result['endpoints']),
             'source_maps': len(source_maps),
             'maps_with_content': sum(1 for m in source_maps if m.get('has_content')),

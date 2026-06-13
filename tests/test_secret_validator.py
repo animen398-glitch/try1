@@ -114,3 +114,21 @@ def test_scan_text_attaches_validation():
 
     placeholder = scan_text('api_key = "your_api_key_here00"')
     assert placeholder[0]['validation']['status'] == INVALID
+
+
+# ── GUI: Security Audit table shows the Format column (headless) ─────────────
+
+def test_security_tab_shows_format_column(qapp):
+    from gui.main_window import MainWindow
+    w = MainWindow()
+    assert "Format" in w.SECRET_COLUMNS
+    w._populate_secret_table([
+        {'type': 'AWS Access Key', 'preview': 'AKIA…', 'source': 'app.js',
+         'validation': {'status': VALID, 'reason': 'ок'}},
+        {'type': 'Generic API Key', 'preview': 'your…', 'source': 'app.js',
+         'validation': {'status': INVALID, 'reason': 'плейсхолдер'}},
+    ])
+    fmt_col = w.SECRET_COLUMNS.index('Format')
+    assert w.security_table.rowCount() == 2
+    assert '✓' in w.security_table.item(0, fmt_col).text()
+    assert '✗' in w.security_table.item(1, fmt_col).text()

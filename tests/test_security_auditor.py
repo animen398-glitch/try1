@@ -77,6 +77,18 @@ def test_audit_collects_secrets_endpoints_and_maps():
     assert result["source_maps"][0]["has_content"] is True
 
 
+def test_audit_summary_counts_offline_format_validation():
+    result = _auditor().audit("https://t.example.com")
+    s = result["summary"]
+    # AWS / GitHub / Stripe values in the corpus are all well-formed → all three
+    # validate as valid_format (offline; no provider was contacted).
+    assert s["secrets"] == 3
+    assert s["secrets_valid_format"] == 3
+    assert s["secrets_invalid_format"] == 0
+    # Every surfaced secret carries an offline validation verdict.
+    assert all('validation' in f for f in result["secrets"])
+
+
 class _FakeRegistry:
     def __init__(self):
         self.records = []

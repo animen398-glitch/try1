@@ -19,7 +19,7 @@ from gui.ui_components import SectionGroupBox, StyledButton
 class SecurityAuditTabMixin:
     """Builds and drives the Security Audit tab."""
 
-    SECRET_COLUMNS = ["Type", "Preview", "Source"]
+    SECRET_COLUMNS = ["Type", "Preview", "Format", "Source"]
     SOURCEMAP_COLUMNS = ["Source Map", "Sources", "Content", "Secrets"]
 
     def _build_security_tab(self) -> QWidget:
@@ -47,7 +47,7 @@ class SecurityAuditTabMixin:
 
         sec_grp = SectionGroupBox("Leaked Secrets")
         sec_layout = QVBoxLayout()
-        self.security_table = self._make_table(self.SECRET_COLUMNS, stretch_col=2)
+        self.security_table = self._make_table(self.SECRET_COLUMNS, stretch_col=3)
         sec_layout.addWidget(self.security_table)
         sec_grp.setLayout(sec_layout)
         layout.addWidget(sec_grp, stretch=2)
@@ -121,8 +121,10 @@ class SecurityAuditTabMixin:
             intro = s.get('graphql_introspection', 0)
             gql_part = (f"  |  GraphQL: {gql}"
                         + (f" (introspection: {intro})" if intro else ""))
+        valid_fmt = s.get('secrets_valid_format', 0)
         self.security_status.setText(
-            f"Секретов: {s.get('secrets', 0)}  |  "
+            f"Секретов: {s.get('secrets', 0)} "
+            f"(формат ок: {valid_fmt})  |  "
             f"эндпоинтов: {s.get('endpoints', 0)}  |  "
             f"source maps: {s.get('source_maps', 0)} "
             f"(с исходниками: {s.get('maps_with_content', 0)})  |  "
@@ -131,20 +133,36 @@ class SecurityAuditTabMixin:
         )
         self._save_target(self.security_url.text().strip())
 
+    # Offline format-validation status → short label + colour for the table.
+    _FORMAT_DISPLAY = {
+        'valid_format':   ('✓ формат', '#66bb6a'),
+        'invalid_format': ('✗ формат', '#bdbdbd'),
+        'unverifiable':   ('—', '#9e9e9e'),
+    }
+
     def _populate_secret_table(self, secrets: list):
         self.security_table.setRowCount(0)
         for finding in secrets:
             r = self.security_table.rowCount()
             self.security_table.insertRow(r)
+            status = (finding.get('validation') or {}).get('status', 'unverifiable')
+            fmt_label, fmt_color = self._FORMAT_DISPLAY.get(
+                status, ('—', '#9e9e9e'))
             values = [
                 finding.get('type', ''),
                 finding.get('preview', ''),
+                fmt_label,
                 finding.get('source', ''),
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(str(val))
                 if col == 0:
                     item.setForeground(QColor('#e57373'))  # secret type — red
+                elif col == 2:
+                    item.setForeground(QColor(fmt_color))
+                    reason = (finding.get('validation') or {}).get('reason', '')
+                    if reason:
+                        item.setToolTip(reason)
                 self.security_table.setItem(r, col, item)
 
     def _populate_sourcemap_table(self, maps: list):
