@@ -1746,3 +1746,37 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       (частично через subdomain crt.sh). DNS-модуль закрыт.
 
 ==============================================================================
+
+  ROADMAP #13 — OSINT: Email Intelligence — [DONE] 2026-06-13
+      Второй модуль из бандла #13. Вертикальный срез. Stdlib only (I1: re +
+      urllib через SessionBuilder/urlopen_text, без новых зависимостей).
+      Инвариант I5: сетевой _fetch_text отделён от чистой экстракции/
+      классификации (extract_emails / role_of / classify), инъектируется в
+      discover(fetch=…) → тесты без сети.
+        1) core/email_intel.py — extract_emails(text) ЧИСТАЯ: _EMAIL_RE
+           (TLD [a-z]{2,} держит version-строки react@18.2.0 вне), _is_noise
+           отсекает плейсхолдеры (_NOISE_DOMAINS: example.com/sentry.io/…),
+           ассет-файлы (sprite@2x.png), unicode-фрагменты. role_of(email) →
+           бакет по local-part (ROLE_RULES: security/admin/support/sales/
+           careers/press/noreply/info, иначе personal). classify(emails,
+           domain) → {total, on_domain (домен или субдомен), external, roles}.
+           discover(target, fetch=…) фетчит homepage/robots.txt/sitemap.xml,
+           снимает www. для on-domain-матча апекса; render_html оффлайн.
+        2) core/collection_runner.py — опц. флаг emails=False; _phase_emails
+           (guarded, No-emails чистый) пишет emails/emails.json; карточка
+           «Email Intelligence» в отчёте.
+        3) core/scan_diff.py — секция 'emails' (set-like: on_domain+external
+           как ключи); _extract_emails + 'emails' в SECTION_PHASES/_TITLES/
+           _EXTRACTORS/_SET_LIKE.
+        4) gui/tab_collection.py — чекбокс «Email-разведка» → emails=… в runner.
+        5) tests: test_email_intel.py (11: extract basic/dedupe/noise/version,
+           role_of, classify on-domain+roles, discover harvest/no-emails/www-
+           strip, render offline/no-emails, scan_diff emails added) +
+           test_collection_runner (+2: фаза пишет артефакт, рендер карточки) +
+           test_scan_diff (empty-skipped +emails).
+        ИТОГ: 645 passed, 3 skipped (648 собрано); ruff чист. Без новых
+        зависимостей.
+      ОСТАЛОСЬ в #13: Employee Intelligence, CT-история (частично через
+      subdomain crt.sh). Email-модуль закрыт.
+
+==============================================================================

@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **632 passed, 3 skipped** (635 собрано; сетенезависимые, Qt headless) |
+| Тесты | **645 passed, 3 skipped** (648 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -73,6 +73,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | openapi_discovery | **OpenAPI Discovery (#11)**: пробинг типовых путей спеки (swagger.json/openapi.json/…) + чистый парсер OpenAPI 3.x/Swagger 2.0 → карта эндпоинтов; фетч (инъектируемый) отделён от парсинга; питает отчёт, граф (категория APIs) и Scan Diff (секция apis) |
 | historical_intel | **Historical Intelligence (#12)**: архивные URL домена из Wayback CDX + чистая классификация (admin/auth/api/config/upload/docs); фетч отделён от классификатора (инъектируемый); питает отчёт, граф (категория Historical) и Scan Diff (секция historical, интересное подмножество) |
 | dns_intel | **DNS Intelligence (#13 OSINT)**: A/AAAA/MX/TXT/NS/CAA + email-auth (SPF/DMARC/DKIM) через DNS-over-HTTPS (без dnspython); чистый анализ → findings (нет SPF/DMARC, слабый DMARC, нет CAA), которые сворачиваются в риск-движок; питает отчёт и Scan Diff (секция dns) |
+| email_intel | **Email Intelligence (#13 OSINT)**: сбор e-mail адресов из homepage/robots.txt/sitemap.xml (stdlib re); чистая экстракция/классификация (фильтр шума: ассеты, плейсхолдеры, version-строки) → группировка на домене/внешние + по ролям (security/admin/support/sales/…); фетч отделён от экстракции (инъектируемый) → тесты без сети; питает отчёт (карточка) и Scan Diff (секция emails) |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
@@ -174,7 +175,10 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 - **#13 OSINT-модули — [В РАБОТЕ]** DNS Intelligence **[ГОТОВО]**
   (`core/dns_intel.py`: A/AAAA/MX/TXT/NS/CAA + SPF/DMARC/DKIM через DoH, findings
   в риск-движок; опц. фаза collection «DNS / Email-auth», карточка, Scan Diff
-  секция dns). Осталось в #13: Email Intelligence, Employee Intelligence,
+  секция dns) · Email Intelligence **[ГОТОВО]** (`core/email_intel.py`: сбор
+  адресов из homepage/robots/sitemap, группировка на домене/внешние + по ролям;
+  фетч отделён от чистой экстракции; опц. фаза collection «Email-разведка»,
+  карточка, Scan Diff секция emails). Осталось в #13: Employee Intelligence,
   CT-история (частично есть через subdomain crt.sh).
 - **#14 Findings Management** — статусы OPEN/IN_PROGRESS/FIXED/IGNORED (оффлайн).
 
