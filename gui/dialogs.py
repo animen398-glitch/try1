@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
 )
 
 from core import config
+from core.llm_summary import DEFAULT_MODEL as _OLLAMA_DEFAULT_MODEL
 from gui.ui_components import SectionGroupBox, StyledButton
 from utils.browser_utils import BROWSER_HEADERS
 
@@ -87,6 +88,14 @@ class SettingsDialog(QDialog):
             self.ua_combo.setCurrentText(current_ua)
         g_layout.addWidget(self.ua_combo)
 
+        g_layout.addWidget(QLabel("Модель локального Ollama (AI-резюме):"))
+        self.ollama_model_edit = QLineEdit(self.settings.get('ollama_model', ''))
+        self.ollama_model_edit.setPlaceholderText(_OLLAMA_DEFAULT_MODEL)
+        self.ollama_model_edit.setToolTip(
+            "Имя модели для опц. AI-резюме через локальный Ollama "
+            f"(по умолчанию '{_OLLAMA_DEFAULT_MODEL}'). Пусто = модель по умолчанию.")
+        g_layout.addWidget(self.ollama_model_edit)
+
         g_layout.addWidget(QLabel("Кеш сканирования (GeoIP + пассивные субдомены):"))
         btn_clear_cache = StyledButton("Очистить кеш", style='secondary')
         btn_clear_cache.setToolTip(
@@ -148,6 +157,7 @@ class SettingsDialog(QDialog):
         self.settings['max_pages'] = self.max_pages_spin.value()
         self.settings['request_delay'] = self.delay_spin.value()
         self.settings['user_agent_profile'] = self.ua_combo.currentText()
+        self.settings['ollama_model'] = self.ollama_model_edit.text().strip()
         self.settings['auto_compress'] = self.auto_compress_cb.isChecked()
         self.settings['compression_format'] = self.compress_combo.currentText()
         self._save_settings()

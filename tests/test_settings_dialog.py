@@ -57,3 +57,16 @@ def test_dialog_loads_current_values(qapp, isolated_config):
     dlg = SettingsDialog()
     assert dlg.ua_combo.currentText() == "safari_mac"
     assert dlg.compress_combo.currentText() == "rar"
+
+
+def test_dialog_persists_ollama_model(qapp, isolated_config):
+    from gui.dialogs import SettingsDialog
+
+    dlg = SettingsDialog()
+    dlg.ollama_model_edit.setText("mistral")
+    dlg._on_accept()
+    assert config.load_settings()["ollama_model"] == "mistral"
+
+    # And it loads back into the field on reopen.
+    dlg2 = SettingsDialog()
+    assert dlg2.ollama_model_edit.text() == "mistral"
