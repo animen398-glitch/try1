@@ -288,6 +288,36 @@ def test_render_html_ct_card():
     assert "<script" not in html.lower()
 
 
+def test_sync_findings_status_persists_and_decorates(tmp_path):
+    from core.project import ProjectStore
+    from core.findings_status import fingerprint
+    project = ProjectStore(tmp_path).get_or_create("https://x.com")
+    report = {"phases": {"vulns": {"status": "Success", "findings": [
+        {"title": "Plain HTTP", "severity": "High"},
+        {"title": "Weak CSP", "severity": "Medium"}]}}}
+    r = CollectionRunner()
+    r._sync_findings_status(report, project, "s1")
+    # Findings are decorated with status, state is persisted + summarized.
+    assert all("status" in f for f in report["phases"]["vulns"]["findings"])
+    assert report["findings_status"]["summary"]["total"] == 2
+    assert project.load_findings()[fingerprint(
+        {"title": "Plain HTTP", "severity": "High"})]["status"] == "open"
+
+
+def test_render_html_findings_management_card():
+    from core.findings_status import apply
+    r = CollectionRunner()
+    state = apply({}, [{"title": "Plain HTTP", "severity": "High"}], scan_id="s1")
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "", "phases": {},
+        "findings_status": {"summary": {"total": 1, "active": 1}, "state": state},
+    }
+    html = r._render_html(report)
+    assert "Findings Management" in html and "Plain HTTP" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):
     # With a takeover candidate present, the executive summary escalates.
     from core.executive_summary import build_summary

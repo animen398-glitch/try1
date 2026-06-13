@@ -189,6 +189,56 @@ class Project:
         meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
         self._write_metadata(meta)
 
+    # ---------------------------------------------------------------- findings (#14)
+    @property
+    def findings_path(self) -> Path:
+        return self.root / 'findings.json'
+
+    def load_findings(self) -> Dict:
+        """The triage state map (fingerprint -> record), or {} if unset/corrupt.
+
+        Lives in its own ``findings.json`` (not metadata) so the potentially
+        large per-finding triage state stays out of the scan index. ``core.
+        findings_status`` owns the record shape; Project only persists it (I3)."""
+        try:
+            data = json.loads(self.findings_path.read_text(encoding='utf-8'))
+        except Exception:
+            return {}
+        findings = data.get('findings') if isinstance(data, dict) else None
+        return findings if isinstance(findings, dict) else {}
+
+    def save_findings(self, state: Dict) -> None:
+        """Persist the triage state map under ``findings.json``."""
+        self.ensure()
+        self.findings_path.write_text(
+            json.dumps({'version': 1,
+                        'updated_at': datetime.now().isoformat(timespec='seconds'),
+                        'findings': state or {}},
+                       indent=2, ensure_ascii=False, default=str),
+            encoding='utf-8')
+
+    def sync_findings(self, findings: List[Dict],
+                      scan_id: Optional[str] = None) -> Dict:
+        """Merge a scan's findings into the stored triage state and persist it.
+
+        Returns the new state map (a thin wrapper over ``findings_status.apply``
+        so callers don't load/save by hand)."""
+        from core.findings_status import apply
+        state = apply(self.load_findings(), findings, scan_id=scan_id)
+        self.save_findings(state)
+        return state
+
+    def set_finding_status(self, fingerprint: str, status: str,
+                           note: Optional[str] = None) -> Dict:
+        """Set one finding's triage status (+ optional note) and persist.
+
+        Returns the new state map. Raises ``ValueError``/``KeyError`` (from
+        ``findings_status.set_status``) for an unknown status/fingerprint."""
+        from core.findings_status import set_status
+        state = set_status(self.load_findings(), fingerprint, status, note=note)
+        self.save_findings(state)
+        return state
+
 
 class ProjectStore:
     """Manages the ``<base>/Projects/`` tree of projects."""

@@ -94,6 +94,16 @@ def build_summary(report: Dict) -> Dict:
     vsum = vulns.get('summary', {}) if isinstance(vulns, dict) else {}
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
 
+    # Findings Management (#14): once findings carry a triage status, drop the
+    # inactive ones (fixed / ignored) from the risk math and re-aggregate. The
+    # guard keeps behaviour identical for reports/tests without statuses.
+    if any(isinstance(f, dict) and f.get('status') for f in findings):
+        from core.findings_status import is_active
+        from core.vuln_scanner import VulnScanner
+        findings = [f for f in findings if not isinstance(f, dict)
+                    or is_active(f)]
+        vsum = VulnScanner.summarize(findings)
+
     high = _int(vsum.get('high'))
     medium = _int(vsum.get('medium'))
     info = _int(vsum.get('info'))

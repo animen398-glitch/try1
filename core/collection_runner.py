@@ -44,6 +44,9 @@ from core.employee_intel import discover as discover_employees
 from core.employee_intel import render_html as render_employees
 from core.ct_history import discover as discover_ct
 from core.ct_history import render_html as render_ct
+from core.findings_status import decorate as decorate_findings
+from core.findings_status import render_html as render_findings_status
+from core.findings_status import summarize as summarize_findings_status
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.infrastructure import render_html as render_infrastructure
@@ -285,6 +288,11 @@ class CollectionRunner:
             report['phases']['analyzers'] = self._phase_analyzers(report)
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
+
+        # Findings Management (#14): persist triage status across scans and
+        # annotate this run's findings with it, BEFORE the summary — so fixed/
+        # ignored findings drop out of the risk verdict below.
+        self._sync_findings_status(report, project, scan_dir.name)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -683,6 +691,28 @@ class CollectionRunner:
             self._log(f'  CT history failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _sync_findings_status(self, report: Dict, project, scan_id: str) -> None:
+        """Persist triage status across scans and annotate this run's findings.
+
+        Merges the vuln-phase findings into the project's stored triage state
+        (new → open, kept statuses preserved), writes it back, then stamps each
+        finding with its status so the risk engine can exclude fixed/ignored.
+        Best-effort: a failure here must never sink an otherwise-good scan."""
+        vulns = report.get('phases', {}).get('vulns')
+        if not isinstance(vulns, dict) or not isinstance(vulns.get('findings'),
+                                                          list):
+            return
+        try:
+            state = project.sync_findings(vulns['findings'], scan_id=scan_id)
+            vulns['findings'] = decorate_findings(vulns['findings'], state)
+            report['findings_status'] = {
+                'summary': summarize_findings_status(state), 'state': state}
+            s = report['findings_status']['summary']
+            self._log(f"  Findings: {s['total']} под триаж "
+                      f"(активных {s['active']})")
+        except Exception as e:  # noqa: BLE001 — triage must not fail the scan
+            self._log(f'  Findings status sync failed: {e}')
+
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
         if not KatanaRunner.available():
@@ -1022,6 +1052,15 @@ class CollectionRunner:
             f'<ul style="font-size:12px;color:#444;margin:6px 0;">{items}</ul>'
         )
         body_parts.append(card('Vulnerabilities', vuln_body, vuln.get('status', '—')))
+
+        # Findings Management (#14) — triage status persisted across scans.
+        fmgmt = report.get('findings_status')
+        if isinstance(fmgmt, dict) and fmgmt.get('state'):
+            fsum = fmgmt.get('summary', {})
+            body_parts.append(card(
+                'Findings Management',
+                render_findings_status(fmgmt['state']),
+                f"активных {fsum.get('active', 0)}/{fsum.get('total', 0)}"))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')
