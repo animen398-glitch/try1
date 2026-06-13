@@ -36,6 +36,8 @@ class DashboardTabMixin:
         ('videos',        'Видео'),
         ('patterns',      'Паттерны'),
         ('api_endpoints', 'API Endpoints'),
+        ('takeovers',     'Takeovers'),
+        ('source_maps',   'Source Maps'),
     ]
 
     # (подпись фильтра -> data_type; None = последние записи всех типов)
@@ -47,6 +49,8 @@ class DashboardTabMixin:
         ('Видео',                'video'),
         ('Паттерны',             'pattern_match'),
         ('API Endpoints',        'api_endpoint'),
+        ('Takeover-кандидаты',   'takeover'),
+        ('Source Maps',          'source_map'),
     ]
 
     # (ключ метрики -> подпись карточки) для Security Overview.

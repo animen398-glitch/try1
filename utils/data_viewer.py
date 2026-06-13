@@ -20,6 +20,8 @@ class DataViewer:
         'videos': 'video',
         'patterns': 'pattern_match',
         'api_endpoints': 'api_endpoint',
+        'takeovers': 'takeover',
+        'source_maps': 'source_map',
     }
 
     def __init__(self, registry=None, db_path: Union[str, Path] = DEFAULT_DB):

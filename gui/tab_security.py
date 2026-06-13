@@ -75,6 +75,17 @@ class SecurityAuditTabMixin:
                 else QHeaderView.ResizeToContents)
         return table
 
+    @staticmethod
+    def _security_registry():
+        """A DataRegistry for recording exposed source maps, or None on failure.
+        Each add_record opens its own SQLite connection, so handing this to the
+        worker thread is safe."""
+        try:
+            from core.registry import DataRegistry
+            return DataRegistry()
+        except Exception:
+            return None
+
     def _run_security_audit(self):
         url = self.security_url.text().strip()
         if not url:
@@ -87,7 +98,8 @@ class SecurityAuditTabMixin:
         self._set_busy(True)
 
         auditor = SecurityAuditor(
-            profile=self.settings.get('user_agent_profile', 'chrome_windows')
+            profile=self.settings.get('user_agent_profile', 'chrome_windows'),
+            data_registry=self._security_registry(),
         )
         self._run_async(lambda u=url: auditor.audit(u), self._on_security_done)
 

@@ -77,6 +77,33 @@ def test_audit_collects_secrets_endpoints_and_maps():
     assert result["source_maps"][0]["has_content"] is True
 
 
+class _FakeRegistry:
+    def __init__(self):
+        self.records = []
+
+    def add_record(self, source, data_type, content, metadata=None):
+        self.records.append({'source': source, 'data_type': data_type,
+                             'content': content, 'metadata': metadata})
+
+
+def test_audit_records_source_maps_to_registry():
+    reg = _FakeRegistry()
+    a = SecurityAuditor(graphql=False, data_registry=reg)
+    a._fetch = lambda url: _CORPUS.get(url)   # type: ignore[assignment]
+    result = a.audit('https://t.example.com')
+    # The one exposed source map is persisted for Dashboard aggregation.
+    sm = [r for r in reg.records if r['data_type'] == 'source_map']
+    assert len(sm) == 1 == len(result['source_maps'])
+    assert sm[0]['content'].endswith('app.js.map')
+    assert sm[0]['metadata']['has_content'] is True
+
+
+def test_audit_without_registry_is_fine():
+    a = SecurityAuditor(graphql=False)            # no registry
+    a._fetch = lambda url: _CORPUS.get(url)       # type: ignore[assignment]
+    assert a.audit('https://t.example.com')['status'] == 'Success'
+
+
 def test_summary_counts_match_lists():
     result = _auditor().audit("https://t.example.com")
     s = result["summary"]

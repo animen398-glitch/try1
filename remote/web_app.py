@@ -153,7 +153,12 @@ def _run_cookies(url: str, push: Callable) -> dict:
 
 
 def _run_security(url: str, push: Callable) -> dict:
-    auditor = SecurityAuditor()
+    try:
+        from core.registry import DataRegistry
+        registry = DataRegistry()
+    except Exception:
+        registry = None
+    auditor = SecurityAuditor(data_registry=registry)
     auditor.set_progress_callback(lambda m: push(m))
     return auditor.audit(url)
 

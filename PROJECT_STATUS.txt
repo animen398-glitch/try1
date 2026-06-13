@@ -1104,11 +1104,29 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         фазы → в его отчётах takeovers/source-maps = 0. Движок ГОТОВ их учитывать;
         источник этих сигналов на Dashboard — открытый вопрос P4 (см. ниже).
 
-  P4. Dashboard 2.0 — частично закрыто (reuse): registry-карточки (субдомены/IP/
-      изображения/видео/паттерны/API endpoints) + Security Overview (risk level +
-      0–100 + Attack Surface + секреты/High/Medium) уже есть. Остаётся решить
-      ОТКУДА Dashboard берёт Takeovers/Source-maps (collection их не даёт) —
-      design-вопрос (агрегировать из DataRegistry/отдельных вкладок vs добавить
-      фазы в collection). P1/P5/P6/P7 — закрыты ранее.
+  P4. Dashboard 2.0 — [DONE] 2026-06-13
+      Решение: агрегировать из DataRegistry (отражает ВСЁ, что просканировано по
+      цели, а не только последний collection). Недостающие по спеке карточки —
+      Takeovers + Source Maps (субдомены/IP/API уже были; секреты/risk/findings —
+      в Security Overview).
+        1) DataViewer.SUMMARY_TYPES += takeovers→'takeover', source_maps→
+           'source_map' (get_summary считает их count'ом по data_type — единый
+           механизм, без нового кода агрегации, I3). DASHBOARD_STATS +
+           DASHBOARD_FILTERS получили обе карточки (+ drill-down).
+        2) takeover УЖЕ писался subdomain_scanner'ом; source_map не писал НИКТО →
+           SecurityAuditor получил optional data_registry и _record_source_maps
+           (best-effort, как recon/subdomain); GUI tab_security и web _run_security
+           передают DataRegistry (per-call SQLite-коннект → thread-safe в воркере).
+        3) Security Overview: risk-метка показывает «<level> · N/100» (P3 reuse).
+        4) tests/test_dashboard_metrics.py (3: счёт новых типов, нули, все ключи
+           карточек существуют в summary) + test_security_auditor (+2: запись
+           source_map в реестр / работа без реестра).
+        ИТОГ: 434 passed, 1 skipped; ruff чист. Без новых зависимостей.
+
+  ИТОГ PLATFORM ROADMAP 2026: P1 (стабилизация) ✅ ранее · P2 (Project Workspace)
+  ✅ · P3 (Unified Risk Engine 0–100) ✅ · P4 (Dashboard 2.0) ✅ · P5 (Reporting)
+  ✅ ранее · P6 (Visualization) ✅ ранее · P7 (Optional integrations: nuclei/
+  katana/amass) ✅ ранее (Ollama — осознанно TIER C, нарушает детерминизм I5).
+  Весь 7-фазный роадмап закрыт. Без новых зависимостей на всём протяжении.
 
 ==============================================================================

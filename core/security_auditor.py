@@ -36,7 +36,7 @@ class SecurityAuditor:
 
     def __init__(self, profile: str = 'chrome_windows',
                  max_scripts: int = 25, timeout: int = 12,
-                 graphql: bool = True):
+                 graphql: bool = True, data_registry=None):
         self._session = SessionBuilder(profile)
         self._scanner = SecretScanner()
         self._smparser = SourceMapParser(self._scanner)
@@ -45,6 +45,9 @@ class SecurityAuditor:
         # Probe conventional GraphQL endpoints + introspection (on by default).
         self.graphql = graphql
         self._profile = profile
+        # Optional DataRegistry — exposed source maps are recorded so the
+        # Dashboard can aggregate them across scans (same pattern as recon).
+        self._data_registry = data_registry
         self.progress_callback: Optional[Callable] = None
         self._cancel = None
 
@@ -150,6 +153,7 @@ class SecurityAuditor:
         result['secrets'] = self._dedup_secrets(secrets)
         result['endpoints'] = list(endpoints.values())
         result['source_maps'] = source_maps
+        self._record_source_maps(url, source_maps)
 
         # GraphQL endpoint discovery + introspection check (opt-out).
         graphql_eps: List[Dict] = []
@@ -176,6 +180,22 @@ class SecurityAuditor:
         return result
 
     # --------------------------------------------------------------- helpers
+
+    def _record_source_maps(self, url: str, source_maps: List[Dict]) -> None:
+        """Persist exposed source maps to the DataRegistry (best-effort) so the
+        Dashboard can count them. Never raises — recording must not fail an audit."""
+        if not self._data_registry or not source_maps:
+            return
+        try:
+            for m in source_maps:
+                self._data_registry.add_record(
+                    source=url, data_type='source_map',
+                    content=m.get('url', ''),
+                    metadata={'js': m.get('js'),
+                              'has_content': m.get('has_content'),
+                              'secrets': m.get('secrets')})
+        except Exception:
+            pass
 
     def _discover_graphql(self, url: str) -> List[Dict]:
         """Probe conventional GraphQL endpoints; never fatal."""
