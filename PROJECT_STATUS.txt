@@ -1708,3 +1708,41 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       расширяем; web-collection-job фазу не включает (GUI/CLI-collection).
 
 ==============================================================================
+
+  ROADMAP #13 — OSINT: DNS Intelligence — [DONE] 2026-06-13
+      Первый модуль из бандла #13. Вертикальный срез. Ключевое решение: DNS-
+      записи без dnspython (новая тяжёлая зависимость) — через DNS-over-HTTPS
+      (Google /resolve JSON), stdlib urllib+json. Инварианты: I1 (без новых
+      зависимостей), I5 (сетевой _doh_query отделён от чистого analyze,
+      инъектируется в discover/fetch_records → тесты без сети).
+        1) core/dns_intel.py — _doh_query(name,rtype): DoH-запрос, Accept dns-
+           json, вернёт answer.data (кавычки TXT снимаются). fetch_records(
+           domain, query=…): A/AAAA/MX/TXT/NS/CAA + DMARC (_dmarc.<d> TXT) +
+           DKIM (пробинг 11 типовых селекторов <sel>._domainkey.<d>). analyze(
+           records) ЧИСТАЯ: _spf (TXT v=spf1), _dmarc_policy (p= из _dmarc),
+           dkim_selectors, caa; findings: нет SPF (Medium), нет DMARC (Medium),
+           p=none (Info), нет DKIM-селектора (Info), нет CAA (Info). discover(
+           target, query=…) → {status, domain, records, email_auth, findings}.
+           render_html оффлайн.
+        2) core/collection_runner.py — опц. флаг dns=False; _phase_dns (guarded,
+           No-records чистый) пишет dns/dns.json И СВОРАЧИВАЕТ findings в фазу
+           vulns (как analyzers) → риск-движок/граф их учитывают; карточка
+           «DNS / Email Auth».
+        3) core/scan_diff.py — секция 'dns' (field-map как headers): changed по
+           SPF/DMARC/DKIM/CAA; _extract_dns + 'dns' в _label headers-ветке.
+        4) gui/tab_collection.py — чекбокс «DNS / Email-auth» → dns=… в runner.
+        5) tests: test_dns_intel.py (13: analyze healthy/missing/weak-DMARC,
+           fetch_records пробинг DMARC+DKIM, _doh_query парс/ошибка, discover
+           success/no-records+домен, render offline/no-records, scan_diff dns
+           changed) + test_collection_runner (+2: фаза сворачивает в vulns,
+           рендер карточки) + test_scan_diff (empty-skipped +dns).
+        ИТОГ: 632 passed, 3 skipped (635 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный DoH]: google.com → A (3 IP), TXT с
+        v=spf1, discover: SPF✓ DMARC=reject CAA✓ (DKIM-селектор не из типовых →
+        finding «No DKIM selector»); example.com → Success, finding «No CAA»;
+        render оффлайн. RESULT: PASS.
+      ОСТАЛОСЬ в #13: Email Intelligence, Employee Intelligence, CT-история
+      (частично через subdomain crt.sh). DNS-модуль закрыт.
+
+==============================================================================
