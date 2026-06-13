@@ -1780,3 +1780,47 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       subdomain crt.sh). Email-модуль закрыт.
 
 ==============================================================================
+
+  ROADMAP #13 — OSINT: Employee Intelligence — [DONE] 2026-06-13
+      Третий модуль из бандла #13. Вертикальный срез. Stdlib only (I1: html +
+      json + re + urllib через SessionBuilder/urlopen_text). Инвариант I5:
+      сетевой _fetch_text отделён от чистого построения roster (extract_people /
+      infer_format / build_roster), инъектируется в discover(fetch=…) → тесты
+      без сети. Ключевое решение по ЧЕСТНОСТИ: вероятный e-mail достраивается
+      ТОЛЬКО когда формат организации НАБЛЮДЁН на домене (пары имя↔адрес) —
+      схема никогда не выдумывается без доказательств; достроенные адреса
+      помечены email_source='inferred' vs 'found'.
+        1) core/employee_intel.py — ДВА низкошумных источника людей:
+           (a) JSON-LD schema.org Person (_walk_persons рекурсивно по @graph/
+           вложенным; name/jobTitle/email/sameAs), (b) личные mailto (local-part
+           вида first.last/first_last → _name_from_local восстанавливает имя;
+           role_of из email_intel отсекает info@/security@; берётся только
+           on-domain). _split_name → (first,last) ascii-only, средние имена
+           отбрасываются. infer_format(pairs) выбирает самый частый из _FORMATS
+           ({first}.{last}, {first}_{last}, {f}.{last}, {f}{last}, {first}{last},
+           {first}{l}, …; tie-break по порядку). generate_email применяет формат
+           (None без формата/без фамилии). build_roster дедупит по имени (запись
+           с email/title выигрывает), выводит формат, достраивает адреса.
+           discover фетчит homepage + TEAM_PATHS (/about,/team,/people,
+           /leadership,…), снимает www.; render_html оффлайн (таблица имя—титул—
+           e-mail с пометкой найден/предположит.).
+        2) core/collection_runner.py — опц. флаг employees=False; _phase_employees
+           (guarded, No-employees чистый) пишет employees/employees.json;
+           карточка «Employee Intelligence».
+        3) core/scan_diff.py — секция 'employees' (set-like по именам, label
+           «Имя — титул»); _extract_employees + регистрация в SECTION_PHASES/
+           _TITLES/_EXTRACTORS/_SET_LIKE.
+        4) gui/tab_collection.py — чекбокс «Сотрудники» → employees=… в runner.
+        5) tests: test_employee_intel.py (15: split_name, match/infer_format,
+           generate_email только-с-форматом, extract из JSON-LD/mailto(role+
+           external фильтр)/nested-@graph, roster infer+fill/no-format-no-invent/
+           merge-dup, discover team-pages/no-employees/www-strip, render offline/
+           no-employees, scan_diff employees added) + test_collection_runner
+           (+2: фаза пишет артефакт, рендер карточки) + test_scan_diff (empty-
+           skipped +employees).
+        ИТОГ: 662 passed, 3 skipped (665 собрано); ruff чист. Без новых
+        зависимостей.
+      ОСТАЛОСЬ в #13: CT-история (частично через subdomain crt.sh). Бандл #13
+      по OSINT-разведке (DNS + Email + Employee) фактически закрыт.
+
+==============================================================================
