@@ -1596,3 +1596,32 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
       готовы; сейчас каналы правятся в settings.json вручную).
 
 ==============================================================================
+
+  ROADMAP #9 — Alert Center (GUI + web поверхность) — [DONE] 2026-06-13
+      Доделывает #9: настройка каналов в GUI и статус/тест в web-консоли поверх
+      готового ядра. Инвариант I4 — поверхности тонкие над core.alerts.
+        1) gui/dialogs.py — SettingsDialog: новая вкладка «Уведомления».
+           Чекбокс enable + чекбоксы 6 типов событий (пусто = все) + поля
+           Telegram(token/chat_id)/Discord(webhook)/Email(host/port/user/pass[
+           echo=Password]/from/to/STARTTLS) + кнопка «Отправить тестовое».
+           _collect_alerts_config() собирает dict формы core.alerts; _on_accept
+           пишет settings['alerts']; _test_alerts() → alert_center.send_test.
+        2) remote/web_app.py — карточка «Alert Center» (Status/Send-test).
+           GET /alerts → _alerts_overview() {enabled, channels[names], types} —
+           БЕЗ значений токенов (LAN не редактирует креды; они в GUI/settings).
+           POST /alerts/test → alerts.send_test в executor; 400 при reason
+           (нет каналов), иначе пушит в SSE. import alerts + load_settings.
+        3) tests: test_web_app (+2 актив: overview-без-токенов, dashboard-
+           controls; +1 skip testclient /alerts+/alerts/test) + test_alerts_gui
+           (3 headless: populate из settings, collect round-trip, кнопка теста
+           зовёт send_test через стаб).
+        ИТОГ: 592 passed, 3 skipped (595 собрано); ruff чист. Без новых
+        зависимостей.
+        [LIVE TEST — 2026-06-13, реальный сервер :5099 + localhost-webhook]:
+        settings.json временно нацелен на mock-вебхук (бэкап→тест→restore из
+        git). GET /alerts → {enabled, channels:[discord], types[6]} без URL;
+        POST /alerts/test → 200 sent=1, mock получил 'test alert'; disabled →
+        400 reason 'no channels'. RESULT: PASS.
+      #9 функционально закрыт на всех поверхностях (core/CLI/GUI/web).
+
+==============================================================================

@@ -10,7 +10,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **587 passed, 2 skipped** (589 собрано; сетенезависимые, Qt headless) |
+| Тесты | **592 passed, 3 skipped** (595 собрано; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -35,7 +35,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 **Точки входа:**
 - `main.py` — GUI (PyQt5), 14 вкладок + внешний плагин Deep Crawl.
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
-- `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8).
+- `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8, + Alert Center #9).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
   (та же логика доступна в GUI — вкладка Collection — и в web-консоли.)
 
@@ -153,11 +153,11 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
   Единая логика (`monitor.enable/disable/status/run_due`) под тремя тонкими
   поверхностями. Осталось опц.: фоновый scheduler внутри GUI/web-процесса
   (сейчас периодический прогон — через `monitor_cli.py watch`).
-- **#9 Alert Center — [НАЧАТО/ЯДРО+CLI ГОТОВО]** `core/alerts.py`: события из
-  авто-diff'а → Telegram/Discord/Email (stdlib), строго opt-in, конфиг в
-  settings.json. Завязано в мониторинг (`run_due(alert_config=…)`), CLI
-  `monitor_cli.py test-alert` + `run/watch` шлют. Осталось: GUI/web-поверхность
-  настройки каналов (сейчас — правка `alerts` в settings.json вручную).
+- **#9 Alert Center — [ГОТОВО]** `core/alerts.py`: события из авто-diff'а →
+  Telegram/Discord/Email (stdlib), строго opt-in, конфиг в settings.json.
+  Завязано в мониторинг (`run_due(alert_config=…)`); поверхности: CLI
+  (`test-alert` + `run/watch`), GUI (Настройки → вкладка «Уведомления»: каналы +
+  типы + тест), web-консоль (карточка Alert Center: статус без токенов + тест).
 - **#11 OpenAPI Discovery** — swagger.json/openapi.json → карта API.
 - **#12 Historical Intelligence** — Wayback / CommonCrawl.
 - **#13 OSINT-модули** — DNS-записи (SPF/DMARC/DKIM/CAA), Email/Employee Intel,
