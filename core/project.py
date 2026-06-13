@@ -165,6 +165,30 @@ class Project:
     def latest_scan(self) -> Optional[Dict]:
         return self.load_metadata().get('latest_scan')
 
+    # ---------------------------------------------------------------- monitoring
+    def get_monitor(self) -> Optional[Dict]:
+        """The project's Continuous Monitoring schedule, or None if unset.
+
+        The schedule (cadence + next-run) lives in ``metadata.json`` so it
+        survives across runs alongside the scan index (I3). ``core.monitor``
+        owns its shape; Project only persists it."""
+        mon = self.load_metadata().get('monitor')
+        return mon if isinstance(mon, dict) else None
+
+    def set_monitor(self, config: Optional[Dict]) -> None:
+        """Store (or, with ``None``, clear) the monitoring schedule.
+
+        Read-modify-write so it composes with ``record_scan`` (both load the
+        whole metadata and write it back, preserving each other's keys)."""
+        self.ensure()
+        meta = self.load_metadata()
+        if config is None:
+            meta.pop('monitor', None)
+        else:
+            meta['monitor'] = config
+        meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
+        self._write_metadata(meta)
+
 
 class ProjectStore:
     """Manages the ``<base>/Projects/`` tree of projects."""
