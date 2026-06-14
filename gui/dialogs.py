@@ -1,6 +1,6 @@
 import os
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox,
     QTabWidget, QVBoxLayout, QWidget,
@@ -9,12 +9,15 @@ from PyQt5.QtWidgets import (
 from core import alerts as alert_center
 from core import config
 from core.llm_summary import DEFAULT_MODEL as _OLLAMA_DEFAULT_MODEL
+from gui.theme import THEMES
 from gui.ui_components import SectionGroupBox, StyledButton
 from utils.browser_utils import BROWSER_HEADERS
 
 # User-Agent profiles the request layer (SessionBuilder) actually supports.
 _UA_PROFILES = list(BROWSER_HEADERS.keys())
 _ARCHIVE_FORMATS = ['zip', 'rar']
+# (gui_theme value -> RU label) for the appearance selector.
+_THEME_LABELS = {'system': 'Системная', 'light': 'Светлая', 'dark': 'Тёмная'}
 
 
 class SettingsDialog(QDialog):
@@ -133,8 +136,27 @@ class SettingsDialog(QDialog):
         )
         g_layout.addWidget(self.compress_combo)
         group.setLayout(g_layout)
-
         layout.addWidget(group)
+
+        # Appearance / theme (F6) — opt-in; applied live on OK.
+        theme_grp = SectionGroupBox("Оформление")
+        tl = QVBoxLayout()
+        tl.addWidget(QLabel("Тема интерфейса:"))
+        self.theme_combo = QComboBox()
+        for value in THEMES:
+            self.theme_combo.addItem(_THEME_LABELS.get(value, value), value)
+        current_theme = self.settings.get('gui_theme', 'system')
+        idx = self.theme_combo.findData(current_theme)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        self.theme_combo.setToolTip(
+            "«Тёмная» включает тёмную палитру всего приложения. Применяется "
+            "сразу; для виджетов со своими стилями полный эффект — после "
+            "перезапуска.")
+        tl.addWidget(self.theme_combo)
+        theme_grp.setLayout(tl)
+        layout.addWidget(theme_grp)
+
         layout.addStretch()
         return widget
 
@@ -264,10 +286,14 @@ class SettingsDialog(QDialog):
             f"Отправлено каналов: {out['sent']}\n" + "\n".join(lines))
 
     def _clear_cache(self):
-        """Сбросить in-memory TTL-кеши сканирования (GeoIP + пассивные субдомены)."""
+        """Сбросить in-memory TTL-кеши сканирования (GeoIP + пассивные субдомены
+        + активная ASN-разведка + CVE-корреляция OSV)."""
+        from core.asn_intel import clear_cache as clear_asn_cache
+        from core.osv_correlation import clear_cache as clear_osv_cache
         from core.recon_engine import clear_geo_cache
         from core.subdomain_scanner import clear_passive_cache
-        n = clear_geo_cache() + clear_passive_cache()
+        n = (clear_geo_cache() + clear_passive_cache() + clear_asn_cache()
+             + clear_osv_cache())
         QMessageBox.information(self, "Кеш", f"Очищено записей кеша: {n}")
 
     def _browse_output_dir(self):
@@ -287,9 +313,20 @@ class SettingsDialog(QDialog):
         self.settings['ollama_model'] = self.ollama_model_edit.text().strip()
         self.settings['auto_compress'] = self.auto_compress_cb.isChecked()
         self.settings['compression_format'] = self.compress_combo.currentText()
+        self.settings['gui_theme'] = self.theme_combo.currentData()
         self.settings['alerts'] = self._collect_alerts_config()
         self._save_settings()
+        self._apply_theme_live()
         self.accept()
+
+    def _apply_theme_live(self):
+        """Apply the chosen theme to the running app immediately (F6)."""
+        from qtpy.QtWidgets import QApplication
+
+        from gui.theme import apply_theme
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, self.settings.get('gui_theme', 'system'))
 
     def get_settings(self) -> dict:
         return self.settings.copy()

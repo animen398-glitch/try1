@@ -6,7 +6,15 @@
 # upgrades. yt-dlp is the deliberate exception (see below).
 
 # ── Core (required for the GUI / .exe build) ──────────────────────────────
-PyQt5>=5.15.9,<6.0          # PyQt6 is a separate, breaking package
+# GUI binding goes through the qtpy seam; the active binding is selected by
+# QT_API (default "pyside6", set in main.py). PySide6-Essentials is the lean
+# subset the app actually imports (QtCore/Gui/Widgets/Svg/SvgWidgets).
+PySide6-Essentials>=6.7,<7.0   # Qt6 binding (variant B)
+qtpy>=2.4,<3.0                 # binding-abstraction seam — GUI imports go via qtpy
+PySide6-Fluent-Widgets>=1.7,<2.0  # Fluent side-navigation (variant B P3); soft-
+                                  # degrades to a plain QTabWidget if absent.
+# Fallback binding: install PyQt5 and run with QT_API=pyqt5 to use the old Qt5 GUI.
+# PyQt5>=5.15.9,<6.0
 requests>=2.31.0,<3.0
 beautifulsoup4>=4.12.0,<5.0
 lxml>=5.1.0,<7.0            # faster HTML parsing (5.x/6.x are compatible)

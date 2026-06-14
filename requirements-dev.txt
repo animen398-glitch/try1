@@ -15,4 +15,5 @@ httpx>=0.27.0,<1.0
 # Optional — enable the vuln-report PDF export test (otherwise skipped):
 fpdf2>=2.7,<3.0
 
-# PyQt5 (from requirements.txt) is needed — the GUI tests build widgets headless.
+# The Qt binding (from requirements.txt: PySide6-Essentials + qtpy) is needed —
+# the GUI tests build widgets headless under QT_API (conftest pins "pyside6").

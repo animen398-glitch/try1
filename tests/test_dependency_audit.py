@@ -75,6 +75,45 @@ def test_audit_annotates_library_vulnerabilities():
     assert lib['vulnerabilities'][0]['severity'] == 'High'
 
 
+# ── extended signatures (D2): axios / underscore / marked ────────────────────
+
+def test_audit_flags_vulnerable_axios():
+    result = da.audit(['https://unpkg.com/axios@0.21.1/dist/axios.min.js'])
+    f = result['findings'][0]
+    assert f['severity'] == 'High'
+    assert 'axios' in f['title'] and '0.21.1' in f['title']
+
+
+def test_audit_does_not_flag_patched_axios():
+    assert da.audit(['/axios-1.6.2.min.js'])['findings'] == []
+    assert any(lib['library'] == 'axios'
+               for lib in da.audit(['/axios-1.6.2.min.js'])['libraries'])
+
+
+def test_audit_flags_underscore_template_rce():
+    result = da.audit(['/underscore-1.12.0.js'])
+    f = result['findings'][0]
+    assert f['severity'] == 'High'
+    assert 'Underscore.js' in f['title']
+
+
+def test_audit_flags_marked_redos():
+    result = da.audit(['https://cdn/marked@4.0.0/marked.min.js'])
+    f = result['findings'][0]
+    assert f['severity'] == 'Medium'
+    assert 'marked' in f['title'] and '4.0.0' in f['title']
+
+
+def test_audit_marked_patched_is_clean():
+    assert da.audit(['/marked-4.0.10.min.js'])['findings'] == []
+
+
+def test_audit_marked_not_confused_by_bookmarked():
+    # 'bookmarked-2.0.js' must NOT be detected as the 'marked' library.
+    libs = da.detect_libraries(['/bookmarked-2.0.js'])
+    assert all(lib['library'] != 'marked' for lib in libs)
+
+
 # ── vuln-scanner integration (findings feed the risk score) ─────────────────
 
 def test_vuln_scanner_merges_dependency_findings():

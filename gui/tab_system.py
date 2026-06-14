@@ -4,7 +4,7 @@ Implemented as a mixin folded into MainWindow. Methods reference shared
 helpers (self.task_manager, self.status_bar, …) that live on the main window.
 """
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QVBoxLayout, QWidget,
 )

@@ -36,6 +36,8 @@ import urllib.request
 from email.mime.text import MIMEText
 from typing import Dict, List, Optional
 
+from core.scan_diff import diff_events
+
 # The change types Alert Center understands. ``new_subdomain`` and ``takeover``
 # both come from the diff's subdomain section (takeover is the dangerous subset).
 ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
@@ -47,54 +49,16 @@ ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
 def extract_alerts(diff: Dict, types: Optional[List[str]] = None) -> List[Dict]:
     """Alertable events from a ``core.scan_diff.diff`` dict (pure, no I/O).
 
-    ``types`` filters to a subset of ``ALERT_TYPES``; falsy means all. Each
-    event is ``{type, title, severity}``; secret titles are already masked."""
-    sections = (diff or {}).get('sections', {})
-    out: List[Dict] = []
-
-    def want(t: str) -> bool:
-        return not types or t in types
-
-    if want('new_secret'):
-        for label in sections.get('secrets', {}).get('added', []):
-            out.append({'type': 'new_secret', 'title': str(label),
-                        'severity': 'high'})
-
-    # Subdomains: a takeover candidate is the dangerous subset (its label carries
-    # the takeover marker that core.scan_diff attaches).
-    for label in sections.get('subdomains', {}).get('added', []):
-        text = str(label)
-        if 'takeover' in text.lower():
-            if want('takeover'):
-                out.append({'type': 'takeover', 'title': text,
-                            'severity': 'critical'})
-        elif want('new_subdomain'):
-            out.append({'type': 'new_subdomain', 'title': text,
-                        'severity': 'medium'})
-
-    if want('new_technology'):
-        for label in sections.get('technologies', {}).get('added', []):
-            out.append({'type': 'new_technology', 'title': str(label),
-                        'severity': 'info'})
-
-    if want('cert_change'):
-        for ch in sections.get('certificates', {}).get('changed', []):
-            if isinstance(ch, dict):
-                out.append({
-                    'type': 'cert_change',
-                    'title': f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}",
-                    'severity': 'medium'})
-
-    if want('risk_increase'):
-        risk = (diff or {}).get('risk', {})
-        if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):
-            out.append({
-                'type': 'risk_increase',
-                'title': (f"{risk.get('level_a')} {risk.get('risk_100_a')} → "
-                          f"{risk.get('level_b')} {risk.get('risk_100_b')}"),
-                'severity': 'high'})
-
-    return out
+    A thin filter over the shared ``scan_diff.diff_events`` classifier (one
+    source of truth, shared with the F2 timeline): keep only the alertable types
+    (``ALERT_TYPES``), further narrowed by ``types`` when given (falsy = all
+    alertable). Each event is ``{type, title, severity}``; secret titles are
+    already masked. Timeline-only types (e.g. ``new_endpoint``, ``risk_decrease``)
+    are excluded here."""
+    want = set(types) if types else set(ALERT_TYPES)
+    return [{'type': e['type'], 'title': e['title'], 'severity': e['severity']}
+            for e in diff_events(diff)
+            if e['type'] in ALERT_TYPES and e['type'] in want]
 
 
 def format_alerts(slug: str, alerts: List[Dict]) -> tuple:
@@ -199,6 +163,27 @@ def dispatch(channels: List, subject: str, body: str) -> List[Dict]:
     return results
 
 
+def _record_delivery(target: str, kind: str, result: Dict) -> None:
+    """Log an alert dispatch to the operations registry (the F4 delivery journal,
+    surfaced by the History tab and web /history). Best-effort — a journaling
+    failure must never affect sending. Secret values are already masked in the
+    diff (and thus in ``results``), so nothing sensitive is persisted here."""
+    try:
+        from utils.operation_registry import OperationRegistry
+        results = result.get('results') or []
+        sent = result.get('sent', 0)
+        attempted = len(results)
+        reg = OperationRegistry()
+        op = reg.start(target, 'alert', metadata={
+            'kind': kind, 'sent': sent, 'attempted': attempted,
+            'results': results, 'alerts': result.get('alerts')})
+        ok = attempted > 0 and sent == attempted
+        reg.finish(op, status='success' if ok else 'failed',
+                   error=None if ok else f'{sent}/{attempted} channels delivered')
+    except Exception:   # noqa: BLE001 — journaling is best-effort, never fatal
+        pass
+
+
 # ── top-level: notify from a diff ─────────────────────────────────────────────
 
 def notify(config: Optional[Dict], slug: str, diff: Dict) -> Dict:
@@ -217,8 +202,10 @@ def notify(config: Optional[Dict], slug: str, diff: Dict) -> Dict:
     subject, body = format_alerts(slug, alerts)
     results = dispatch(channels, subject, body)
     sent = sum(1 for r in results if r.get('status') == 'ok')
-    return {'alerts': len(alerts), 'sent': sent, 'results': results,
-            'subject': subject}
+    out = {'alerts': len(alerts), 'sent': sent, 'results': results,
+           'subject': subject}
+    _record_delivery(slug, 'notify', out)
+    return out
 
 
 def send_test(config: Optional[Dict]) -> Dict:
@@ -230,5 +217,7 @@ def send_test(config: Optional[Dict]) -> Dict:
         return {'sent': 0, 'reason': 'no channels'}
     results = dispatch(channels, '[Site Analyzer] test alert',
                        'If you can read this, alerts are configured correctly.')
-    return {'sent': sum(1 for r in results if r.get('status') == 'ok'),
-            'results': results}
+    out = {'sent': sum(1 for r in results if r.get('status') == 'ok'),
+           'results': results}
+    _record_delivery('alert-test', 'test', out)
+    return out

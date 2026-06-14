@@ -4,6 +4,9 @@
   0–100 / Dashboard 2.0 / Scan Diff / мульти-скриншоты (B1) / интерактивный
   attack-surface граф (B2) / LLM-резюме на локальном Ollama (C1) / оффлайн-
   валидация формата секретов (C2); тесты ~504)
+  Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
+  report_export, углубление detection); актуальные тесты: 882 passed / 5 skipped.
+  Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
   >>> см. PROJECT_REPORT.md. Этот файл — подробный пофичный лог.
@@ -20,7 +23,7 @@ Advanced Site Analyzer — десктопный инструмент (Python 3.1
 дизайн-системы (палитра, типографика).
 
 Сценарии запуска:
-  • GUI       — main.py (основной режим, PyQt5, 14 вкладок).
+  • GUI       — main.py (основной режим, PyQt5, 18 вкладок).
   • CLI       — main_orchestrator.py (единый pipeline из 6 фаз).
   • Web/LAN   — remote/web_app.py (консоль управления на FastAPI, порт 5000).
 
@@ -1903,5 +1906,665 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
         зависимостей.
       ОСТАЛОСЬ опц. по #14: интерактивная GUI-вкладка ручного триажа (движок и
       персист готовы; статусы сейчас через Project API).
+
+==============================================================================
+
+  СМЕНА ЭТАПА — EPIC: ASM PLATFORM 2.0 — 2026-06-13
+      Приняты управляющие документы (в корне проекта): CLAUDE.md (правила +
+      архитектура + статус, авто-загрузка), ROADMAP_ASM_2.0.md (план эпика),
+      KICKOFF_PROMPT.md (старт). дополнение.txt на Рабочем столе — ПУСТОЙ
+      (0 байт), контента нет.
+      ГЛАВНЫЙ СДВИГ: с «поиска данных» на «управление данными» (lifecycle
+      находок, история, мониторинг, оповещения, дашборд) — НЕ новые сканеры.
+      НОВОЕ ЖЁСТКОЕ ПРАВИЛО (CLAUDE.md §5.1): работа ТОЛЬКО локально — никаких
+      git commit/push/pull/fetch/clone, PR, remote/origin, релизов. Версионирует
+      человек сам. (Раньше я коммитил/пушил — теперь СТОП, только локально.)
+      ПРОЦЕСС: строго Epic→Feature→Task→Impl→Test→Review; план утверждается ДО
+      кода; крупные изменения без утверждённого плана запрещены.
+
+      ПОРЯДОК ЭПИКА (по зависимостям): F1 Findings (идентичность+lifecycle) →
+      F2 Timeline → F3 Continuous Monitoring → F4 Alert Center → F5 Executive
+      Dashboard → F6 GUI Redesign (отдельный рискованный трек).
+
+      РАЗРЫВ #14 (сделано) vs F1 (нужно) — ВАЖНО, зафиксировать:
+        #14 = core/findings_status.py: JSON findings.json на проект, fingerprint
+        = sha1(severity|source|нормализ.title), статусы open/in_progress/fixed/
+        ignored, без finding_events, без FALSE_POSITIVE, без auto-FIXED, без web.
+        F1 (роадмап) = SQLite core/findings_store.py (таблицы findings +
+        finding_events), fingerprint = sha1(category|rule_id|normalized_location|
+        discriminator) с переиспользованием EndpointIndex.normalize и имён правил
+        secret_scanner.RULES; + FALSE_POSITIVE, auto-FIXED ТОЛЬКО при успешной
+        фазе-источнике, липкость IGNORED/FALSE_POSITIVE, sync(project,scan_id,
+        findings)→diff, web GET /findings + POST /findings/{id}/status, GUI-
+        вкладка. => F1 ЭВОЛЮЦИОНИРУЕТ/ЗАМЕНЯЕТ findings_status.py (миграцию
+        решаем в плане F1, не дублируем).
+
+      ТЕКУЩИЙ СТАТУС ЭПИКА: F1 [ЧАСТИЧНО] (#14-версия), F2 [НЕ НАЧАТО], F3
+      [ЧАСТИЧНО] (базовый monitor в project.py/core.monitor), F4/F5/F6
+      [НЕ НАЧАТО]. БАЗА: ~691 тестов (offline/headless), ruff чист.
+      СЛЕДУЮЩИЙ ШАГ: ШАГ 1 KICKOFF — аудит архитектуры (без кода) + план F1,
+      СТОП на утверждение.
+
+==============================================================================
+
+  F1 / T1.1 — Fingerprint находки (дизайн + тесты стабильности) — [DONE] 2026-06-13
+      Самое важное решение эпика: детерминированный отпечаток, одинаковый для
+      «той же» проблемы между сканами (дедуп, липкость статуса, корректное
+      «что нового» для Timeline/Alerts).
+        ФОРМУЛА: fingerprint = sha1( category ␟ rule_id ␟ normalized_location ␟
+        discriminator ), полный 40-символьный hex (= PRIMARY KEY findings).
+        РЕШЕНИЯ (обоснование):
+          * normalized_location — поверх СУЩЕСТВУЮЩЕГО EndpointIndex.normalize
+            (drop query/fragment/trailing-slash, lower scheme+host) + ДОП. сброс
+            схемы → host/path. Т.е. http vs https одного ресурса = ОДНА находка
+            (идентичность = ресурс, не транспорт). EndpointIndex.normalize НЕ
+            трогаем (общий источник правды) — снимаем схему в обёртке.
+          * Только identity-поля. Волатильное (счётчики «(3)», таймстемпы,
+            заголовки) в отпечаток НЕ передаём → идентичность не «плывёт».
+          * Секреты без plaintext: secret_discriminator = vendor + masked
+            prefix(6) + длина (mask_value), само значение НИГДЕ в отпечатке.
+            Два разных ключа одного вендора в одной локации → разные fp.
+          * Разделитель ␟ = ASCII Unit Separator (\x1f): не встречается в URL/
+            rule_id/маске → ("ab","c") != ("a","bc"), без коллизий склейки.
+        ФАЙЛЫ: core/finding_fingerprint.py (НОВЫЙ; чистый, stdlib; публичное API
+        fingerprint/normalize_location/secret_discriminator/mask_value +
+        список CATEGORIES). Дизайн-«документ» = докстринг модуля + эта запись
+        (новых doc-файлов не плодим — CLAUDE.md).
+        ТЕСТЫ: tests/test_finding_fingerprint.py (11): стабильность локации
+        (scheme/query/fragment/slash → один fp), волатильные поля не влияют,
+        разные issue → разные fp, нормализация регистра category/rule, защита
+        от коллизий разделителя, секрет без утечки plaintext (тот же value →
+        тот же fp, другой → другой), 40-hex/детерминизм, сверка с формулой,
+        ГОЛДЕН-хеш (34dd86e8…6342) — фиксирует алгоритм навсегда (смена = потеря
+        истории находок, только осознанно).
+        ИТОГ: 702 passed, 3 skipped; ruff чист. Без новых зависимостей. Только
+        локально (без git — CLAUDE.md §5.1).
+        НЕ ВХОДИТ в T1.1 (дальше): findings_store.py + SQLite-миграция (T1.2),
+        адаптеры сканер→Finding-DTO (T1.3), sync()+lifecycle (T1.4). ОТКРЫТО:
+        подтвердить замену findings_status.py/findings.json (#14) на SQLite-
+        стор перед T1.2.
+
+==============================================================================
+
+  F1 / T1.2 — FindingsStore (SQLite) + замена #14-JSON — [DONE] 2026-06-13
+      РЕШЕНИЕ ПОЛЬЗОВАТЕЛЯ: заменяем #14 (JSON findings.json) на SQLite-стор.
+      Сделано (без техдолга/дублей):
+        НОВОЕ:
+          * core/config.py — FINDINGS_DB = DATA_DIR/'findings.db' (через
+            PathManager, frozen-aware). Единая БД, скоуп по колонке project
+            (как operations.db/registry.db; удобно для Dashboard/web).
+          * core/findings_store.py — FindingsStore(SQLiteStore): таблицы
+            findings (PK=fingerprint) + finding_events (CREATED|SEEN|
+            STATUS_CHANGED|REOPENED|RESOLVED_AUTO). Схема CREATE TABLE IF NOT
+            EXISTS (идемпотентно, не ломает существующие БД) + PRAGMA
+            user_version=1 (задел под будущие миграции). STATUSES = OPEN/
+            IN_PROGRESS/FIXED/IGNORED/FALSE_POSITIVE; INACTIVE = FIXED/IGNORED/
+            FALSE_POSITIVE (вне риска); SUPPRESSED = IGNORED/FALSE_POSITIVE
+            (липкие, не реоупен/не алерт). Примитивы: upsert (INSERT→CREATED/OPEN
+            или UPDATE→SEEN, статус не трогает, refresh title/severity/evidence),
+            set_status (валидирует, логирует переход, no-op без изменения,
+            event_type параметризуем — под RESOLVED_AUTO/REOPENED из T1.4),
+            get/list_findings(фильтры project/status/severity)/active_findings/
+            events/summary. evidence хранится JSON (маскированный, без plaintext).
+        УДАЛЕНО/РАЗВЯЗАНО (замена #14, не дублируем):
+          * core/findings_status.py + tests/test_findings_status.py — УДАЛЕНЫ.
+          * collection_runner.py — убраны импорты, _sync_findings_status, вызов
+            перед summary, карточка «Findings Management». (Перевяжем на стор в
+            T1.4.)
+          * executive_summary.py — убран status-aware блок (#14). Риск-интеграция
+            (исключать IGNORED/FALSE_POSITIVE) вернётся через стор в T1.4.
+          * project.py — убраны findings_path/load/save/sync/set_finding_status
+            (JSON). Персист теперь в FindingsStore, не в Project/findings.json.
+          * tests/test_project.py, tests/test_collection_runner.py — убраны
+            #14-тесты.
+        ТЕСТЫ: tests/test_findings_store.py (9): идемпотентность схемы +
+        user_version, upsert CREATE→SEEN (first_seen не сбрасывается, события),
+        evidence как JSON, set_status переходы/события/no-op/кастомный event_type/
+        валидация, list-фильтры+скоуп по project, active/summary исключают
+        INACTIVE.
+        ИТОГ: 695 passed, 3 skipped; ruff чист. Без новых зависимостей. Локально
+        (без git).
+        ВРЕМЕННО: фича Findings не подключена к сканам между T1.2 и T1.4 (нет
+        карточки/риск-интеграции) — это осознанно, перевязка на стор в T1.4
+        после адаптеров T1.3. Код целостный, тесты зелёные.
+        ДАЛЬШЕ: T1.3 — адаптеры каждого сканера → единый Finding-DTO (category/
+        rule_id/location/discriminator) поверх finding_fingerprint.
+
+==============================================================================
+
+  F1 / T1.3 — Адаптер находок → Finding-DTO — [DONE] 2026-06-13
+      РЕШЕНИЕ: ЧИСТЫЙ адаптер-слой, сканеры НЕ трогаем (минимальный риск для
+      обратной совместимости и существующих читателей report/Scan-Diff; так же
+      трактует роадмап — «адаптеры»). Все продьюсеры (vuln_scanner, dependency_
+      audit, dns_intel, nuclei, analyzer-плагины) кладут плоские {severity,
+      title, detail[, source]} в фазу vulns — адаптер переводит их в Finding.
+        НОВОЕ: core/findings_adapter.py
+          * @dataclass Finding(category, rule_id, title, severity, location,
+            discriminator, source, detail) с .id (= fingerprint четырёх
+            компонентов) и .to_store() (форма для FindingsStore.upsert; evidence
+            маскированное).
+          * from_raw(raw): explicit-поля (category/rule_id/location/discriminator)
+            ПОБЕЖДАЮТ (продьюсер может опт-инить позже), иначе вывод:
+              - category: по source-map (dns→dns, dependency-audit→dependency,
+                nuclei→vuln, secret→secret), иначе ключевое слово в title, иначе
+                'vuln'.
+              - rule_id: slug(title) с МАСКОЙ цифр (\d+→#) → волатильные счётчики
+                «(3)»/«(5)» не форкают идентичность, а встроенные различители
+                (имя cookie/заголовка, тип секрета) сохраняют различие правил.
+              - location: первый URL из detail/source/title → normalize_location
+                (scheme/host-стабильно).
+              - discriminator: пусто для большинства; для СЕКРЕТОВ парсит уже
+                МАСКИРОВАННЫЕ key+preview из detail (regex) → два разных ключа в
+                одной локации различимы БЕЗ plaintext; нет парса → '' (мягко).
+          * normalize_severity → канон lower (critical/high/medium/low/info;
+            informational→info, warning→medium, неизвестное→info).
+          * normalize(list) → List[Finding], дедуп по fingerprint (один и тот же
+            issue, заявленный дважды, схлопывается; стор апсёртит каждый id раз).
+        ТЕСТЫ: tests/test_findings_adapter.py (13): severity-маппинг, category из
+        source/title/default, explicit-поля побеждают, счётчики не форкают id,
+        разные title→разные id, извлечение+нормализация location, host-level без
+        location, секрет различает ключи + same→same + мягкий fallback,
+        id==fingerprint(компоненты), форма to_store+маска, normalize дедуп.
+        ИТОГ: 708 passed, 3 skipped; ruff чист. Без новых зависимостей. Локально.
+        ДАЛЬШЕ: T1.4 — sync(project, scan_id, findings) в CollectionRunner:
+        normalize→upsert каждой; авто-FIXED для отсутствующих ТОЛЬКО при успешной
+        фазе-источнике; липкость IGNORED/FALSE_POSITIVE; риск-интеграция
+        (исключать INACTIVE); вернуть карточку отчёта.
+
+==============================================================================
+
+  F1 / T1.4 — sync() lifecycle в CollectionRunner + риск + карточка — [DONE] 2026-06-13
+      Связали стор+адаптер в живой жизненный цикл находок по сканам.
+        FindingsStore.sync(project, scan_id, findings, *, in_scope=None):
+          * normalize(raw)→upsert каждой (CREATED/SEEN), сбор seen_ids;
+          * seen с прежним статусом FIXED → REOPENED→OPEN (повторное появление);
+          * сохранённые OPEN/IN_PROGRESS, не виденные в скане → RESOLVED_AUTO→
+            FIXED, но ТОЛЬКО если in_scope(source) (фаза-источник реально шла);
+          * IGNORED/FALSE_POSITIVE липкие: не OPEN/IN_PROGRESS → оба правила их
+            не трогают (не реоупен/не авто-fix).
+          Возврат diff: {new, recurring, reopened, resolved, summary}.
+        core/collection_runner.py — _sync_findings(report, project, scan_id)
+        ПЕРЕД build_summary: строит предикат in_scope из статусов фаз (dns→фаза
+        dns; nuclei→self.nuclei+vulns; dependency-audit→recon; иначе vulns),
+        зовёт store.sync(project.slug,…), ШТАМПУЕТ каждую находку vulns.findings
+        её сохранённым статусом (id через from_raw), кладёт report['findings'] =
+        {summary, new/reopened/resolved/recurring}; карточка «Findings
+        Management» (_render_findings_card, оффлайн). Best-effort (не валит скан).
+        core/executive_summary.py — ВЕРНУЛИ status-aware: при наличии 'status' у
+        находок отбрасываем INACTIVE (FIXED/IGNORED/FALSE_POSITIVE из
+        findings_store) и пересчитываем counts. Guard «any status» → без статусов
+        поведение прежнее.
+        ИЗОЛЯЦИЯ ТЕСТОВ: tests/conftest.py — autouse-фикстура _isolate_findings_db
+        перенаправляет FINDINGS_DB в tmp на каждый тест (иначе r.run()/sync
+        писали бы в data/findings.db рабочего дерева). Найден и устранён такой
+        лик.
+        ТЕСТЫ: test_findings_store (+5 sync: create→recur, auto-fix in-scope,
+        НЕ-fix out-of-scope, липкость IGNORED, reopen FIXED→OPEN) +
+        test_collection_runner (+3: _sync_findings персист+штамп статуса+summary,
+        рендер карточки, build_summary исключает INACTIVE).
+        ИТОГ: 716 passed, 3 skipped; ruff чист. Без новых зависимостей. Локально.
+        F1 ФУНКЦИОНАЛЬНО ЖИВ: находки персистятся между сканами, дедуп по
+        fingerprint, lifecycle+авто-FIXED со scope-guard, риск учитывает триаж.
+        ОСТАЛОСЬ по F1: T1.5 GUI-вкладка (таблица/фильтры/смена статуса), T1.6
+        web-консоль (GET /findings, POST /findings/{id}/status).
+
+==============================================================================
+  ASM 2.0 — ЭПИК ЗАКРЫТ + ПОСТ-ЭПИК ИНКРЕМЕНТЫ — [DONE] 2026-06-14
+  (сводно; авторитетный пофичный статус — CLAUDE.md §12. Тесты: 882 passed /
+   5 skipped, offline/headless, без новых зависимостей.)
+==============================================================================
+
+  F1 Findings Management — ЗАКРЫТ. SQLite-стор core/findings_store.py
+  (findings + finding_events) заменил JSON findings_status.py; fingerprint
+  (finding_fingerprint.py) + scoped_id(project, fp) для cross-project; адаптер
+  findings_adapter.py; sync()-lifecycle в CollectionRunner (авто-FIXED со
+  scope-guard, липкость IGNORED/FALSE_POSITIVE, риск исключает INACTIVE);
+  GUI tab_findings.py (T1.5); web GET/POST /findings (T1.6); миграция БД v1→v2.
+
+  F2 Timeline / Change Events — ЗАКРЫТ (derive-on-read, без второй таблицы):
+  core/timeline.py (build_series из metadata.scans[], build_events из попарного
+  scan_diff.diff_events + finding_events). Единый классификатор diff→события
+  scan_diff.diff_events кормит и Timeline, и Alert Center. GUI tab_timeline.py.
+
+  F3 Continuous Monitoring — ЗАКРЫТ. core/monitor.py (расписание в metadata.json,
+  per-job options, default_monitor_options, _build_run_fn per-project,
+  last_status); OS-адаптер monitor_cli.py (run/watch); in-app gui/monitor_runner.py
+  (MonitorRunnerMixin + сигнал-мост, autostart из settings); чекбокс «Авто (фоном)»
+  в Collection.
+
+  F4 Alert Center — ЗАКРЫТ. core/alerts.py (telegram/discord/email +
+  extract_alerts поверх diff_events), диспетч из monitor/web/CLI, GUI-настройка
+  в Settings, журнал доставки через OperationRegistry (phase='alert'). conftest
+  изолирует operations.db.
+
+  F5 Executive Dashboard — ЗАКРЫТ. Решение по графике: native Qt / inline-SVG
+  (НЕ QWebEngine/ECharts). core/portfolio.py (build_portfolio rows+totals,
+  build_exposure_matrix, load_portfolio); core/dashboard_charts.py (sparkline/
+  heatmap, stdlib SVG → QSvgWidget); вкладка gui/tab_overview.py (карточки +
+  портфолио-таблица + heatmap + тренды + кнопка «Граф атак-поверхности» поверх
+  attack_surface.render_svg); web GET /overview.
+
+  F6 GUI Redesign — ВАРИАНТ A ЗАКРЫТ (рестайл на PyQt5; вариант B PySide6/qfluent
+  НЕ делали). gui/theme.py — единый источник темы: Fusion + QPalette, opt-in dark
+  (settings gui_theme, дефолт system = прежний вид), apply_theme в main.py +
+  комбо в Settings (live-apply); ui_components берут цвета из theme; тема-зависимые
+  theme.risk_color/severity_color (яркие на тёмном) в Dashboard/Overview/Findings/
+  Timeline. Отчётные палитры (RISK_COLORS/scan_diff/report) не тронуты.
+
+  ПОСТ-ЭПИК (углубление существующих движков — расширение данных/логики, без
+  переписывания; формы находок/технологий прежние → авто в risk/surface/report):
+   • tech_fingerprint.py — категория «JS Framework»: Next.js/Nuxt/SvelteKit/
+     Gatsby/Remix/Astro/Angular (версия из ng-version; добавлен version_html).
+   • dependency_audit.py — +axios/underscore/marked с CVE-диапазонами (marked
+     заякорен от bookmarked/remarked).
+   • graphql_discovery.py — +field-suggestions («Did you mean») + query-batching
+     (массив-ответ) + новые пути; единый сетевой seam _post_raw.
+   • core/asn_intel.py — НОВЫЙ, активная ASN/netblock-разведка (opt-in, keyless):
+     RDAP CIDR/range + RIPEstat префиксы (кэп 50) + reverse-IP co-hosted
+     (HackerTarget, best-effort, кэп 100). Паттерн dns_intel (инъектируемый
+     _get_text, TTLCache, мягкая деградация). Проводка: флаг asn_intel в
+     CollectionRunner (фаза 7j + карточка отчёта), чекбокс в Collection,
+     monitor-паритет (_build_run_fn), Settings «Очистить кеш» += clear_cache().
+     infrastructure.py (offline derive) не тронут.
+   • core/report_export.py — НОВЫЙ, CSV-экспорт findings_csv/portfolio_csv
+     (stdlib); кнопки «Export CSV» в Findings/Overview (utf-8-sig). PDF — печатью
+     самодостаточного report.html (тяжёлый PDF-движок не добавляли).
+
+  ТЕСТЫ ДОБАВЛЕНЫ: test_findings_* / test_timeline* / test_diff_events /
+  test_monitor* / test_web_* / test_portfolio / test_dashboard_charts /
+  test_overview_tab / test_theme / test_asn_intel / test_report_export +
+  расширены test_tech_fingerprint / test_dependency_audit / test_graphql_discovery.
+
+==============================================================================
+
+  ASSET INVENTORY (пост-эпик инкремент — персистентный реестр активов).
+
+  Аналог Findings Management, но для активов поверхности атаки
+  (domain/subdomain/ip/asn/netblock/endpoint/technology). Актив живёт МЕЖДУ
+  сканами, а не внутри отчёта.
+
+  core/asset_adapter.py — pure/offline derive из уже собранного report
+  (сканеры не трогаются, инвариант I1/I3): Asset DTO со стабильной identity
+  sha1(type␟normalized_value); endpoint нормализуется через
+  finding_fingerprint.normalize_location (http/https/query → один актив),
+  технология = имя (версия — атрибут, не identity); __post_init__ держит value
+  в нормализованной форме, оригинал — в label. ASSET_SOURCE_PHASES маппит тип →
+  фаза-источник (для scope-guard).
+
+  core/asset_store.py — SQLite-стор (data/assets.db через PathManager), зеркало
+  findings_store: таблицы assets (ключ = scoped_id(project, fingerprint)) +
+  asset_events (CREATED/SEEN/GONE/REAPPEARED), SCHEMA_VERSION=1. Lifecycle
+  проще находок (активы не триажат пользователем): ACTIVE ⇄ GONE → REAPPEARED.
+  sync() — new/recurring/reappeared/gone со scope-guard (GONE только если
+  фаза-источник реально отработала в этом скане). Reads: list_assets, get,
+  events, summary, projects(), project_events() (обогащён type/value/label —
+  источник для Timeline).
+
+  Проводка:
+   • collection_runner._sync_assets — best-effort после _sync_findings, пишет
+     report['assets'] (summary + new/gone/reappeared/recurring); сбой не валит
+     скан. Карточка «Asset Inventory» в report.html (_render_assets_card) рядом
+     с Findings: дельта за скан + active/total + разбивка по типам.
+   • gui/tab_assets.py (AssetsTabMixin) — вкладка «Assets», READ-ONLY (без смены
+     статуса): селектор проекта + фильтры тип/статус, таблица, детали+история
+     событий, Export CSV. Off-thread через _run_async, lazy-load в
+     tab_history._on_tab_changed; регистрация в BUILTIN_TABS между Findings и
+     Timeline; флаги в main_window.
+   • remote/web_app.py — _assets_list + GET /assets (фильтры project/type/status)
+     + кнопка «Assets» в консоли. READ-ONLY (POST нет — паритет с GUI).
+   • core/timeline.py — asset-события в ленту изменений: CREATED→new_asset,
+     GONE→asset_gone, REAPPEARED→asset_reappeared (SEEN дропается как шум),
+     секция 'assets'; build_events получил 3-й параметр asset_events,
+     build_timeline тянет AssetStore.project_events (мягкая деградация).
+   • core/report_export.py — assets_csv (stdlib, паритет с findings_csv).
+   • tests/conftest.py — autouse _isolate_assets_db (как _isolate_findings_db).
+
+  БАГФИКС при подхвате: asset_adapter падал с NameError (EndpointIndex не
+  импортирован) → _sync_assets молча ничего не сохранял. Исправлено на
+  предусмотренный normalize_location.
+
+  ТЕСТЫ: test_asset_store / test_asset_adapter / test_assets_tab /
+  test_web_assets + расширены test_timeline / test_report_export.
+  Итог набора: 916 passed / 6 skipped (offline/headless).
+
+==============================================================================
+
+  F5 HEATMAP-РАЗБИВКА (отложенный хвост F5 — exposure по detection-движкам).
+
+  Exposure-heatmap (вкладка Overview) раньше показывал только high-level
+  колонки из metadata.json: Secrets / High / Medium / Surface / Findings.
+  Добавлена тонкая разбивка по detection-категориям: SourceMap / Cookie /
+  GraphQL рядом с Secrets (API-ключи = текущая колонка Secrets, без дубля —
+  решение пользователя). Итог: 8 колонок, одна таблица.
+
+  Причина, по которой это было отложено («нужна загрузка latest-report по
+  каждому проекту»), снята БЕЗ загрузки отчётов:
+   • core/executive_summary.py — числа уже считались в metrics
+     (source_map_leaks / weak_cookies); добавлен _graphql_exposure → новые
+     metrics graphql / graphql_introspection (читаются из security-фазы summary,
+     которую SecurityAuditor уже наполняет; risk-формула НЕ тронута — GraphQL
+     findings и так влияют через vulns).
+   • core/project.py (_scan_entry) — эти 4 числа теперь ПЕРСИСТЯТСЯ в scan-entry
+     metadata.json рядом с secrets/high/medium (паттерн I3 — переиспользуем
+     выведенное, не пересчитываем). Portfolio читает их из дешёвого metadata,
+     отчёты не грузит.
+   • core/portfolio.py — build_portfolio тянет новые ключи в строку; level-
+     функции _EXPOSURE_COLUMNS переведены на приём всей строки (а не одного
+     значения), чтобы GraphQL красился по второму сигналу (introspection).
+     Севериность: SourceMap — как секрет (any leak → critical), Cookie —
+     moderate, GraphQL — open introspection → critical / reachable → moderate.
+   • gui/tab_overview.py — heatmap авто-размерный, рендер не менялся (обновлён
+     только docstring со списком колонок). Web /overview heatmap не рендерит —
+     не затронут.
+
+  Обратная совместимость: pre-F5 metadata.json без новых ключей → 0 → чистые
+  (зелёные) detection-ячейки. Публичные сигнатуры build_portfolio /
+  build_exposure_matrix / heatmap не менялись.
+
+  ТЕСТЫ: расширены test_portfolio (новые колонки + severity-логика + pre-F5
+  деградация), test_executive_summary (graphql metric), test_project (персист
+  breakdown в scan-entry). Итог набора: 923 passed / 6 skipped (offline/headless).
+
+==============================================================================
+
+  F5 ТРЕНД-ГРАФИКИ В HTML-ОТЧЁТЕ (последний хвост F5 — F5 полностью закрыт).
+
+  В report.html добавлена карточка «Trends» со sparkline'ами истории проекта:
+  Risk score / Attack surface / Secrets / High vulns по сканам.
+
+   • core/collection_runner.py — в run() после executive_summary строится серия:
+     prior-сканы из metadata.json (project.scans()) + текущий скан через
+     Project._scan_entry(scan_dir, report) (текущий ещё не записан — render идёт
+     ДО record_scan). Делегирует timeline.build_series (derive-on-read, без
+     второй модели — I3); результат кладётся в report['trends'] (попадает и в
+     report.json → HTML регенерируем). Best-effort: сбой не валит скан.
+   • _render_trends_card(trends) — static, рисует через offline
+     dashboard_charts.sparkline (тот же chart-хелпер, что и дашборд — без новых
+     зависимостей, инвариант I1/I2). Карточка показывается ТОЛЬКО при ≥2 сканах
+     (одна точка — не тренд); численная коррекция значений defensive (не кидает).
+     Вставлена в HTML после Attack Surface.
+   • scan_diff не затронут — он phase-based (читает только известные секции),
+     новый top-level ключ report['trends'] игнорируется (без ложных diff-событий).
+
+  ТЕСТЫ: test_collection_runner — multi-scan рисует sparkline (<polyline> +
+  «История за <b>2</b>»), single-scan скрывает карточку. Итог набора:
+  925 passed / 6 skipped (offline/headless).
+
+==============================================================================
+
+  GUI ВАРИАНТ B — P0/P1 (миграция на PySide6+qfluent, поэтапно, стабильность №1).
+
+  Решения (утв. пользователем): стек PySide6 (Qt6) + PySide6-Fluent-Widgets;
+  шов qtpy; глубина «гибрид» (FluentWindow+NavigationInterface вместо QTabWidget,
+  внутренности вкладок — текущие виджеты); размер .exe — замерить в P0.
+
+  P0 (спайк, без продакшн-кода): минимальные onefile-сборки apples-to-apples.
+   • Полный app сегодня (PyQt5): 38.5 MB. min PyQt5: 43.7 MB.
+   • min PySide6+Fluent raw (Essentials+Addons): 66.0 MB; tuned (excludes Qt6
+     Addons — WebEngine/Quick/Qml/3D/Charts/Multimedia/Pdf/Sql/Location/…):
+     56.2 MB → дельта +12.5 MB. ПРОЕКЦИЯ на полный app: tuned ~51 MB (+32%),
+     raw ~61 MB (+58%).
+   • PySide6 6.11.1 = cp310-abi3 → работает на Python 3.14.5. Все пакеты доступны.
+   • Шов qtpy верифицирован на ОБОИХ байндингах (одни импорты резолвятся),
+     оговорка: QSvgWidget — Qt5 в QtSvg, Qt6 в QtSvgWidgets (qtpy не бэкфиллит).
+   Артефакты спайка (~1.1 GB venv+сборки) удалены.
+
+  P1 (готов; шов введён, БАЙНДИНГ ОСТАЁТСЯ PyQt5, поведение байт-в-байт):
+   • Все `from PyQt5.X` → `from qtpy.X`: gui/ (27 файлов), main.py,
+     plugins/scrapy_tab.py, tests (conftest/test_dashboard_clear/test_theme).
+     core/dashboard_charts.py — только docstring (обновлён).
+   • Спецслучаи: pyqtSignal/pyqtSlot→Signal/Slot (workers.py, monitor_runner.py);
+     QAction → qtpy.QtGui (window_chrome.py); QSvgWidget биндинг-агностично через
+     try QtSvgWidgets/except QtSvg (tab_overview.py).
+   • requirements.txt: + qtpy>=2.4,<3.0. QT_API=pyqt5 пиновано через
+     os.environ.setdefault в main.py и conftest (флип P2 = заменить на "pyside6").
+   • Верификация: qtpy.API_NAME==PyQt5; 925 passed/6 skipped; main.py --self-check
+     строит 19 вкладок через шов. Полностью обратимо.
+
+  ДАЛЬШЕ: P2 (флип байндинга на PySide6 + правка остаточных Qt6-нюансов), затем
+  P3 (Fluent-оболочка с адаптером PluginManager + примирение theme.py с setTheme).
+
+==============================================================================
+
+  GUI ВАРИАНТ B — P2 (флип байндинга на PySide6). ФУНКЦИОНАЛЬНО ГОТОВ.
+
+  PySide6 6.11.1 установлен в основной env (PyQt5 оставлен как fallback —
+  qtpy выбирает по QT_API). QT_API флипнут на "pyside6" в main.py и conftest.
+  Единственное трение в исходниках: 3×exec_()→exec() (tab_overview, window_chrome,
+  main.py — работает на обоих байндингах). Enum-scoping правок НЕ потребовал
+  (PySide6 6.11 принимает unscoped-enum'ы). requirements.txt → PySide6-Essentials +
+  qtpy (PyQt5 закомментирован как fallback); requirements-dev комментарий обновлён.
+
+  ВЕРИФИКАЦИЯ: 925 passed/6 skipped ПОД PySide6; python main.py --self-check строит
+  19 вкладок из исходников; frozen .exe собирается и проходит self-check (18 вкладок —
+  19-я это внешний scrapy-плагин из plugins/, в onefile не бандлится; так было и в
+  PyQt5-сборке, НЕ регресс).
+
+  РАЗМЕР .EXE (важно — выше прогноза P0):
+   • PyQt5 baseline: 38.5 MB. PySide6 только с module-excludes: 69.7 MB (+81%).
+   • Module-excludes НЕ режут Qt6-DLL: PySide6-хук PyInstaller принудительно
+     собирает плагины/translations (238 записей; Qml/Quick/Pdf/VirtualKeyboard/
+     OpenGL DLL попадают, даже если их PySide6.*-модуль исключён).
+   • Добавлен TOC-фильтр в build.spec (a.binaries/a.datas): дропнуты translations +
+     qml/quick/pdf/virtualkeyboard (плагины+DLL); opengl/d3d ОСТАВЛЕНЫ (fallback
+     рендера) → 60.1 MB (+56%), self-check проходит.
+   • +56% ВЫШЕ согласованных в P0 +32%. Дальнейшая резка (opengl32sw/d3dcompiler,
+     ~−10 MB) рискует рендером на VM/старых GPU и требует РЕАЛЬНОГО запуска GUI
+     (headless self-check на offscreen этого не ловит).
+   • dist_pyside6/SiteAnalyzer.exe оставлен для проверки; dist/SiteAnalyzer.exe
+     (PyQt5) не тронут.
+
+  ОТКРЫТОЕ РЕШЕНИЕ пользователя: принять ~60 MB / резать глубже (риск) / пересмотреть
+  стек на PyQt5+Fluent (сохраняет базу 38.5 MB). ДАЛЬШЕ — P3 (Fluent-оболочка).
+
+==============================================================================
+
+  GUI ВАРИАНТ B — P3a (Fluent-навигация через адаптер). ГОТОВ.
+  (Размер ~60 MB пользователем ПРИНЯТ; идём в P3. Выбран инкремент P3a —
+  NavigationInterface через адаптер, QMainWindow оставлен; полный FluentWindow —
+  будущий P3b.)
+
+  gui/fluent_nav.py (НОВЫЙ) — FluentTabWidget: QTabWidget-совместимый фасад над
+  qfluentwidgets NavigationInterface (боковое меню) + QStackedWidget (страницы).
+  Наружу только нужный подмножество QTabWidget-API: addTab (контракт плагинов
+  build_into), widget (lazy-load), count/tabText/widget (тесты), currentIndex/
+  setCurrentIndex/currentWidget/indexOf + сигнал currentChanged. Фабрика
+  make_central_tabs() возвращает его при активном Fluent, иначе обычный QTabWidget.
+
+  Проводка:
+   • window_chrome._build_central — self.tabs = make_central_tabs() (было
+     QTabWidget()); неиспользуемый импорт QTabWidget убран. Контракт плагинов,
+     lazy-load (currentChanged + tabs.widget) и ВСЕ ~20 GUI-тестов работают без
+     правок через фасад.
+   • theme.apply_theme — дополнительно зовёт qfluent setTheme (system→AUTO,
+     dark/light напрямую) через _apply_fluent_theme; gated на активный Fluent.
+
+  ВАЖНЫЙ ФИКС ГЕЙТА: PySide6-Fluent-Widgets импортируется даже под PyQt5-приложением
+  (пакет установлен), но отдаёт PySide6-виджеты → кросс-байндинг КРАШ. Поэтому
+  _HAVE_FLUENT гейтится по qtpy.API_NAME=='PySide6', а не по факту импорта. Под
+  PyQt5 → fallback QTabWidget, проверено: без краша, 19 вкладок.
+
+  Упаковка: PySide6-Fluent-Widgets>=1.7,<2.0 в requirements.txt; build.spec тянет
+  его ресурсы (qss/шрифты/иконки) через collect_all('qfluentwidgets') — иначе
+  frozen GUI не находит ресурсы. ЗАМЕЧАНИЕ: импорт qfluentwidgets печатает 1 строку
+  промо-баннера в stdout (безвредно, не подавлено).
+
+  ВЕРИФИКАЦИЯ: 925 passed/6 skipped (PySide6 + Fluent-навигация); self-check 19
+  вкладок на ОБОИХ байндингах; ruff чист; frozen .exe собирается, self-check
+  проходит (ресурсы подхвачены), размер 63.5 MB (+3.4 к Fluent vs 60.1 pre-Fluent;
+  база PyQt5 38.5 MB). QMainWindow оставлен (P3b — frameless FluentWindow — позже).
+  ЗАМЕЧАНИЕ: self-check на offscreen не проверяет реальный Fluent-рендер — нужен
+  живой запуск dist_pyside6/SiteAnalyzer.exe.
+
+==============================================================================
+
+  GUI ВАРИАНТ B — P3b (полная FluentWindow-оболочка). ГОТОВ — ВАРИАНТ B ЗАКРЫТ.
+
+  Решения пользователя: ДРОПНУТЬ PyQt5-fallback (коммит на PySide6 — одна
+  архитектура окна) + кастомная нижняя статус-панель.
+
+  gui/fluent_nav.py (переписан под P3b):
+   • FluentWindowBase = FluentWindow (базовый класс MainWindow).
+   • FluentWindowTabs(QObject) — фасад над ВСТРОЕННЫМИ в окно stackedWidget +
+     navigationInterface: addTab→addSubInterface (per-tab FluentIcon по заголовку,
+     getattr-fallback на TAG), count/widget/tabText/currentIndex/currentWidget/
+     indexOf/setCurrentIndex(→switchTo) + сигнал currentChanged + currentMessage.
+   • StatusBar(QWidget) — showMessage/addPermanentWidget/currentMessage.
+   • install_status_bar(window, bar) — монтирует панель во всю ширину под рядом
+     nav+content: переносит window.hBoxLayout на inner-виджет и ставит новый
+     QVBoxLayout = [inner, statusbar]. (Проверено эмпирически headless.)
+   • Standalone FluentTabWidget + make_central_tabs (из P3a) удалены — fallback
+     убран, центр теперь сам FluentWindow.
+
+  Проводка:
+   • main_window.py — база QMainWindow→FluentWindowBase; порядок __init__:
+     _build_statusbar → _build_central (монтирует статус-бар + строит вкладки) →
+     _build_menu.
+   • window_chrome.py — _build_menu кладёт Настройки/О программе/Выход в nav-FOOTER
+     (navigationInterface.addItem position=BOTTOM, onClick=lambda *_:…,
+     selectable=False); _build_central использует фасад + install_status_bar (без
+     setCentralWidget); _build_statusbar строит кастомный StatusBar. Убраны
+     QMainWindow-вызовы (menuBar/setStatusBar/setCentralWidget) и импорт QAction.
+   • theme._apply_fluent_theme упрощён (Fluent теперь всегда).
+
+  ФИКС при P3b: добавлен StatusBar.currentMessage (его звал test_monitor_gui).
+
+  ВЕРИФИКАЦИЯ: 925 passed/6 skipped; ruff чист; self-check 19 вкладок; frozen .exe
+  собирается, self-check проходит, размер 63.5 MB (без прироста vs P3a — qfluent уже
+  забандлен). ОГОВОРКА: offscreen self-check НЕ проверяет реальный frameless-рендер
+  и обёртку нижней панели — нужен живой запуск (dist_pyside6/SiteAnalyzer.exe или
+  python main.py под PySide6).
+
+  ИТОГ: ВАРИАНТ B (P0–P3b) ЗАКРЫТ. Возможная будущая полировка: тонкая настройка
+  per-tab иконок, acrylic/mica, подавление промо-баннера qfluentwidgets в stdout.
+
+==============================================================================
+
+  GUI ВАРИАНТ B — ЖИВОЙ ЗАПУСК (закрытие стоящей оговорки P3a/P3b). ГОТОВ.
+
+  Запущен frozen dist_pyside6/SiteAnalyzer.exe вживую (скриншоты экрана + PrintWindow
+  с PW_RENDERFULLCONTENT для захвата окна целиком, минуя клип края экрана) и визуально
+  проверен реальный frameless-рендер, который offscreen self-check не покрывает.
+
+  ПОДТВЕРЖДЕНО ВИЗУАЛЬНО:
+   • Frameless FluentWindow — нет OS-заголовка; кастомная caption-полоса (back-arrow +
+     заголовок «Advanced Site Analyzer» + min/max/close-кнопки).
+   • Fluent nav-рельс слева с per-tab FluentIcons (addSubInterface + иконки).
+   • Переключение вкладок функционально (выбор в рельсе сменил вкладку History→Subdomain).
+   • Контент вкладок рендерится полностью (Subdomain: Target_Options/Start Scanning/
+     Export CSV/таблица).
+   • Тёмная Fluent-тема применяется.
+   • Стабильность при maximize/restore/resize/minimize→restore — без краша, чистый
+     re-layout; full-window PrintWindow показывает чистую сборку nav+content+низ
+     (install_status_bar-обёртка композится без разрывов).
+
+  ОГОВОРКА (остаточная, незначимая): idle-status-strip (пустая тёмная полоса) и
+  nav-футер (Настройки/О программе/Выход) не изолированы визуально на дисплее 1536×864
+  (min-высота окна упирается в край экрана). Их API/проводка покрыты тестами
+  (test_monitor_gui дёргает StatusBar.currentMessage/showMessage; window_chrome добавляет
+  футер-айтемы). Полный рендер окна (PrintWindow) разрывов лэйаута не выявил.
+
+  ИТОГ: стоящая оговорка «нужен живой запуск» ЗАКРЫТА — вариант B рендерится корректно
+  в собранном .exe. Тесты прежние (925 passed/6 skipped). Кода не менялось (только
+  верификация + эта запись в логе).
+
+==============================================================================
+
+  GUI ВАРИАНТ B — ПОЛИРОВКА: подавление промо-баннера qfluentwidgets. ГОТОВ.
+
+  Проблема: импорт qfluentwidgets печатает в stdout одну строку промо-баннера
+  («📢 Tips: QFluentWidgets Pro …») — это bare print(ALERT) в
+  qfluentwidgets/common/config.py на первом импорте пакета. Засоряет вывод GUI/CLI/
+  тестов. Патчить установленный пакет нельзя (чужой код, не переживёт reinstall/
+  frozen-сборку).
+
+  Решение — единая точка-чокпоинт: новый gui/_fluent.py импортирует qfluentwidgets
+  один раз с redirect_stdout (print→StringIO, баннер проглочен; исключения и stderr
+  не трогаются) и реэкспортит используемые символы (FluentIcon/FluentWindow/
+  NavigationItemPosition/Theme/setTheme). Все три прежних импортёра переведены на
+  него: gui/fluent_nav.py, gui/window_chrome.py, gui/theme.py (лениво в
+  _apply_fluent_theme). Теперь qfluentwidgets напрямую импортирует ТОЛЬКО чокпоинт →
+  он гарантированно первый, баннер глушится ровно один раз. build.spec не тронут
+  (collect_all('qfluentwidgets') бандлит пакет как раньше).
+
+  ВЕРИФИКАЦИЯ: баннер отсутствует в stdout (gui-импорты + `python main.py
+  --self-check` → 0 совпадений «QFluentWidgets Pro», self-check 19 вкладок); символы
+  доступны; 925 passed/6 skipped; ruff чист.
+
+  ВЕРИФИКАЦИЯ НА FROZEN .EXE: пересобран `pyinstaller build.spec --clean --noconfirm`
+  → dist/SiteAnalyzer.exe (61.4 MB). Живой запуск с перенаправлением stdout/stderr в
+  файлы (наследованные хендлы редиректа пишутся даже у windowed-приложения; при
+  редиректе sys.stdout = файл, т.е. без подавления баннер ушёл бы туда) → ОБА файла
+  0 байт, баннера нет. GUI отрисовался корректно (frameless FluentWindow + nav-рельс +
+  тёмная тема + контент вкладки Recon; PrintWindow), т.е. чокпоинт не сломал бандлинг
+  ресурсов qfluentwidgets (collect_all в build.spec не тронут).
+
+==============================================================================
+
+  CVE-КОРРЕЛЯЦИЯ ЧЕРЕЗ OSV.dev (пост-эпик инкремент). ГОТОВ.
+
+  Зачем: dependency_audit держал ЗАХАРДКОЖЕННУЮ таблицу CVE-диапазонов (ручное
+  устаревание). Добавлена live CVE-корреляция через публичный OSV.dev API.
+
+  Решения (утв. пользователем): live API (НЕ оффлайн-снимок — полный npm-дамп OSV
+  сотни МБ, нарушил бы инвариант .exe); OSV ВЫТЕСНЯЕТ хардкод по покрытой либе
+  (хардкод остаётся offline-fallback, когда OSV выкл/пуст).
+
+  core/osv_correlation.py (новый, брат asn_intel) — паттерн активного opt-in модуля:
+   - инъектируемый сетевой шов _post_json (POST /v1/query, urllib+json, без зависимостей;
+     стабится в тестах), TTLCache(3600), мягкая деградация;
+   - _parse_osv (pure) -> [{id, cve, severity, summary}]; severity-маппинг в 3-бакетный
+     словарь vuln-скана (Critical/High->High, Moderate/Medium->Medium, Low->Info — как
+     external_tools для nuclei; CVSS-вектор НЕ пере-скорится, берётся database_specific
+     или числовой score, иначе Medium);
+   - correlate(libraries) -> {lib_key: [vulns]} (кэш per ecosystem/package/version);
+   - to_findings() -> находки в форме vuln-скана: source=dependency-audit (тот же
+     producer -> findings_adapter/F1 без правок), discriminator=CVE (распознаёт разные
+     CVE одной либы, иначе fingerprint маскирует цифры в title).
+
+  Проводка (мирроринг asn_intel + fold-in как _phase_dns):
+   - collection_runner: флаг osv в ctor/configure; шаг 7k _phase_osv(report, scan_dir)
+     читает recon.dependencies.libraries -> correlate -> обогащает lib.vulnerabilities
+     (существующая карточка Dependencies рендерит OSV без новой карточки) + ВЫТЕСНЯЕТ
+     бандл-находки покрытых либ из vulns.findings (по точному title-префиксу) + добавляет
+     OSV-находки + пересчёт summary; пишет recon/osv.json. Guarded.
+   - tab_collection: чекбокс «CVE-корреляция OSV (активно)» + ключ osv в _collection_options.
+   - monitor: osv=opts.get(osv) в _build_run_fn (паритет).
+   - dialogs Settings «Очистить кеш»: + osv_correlation.clear_cache().
+   - web: opt-in флаги в web-консоль НЕ пробрасываются (вся семья asn_intel/dns/ct тоже) ->
+     паритет соблюдён без правок.
+
+  ИЗВЕСТНО (разовый, принят): при ВКЛЮЧЕНИИ OSV бандл-находка либы получает FIXED
+  (вытеснена), а OSV-CVE-находки — NEW (другой fingerprint). Честное пере-определение,
+  не баг.
+
+  Тесты: tests/test_osv_correlation.py (11 — parser/severity/cache/degradation/findings/
+  phase supersede+fold/fallback) + osv-passthrough в test_monitor. Инварианты целы
+  (stdlib-only I1, шов инъектируемый/offline §9, opt-in -> дефолт байт-в-байт прежний).
+
+  ВЕРИФИКАЦИЯ: 936 passed/6 skipped (+11); ruff чист; self-check 19 вкладок.
+
+==============================================================================
+
+  UX-ФИКС: перенос ряда opt-in чекбоксов Collection на несколько строк. ГОТОВ.
+
+  Проблема: 14 чекбоксов в одном QHBoxLayout (без переноса) шире макс. ширины окна
+  -> правые (CT/ASN/OSV) обрезались краем экрана на 1536px.
+
+  Решение: gui/ui_components.py — добавлен FlowLayout (канонический Qt-паттерн,
+  binding-agnostic через qtpy): раскладывает виджеты слева-направо и ПЕРЕНОСИТ на
+  новую строку при нехватке ширины (на широком экране — одна строка, на узком —
+  две+). tab_collection.py: opt_row = QHBoxLayout() -> FlowLayout(spacing=12), убран
+  addStretch (перенос его заменяет); 14 строк addWidget НЕ тронуты (минимальный диф).
+
+  ВЕРИФИКАЦИЯ: живой запуск GUI (source) — ряд переносится на 2 строки, «CVE-
+  корреляция OSV (активно)» полностью видна, вертикального клиппинга нет (вложенный
+  heightForWidth отработал). 936 passed/6 skipped; ruff чист; self-check 19 вкладок.
+
+  ПЕРЕСБОРКА + ЖИВАЯ ПРОВЕРКА FROZEN: .exe пересобран (dist/ + dist_pyside6/ → 61.4 MB,
+  frozen self-check ExitCode 0 / 18 tab). Запущен dist_pyside6/SiteAnalyzer.exe вживую,
+  вкладка Full Collection: на ширине 1040px ряд лёг на 3 строки (на широком экране — 2),
+  все 14 чекбоксов видны, «CVE-корреляция OSV (активно)» полностью на последней строке,
+  клиппинга нет. FlowLayout работает в собранном .exe.
 
 ==============================================================================

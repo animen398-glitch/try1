@@ -69,6 +69,47 @@ def test_fingerprint_hotjar_via_inline_html():
     assert 'Hotjar' in _names(techs)
 
 
+# ── JS meta-frameworks (D1) ─────────────────────────────────────────────────
+
+def test_fingerprint_nextjs_via_html_marker():
+    techs = tf.fingerprint(html='<div id="__next"></div><script>__NEXT_DATA__={}')
+    nx = next(t for t in techs if t['name'] == 'Next.js')
+    assert nx['category'] == 'JS Framework'
+
+
+def test_fingerprint_nextjs_via_powered_by_header():
+    techs = tf.fingerprint(headers={'X-Powered-By': 'Next.js'})
+    assert 'Next.js' in _names(techs)
+
+
+def test_fingerprint_nuxt_via_script_path():
+    techs = tf.fingerprint(scripts=['/_nuxt/entry.abc.js'])
+    assert 'Nuxt.js' in _names(techs)
+
+
+def test_fingerprint_sveltekit_via_html():
+    techs = tf.fingerprint(html='<body data-sveltekit-preload-data="hover">')
+    assert 'SvelteKit' in _names(techs)
+
+
+def test_fingerprint_gatsby_via_script_path():
+    techs = tf.fingerprint(scripts=['/page-data/index/page-data.json'])
+    assert 'Gatsby' in _names(techs)
+
+
+def test_fingerprint_remix_and_astro_via_html():
+    assert 'Remix' in _names(tf.fingerprint(html='window.__remixContext = {};'))
+    assert 'Astro' in _names(tf.fingerprint(html='<astro-island uid="1">'))
+
+
+def test_fingerprint_angular_extracts_version_from_html():
+    techs = tf.fingerprint(html='<app-root ng-version="17.0.6"></app-root>')
+    ng = next(t for t in techs if t['name'] == 'Angular')
+    assert ng['category'] == 'JS Framework'
+    assert ng['version'] == '17.0.6'
+    assert ng['evidence'] == 'html'
+
+
 # ── ordering, dedup, empties ────────────────────────────────────────────────
 
 def test_fingerprint_sorted_by_category_then_name():

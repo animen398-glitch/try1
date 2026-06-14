@@ -1,8 +1,32 @@
 {
-  "output_dir": "~/SiteAnalyzer",
+  "output_dir": "C:\\Users\\321/SiteAnalyzer",
   "max_pages": 50,
   "request_delay": 500,
   "user_agent_profile": "chrome_windows",
   "auto_compress": false,
-  "compression_format": "zip"
+  "compression_format": "zip",
+  "alerts": {
+    "enabled": false,
+    "types": [],
+    "telegram": {
+      "token": "",
+      "chat_id": ""
+    },
+    "discord": {
+      "webhook_url": ""
+    },
+    "email": {
+      "host": "",
+      "port": 587,
+      "username": "",
+      "password": "",
+      "from": "",
+      "to": "",
+      "tls": true
+    }
+  },
+  "monitor_autostart": false,
+  "monitor_check_interval": 1800,
+  "gui_theme": "light",
+  "ollama_model": ""
 }

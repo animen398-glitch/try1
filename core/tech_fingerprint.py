@@ -19,7 +19,8 @@ import re
 from typing import Dict, List, Optional
 
 # Detection categories (display order in reports).
-CATEGORY_ORDER = ['CDN', 'Server', 'Backend', 'Language', 'Analytics']
+CATEGORY_ORDER = ['CDN', 'Server', 'Backend', 'JS Framework', 'Language',
+                  'Analytics']
 
 # A signature matches if ANY of its matchers fire. Matchers:
 #   headers       {header: value-regex}   header present AND value matches
@@ -28,6 +29,7 @@ CATEGORY_ORDER = ['CDN', 'Server', 'Backend', 'Language', 'Analytics']
 #   scripts       [substr, …]             substring in any <script src>
 #   html          [regex, …]              regex search in the HTML body
 #   version       {'header','regex'}       extract group(1) from a header value
+#   version_html  {'regex'}               extract group(1) from the HTML body
 _SIGNATURES: List[Dict] = [
     # ── CDN / Infrastructure (header-driven) ──────────────────────────────
     {'name': 'Cloudflare', 'category': 'CDN',
@@ -84,6 +86,31 @@ _SIGNATURES: List[Dict] = [
      'headers': {'server': r'werkzeug'},
      'version': {'header': 'server', 'regex': r'werkzeug/([\d.]+)'}},
 
+    # ── JS meta-frameworks (SSR/SSG — HTML markers, build paths, headers) ──
+    # These complement recon's React/Vue detection: a SPA library plus the
+    # meta-framework around it (Next on React, Nuxt on Vue, …). Versions are
+    # rarely advertised, except Angular's ``ng-version`` (read from the body).
+    {'name': 'Next.js', 'category': 'JS Framework',
+     'headers': {'x-powered-by': r'next\.js'},
+     'scripts': ['/_next/'],
+     'html': [r'id=["\']__next["\']', r'__NEXT_DATA__']},
+    {'name': 'Nuxt.js', 'category': 'JS Framework',
+     'scripts': ['/_nuxt/'],
+     'html': [r'id=["\']__nuxt["\']', r'window\.__NUXT__']},
+    {'name': 'SvelteKit', 'category': 'JS Framework',
+     'scripts': ['/_app/immutable/'],
+     'html': [r'data-sveltekit', r'__sveltekit_']},
+    {'name': 'Gatsby', 'category': 'JS Framework',
+     'scripts': ['/page-data/'],
+     'html': [r'id=["\']___gatsby["\']']},
+    {'name': 'Remix', 'category': 'JS Framework',
+     'html': [r'window\.__remixContext', r'__remixManifest']},
+    {'name': 'Astro', 'category': 'JS Framework',
+     'html': [r'<astro-island']},
+    {'name': 'Angular', 'category': 'JS Framework',
+     'html': [r'ng-version=["\'][\d.]+["\']', r'_nghost-'],
+     'version_html': {'regex': r'ng-version=["\']([\d.]+)["\']'}},
+
     # ── Language (header) ─────────────────────────────────────────────────
     {'name': 'PHP', 'category': 'Language',
      'headers': {'x-powered-by': r'php'},
@@ -129,35 +156,62 @@ def _extract_version(spec: Dict, headers: Dict[str, str]) -> Optional[str]:
 
 def _match(sig: Dict, headers: Dict[str, str], set_cookie: str,
            html: str, scripts_blob: str):
-    """Return (evidence, version) when the signature fires, else (None, None)."""
+    """Return (evidence, version) when the signature fires, else (None, None).
+
+    Version is resolved the same way regardless of which matcher fired — from a
+    response header (``version``) or the HTML body (``version_html``) — so e.g.
+    Angular detected via an HTML marker still reports its ``ng-version``.
+    """
+    evidence = None
     # Header value regex.
     for hname, value_re in sig.get('headers', {}).items():
         value = headers.get(hname.lower())
         if value is not None and re.search(value_re, value, re.IGNORECASE):
-            return f'header:{hname}', _version(sig, headers)
+            evidence = f'header:{hname}'
+            break
     # Header merely present.
-    for hname in sig.get('header_present', []):
-        if hname.lower() in headers:
-            return f'header:{hname}', _version(sig, headers)
+    if evidence is None:
+        for hname in sig.get('header_present', []):
+            if hname.lower() in headers:
+                evidence = f'header:{hname}'
+                break
     # Set-Cookie substring.
-    sc = set_cookie.lower()
-    for needle in sig.get('cookies', []):
-        if needle.lower() in sc:
-            return f'cookie:{needle}', _version(sig, headers)
+    if evidence is None:
+        sc = set_cookie.lower()
+        for needle in sig.get('cookies', []):
+            if needle.lower() in sc:
+                evidence = f'cookie:{needle}'
+                break
     # <script src> substring.
-    for needle in sig.get('scripts', []):
-        if needle.lower() in scripts_blob:
-            return f'script:{needle}', None
+    if evidence is None:
+        for needle in sig.get('scripts', []):
+            if needle.lower() in scripts_blob:
+                evidence = f'script:{needle}'
+                break
     # HTML regex.
-    for pattern in sig.get('html', []):
-        if re.search(pattern, html, re.IGNORECASE):
-            return 'html', None
-    return None, None
+    if evidence is None:
+        for pattern in sig.get('html', []):
+            if re.search(pattern, html, re.IGNORECASE):
+                evidence = 'html'
+                break
+    if evidence is None:
+        return None, None
+    return evidence, _version(sig, headers, html)
 
 
-def _version(sig: Dict, headers: Dict[str, str]) -> Optional[str]:
+def _version(sig: Dict, headers: Dict[str, str],
+             html: str = '') -> Optional[str]:
     spec = sig.get('version')
-    return _extract_version(spec, headers) if spec else None
+    if spec:
+        v = _extract_version(spec, headers)
+        if v:
+            return v
+    hspec = sig.get('version_html')
+    if hspec:
+        m = re.search(hspec['regex'], html or '', re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
 
 
 def fingerprint(headers: Optional[Dict] = None, html: str = '',

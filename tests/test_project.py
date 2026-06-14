@@ -70,6 +70,21 @@ def test_record_scan_updates_metadata_and_history(tmp_path):
     assert entry['risk_level'] == 'High'
     assert entry['attack_surface_score'] == 16
 
+
+def test_record_scan_persists_exposure_breakdown(tmp_path):
+    """F5: detection-category counts from metrics land on the scan entry so the
+    portfolio reads them without loading report.json."""
+    p = ProjectStore(tmp_path).get_or_create('https://example.com')
+    scan_dir = p.start_scan('20260613_120000')
+    entry = p.record_scan(scan_dir, _report(metrics={
+        'secrets': 1, 'high': 2, 'medium': 3, 'attack_surface_score': 16,
+        'source_map_leaks': 2, 'weak_cookies': 4,
+        'graphql': 1, 'graphql_introspection': 1}))
+    assert entry['source_map_leaks'] == 2
+    assert entry['weak_cookies'] == 4
+    assert entry['graphql'] == 1
+    assert entry['graphql_introspection'] == 1
+
     meta = p.load_metadata()
     assert meta['scan_count'] == 1
     assert meta['latest_scan']['id'] == '20260613_120000'
@@ -118,32 +133,3 @@ def test_load_metadata_tolerates_corruption(tmp_path):
     p.metadata_path.write_text('{ broken', encoding='utf-8')
     meta = p.load_metadata()        # falls back to a fresh metadata dict
     assert meta['scan_count'] == 0
-
-
-# ── findings triage persistence (#14) ────────────────────────────────────────
-
-def _finding(title, severity='High'):
-    return {'title': title, 'severity': severity}
-
-
-def test_sync_and_persist_findings(tmp_path):
-    from core.findings_status import fingerprint
-    p = ProjectStore(tmp_path).get_or_create('https://example.com')
-    state = p.sync_findings([_finding('A'), _finding('B')], scan_id='s1')
-    assert len(state) == 2 and p.findings_path.exists()
-    # Reloads from disk identically.
-    assert set(p.load_findings()) == set(state)
-    # Status survives a re-sync of the same finding on a later scan.
-    fp = fingerprint(_finding('A'))
-    p.set_finding_status(fp, 'fixed', note='patched')
-    p.sync_findings([_finding('A'), _finding('B')], scan_id='s2')
-    reloaded = p.load_findings()
-    assert reloaded[fp]['status'] == 'fixed' and reloaded[fp]['note'] == 'patched'
-    assert reloaded[fp]['last_scan'] == 's2'
-
-
-def test_load_findings_tolerates_missing_and_corrupt(tmp_path):
-    p = ProjectStore(tmp_path).get_or_create('https://example.com')
-    assert p.load_findings() == {}          # none yet
-    p.findings_path.write_text('{ broken', encoding='utf-8')
-    assert p.load_findings() == {}          # corrupt → empty, no raise

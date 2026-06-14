@@ -64,6 +64,57 @@ def test_is_due_logic():
     assert monitor.is_due({'enabled': True, 'next_run': 'garbage'}, now) is True
 
 
+# ── per-job options + last_status (T3.1) ──────────────────────────────────────
+
+def test_make_schedule_carries_options_and_last_status():
+    s = monitor.make_schedule('daily', now=datetime(2026, 6, 13))
+    assert s['last_status'] is None
+    assert s['options'] == monitor.default_monitor_options()
+    # explicit options are stored verbatim (defaults merged only at run time)
+    s2 = monitor.make_schedule('daily', now=datetime(2026, 6, 13),
+                               options={'nuclei': True})
+    assert s2['options'] == {'nuclei': True}
+
+
+def test_default_monitor_options_preserves_legacy_profile():
+    opts = monitor.default_monitor_options()
+    assert opts['subdomains'] is True and opts['certificate'] is True
+    assert opts['nuclei'] is False and opts['max_pages'] == 20
+
+
+def test_build_run_fn_maps_options_to_runner(monkeypatch):
+    captured = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, url, base):
+            return {'url': url, 'base': base, 'status': 'Success'}
+
+    monkeypatch.setattr('core.collection_runner.CollectionRunner', FakeRunner)
+    rf = monitor._build_run_fn('/base', {'nuclei': True, 'subdomains': False,
+                                         'osv': True,
+                                         'profile': 'firefox_windows'})
+    out = rf('https://x.com')
+    assert out['base'] == '/base'
+    assert captured['nuclei'] is True and captured['subdomains'] is False
+    assert captured['osv'] is True            # opt-in OSV correlation maps through
+    assert captured['profile'] == 'firefox_windows'
+    assert captured['certificate'] is True        # default preserved on merge
+
+
+def test_format_event_kinds():
+    assert 'scan start' in monitor.format_event({'type': 'scan_start', 'slug': 'x'})
+    assert 'first scan' in monitor.format_event(
+        {'type': 'scan_done', 'slug': 'x', 'scan_id': '1'})
+    done = monitor.format_event(
+        {'type': 'scan_done', 'slug': 'x', 'scan_id': '2', 'diff_line': 'd'})
+    assert 'd' in done and 'first scan' not in done
+    assert 'error' in monitor.format_event(
+        {'type': 'error', 'slug': 'x', 'error': 'boom'})
+
+
 # ── Project schedule persistence ──────────────────────────────────────────────
 
 def test_project_get_set_clear_monitor(tmp_path):
@@ -121,6 +172,19 @@ def test_status_lists_only_monitored(tmp_path):
     assert rows[0]['interval'] == 'monthly' and rows[0]['enabled'] is True
 
 
+def test_enable_passes_options_through(tmp_path):
+    store = ProjectStore(tmp_path)
+    monitor.enable(store, 'https://x.com', 'daily', options={'dns': True})
+    assert store.get('x.com').get_monitor()['options'] == {'dns': True}
+
+
+def test_status_includes_last_status_and_options(tmp_path):
+    store = ProjectStore(tmp_path)
+    monitor.enable(store, 'https://w.com', 'daily', options={'dns': True})
+    row = monitor.status(store)[0]
+    assert row['last_status'] is None and row['options'] == {'dns': True}
+
+
 # ── run engine with an injected (offline) collection step ─────────────────────
 
 def _fake_run_fn(project, pages_by_scan):
@@ -173,6 +237,50 @@ def test_run_project_second_run_writes_auto_diff(tmp_path):
     assert out['diff_html'] and out['diff_html'].endswith('.html')
     # the diff saw the added page
     assert 'Страницы' in out['diff_line']
+
+
+def test_run_project_records_last_status_ok_then_failed(tmp_path):
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+    run_fn = _fake_run_fn(project, [('20260613_010000', ['/a'])])
+    monitor.run_project(project, run_fn, now=datetime(2026, 6, 13, 10, 0))
+    assert project.get_monitor()['last_status'] == 'ok'
+
+    def boom(url):
+        raise RuntimeError('collection blew up')
+
+    monitor.run_project(project, boom, now=datetime(2026, 6, 14, 10, 0))
+    mon = project.get_monitor()
+    assert mon['last_status'] == 'failed'
+    # a failure still rolls the schedule forward (no tight retry loop)
+    assert mon['next_run'] == '2026-06-15T10:00:00'
+
+
+def test_run_due_builds_run_fn_from_each_project_options(tmp_path, monkeypatch):
+    store = ProjectStore(tmp_path)
+    monitor.enable(store, 'https://a.com', 'daily', options={'nuclei': True})
+    a = store.get('a.com')
+    m = a.get_monitor(); m['next_run'] = '2000-01-01T00:00:00'; a.set_monitor(m)
+
+    seen = {}
+
+    def fake_build(base, options):
+        def run(url):
+            from core.project import project_slug
+            proj = store.get(project_slug(url))
+            sid = '20260613_120000'
+            sd = proj.start_scan(sid)
+            report = {'url': url, 'status': 'Success', 'scan_id': sid,
+                      'executive_summary': {'risk_level': 'Low'}}
+            (sd / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+            proj.record_scan(sd, report)
+            seen['options'] = options
+            return report
+        return run
+
+    monkeypatch.setattr(monitor, '_build_run_fn', fake_build)
+    monitor.run_due(store, now=datetime(2026, 6, 13, 12, 0))
+    assert seen['options'] == {'nuclei': True}      # the job's own profile
 
 
 def test_run_due_runs_only_enabled_and_due(tmp_path):

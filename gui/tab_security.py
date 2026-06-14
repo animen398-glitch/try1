@@ -7,9 +7,9 @@ shared helpers (_set_busy, _run_async, _save_target, self.settings).
 
 import threading
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )

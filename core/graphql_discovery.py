@@ -22,12 +22,20 @@ from utils.browser_utils import SessionBuilder
 CANDIDATE_PATHS = [
     '/graphql', '/api/graphql', '/graphql/v1', '/v1/graphql',
     '/graphql/console', '/query', '/api/graphql/v1',
+    '/v2/graphql', '/graphiql', '/playground', '/gql',
 ]
 
 # Minimal query to confirm a GraphQL handler; introspection query to detect that
 # schema introspection is enabled.
 _PROBE_QUERY = '{__typename}'
 _INTROSPECTION_QUERY = '{__schema{queryType{name} types{name}}}'
+# A query for a field that almost certainly does not exist: a server with field
+# suggestions enabled answers with a "Did you mean …" hint, which leaks schema
+# detail even when introspection is disabled.
+_SUGGESTION_QUERY = '{aaaaaaaaaazzzzzzzzzz}'
+# A batched (array) request: a server that executes it returns an array of
+# results, i.e. query batching is enabled (an amplification / DoS vector).
+_BATCH_QUERY = [{'query': '{__typename}'}, {'query': '{__typename}'}]
 
 
 class GraphQLDiscovery:
@@ -46,13 +54,14 @@ class GraphQLDiscovery:
             self.progress_callback(msg)
 
     # ------------------------------------------------------------- network
-    def _post(self, url: str, query: str):
-        """POST a GraphQL ``query`` as JSON. Returns ``(status, text)`` or
-        ``(None, '')`` on transport failure. Isolated for stubbing in tests."""
+    def _post_raw(self, url: str, payload):
+        """POST an arbitrary JSON ``payload`` (object for a single query, array
+        for a batch). Returns ``(status, text)`` or ``(None, '')`` on transport
+        failure. The single network seam — stub this (or ``_post``) in tests."""
         import urllib.request
         from utils.http_retry import decompress, urlopen_retry
         try:
-            body = json.dumps({'query': query}).encode('utf-8')
+            body = json.dumps(payload).encode('utf-8')
             headers = dict(self._session.get_headers())
             headers['Content-Type'] = 'application/json'
             req = urllib.request.Request(url, data=body, headers=headers,
@@ -62,6 +71,10 @@ class GraphQLDiscovery:
         except Exception as e:  # noqa: BLE001 — a bad endpoint must not abort
             code = getattr(e, 'code', None)
             return code, ''
+
+    def _post(self, url: str, query: str):
+        """POST a single GraphQL ``query`` string as JSON (thin over _post_raw)."""
+        return self._post_raw(url, {'query': query})
 
     # ------------------------------------------------------------- logic
     @staticmethod
@@ -84,6 +97,23 @@ class GraphQLDiscovery:
             return False
         data = doc.get('data') if isinstance(doc, dict) else None
         return bool(isinstance(data, dict) and data.get('__schema'))
+
+    @staticmethod
+    def _suggestions_enabled(text: str) -> bool:
+        """A 'Did you mean …' hint in the error reply means field suggestions are
+        on — it leaks valid schema names even when introspection is disabled."""
+        return bool(text) and 'did you mean' in text.lower()
+
+    @staticmethod
+    def _batching_enabled(text: str) -> bool:
+        """A JSON *array* reply to a batched array request means the server
+        executed the batch — an amplification / brute-force / DoS vector."""
+        try:
+            doc = json.loads(text)
+        except (ValueError, TypeError):
+            return False
+        return (isinstance(doc, list) and len(doc) >= 2
+                and all(isinstance(x, dict) for x in doc))
 
     def _origin(self, url: str) -> str:
         if not url.startswith(('http://', 'https://')):
@@ -111,8 +141,16 @@ class GraphQLDiscovery:
             istatus, itext = self._post(target, _INTROSPECTION_QUERY)
             if self._introspection_open(itext):
                 introspection = True
+
+            # Extra hardening checks (valuable even when introspection is off).
+            _, stext = self._post(target, _SUGGESTION_QUERY)
+            suggestions = self._suggestions_enabled(stext)
+            _, btext = self._post_raw(target, _BATCH_QUERY)
+            batching = self._batching_enabled(btext)
+
             endpoints.append({'url': target, 'graphql': True,
-                              'introspection': introspection})
+                              'introspection': introspection,
+                              'suggestions': suggestions, 'batching': batching})
             if introspection:
                 findings.append({
                     'severity': 'Medium',
@@ -126,6 +164,23 @@ class GraphQLDiscovery:
                     'severity': 'Info',
                     'title': 'GraphQL endpoint exposed',
                     'detail': f'{target} — reachable GraphQL API (introspection off).',
+                    'source': 'graphql-discovery',
+                })
+            if suggestions:
+                findings.append({
+                    'severity': 'Info',
+                    'title': 'GraphQL field suggestions enabled',
+                    'detail': f'{target} — server returns "Did you mean" hints, '
+                              f'leaking valid schema names even with introspection '
+                              f'disabled.',
+                    'source': 'graphql-discovery',
+                })
+            if batching:
+                findings.append({
+                    'severity': 'Medium',
+                    'title': 'GraphQL query batching enabled',
+                    'detail': f'{target} — accepts batched array queries, enabling '
+                              f'request amplification / brute-force / DoS.',
                     'source': 'graphql-discovery',
                 })
 

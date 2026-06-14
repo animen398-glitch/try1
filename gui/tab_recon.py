@@ -10,7 +10,7 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QCheckBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QVBoxLayout, QWidget,
 )

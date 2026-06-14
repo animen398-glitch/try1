@@ -8,18 +8,19 @@ _browse, _browse_file, _set_busy, _start_task and _active_collector.
 import webbrowser
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
     QProgressBar, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from core import monitor
+from core import config, monitor
 from core.collection_runner import CollectionRunner
 from core.executive_summary import RISK_COLORS
 from core.features import has_katana, has_nuclei, has_playwright
 from core.project import ProjectStore
 from core.scan_diff import write_diff_report
-from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import (FlowLayout, ResultsDisplay, SectionGroupBox,
+                               StyledButton)
 from gui.workers import _CollectionWorker, _MonitorWorker
 
 
@@ -70,7 +71,9 @@ class FinalReportTabMixin:
 
         # Opt-in headless screenshot (Playwright). Disabled with a hint when
         # Playwright is absent — the feature-gating pattern used elsewhere.
-        opt_row = QHBoxLayout()
+        # FlowLayout so the long opt-in row wraps onto two+ rows instead of
+        # clipping off the right edge on a narrow window.
+        opt_row = FlowLayout(spacing=12)
         self.collect_screenshot = QCheckBox("Скриншоты ключевых страниц (Playwright)")
         if not has_playwright():
             self.collect_screenshot.setEnabled(False)
@@ -165,7 +168,25 @@ class FinalReportTabMixin:
             "центры сертификации, сроки, первое/последнее появление, недавние и "
             "wildcard-сертификаты. Новые сертификаты видны в Scan Diff.")
         opt_row.addWidget(self.collect_ct)
-        opt_row.addStretch()
+
+        # Opt-in active ASN/netblock recon — RDAP CIDR + RIPEstat prefixes +
+        # reverse-IP co-hosted hosts.
+        self.collect_asn_intel = QCheckBox("ASN/Netblock (активно)")
+        self.collect_asn_intel.setToolTip(
+            "Активная разведка инфраструктуры по IP/ASN цели: netblock (CIDR, "
+            "RDAP), все анонсируемые префиксы ASN (RIPEstat) и со-хостящиеся "
+            "домены (reverse-IP, best-effort). Доп. сетевые запросы к публичным "
+            "сервисам — только для авторизованной цели.")
+        opt_row.addWidget(self.collect_asn_intel)
+
+        # Opt-in CVE correlation via OSV.dev — live advisories per detected JS
+        # library; supersedes the bundled dependency-audit table.
+        self.collect_osv = QCheckBox("CVE-корреляция OSV (активно)")
+        self.collect_osv.setToolTip(
+            "Сверка обнаруженных JS-библиотек с базой OSV.dev: актуальный набор "
+            "advisory/CVE на каждую версию вместо встроенной таблицы (которая "
+            "остаётся запасной). Доп. сетевые запросы к публичному API OSV.")
+        opt_row.addWidget(self.collect_osv)
         g.addLayout(opt_row)
 
         btn_row = QHBoxLayout()
@@ -237,6 +258,16 @@ class FinalReportTabMixin:
         self.btn_monitor_run = StyledButton("Запустить готовые", style='secondary')
         self.btn_monitor_run.clicked.connect(self._run_monitor_due)
         mg.addWidget(self.btn_monitor_run)
+        # In-app background watcher (F3, T3.2) — runs due scans while the app is
+        # open. Persisted in settings; reflects/toggles the MainWindow scheduler.
+        self.monitor_autostart = QCheckBox("Авто (фоном)")
+        self.monitor_autostart.setToolTip(
+            "Запускать готовые мониторинг-сканы в фоне, пока приложение открыто.\n"
+            "Для настоящего фона (когда приложение закрыто) — monitor_cli.py "
+            "(run/watch) через планировщик ОС.")
+        self.monitor_autostart.setChecked(bool(self.settings.get('monitor_autostart')))
+        self.monitor_autostart.toggled.connect(self._toggle_monitor_autostart)
+        mg.addWidget(self.monitor_autostart)
         mg.addStretch()
         mon_outer = QVBoxLayout()
         mon_outer.addLayout(mg)
@@ -259,6 +290,33 @@ class FinalReportTabMixin:
         layout.addWidget(res_grp, stretch=1)
         return w
 
+    def _collection_options(self) -> dict:
+        """Scan options from the tab's controls — the single place that reads
+        the checkboxes, reused by both Full Collection and monitor-enable so a
+        monitored scan runs exactly what the user selected (the keys match
+        ``CollectionRunner`` kwargs)."""
+        return {
+            'profile': self.settings.get('user_agent_profile', 'chrome_windows'),
+            'max_pages': self.collect_pages.value(),
+            'cookies': self.collect_cookies.text().strip() or None,
+            'capture_delay': self.settings.get('request_delay', 500) / 1000.0,
+            'screenshots': self.collect_screenshot.isChecked(),
+            'nuclei': self.collect_nuclei.isChecked(),
+            'katana': self.collect_katana.isChecked(),
+            'llm': self.collect_llm.isChecked(),
+            'llm_model': self.settings.get('ollama_model') or None,
+            'subdomains': self.collect_subdomains.isChecked(),
+            'certificate': self.collect_certificate.isChecked(),
+            'openapi': self.collect_openapi.isChecked(),
+            'historical': self.collect_historical.isChecked(),
+            'dns': self.collect_dns.isChecked(),
+            'emails': self.collect_emails.isChecked(),
+            'employees': self.collect_employees.isChecked(),
+            'ct': self.collect_ct.isChecked(),
+            'asn_intel': self.collect_asn_intel.isChecked(),
+            'osv': self.collect_osv.isChecked(),
+        }
+
     def _run_collection(self):
         url = self.collect_url.text().strip()
         base = self.collect_dir.text().strip()
@@ -275,25 +333,7 @@ class FinalReportTabMixin:
         self.btn_collect_report.setEnabled(False)
         self._set_busy(True)
 
-        runner = CollectionRunner(
-            profile=self.settings.get('user_agent_profile', 'chrome_windows'),
-            max_pages=self.collect_pages.value(),
-            cookies=self.collect_cookies.text().strip() or None,
-            capture_delay=self.settings.get('request_delay', 500) / 1000.0,
-            screenshots=self.collect_screenshot.isChecked(),
-            nuclei=self.collect_nuclei.isChecked(),
-            katana=self.collect_katana.isChecked(),
-            llm=self.collect_llm.isChecked(),
-            llm_model=self.settings.get('ollama_model') or None,
-            subdomains=self.collect_subdomains.isChecked(),
-            certificate=self.collect_certificate.isChecked(),
-            openapi=self.collect_openapi.isChecked(),
-            historical=self.collect_historical.isChecked(),
-            dns=self.collect_dns.isChecked(),
-            emails=self.collect_emails.isChecked(),
-            employees=self.collect_employees.isChecked(),
-            ct=self.collect_ct.isChecked(),
-        )
+        runner = CollectionRunner(**self._collection_options())
         self._active_collector = runner
 
         worker = _CollectionWorker(runner, url, base)
@@ -482,10 +522,12 @@ class FinalReportTabMixin:
             self.monitor_status.setText("Не отслеживается")
             return
         state = "вкл" if mon.get('enabled') else "выкл"
+        last_status = mon.get('last_status')
         self.monitor_status.setText(
             f"[{state}] {mon.get('interval', '?')} · "
             f"следующий: {mon.get('next_run', '—')} · "
-            f"последний: {mon.get('last_run', '—')}")
+            f"последний: {mon.get('last_run', '—')}"
+            + (f" · статус: {last_status}" if last_status else ""))
         # Keep the interval combo in sync with the stored schedule.
         idx = self.monitor_interval.findData(mon.get('interval'))
         if idx >= 0:
@@ -507,7 +549,9 @@ class FinalReportTabMixin:
                                 "Выберите проект или укажите URL")
             return
         interval = self.monitor_interval.currentData()
-        out = monitor.enable(self._diff_store(), url, interval)
+        # The monitored scan runs the same options the user picked above.
+        out = monitor.enable(self._diff_store(), url, interval,
+                             options=self._collection_options())
         self.collect_log.append_success(
             f"Мониторинг включён: {out['slug']} ({interval}); "
             f"первый запуск: {out['schedule']['next_run']}")
@@ -525,6 +569,19 @@ class FinalReportTabMixin:
             return
         self.collect_log.append_warning(f"Мониторинг выключен: {out['slug']}")
         self._refresh_monitor_projects()
+
+    def _toggle_monitor_autostart(self, checked: bool):
+        """Persist the in-app background-watcher preference and start/stop it
+        (the scheduler lives on the window — MonitorRunnerMixin)."""
+        self.settings['monitor_autostart'] = bool(checked)
+        try:
+            config.save_settings(self.settings)
+        except Exception:
+            pass    # a persistence failure must not break the toggle
+        if checked:
+            self._start_monitor_scheduler()
+        else:
+            self._stop_monitor_scheduler()
 
     def _run_monitor_due(self):
         """Run all due monitored projects now (Full Collection + auto-diff)."""

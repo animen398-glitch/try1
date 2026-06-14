@@ -1,7 +1,7 @@
-from PyQt5.QtWidgets import QMainWindow
-
 from core import config
+from gui.fluent_nav import FluentWindowBase
 from gui.task_runner import TaskRunnerMixin
+from gui.monitor_runner import MonitorRunnerMixin
 from gui.window_chrome import WindowChromeMixin
 from gui.window_helpers import WindowHelpersMixin
 from gui.tab_system import SystemTabMixin
@@ -15,17 +15,24 @@ from gui.tab_clone import CloneTabMixin
 from gui.tab_collection import FinalReportTabMixin
 from gui.tab_cookie import CookieAuditTabMixin
 from gui.tab_security import SecurityAuditTabMixin
+from gui.tab_findings import FindingsTabMixin
+from gui.tab_assets import AssetsTabMixin
+from gui.tab_timeline import TimelineTabMixin
+from gui.tab_overview import OverviewTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_history import HistoryTabMixin
 from utils.task_manager import TaskManager
 
 
-class MainWindow(QMainWindow, TaskRunnerMixin, WindowChromeMixin,
+class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
+                 WindowChromeMixin,
                  WindowHelpersMixin, SystemTabMixin, ApiTabMixin,
                  VideoTabMixin, ImageTabMixin, CaptureTabMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
                  CloneTabMixin, CookieAuditTabMixin, SecurityAuditTabMixin,
-                 FinalReportTabMixin, DashboardTabMixin, HistoryTabMixin):
+                 FinalReportTabMixin, FindingsTabMixin, AssetsTabMixin,
+                 TimelineTabMixin,
+                 OverviewTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.
 
     Тонкий контейнер: инициализирует состояние и собирает окно из mixin'ов —
@@ -63,17 +70,41 @@ class MainWindow(QMainWindow, TaskRunnerMixin, WindowChromeMixin,
         self._dashboard_filter_pending = False
         self._dashboard_loaded = False
         self._endpoint_filter = None  # active endpoint occurrence filter (or None)
+        self._findings_loading = False
+        self._findings_loaded = False
+        self._findings_table_loading = False
+        self._findings_filter_pending = False
+        self._assets_loading = False
+        self._assets_loaded = False
+        self._assets_table_loading = False
+        self._assets_filter_pending = False
+        self._timeline_loading = False
+        self._timeline_loaded = False
+        self._timeline_data_loading = False
+        self._timeline_pending = False
+        self._overview_loading = False
+        self._overview_loaded = False
+        self._overview_series_loading = False
+        self._overview_series_pending = False
+        self._overview_graph_loading = False
         self.task_manager = TaskManager()
 
         # Build the window from the mixins (chrome lives in WindowChromeMixin).
-        self._build_menu()
-        self._build_central()
+        # Order matters under FluentWindow: the status bar is created first, then
+        # _build_central mounts it beneath the nav+content row; menu actions are
+        # added to the navigation footer.
         self._build_statusbar()
+        self._build_central()
+        self._build_menu()
         self._check_dependencies()
         self._report_plugin_errors()
+        # In-app Continuous Monitoring (F3) — opt-in background watcher; needs
+        # the status bar (indicator) and tabs (Collection label) already built.
+        self._init_monitor_runner()
 
     def closeEvent(self, event):
-        # Drain in-flight worker threads (TaskRunnerMixin) so none is destroyed
-        # mid-run, then let Qt close the window.
+        # Stop the background monitor, then drain in-flight worker threads
+        # (TaskRunnerMixin) so none is destroyed mid-run, then let Qt close.
+        self._stop_monitor_scheduler()
         self._await_running_tasks()
         super().closeEvent(event)

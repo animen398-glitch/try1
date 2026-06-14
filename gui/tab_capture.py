@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QVBoxLayout, QWidget,
 )
 

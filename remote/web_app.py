@@ -39,6 +39,7 @@ from core.collection_runner import CollectionRunner
 from core.config import OPERATIONS_DB, REGISTRY_DB, load_settings
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
+from core.findings_store import STATUSES, FindingsStore
 from core.design_analyzer import DesignAnalyzer
 from core.frontend_cloner import FrontendCloner
 from core.paywall_bypass import PaywallBypass
@@ -343,6 +344,73 @@ def _registry_data(limit: int = 50) -> dict:
         return {'summary': {}, 'records': [], 'error': str(e)}
 
 
+# ── Findings Management (F1, T1.6) ──────────────────────────────────────────────
+# Thin wrappers over core.findings_store (the same SQLite store the GUI tab and
+# CollectionRunner use — single source of truth). Pure over the store so the
+# endpoints stay thin and these are unit-testable without FastAPI.
+
+def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
+                   severity: Optional[str] = None) -> dict:
+    """Findings (optionally filtered) + the project list + a status summary."""
+    try:
+        store = FindingsStore()
+        return {'projects': store.projects(),
+                'findings': store.list_findings(project=project, status=status,
+                                                severity=severity),
+                'summary': store.summary(project)}
+    except Exception as e:
+        return {'projects': [], 'findings': [], 'summary': {}, 'error': str(e)}
+
+
+def _findings_set_status(finding_id: str, status: str,
+                         note: Optional[str] = None) -> dict:
+    """Change one finding's triage status (user-sourced). Returns the updated
+    row, or an ``{'error': ...}`` for an unknown status / finding."""
+    if status not in STATUSES:
+        return {'error': f'unknown status: {status} (expected {list(STATUSES)})'}
+    try:
+        row = FindingsStore().set_status(finding_id, status, note=note,
+                                         source='user')
+        return {'status': 'ok', 'finding': row}
+    except KeyError:
+        return {'error': f'finding not found: {finding_id}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+# ── Asset Inventory (web parity) ────────────────────────────────────────────────
+# Thin read-only wrapper over core.asset_store (the same SQLite store the GUI tab
+# and CollectionRunner use). Assets are observed, not user-triaged, so there is no
+# write endpoint — parity with the read-only Assets tab.
+
+def _assets_list(project: Optional[str] = None, type: Optional[str] = None,
+                 status: Optional[str] = None) -> dict:
+    """Assets (optionally filtered) + the project list + a status summary."""
+    try:
+        from core.asset_store import AssetStore
+        store = AssetStore()
+        return {'projects': store.projects(),
+                'assets': store.list_assets(project=project, type=type,
+                                            status=status),
+                'summary': store.summary(project)}
+    except Exception as e:
+        return {'projects': [], 'assets': [], 'summary': {}, 'error': str(e)}
+
+
+# ── Executive Overview (F5, web parity) ─────────────────────────────────────────
+# Thin wrapper over core.portfolio (the same aggregates the GUI Overview tab
+# shows). Read-only over the server's SiteAnalyzer projects tree; ``base`` is
+# parametrised only so it is unit-testable against a tmp tree.
+
+def _overview_summary(base: Optional[str] = None) -> dict:
+    """Cross-project executive portfolio (rows + estate totals) for the console."""
+    try:
+        from core.portfolio import load_portfolio
+        return load_portfolio(base or str(_REPORT_BASE))
+    except Exception as e:
+        return {'rows': [], 'totals': {}, 'error': str(e)}
+
+
 # ── Continuous Monitoring (#8) ─────────────────────────────────────────────────
 # Thin wrappers over core.monitor (single source of truth, shared with the CLI
 # and GUI). All bound to the same project store the jobs use.
@@ -352,20 +420,8 @@ def _monitor_store() -> ProjectStore:
 
 
 def _monitor_event_text(ev: dict) -> str:
-    """Render a monitor run event for the live console feed."""
-    slug = ev.get('slug', '')
-    kind = ev.get('type')
-    if kind == 'scan_start':
-        return f'[monitor] {slug}: scan start'
-    if kind == 'diff':
-        return f'[monitor] {slug}: {ev.get("line", "")}'
-    if kind == 'scan_done':
-        line = ev.get('diff_line')
-        return (f'[monitor] {slug}: done {ev.get("scan_id", "")}'
-                + (f' · {line}' if line else ' (first scan)'))
-    if kind in ('error', 'diff_error'):
-        return f'[monitor] {slug}: {kind}: {ev.get("error", "")}'
-    return f'[monitor] {slug}: {kind}'
+    """Render a monitor run event for the live console feed (shared formatter)."""
+    return monitor.format_event(ev)
 
 
 # ── Alert Center (#9) ──────────────────────────────────────────────────────────
@@ -471,6 +527,9 @@ margin-right:5px;vertical-align:middle}
       <button class="btn er" id="b-clr" onclick="clr()">Clear</button>
       <button class="btn sec" onclick="showHistory()">History</button>
       <button class="btn sec" onclick="showData()">Data</button>
+      <button class="btn sec" onclick="showFindings()">Findings</button>
+      <button class="btn sec" onclick="showAssets()">Assets</button>
+      <button class="btn sec" onclick="showOverview()">Overview</button>
     </div>
   </div>
 
@@ -734,6 +793,49 @@ async function showData(){
   }catch(ex){log('Data failed: '+ex.message,'er');}
 }
 
+async function showFindings(){
+  try{
+    const r=await fetch('/findings'); const d=await r.json();
+    const s=d.summary||{};
+    log('Findings: '+(s.active||0)+' active / '+(s.total||0)+' total · projects: '
+        +(d.projects||[]).length,'data');
+    (d.findings||[]).slice(0,20).forEach(f=>{
+      log('['+(f.severity||'')+'] '+(f.title||'')+' — '+(f.status||'')
+          +' ('+(f.id||'').slice(0,8)+')',
+          f.status==='OPEN'?'wn':(f.status==='FIXED'?'ok':'info'));
+    });
+  }catch(ex){log('Findings failed: '+ex.message,'er');}
+}
+
+async function showAssets(){
+  try{
+    const r=await fetch('/assets'); const d=await r.json();
+    const s=d.summary||{};
+    log('Assets: '+(s.active||0)+' active / '+(s.total||0)+' total · projects: '
+        +(d.projects||[]).length,'data');
+    (d.assets||[]).slice(0,20).forEach(a=>{
+      log('['+(a.type||'')+'] '+(a.label||a.value||'')+' — '+(a.status||''),
+          a.status==='ACTIVE'?'ok':'wn');
+    });
+  }catch(ex){log('Assets failed: '+ex.message,'er');}
+}
+
+async function showOverview(){
+  try{
+    const r=await fetch('/overview'); const d=await r.json();
+    const t=d.totals||{};
+    log('Overview: '+(t.projects||0)+' projects · worst risk: '
+        +(t.worst_risk_level||'—')+' · secrets: '+(t.secrets||0)
+        +' · active findings: '+(t.active_findings||0),'data');
+    (d.rows||[]).slice(0,20).forEach(p=>{
+      const d2=(p.risk_delta==null)?'':(p.risk_delta>0?' ▲':(p.risk_delta<0?' ▼':''));
+      log('  '+p.slug+' — '+(p.risk_level||'—')
+          +' ('+(p.risk_score==null?'?':p.risk_score)+')'+d2
+          +' · findings: '+(p.active_findings||0),'info');
+    });
+  }catch(ex){log('Overview failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -922,6 +1024,37 @@ if _FASTAPI_OK:
     @app.get('/data')
     async def data():
         return JSONResponse(_registry_data(50))
+
+    # ── Findings Management (F1, T1.6) ───────────────────────────────────
+
+    class StatusRequest(BaseModel):
+        status: str
+        note: Optional[str] = None
+
+    @app.get('/findings')
+    async def findings(project: Optional[str] = None,
+                       status: Optional[str] = None,
+                       severity: Optional[str] = None):
+        return JSONResponse(_findings_list(project, status, severity))
+
+    @app.post('/findings/{finding_id}/status')
+    async def findings_set_status(finding_id: str, body: StatusRequest):
+        out = _findings_set_status(finding_id, body.status, body.note)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[findings] {finding_id[:8]} → {body.status}', 'ok')
+        return out
+
+    @app.get('/assets')
+    async def assets(project: Optional[str] = None,
+                     type: Optional[str] = None,
+                     status: Optional[str] = None):
+        return JSONResponse(_assets_list(project, type, status))
+
+    @app.get('/overview')
+    async def overview():
+        return JSONResponse(_overview_summary())
 
     @app.get('/report')
     async def report(file: str):

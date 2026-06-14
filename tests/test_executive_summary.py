@@ -107,7 +107,20 @@ def test_new_signals_absent_by_default():
     s = es.build_summary(_report(secrets=1))
     assert s['metrics']['takeovers'] == 0
     assert s['metrics']['source_map_leaks'] == 0
+    assert s['metrics']['graphql'] == 0
+    assert s['metrics']['graphql_introspection'] == 0
     assert s['risk_score'] == 5                         # unchanged formula
+
+
+def test_graphql_exposure_surfaced_in_metrics():
+    report = _report()
+    report['phases']['security'] = {
+        'data': {'summary': {'graphql': 2, 'graphql_introspection': 1}}}
+    s = es.build_summary(report)
+    assert s['metrics']['graphql'] == 2
+    assert s['metrics']['graphql_introspection'] == 1
+    # Surfacing for display only — GraphQL findings already feed risk via vulns.
+    assert s['risk_score'] == 0
 
 
 def test_render_html_shows_0_100_headline():

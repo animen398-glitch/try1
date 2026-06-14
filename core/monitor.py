@@ -35,6 +35,21 @@ INTERVALS = ('daily', 'weekly', 'monthly')
 _SPANS = {'daily': timedelta(days=1), 'weekly': timedelta(days=7)}
 
 
+def default_monitor_options() -> Dict:
+    """Default per-job scan options (what a monitored scan runs).
+
+    Single source for the monitoring scan profile — mirrors the previous
+    hard-coded ``subdomains + certificate`` run so existing schedules behave
+    identically, and is the shape ``_build_run_fn`` maps onto ``CollectionRunner``
+    keyword arguments. The GUI reuses it when enabling monitoring."""
+    return {
+        'profile': 'chrome_windows', 'max_pages': 20,
+        'subdomains': True, 'certificate': True,
+        'nuclei': False, 'katana': False, 'dns': False,
+        'screenshots': False, 'llm': False,
+    }
+
+
 # ── pure scheduling logic ─────────────────────────────────────────────────────
 
 def _add_month(dt: datetime) -> datetime:
@@ -62,18 +77,24 @@ def compute_next_run(interval: str, from_dt: Optional[datetime] = None) -> datet
 
 
 def make_schedule(interval: str, now: Optional[datetime] = None,
-                  enabled: bool = True) -> Dict:
+                  enabled: bool = True, options: Optional[Dict] = None) -> Dict:
     """A fresh schedule dict. The first run is scheduled one interval out, so
-    enabling monitoring does not immediately kick off a heavy collection."""
+    enabling monitoring does not immediately kick off a heavy collection.
+
+    ``options`` is the per-job scan profile (defaults to
+    :func:`default_monitor_options`); ``last_status`` tracks the outcome of the
+    most recent run (``ok`` / ``failed`` / ``None``)."""
     if interval not in INTERVALS:
         raise ValueError(f'unknown interval: {interval!r} (use {INTERVALS})')
     now = now or datetime.now()
     return {
         'enabled': enabled,
         'interval': interval,
+        'options': options or default_monitor_options(),
         'created_at': now.isoformat(timespec='seconds'),
         'last_run': None,
         'last_scan_id': None,
+        'last_status': None,
         'next_run': compute_next_run(interval, now).isoformat(timespec='seconds'),
     }
 
@@ -97,10 +118,13 @@ def is_due(monitor: Optional[Dict], now: Optional[datetime] = None) -> bool:
 
 # ── schedule management (one source of truth for CLI / web / GUI) ─────────────
 
-def enable(store, url: str, interval: str) -> Dict:
-    """Turn monitoring on for ``url`` at ``interval`` (creates the project)."""
+def enable(store, url: str, interval: str,
+           options: Optional[Dict] = None) -> Dict:
+    """Turn monitoring on for ``url`` at ``interval`` (creates the project).
+
+    ``options`` is the per-job scan profile (defaults applied in make_schedule)."""
     project = store.get_or_create(url)
-    sched = make_schedule(interval)
+    sched = make_schedule(interval, options=options)
     project.set_monitor(sched)
     return {'slug': project.slug, 'url': url, 'schedule': sched}
 
@@ -129,22 +153,64 @@ def status(store) -> List[Dict]:
             'slug': meta.get('slug'), 'url': meta.get('url'),
             'enabled': mon.get('enabled'), 'interval': mon.get('interval'),
             'last_run': mon.get('last_run'), 'next_run': mon.get('next_run'),
+            'last_status': mon.get('last_status'), 'options': mon.get('options'),
         })
     return rows
 
 
+def format_event(ev: Dict) -> str:
+    """Human line for a monitor run event — shared by the web console feed and
+    the in-app scheduler indicator, so the two never render it differently."""
+    slug = ev.get('slug', '')
+    kind = ev.get('type')
+    if kind == 'scan_start':
+        return f'[monitor] {slug}: scan start'
+    if kind == 'diff':
+        return f'[monitor] {slug}: {ev.get("line", "")}'
+    if kind == 'scan_done':
+        line = ev.get('diff_line')
+        return (f'[monitor] {slug}: done {ev.get("scan_id", "")}'
+                + (f' · {line}' if line else ' (first scan)'))
+    if kind in ('error', 'diff_error'):
+        return f'[monitor] {slug}: {kind}: {ev.get("error", "")}'
+    return f'[monitor] {slug}: {kind}'
+
+
 # ── run engine (heavy step injectable) ────────────────────────────────────────
 
-def _default_run_fn(base: str) -> Callable[[str], Dict]:
-    """Build the real collection runner bound to ``base``.
+def _build_run_fn(base: str, options: Optional[Dict] = None) -> Callable[[str], Dict]:
+    """Build the real collection runner bound to ``base`` and a job's ``options``.
 
     Imported lazily so the pure logic above (and its tests) never pull in the
-    full collection pipeline. Subdomains + certificate are on so monitoring
-    actually surfaces the changes Scan Diff knows how to report."""
+    full collection pipeline. ``options`` (a per-job scan profile, defaults from
+    :func:`default_monitor_options`) maps onto ``CollectionRunner`` kwargs, so
+    monitoring runs whatever the user selected when enabling it."""
     from core.collection_runner import CollectionRunner
 
+    opts = {**default_monitor_options(), **(options or {})}
+
     def run(url: str) -> Dict:
-        runner = CollectionRunner(max_pages=20, subdomains=True, certificate=True)
+        runner = CollectionRunner(
+            profile=opts.get('profile', 'chrome_windows'),
+            max_pages=opts.get('max_pages', 20),
+            cookies=opts.get('cookies'),
+            capture_delay=opts.get('capture_delay', 0.5),
+            subdomains=opts.get('subdomains', True),
+            certificate=opts.get('certificate', True),
+            nuclei=opts.get('nuclei', False),
+            katana=opts.get('katana', False),
+            dns=opts.get('dns', False),
+            screenshots=opts.get('screenshots', False),
+            llm=opts.get('llm', False),
+            llm_model=opts.get('llm_model'),
+            openapi=opts.get('openapi', False),
+            historical=opts.get('historical', False),
+            emails=opts.get('emails', False),
+            employees=opts.get('employees', False),
+            ct=opts.get('ct', False),
+            asn_intel=opts.get('asn_intel', False),
+            osv=opts.get('osv', False),
+        )
         return runner.run(url, base)
 
     return run
@@ -187,6 +253,9 @@ def run_project(project, run_fn: Callable[[str], Dict],
         result['status'] = 'Error'
         result['error'] = str(e)
         emit('error', error=str(e))
+        # Record the failure and roll the schedule forward, so a persistently
+        # broken target is retried next interval rather than every tick.
+        _advance_schedule(project, None, now, status='failed')
         return result
 
     new_id = report.get('scan_id')
@@ -209,7 +278,8 @@ def run_project(project, run_fn: Callable[[str], Dict],
             result['error'] = f'diff failed: {e}'
             emit('diff_error', error=str(e))
 
-    _advance_schedule(project, new_id, now)
+    last_status = 'ok' if result['status'] == 'Success' else 'failed'
+    _advance_schedule(project, new_id, now, status=last_status)
     emit('scan_done', scan_id=new_id, diff_line=result['diff_line'])
     return result
 
@@ -225,13 +295,16 @@ def _dispatch_alerts(slug: str, diff: Dict, alert_config: Dict, emit) -> Dict:
     return summary
 
 
-def _advance_schedule(project, scan_id: Optional[str], now: datetime) -> None:
-    """Stamp last_run/last_scan_id and roll next_run forward by one interval."""
+def _advance_schedule(project, scan_id: Optional[str], now: datetime,
+                      status: Optional[str] = None) -> None:
+    """Stamp last_run/last_scan_id (+ last_status) and roll next_run forward."""
     mon = project.get_monitor()
     if not mon:
         return
     mon['last_run'] = now.isoformat(timespec='seconds')
     mon['last_scan_id'] = scan_id
+    if status is not None:
+        mon['last_status'] = status
     interval = mon.get('interval', 'daily')
     try:
         mon['next_run'] = compute_next_run(interval, now).isoformat(timespec='seconds')
@@ -247,19 +320,23 @@ def run_due(store, now: Optional[datetime] = None,
     """Run every project in ``store`` whose schedule is enabled and due.
 
     ``run_fn`` is the heavy collection step; when omitted the real pipeline is
-    used (bound to the store's base). ``alert_config`` (Alert Center, #9) is
-    passed through so each diff can fire notifications. Returns one
-    ``run_project`` summary per project that ran (empty when nothing is due)."""
+    built per project from its stored ``options`` (bound to the store's base).
+    ``alert_config`` (Alert Center, #9) is passed through so each diff can fire
+    notifications. Returns one ``run_project`` summary per project that ran
+    (empty when nothing is due)."""
     now = now or datetime.now()
-    run_fn = run_fn or _default_run_fn(str(store.root.parent))
+    base = str(store.root.parent)
     summaries: List[Dict] = []
     for meta in store.list_projects():
         slug = meta.get('slug')
         project = store.get(slug) if slug else None
         if project is None:
             continue
-        if is_due(project.get_monitor(), now):
-            summaries.append(run_project(project, run_fn, now=now,
+        mon = project.get_monitor()
+        if is_due(mon, now):
+            # Honour the job's own scan profile; an injected run_fn (tests) wins.
+            rf = run_fn or _build_run_fn(base, (mon or {}).get('options'))
+            summaries.append(run_project(project, rf, now=now,
                                          on_event=on_event,
                                          alert_config=alert_config))
     return summaries

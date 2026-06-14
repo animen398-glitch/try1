@@ -7,7 +7,7 @@ _active_cloner (for cancellation).
 import os
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
     QVBoxLayout, QWidget,
 )

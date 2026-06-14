@@ -7,7 +7,7 @@ _run_async).
 import json
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QVBoxLayout, QWidget,
 )
 

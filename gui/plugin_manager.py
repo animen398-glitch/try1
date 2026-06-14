@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator, List, Optional, Union
 
-from PyQt5.QtWidgets import QWidget
+from qtpy.QtWidgets import QWidget
 
 
 @dataclass(frozen=True)
@@ -142,6 +142,10 @@ BUILTIN_TABS = [
     ("cookie",     "Cookie Security Audit",     "_build_cookie_tab"),
     ("security",   "Security Audit",            "_build_security_tab"),
     ("collection", "Final Report & Collection", "_build_collection_tab"),
+    ("findings",   "Findings",                  "_build_findings_tab"),
+    ("assets",     "Assets",                    "_build_assets_tab"),
+    ("timeline",   "Timeline",                  "_build_timeline_tab"),
+    ("overview",   "Overview",                  "_build_overview_tab"),
     ("dashboard",  "Dashboard",                 "_build_dashboard_tab"),
     ("history",    "История операций",          "_build_history_tab"),
     ("system",     "System",                    "_build_system_tab"),

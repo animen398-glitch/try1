@@ -403,6 +403,76 @@ def summarize_line(d: Dict) -> str:
     return ' · '.join(parts + [risk_str])
 
 
+# ── change events (shared by Alert Center #9 and Timeline #F2) ─────────────────
+# One classifier turns a diff into typed events so the two consumers never
+# diverge: Alert Center keeps the alertable subset (alerts.ALERT_TYPES), the
+# Timeline takes them all. Each event is {type, title, severity, section}.
+EVENT_SEVERITY = {
+    'new_secret':          'high',
+    'takeover':            'critical',
+    'new_subdomain':       'medium',
+    'new_technology':      'info',
+    'tech_version_change': 'info',
+    'cert_change':         'medium',
+    'new_endpoint':        'info',
+    'risk_increase':       'high',
+    'risk_decrease':       'info',
+}
+
+
+def diff_events(d: Dict) -> List[Dict]:
+    """All change events from a ``diff`` dict (pure, no I/O).
+
+    Superset of the alertable events (alerts filter by ``ALERT_TYPES``); the
+    timeline consumes the full set. Secret titles are already masked in the diff.
+    """
+    sections = (d or {}).get('sections', {})
+    out: List[Dict] = []
+
+    def add(type_: str, title, section: str) -> None:
+        out.append({'type': type_, 'title': str(title),
+                    'severity': EVENT_SEVERITY[type_], 'section': section})
+
+    for label in sections.get('secrets', {}).get('added', []):
+        add('new_secret', label, 'secrets')
+
+    # Subdomains: a takeover candidate is the dangerous subset (its label carries
+    # the marker core.scan_diff attaches).
+    for label in sections.get('subdomains', {}).get('added', []):
+        text = str(label)
+        add('takeover' if 'takeover' in text.lower() else 'new_subdomain',
+            text, 'subdomains')
+
+    for label in sections.get('technologies', {}).get('added', []):
+        add('new_technology', label, 'technologies')
+    for ch in sections.get('technologies', {}).get('changed', []):
+        if isinstance(ch, dict):
+            add('tech_version_change',
+                f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'technologies')
+
+    for ch in sections.get('certificates', {}).get('changed', []):
+        if isinstance(ch, dict):
+            add('cert_change',
+                f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'certificates')
+
+    # A newly discovered endpoint (Katana crawl or OpenAPI spec).
+    for section in ('endpoints', 'apis'):
+        for label in sections.get(section, {}).get('added', []):
+            add('new_endpoint', label, section)
+
+    risk = (d or {}).get('risk', {})
+    if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):
+        add('risk_increase',
+            f"{risk.get('level_a')} {risk.get('risk_100_a')} → "
+            f"{risk.get('level_b')} {risk.get('risk_100_b')}", 'risk')
+    elif (risk.get('risk_100_b') or 0) < (risk.get('risk_100_a') or 0):
+        add('risk_decrease',
+            f"{risk.get('level_a')} {risk.get('risk_100_a')} → "
+            f"{risk.get('level_b')} {risk.get('risk_100_b')}", 'risk')
+
+    return out
+
+
 def write_diff_report(project, id_a: str, id_b: str) -> Dict:
     """Load two of a project's scans, diff them and write the offline HTML
     into the project's ``reports/`` folder (its first real tenant).

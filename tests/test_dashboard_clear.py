@@ -58,7 +58,7 @@ def _seed_registry(monkeypatch, tmp_path, n=2):
 
 
 def test_purge_registry_confirm_deletes_db(qapp, tmp_path, monkeypatch):
-    from PyQt5.QtWidgets import QMessageBox
+    from qtpy.QtWidgets import QMessageBox
 
     from core.registry import DataRegistry
     td, db = _seed_registry(monkeypatch, tmp_path, n=2)
@@ -74,7 +74,7 @@ def test_purge_registry_confirm_deletes_db(qapp, tmp_path, monkeypatch):
 
 
 def test_purge_registry_cancel_keeps_db(qapp, tmp_path, monkeypatch):
-    from PyQt5.QtWidgets import QMessageBox
+    from qtpy.QtWidgets import QMessageBox
 
     from core.registry import DataRegistry
     td, db = _seed_registry(monkeypatch, tmp_path, n=3)

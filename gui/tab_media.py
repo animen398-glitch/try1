@@ -8,7 +8,7 @@ _make_archive, _save_video_log).
 from datetime import datetime
 from pathlib import Path
 
-from PyQt5.QtWidgets import (
+from qtpy.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QVBoxLayout, QWidget,
 )
 

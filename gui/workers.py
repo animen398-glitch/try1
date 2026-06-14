@@ -6,13 +6,13 @@ and communicate with the UI purely through signals. _TaskHandle keeps the
 thread is never garbage-collected while still running.
 """
 
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from qtpy.QtCore import QObject, QThread, Signal
 
 
 class _Worker(QObject):
     """Runs an arbitrary callable off-thread and emits its result."""
-    finished = pyqtSignal(dict)
-    error = pyqtSignal(str)
+    finished = Signal(dict)
+    error = Signal(str)
 
     def __init__(self, fn, *args, **kwargs):
         super().__init__()
@@ -29,11 +29,11 @@ class _Worker(QObject):
 
 
 class _SubdomainWorker(QObject):
-    row_found   = pyqtSignal(dict)
-    row_updated = pyqtSignal(dict)   # active-check enrichment for an existing row
-    progress    = pyqtSignal(int, int)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
+    row_found   = Signal(dict)
+    row_updated = Signal(dict)   # active-check enrichment for an existing row
+    progress    = Signal(int, int)
+    finished    = Signal(dict)
+    error       = Signal(str)
 
     def __init__(self, scanner, domain: str, passive: bool, brute: bool,
                  active: bool = False, amass: bool = False):
@@ -65,10 +65,10 @@ class _SubdomainWorker(QObject):
 class _CloneWorker(QObject):
     """Thread worker for FrontendCloner: forwards log text + structured
     page progress straight from the engine's callbacks to Qt signals."""
-    log_message = pyqtSignal(str)
-    progress    = pyqtSignal(int, int)   # (current_page, total_pages)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
+    log_message = Signal(str)
+    progress    = Signal(int, int)   # (current_page, total_pages)
+    finished    = Signal(dict)
+    error       = Signal(str)
 
     def __init__(self, cloner):
         super().__init__()
@@ -86,9 +86,9 @@ class _CloneWorker(QObject):
 
 class _CaptureWorker(QObject):
     """Thread worker for SiteContentCapture with thread-safe log routing."""
-    log_message = pyqtSignal(str)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
+    log_message = Signal(str)
+    finished    = Signal(dict)
+    error       = Signal(str)
 
     def __init__(self, capturer):
         super().__init__()
@@ -105,9 +105,9 @@ class _CaptureWorker(QObject):
 
 class _CollectionWorker(QObject):
     """Thread worker for CollectionRunner (Full Collection) with log routing."""
-    log_message = pyqtSignal(str)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
+    log_message = Signal(str)
+    finished    = Signal(dict)
+    error       = Signal(str)
 
     def __init__(self, runner, url: str, output_base: str):
         super().__init__()
@@ -130,9 +130,9 @@ class _SecurityWorker(QObject):
     The auditor already supports cooperative cancellation (set_cancel_event) and
     progress logging; this just forwards its log messages to a Qt signal so the
     GUI can show progress without touching widgets from the worker thread."""
-    log_message = pyqtSignal(str)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
+    log_message = Signal(str)
+    finished    = Signal(dict)
+    error       = Signal(str)
 
     def __init__(self, auditor, url: str):
         super().__init__()
@@ -153,9 +153,9 @@ class _MonitorWorker(QObject):
 
     Continuous Monitoring's heavy step is a Full Collection per due project, so
     it runs off-thread; monitor events are forwarded to the GUI log as text."""
-    log_message = pyqtSignal(str)
-    finished    = pyqtSignal(dict)
-    error       = pyqtSignal(str)
+    log_message = Signal(str)
+    finished    = Signal(dict)
+    error       = Signal(str)
 
     def __init__(self, store):
         super().__init__()

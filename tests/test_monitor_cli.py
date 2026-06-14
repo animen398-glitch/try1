@@ -45,7 +45,9 @@ def test_cmd_run_executes_due(tmp_path, monkeypatch):
                          'next_run': '2000-01-01T00:00:00'})
 
     # Inject an offline collection step (no real CollectionRunner / network).
-    def fake_default(base):
+    # run_due now builds the run_fn per project from its options, so the patch
+    # target is _build_run_fn(base, options).
+    def fake_build(base, options=None):
         def run(url):
             sid = '20260613_120000'
             proj = store.get(project_slug(url))
@@ -57,7 +59,7 @@ def test_cmd_run_executes_due(tmp_path, monkeypatch):
             return report
         return run
 
-    monkeypatch.setattr(cli.monitor, '_default_run_fn', fake_default)
+    monkeypatch.setattr(cli.monitor, '_build_run_fn', fake_build)
     results = cli.cmd_run(store)
     assert len(results) == 1 and results[0]['slug'] == 'x.com'
     # schedule advanced past the epoch placeholder

@@ -7,9 +7,9 @@ History and Dashboard tabs the first time each is opened.
 import html
 import json
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -93,6 +93,18 @@ class HistoryTabMixin:
         elif widget is getattr(self, '_dashboard_widget', None):
             if not self._dashboard_loaded and not self._dashboard_loading:
                 self._refresh_dashboard()
+        elif widget is getattr(self, '_findings_widget', None):
+            if not self._findings_loaded and not self._findings_loading:
+                self._refresh_findings()
+        elif widget is getattr(self, '_assets_widget', None):
+            if not self._assets_loaded and not self._assets_loading:
+                self._refresh_assets()
+        elif widget is getattr(self, '_timeline_widget', None):
+            if not self._timeline_loaded and not self._timeline_loading:
+                self._refresh_timeline()
+        elif widget is getattr(self, '_overview_widget', None):
+            if not self._overview_loaded and not self._overview_loading:
+                self._refresh_overview()
 
     def _refresh_history(self):
         if self._history_loading:

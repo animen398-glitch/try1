@@ -11,16 +11,63 @@ from pathlib import Path
 
 import pytest
 
-# Headless Qt + importable project root, before any PyQt import.
+# Headless Qt + importable project root, before any Qt import. QT_API pins the
+# qtpy binding (PyQt5 today; flip to "pyside6" for the variant-B migration).
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_API", "pyside6")
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_findings_db(tmp_path_factory, monkeypatch):
+    """Redirect the global findings DB to a per-test temp file.
+
+    ``FindingsStore()`` defaults to ``data/findings.db`` (a real repo path).
+    Without this, any test that runs a Full Collection or FindingsStore.sync
+    would write into the working tree. Tests that need to inspect the store use
+    the default ``FindingsStore()`` and land here automatically; tests passing an
+    explicit ``db_path`` are unaffected.
+    """
+    import core.findings_store as fstore
+    monkeypatch.setattr(fstore, "FINDINGS_DB",
+                        tmp_path_factory.mktemp("findings") / "findings.db")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_assets_db(tmp_path_factory, monkeypatch):
+    """Redirect the global assets DB to a per-test temp file.
+
+    ``AssetStore()`` defaults to ``data/assets.db`` (a real repo path); without
+    this, any test running a Full Collection or AssetStore.sync would write into
+    the working tree (mirrors ``_isolate_findings_db``)."""
+    import core.asset_store as astore
+    monkeypatch.setattr(astore, "ASSETS_DB",
+                        tmp_path_factory.mktemp("assets") / "assets.db")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_operations_db(request, tmp_path_factory, monkeypatch):
+    """Redirect the global operations DB to a per-test temp file.
+
+    ``OperationRegistry()`` defaults to ``core.config.OPERATIONS_DB`` (a real repo
+    path). Alert deliveries (F4) and any other op logging now land there, so
+    without this a test could write into the working tree. ``OperationRegistry``
+    reads the default lazily from ``core.config`` at construction, so patching the
+    attribute there covers every default-constructed registry. Tests that assert
+    the real derived path opt out with ``@pytest.mark.real_operations_db``.
+    """
+    if request.node.get_closest_marker("real_operations_db"):
+        return
+    import core.config as cfg
+    monkeypatch.setattr(cfg, "OPERATIONS_DB",
+                        tmp_path_factory.mktemp("ops") / "operations.db")
+
+
 @pytest.fixture(scope="session")
 def qapp():
-    from PyQt5.QtWidgets import QApplication
+    from qtpy.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
     yield app
 
@@ -41,8 +88,8 @@ def _reclaim_qt_objects():
     import gc
     yield
     try:
-        from PyQt5.QtCore import QEvent
-        from PyQt5.QtWidgets import QApplication
+        from qtpy.QtCore import QEvent
+        from qtpy.QtWidgets import QApplication
         app = QApplication.instance()
         if app is not None:
             for widget in app.topLevelWidgets():

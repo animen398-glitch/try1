@@ -63,6 +63,7 @@ def test_targets_capped(isolated_config, monkeypatch):
     assert len(config.load_targets()) == 3
 
 
+@pytest.mark.real_operations_db
 def test_config_paths_derive_from_path_manager():
     """Writable paths track PathManager.data_root, resources track resource_root.
 

@@ -6,9 +6,9 @@ Mixin folded into MainWindow; uses _start_task and _active_subdomain_scanner.
 import csv
 from datetime import datetime
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor
+from qtpy.QtWidgets import (
     QAbstractItemView, QCheckBox, QFileDialog, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMessageBox, QProgressBar, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,

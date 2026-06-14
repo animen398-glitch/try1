@@ -16,7 +16,7 @@ without the nondeterminism or runtime surface of a local model.
 import html
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Risk verdict -> banner colour (shared palette with the vuln/site-map reports).
 RISK_COLORS = {
@@ -79,6 +79,15 @@ def _count_sourcemap_leaks(report: Dict) -> int:
     return _int(summary.get('maps_with_content'))
 
 
+def _graphql_exposure(report: Dict) -> Tuple[int, int]:
+    """(reachable GraphQL endpoints, of which expose introspection), if a
+    security phase ran. The SecurityAuditor already counts both — surface them
+    for the exposure breakdown without re-probing (invariant I3)."""
+    sec = _phase_data(report, 'security')
+    summary = sec.get('summary', {}) if isinstance(sec, dict) else {}
+    return _int(summary.get('graphql')), _int(summary.get('graphql_introspection'))
+
+
 def build_summary(report: Dict) -> Dict:
     """Derive a structured executive summary from a collection ``report``.
 
@@ -94,14 +103,16 @@ def build_summary(report: Dict) -> Dict:
     vsum = vulns.get('summary', {}) if isinstance(vulns, dict) else {}
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
 
-    # Findings Management (#14): once findings carry a triage status, drop the
-    # inactive ones (fixed / ignored) from the risk math and re-aggregate. The
-    # guard keeps behaviour identical for reports/tests without statuses.
+    # Findings Management (F1): once findings carry a triage status (stamped by
+    # FindingsStore.sync), drop the inactive ones (FIXED / IGNORED /
+    # FALSE_POSITIVE) from the risk math and re-aggregate — triaging a
+    # false-positive lowers the score. The guard keeps behaviour identical for
+    # reports/tests without statuses.
     if any(isinstance(f, dict) and f.get('status') for f in findings):
-        from core.findings_status import is_active
+        from core.findings_store import INACTIVE_STATUSES
         from core.vuln_scanner import VulnScanner
         findings = [f for f in findings if not isinstance(f, dict)
-                    or is_active(f)]
+                    or f.get('status') not in INACTIVE_STATUSES]
         vsum = VulnScanner.summarize(findings)
 
     high = _int(vsum.get('high'))
@@ -113,6 +124,7 @@ def build_summary(report: Dict) -> Dict:
     # Unified risk engine: pull every available security signal (Security Audit
     # source maps + subdomain takeovers are zero unless those phases ran).
     source_map_leaks = _count_sourcemap_leaks(report)
+    graphql, graphql_introspection = _graphql_exposure(report)
     takeovers = _count_takeovers(report)
 
     status_summary = capture.get('status_summary', {}) or {}
@@ -139,6 +151,7 @@ def build_summary(report: Dict) -> Dict:
         'high': high, 'medium': medium, 'info': info,
         'secrets': secrets, 'weak_cookies': weak_cookies,
         'source_map_leaks': source_map_leaks, 'takeovers': takeovers,
+        'graphql': graphql, 'graphql_introspection': graphql_introspection,
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

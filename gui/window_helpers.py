@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from PyQt5.QtWidgets import QFileDialog, QLineEdit
+from qtpy.QtWidgets import QFileDialog, QLineEdit
 
 from core import config
 from utils.file_compression import FileCompressor

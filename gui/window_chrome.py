@@ -15,14 +15,14 @@ and, after _build_central runs, this mixin sets ``self.tabs``, ``self.plugins``,
 
 import shutil
 
-from PyQt5.QtWidgets import (
-    QAction, QLabel, QMessageBox, QProgressBar, QStatusBar, QTabWidget,
-    QVBoxLayout, QWidget,
-)
+from qtpy.QtWidgets import QLabel, QMessageBox, QProgressBar
+
+from gui._fluent import FluentIcon, NavigationItemPosition
 
 from core import features
 from gui.constants import PLUGINS_DIR
 from gui.dialogs import SettingsDialog
+from gui.fluent_nav import (FluentWindowTabs, StatusBar, install_status_bar)
 from gui.plugin_manager import default_manager
 
 
@@ -30,31 +30,25 @@ class WindowChromeMixin:
     """Builds the menu / central tabs / status bar and their dialogs."""
 
     def _build_menu(self):
-        menu = self.menuBar()
-
-        file_menu = menu.addMenu("Файл")
-        act_settings = QAction("Настройки...", self)
-        act_settings.setShortcut("Ctrl+,")
-        act_settings.triggered.connect(self._open_settings)
-        file_menu.addAction(act_settings)
-        file_menu.addSeparator()
-        act_exit = QAction("Выход", self)
-        act_exit.setShortcut("Ctrl+Q")
-        act_exit.triggered.connect(self.close)
-        file_menu.addAction(act_exit)
-
-        help_menu = menu.addMenu("Помощь")
-        act_about = QAction("О программе", self)
-        act_about.triggered.connect(self._show_about)
-        help_menu.addAction(act_about)
+        # FluentWindow has no menu bar — the menu actions live in the navigation
+        # footer (Settings / About), with Exit at the very bottom.
+        nav = self.navigationInterface
+        # onClick is wired to the item's clicked(bool) signal, so swallow the arg.
+        nav.addItem(routeKey='settings', icon=FluentIcon.SETTING,
+                    text="Настройки", onClick=lambda *_: self._open_settings(),
+                    selectable=False, position=NavigationItemPosition.BOTTOM)
+        nav.addItem(routeKey='about', icon=FluentIcon.INFO,
+                    text="О программе", onClick=lambda *_: self._show_about(),
+                    selectable=False, position=NavigationItemPosition.BOTTOM)
+        nav.addItem(routeKey='exit', icon=FluentIcon.CLOSE,
+                    text="Выход", onClick=lambda *_: self.close(),
+                    selectable=False, position=NavigationItemPosition.BOTTOM)
 
     def _build_central(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
-        layout.setContentsMargins(8, 8, 8, 8)
-
-        self.tabs = QTabWidget()
+        # FluentWindow owns the side navigation + content stack; self.tabs is a
+        # QTabWidget-compatible facade over them, so the plugin contract, the
+        # lazy-load hook and the GUI tests keep working unchanged.
+        self.tabs = FluentWindowTabs(self)
         # Tabs are built from the plugin registry (single source of truth for
         # the tab bar), not a hard-coded addTab() list. Built-in tabs first,
         # then any external tab plugins dropped into PLUGINS_DIR. See
@@ -66,14 +60,15 @@ class WindowChromeMixin:
             on_error=lambda name, exc: self._plugin_errors.append((name, exc)),
         )
         self.plugins.build_into(self, self.tabs)
-        layout.addWidget(self.tabs)
+
+        # Mount the status bar (built first) beneath the nav+content row.
+        install_status_bar(self, self.status_bar)
 
         # Lazily load history the first time its tab is opened.
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
     def _build_statusbar(self):
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
+        self.status_bar = StatusBar()
         self.task_indicator = QLabel("")
         self.task_indicator.setStyleSheet("color: #4fc3f7; padding-right: 8px;")
         self.status_bar.addPermanentWidget(self.task_indicator)
@@ -111,7 +106,7 @@ class WindowChromeMixin:
 
     def _open_settings(self):
         dialog = SettingsDialog(self)
-        if dialog.exec_():
+        if dialog.exec():
             self.settings = dialog.get_settings()
 
     def _show_about(self):

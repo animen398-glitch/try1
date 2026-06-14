@@ -35,6 +35,8 @@ SETTINGS_FILE = CONFIG_DIR / 'settings.json'
 TARGETS_FILE = CONFIG_DIR / 'targets.json'
 OPERATIONS_DB = DATA_DIR / 'operations.db'
 REGISTRY_DB = DATA_DIR / 'registry.db'
+FINDINGS_DB = DATA_DIR / 'findings.db'
+ASSETS_DB = DATA_DIR / 'assets.db'        # Asset Inventory (cross-scan, lifecycle)
 LIVE_TEST_OUTPUT = _PM.data_root / 'live_test_output'
 PLUGINS_DIR = _PM.resource_root / 'plugins'
 
@@ -48,6 +50,15 @@ DEFAULT_SETTINGS = {
     # Alert Center (#9) — opt-in; off until a channel is configured. See
     # core.alerts for the full shape (telegram/discord/email + types filter).
     'alerts': {'enabled': False},
+    # Continuous Monitoring (F3) in-app scheduler — opt-in background watcher
+    # that runs while the app is open. ``monitor_check_interval`` is seconds
+    # between due-checks (the OS-level adapter is monitor_cli.py).
+    'monitor_autostart': False,
+    'monitor_check_interval': 1800,
+    # GUI theme (F6, variant A) — 'system' | 'light' | 'dark'. Default 'system'
+    # leaves the current look untouched; only 'dark' overrides the palette.
+    # Applied at startup (main.py) via gui.theme.apply_theme.
+    'gui_theme': 'system',
 }
 
 MAX_TARGETS = 100

@@ -21,7 +21,7 @@ import json
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from core.analyzer_plugins import discover_analyzers, run_analyzers
 from core.api_key_extractor import ApiKeyExtractor
@@ -44,11 +44,12 @@ from core.employee_intel import discover as discover_employees
 from core.employee_intel import render_html as render_employees
 from core.ct_history import discover as discover_ct
 from core.ct_history import render_html as render_ct
-from core.findings_status import decorate as decorate_findings
-from core.findings_status import render_html as render_findings_status
-from core.findings_status import summarize as summarize_findings_status
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
+from core.asn_intel import build_asn_intel
+from core.asn_intel import render_html as render_asn_intel
+from core.osv_correlation import correlate as correlate_osv
+from core.osv_correlation import to_findings as osv_to_findings
 from core.infrastructure import render_html as render_infrastructure
 from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
 from core.openapi_discovery import discover as discover_openapi
@@ -82,7 +83,8 @@ class CollectionRunner:
                  certificate: bool = False, openapi: bool = False,
                  historical: bool = False, dns: bool = False,
                  emails: bool = False, employees: bool = False,
-                 ct: bool = False):
+                 ct: bool = False, asn_intel: bool = False,
+                 osv: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -124,6 +126,13 @@ class CollectionRunner:
         # Opt-in CT history (#13) — certificate-transparency timeline (crt.sh):
         # issuers/validity/first-last-seen; feeds report + Scan Diff (new certs).
         self.ct = ct
+        # Opt-in active ASN/netblock recon — RDAP CIDR + RIPEstat ASN prefixes +
+        # reverse-IP co-hosted hosts (extra network; off by default).
+        self.asn_intel = asn_intel
+        # Opt-in CVE correlation via OSV.dev — live advisory set per detected JS
+        # library; supersedes the bundled dependency-audit table (extra network;
+        # off by default).
+        self.osv = osv
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -143,7 +152,9 @@ class CollectionRunner:
                   dns: Optional[bool] = None,
                   emails: Optional[bool] = None,
                   employees: Optional[bool] = None,
-                  ct: Optional[bool] = None):
+                  ct: Optional[bool] = None,
+                  asn_intel: Optional[bool] = None,
+                  osv: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -176,6 +187,10 @@ class CollectionRunner:
             self.employees = employees
         if ct is not None:
             self.ct = ct
+        if asn_intel is not None:
+            self.asn_intel = asn_intel
+        if osv is not None:
+            self.osv = osv
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -275,6 +290,15 @@ class CollectionRunner:
         # 7i. CT history (opt-in) → certificate-transparency timeline (crt.sh).
         if self.ct and not self._cancelled(report):
             report['phases']['ct'] = self._phase_ct(url, scan_dir)
+        # 7j. Active ASN/netblock recon (opt-in) → CIDR + ASN prefixes +
+        # reverse-IP co-hosted hosts (needs the recon-derived ip/asn).
+        if self.asn_intel and not self._cancelled(report):
+            report['phases']['asn_intel'] = self._phase_asn_intel(report, scan_dir)
+        # 7k. CVE correlation via OSV.dev (opt-in, active) → live advisories per
+        # detected JS library; supersedes the bundled dependency-audit table and
+        # folds its findings into the vuln phase (so risk/summary account for them).
+        if self.osv and not self._cancelled(report):
+            report['phases']['osv'] = self._phase_osv(report, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             report['phases']['katana'] = self._phase_katana(url)
@@ -289,10 +313,14 @@ class CollectionRunner:
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
-        # Findings Management (#14): persist triage status across scans and
-        # annotate this run's findings with it, BEFORE the summary — so fixed/
-        # ignored findings drop out of the risk verdict below.
-        self._sync_findings_status(report, project, scan_dir.name)
+        # Findings Management (F1): persist findings + run the lifecycle, and
+        # stamp this scan's findings with their stored status — BEFORE the
+        # summary, so inactive (fixed/ignored/false-positive) ones drop out of
+        # the risk verdict below.
+        self._sync_findings(report, project, scan_dir.name)
+        # Asset Inventory: persist this scan's assets + run their lifecycle
+        # (CREATED/SEEN/GONE/REAPPEARED) across scans — the head of the chain.
+        self._sync_assets(report, project, scan_dir.name)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -301,6 +329,18 @@ class CollectionRunner:
         # the verdict above is untouched; a missing Ollama just adds nothing).
         if self.llm and not self._cancelled(report):
             self._attach_llm_narrative(report['executive_summary'])
+
+        # Trend series for the HTML report: this project's metric history — prior
+        # scans from metadata.json plus this scan (not yet recorded at render
+        # time). Derive-on-read, reuses timeline.build_series (I3) and the single
+        # scan-entry flatten; best-effort so a failure never sinks the scan.
+        try:
+            from core.timeline import build_series
+            entries = list(project.scans()) + [project._scan_entry(scan_dir, report)]
+            report['trends'] = build_series(entries)
+        except Exception as ex:  # noqa: BLE001 — trends are best-effort
+            self._log(f'  ! trend series failed: {ex}')
+            report['trends'] = []
 
         # Reports
         json_path = scan_dir / 'report.json'
@@ -691,27 +731,295 @@ class CollectionRunner:
             self._log(f'  CT history failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
-    def _sync_findings_status(self, report: Dict, project, scan_id: str) -> None:
-        """Persist triage status across scans and annotate this run's findings.
+    def _phase_asn_intel(self, report: Dict, project_dir: Path) -> Dict:
+        """Active ASN/netblock recon over the recon-derived infrastructure
+        (opt-in). Needs recon's ip/asn; guarded and never fatal. Writes
+        recon/asn_intel.json."""
+        self._log('[+] ASN/netblock intel…')
+        try:
+            rd = report.get('phases', {}).get('recon', {}).get('data', {})
+            infra = rd.get('infrastructure') or {}
+            if not (infra.get('ip') or infra.get('asn')):
+                self._log('  ASN intel — пропущено (нет IP/ASN из recon)')
+                return {'status': 'Skipped', 'reason': 'no ip/asn'}
+            data = build_asn_intel(infra)
+            out = project_dir / 'recon'
+            out.mkdir(exist_ok=True)
+            (out / 'asn_intel.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            self._log(f"  ASN intel: CIDR {data.get('cidr') or '—'}, "
+                      f"префиксов {data.get('prefix_count', 0)}, "
+                      f"со-хостов {data.get('neighbor_count', 0)}")
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  ASN intel failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
 
-        Merges the vuln-phase findings into the project's stored triage state
-        (new → open, kept statuses preserved), writes it back, then stamps each
-        finding with its status so the risk engine can exclude fixed/ignored.
+    def _phase_osv(self, report: Dict, project_dir: Path) -> Dict:
+        """CVE correlation via OSV.dev (opt-in, active). Reads the JS libraries
+        already detected by recon's dependency audit, asks OSV for the live
+        advisory set, and *supersedes* the bundled table for covered libraries:
+        enriches the report card (the library's ``vulnerabilities``) and folds the
+        findings into the vuln phase (so risk/summary/surface account for them),
+        replacing the bundled dependency-audit findings of those same libraries.
+        Writes recon/osv.json. Guarded; degrades to the bundled table on failure."""
+        self._log('[+] CVE-корреляция (OSV.dev)…')
+        try:
+            rd = report.get('phases', {}).get('recon', {}).get('data', {})
+            dep = rd.get('dependencies') or {}
+            libraries = dep.get('libraries') or []
+            if not libraries:
+                self._log('  OSV — JS-библиотек с версиями нет')
+                return {'status': 'No libraries', 'data': {'correlated': {}}}
+
+            correlated = correlate_osv(libraries)
+            if not correlated:
+                self._log('  OSV — известных уязвимостей не найдено')
+                return {'status': 'Success', 'data': {'correlated': {}}}
+
+            # Enrich covered libraries' display vulns + build OSV findings, and
+            # collect the (name, version) of every covered library so the bundled
+            # findings of exactly those can be dropped from the vuln phase.
+            osv_findings: List[Dict] = []
+            covered: set = set()
+            for lib in libraries:
+                vulns = correlated.get(lib.get('library'))
+                if not vulns:
+                    continue
+                name, version = lib.get('name', lib.get('library')), lib.get('version', '')
+                covered.add((name, version))
+                lib['vulnerabilities'] = [
+                    {'severity': v['severity'],
+                     'detail': f"OSV/{v.get('id', '')}: {v.get('summary', '')}".strip(),
+                     'fixed_in': None}
+                    for v in vulns
+                ]
+                osv_findings.extend(osv_to_findings(name, version, vulns))
+
+            # Supersede in the vuln phase: drop the bundled dependency-audit
+            # findings of covered libraries (their title is exactly the
+            # "Уязвимая библиотека: <name> <version>" prefix), then add OSV's and
+            # re-summarize — the same fold-in pattern as _phase_dns.
+            def _superseded(f: Dict) -> bool:
+                if f.get('source') != 'dependency-audit':
+                    return False
+                title = f.get('title', '')
+                return any(title.startswith(f'Уязвимая библиотека: {n} {v}')
+                           for (n, v) in covered)
+
+            vulns_phase = report.get('phases', {}).get('vulns')
+            if osv_findings and isinstance(vulns_phase, dict):
+                kept = [f for f in vulns_phase.get('findings', [])
+                        if not _superseded(f)]
+                kept.extend(osv_findings)
+                vulns_phase['findings'] = kept
+                vulns_phase['summary'] = VulnScanner.summarize(kept)
+            # Keep the recon dependency object's own findings list consistent too.
+            if osv_findings and isinstance(dep.get('findings'), list):
+                dep['findings'] = [f for f in dep['findings']
+                                   if not _superseded(f)] + osv_findings
+
+            out = project_dir / 'recon'
+            out.mkdir(exist_ok=True)
+            (out / 'osv.json').write_text(
+                json.dumps(correlated, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            n_vulns = sum(len(v) for v in correlated.values())
+            self._log(f"  OSV: {len(correlated)} библиотек(и) с уязвимостями, "
+                      f"{n_vulns} advisory (находок +{len(osv_findings)})")
+            return {'status': 'Success', 'data': {'correlated': correlated}}
+        except Exception as e:
+            self._log(f'  OSV correlation failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _sync_findings(self, report: Dict, project, scan_id: str) -> None:
+        """Persist this scan's findings + run the F1 lifecycle, then stamp each
+        finding with its stored status so the risk engine excludes inactive ones.
+
         Best-effort: a failure here must never sink an otherwise-good scan."""
         vulns = report.get('phases', {}).get('vulns')
         if not isinstance(vulns, dict) or not isinstance(vulns.get('findings'),
                                                           list):
             return
         try:
-            state = project.sync_findings(vulns['findings'], scan_id=scan_id)
-            vulns['findings'] = decorate_findings(vulns['findings'], state)
-            report['findings_status'] = {
-                'summary': summarize_findings_status(state), 'state': state}
-            s = report['findings_status']['summary']
-            self._log(f"  Findings: {s['total']} под триаж "
-                      f"(активных {s['active']})")
-        except Exception as e:  # noqa: BLE001 — triage must not fail the scan
-            self._log(f'  Findings status sync failed: {e}')
+            from core.finding_fingerprint import scoped_id
+            from core.findings_adapter import from_raw
+            from core.findings_store import FindingsStore
+
+            phases = report.get('phases', {})
+
+            def phase_ok(name: str) -> bool:
+                p = phases.get(name)
+                return isinstance(p, dict) and p.get('status') == 'Success'
+
+            def in_scope(source: str) -> bool:
+                # Only auto-FIX an absent finding when the phase that produces
+                # its source actually ran this scan (skipped opt-in phase ≠ fixed).
+                s = (source or '').lower()
+                if s == 'dns':
+                    return phase_ok('dns')
+                if s == 'nuclei':
+                    return bool(self.nuclei) and phase_ok('vulns')
+                if s == 'dependency-audit':
+                    return phase_ok('recon')
+                return phase_ok('vulns')
+
+            store = FindingsStore()
+            result = store.sync(project.slug, scan_id, vulns['findings'],
+                                in_scope=in_scope)
+            # Stamp each finding with its stored status (for the risk engine).
+            # Stored rows are keyed by the project-scoped id, so map each raw
+            # finding's bare fingerprint through scoped_id to look it up.
+            status_by_id = {f['id']: f['status']
+                            for f in store.list_findings(project.slug)}
+            for raw in vulns['findings']:
+                if isinstance(raw, dict):
+                    sid = scoped_id(project.slug, from_raw(raw).id)
+                    raw['status'] = status_by_id.get(sid, 'OPEN')
+            report['findings'] = {
+                'project': project.slug, 'summary': result['summary'],
+                'new': len(result['new']), 'reopened': len(result['reopened']),
+                'resolved': len(result['resolved']),
+                'recurring': len(result['recurring']),
+            }
+            s = result['summary']
+            self._log(f"  Findings: {s['active']} активных / {s['total']} "
+                      f"(новых {len(result['new'])}, "
+                      f"auto-fixed {len(result['resolved'])})")
+        except Exception as e:  # noqa: BLE001 — findings sync must not fail a scan
+            self._log(f'  Findings sync failed: {e}')
+
+    def _sync_assets(self, report: Dict, project, scan_id: str) -> None:
+        """Persist this scan's assets + run their lifecycle (Asset Inventory).
+
+        Best-effort and read-only over the report — a failure here must never
+        sink an otherwise-good scan (same contract as ``_sync_findings``). Marks
+        an asset GONE only for types whose producing phase actually ran, so a
+        skipped opt-in phase never looks like the asset disappeared."""
+        try:
+            from core.asset_adapter import ASSET_SOURCE_PHASES, derive_assets
+            from core.asset_store import AssetStore
+
+            phases = report.get('phases', {})
+
+            def phase_ok(name: str) -> bool:
+                p = phases.get(name)
+                return isinstance(p, dict) and p.get('status') == 'Success'
+
+            def in_scope(asset_type: str) -> bool:
+                sources = ASSET_SOURCE_PHASES.get(asset_type, ('recon',))
+                return any(phase_ok(s) for s in sources)
+
+            assets = derive_assets(report)
+            if not assets:
+                return
+            result = AssetStore().sync(project.slug, scan_id, assets,
+                                       in_scope=in_scope)
+            s = result['summary']
+            report['assets'] = {
+                'project': project.slug, 'summary': s,
+                'new': len(result['new']), 'gone': len(result['gone']),
+                'reappeared': len(result['reappeared']),
+                'recurring': len(result['recurring']),
+            }
+            self._log(f"  Assets: {s['active']} активных / {s['total']} "
+                      f"(новых {len(result['new'])}, "
+                      f"ушло {len(result['gone'])})")
+        except Exception as e:  # noqa: BLE001 — asset sync must not fail a scan
+            self._log(f'  Asset sync failed: {e}')
+
+    @staticmethod
+    def _render_findings_card(fdata: Dict) -> str:
+        """Offline HTML for the Findings Management card: this scan's delta +
+        the project's status breakdown."""
+        from core.findings_store import STATUS_LABELS as labels
+        e = html.escape
+        summary = fdata.get('summary', {})
+        by_status = summary.get('by_status', {})
+        delta = (f'<p style="font-size:13px;">Изменения за скан: '
+                 f'<b>+{e(str(fdata.get("new", 0)))}</b> новых, '
+                 f'{e(str(fdata.get("reopened", 0)))} переоткрыто, '
+                 f'{e(str(fdata.get("resolved", 0)))} авто-исправлено '
+                 f'(активных: <b>{e(str(summary.get("active", 0)))}</b> '
+                 f'из {e(str(summary.get("total", 0)))})</p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(labels.get(st, st))}</td>'
+            f'<td style="color:#666;">{e(str(by_status.get(st, 0)))}</td></tr>'
+            for st in ('OPEN', 'IN_PROGRESS', 'FIXED', 'IGNORED', 'FALSE_POSITIVE')
+            if by_status.get(st))
+        table = (f'<table style="font-size:12px;">{rows}</table>' if rows else '')
+        return delta + table
+
+    @staticmethod
+    def _render_assets_card(adata: Dict) -> str:
+        """Offline HTML for the Asset Inventory card: this scan's delta +
+        the project's active/total and per-type breakdown."""
+        e = html.escape
+        summary = adata.get('summary', {})
+        by_type = summary.get('by_type', {})
+        delta = (f'<p style="font-size:13px;">Изменения за скан: '
+                 f'<b>+{e(str(adata.get("new", 0)))}</b> новых, '
+                 f'{e(str(adata.get("reappeared", 0)))} вернулось, '
+                 f'{e(str(adata.get("gone", 0)))} исчезло '
+                 f'(активных: <b>{e(str(summary.get("active", 0)))}</b> '
+                 f'из {e(str(summary.get("total", 0)))})</p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(str(t))}</td>'
+            f'<td style="color:#666;">{e(str(c))}</td></tr>'
+            for t, c in sorted(by_type.items(), key=lambda kv: (-kv[1], kv[0]))
+            if c)
+        table = (f'<table style="font-size:12px;">{rows}</table>' if rows else '')
+        return delta + table
+
+    @staticmethod
+    def _render_trends_card(trends: list) -> str:
+        """Offline HTML for the Trends card: sparklines of the project's metric
+        history over its scans (F5). Reuses the offline-SVG ``sparkline`` (the
+        dashboard's chart helper, no new deps). Rendered only with ≥2 scans — a
+        single point is not a trend."""
+        from core.dashboard_charts import sparkline
+        e = html.escape
+        pts = [p for p in (trends or []) if isinstance(p, dict)]
+        if len(pts) < 2:
+            return ''
+
+        def _f(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        # (label, series-key, line colour) — the metrics build_series exposes.
+        metrics = [
+            ('Risk score',     'risk_score',     '#c62828'),
+            ('Attack surface', 'attack_surface', '#6a1b9a'),
+            ('Secrets',        'secrets',        '#ad1457'),
+            ('High vulns',     'high',           '#ef6c00'),
+        ]
+        tiles = []
+        for label, key, color in metrics:
+            series = [_f(p.get(key)) for p in pts]
+            if not any(v is not None for v in series):
+                continue
+            latest = next((v for v in reversed(series) if v is not None), None)
+            latest_txt = ('—' if latest is None else
+                          str(int(latest)) if float(latest).is_integer()
+                          else f'{latest:.1f}')
+            svg = sparkline(series, color=color, width=220, height=44)
+            tiles.append(
+                f'<figure style="margin:0;width:220px;">'
+                f'<figcaption style="font-size:12px;color:#666;'
+                f'margin-bottom:2px;">{e(label)}: <b style="color:#222;">'
+                f'{e(latest_txt)}</b></figcaption>{svg}</figure>')
+        if not tiles:
+            return ''
+        return (f'<p style="font-size:13px;">История за '
+                f'<b>{e(str(len(pts)))}</b> скан(ов) — самые свежие справа.</p>'
+                f'<div style="display:flex;flex-wrap:wrap;gap:16px;">'
+                f'{"".join(tiles)}</div>')
 
     def _phase_katana(self, url: str) -> Dict:
         self._log('[8/8] Katana crawl…')
@@ -843,6 +1151,14 @@ class CollectionRunner:
             body_parts.append(card(
                 'Infrastructure', render_infrastructure(infra),
                 recon.get('status', '—'),
+            ))
+
+        # Active ASN/netblock intel (opt-in) — CIDR + ASN prefixes + co-hosts.
+        asn_phase = phases.get('asn_intel')
+        if isinstance(asn_phase, dict) and asn_phase.get('status') == 'Success':
+            body_parts.append(card(
+                'ASN Intelligence', render_asn_intel(asn_phase.get('data')),
+                asn_phase.get('status', '—'),
             ))
 
         # Technology fingerprint — CDN / server / backend / analytics + versions.
@@ -1053,14 +1369,21 @@ class CollectionRunner:
         )
         body_parts.append(card('Vulnerabilities', vuln_body, vuln.get('status', '—')))
 
-        # Findings Management (#14) — triage status persisted across scans.
-        fmgmt = report.get('findings_status')
-        if isinstance(fmgmt, dict) and fmgmt.get('state'):
-            fsum = fmgmt.get('summary', {})
+        # Findings Management (F1) — persistent triage state + this scan's delta.
+        fdata = report.get('findings')
+        if isinstance(fdata, dict) and fdata.get('summary'):
+            fsum = fdata['summary']
             body_parts.append(card(
-                'Findings Management',
-                render_findings_status(fmgmt['state']),
-                f"активных {fsum.get('active', 0)}/{fsum.get('total', 0)}"))
+                'Findings Management', self._render_findings_card(fdata),
+                f"{fsum.get('active', 0)}/{fsum.get('total', 0)} активных"))
+
+        # Asset Inventory — persistent asset registry + this scan's delta.
+        adata = report.get('assets')
+        if isinstance(adata, dict) and adata.get('summary'):
+            asum = adata['summary']
+            body_parts.append(card(
+                'Asset Inventory', self._render_assets_card(adata),
+                f"{asum.get('active', 0)}/{asum.get('total', 0)} активных"))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')
@@ -1116,6 +1439,10 @@ class CollectionRunner:
             if surface.get('categories') else ''
         )
 
+        # Trends — sparklines of the project's metric history (≥2 scans only).
+        trends_body = self._render_trends_card(report.get('trends'))
+        trends_card = card('Trends', trends_body, 'Success') if trends_body else ''
+
         return f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
 <title>Collection Report — {e(report.get('domain', ''))}</title></head>
@@ -1130,6 +1457,7 @@ max-width:860px;margin:24px auto;padding:0 16px;color:#222;">
 </p>
 {exec_card}
 {surface_card}
+{trends_card}
 {''.join(body_parts)}
 <p style="color:#aaa;font-size:11px;margin-top:24px;">
   Advanced Site Analyzer · Full Collection

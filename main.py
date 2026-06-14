@@ -4,6 +4,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Pin the qtpy binding before any Qt import (variant-B: PySide6). setdefault so
+# an external QT_API still wins (e.g. QT_API=pyqt5 to fall back to the old binding).
+os.environ.setdefault("QT_API", "pyside6")
+
 # Establish the process-wide PathManager up front, before anything imports
 # core.config, so a frozen .exe resolves its writable data dir (%APPDATA%)
 # rather than the ephemeral PyInstaller _MEIPASS extraction dir.
@@ -11,7 +15,7 @@ from core.paths import init_path_manager
 
 init_path_manager()
 
-from PyQt5.QtWidgets import QApplication
+from qtpy.QtWidgets import QApplication
 from gui.main_window import MainWindow
 
 
@@ -28,7 +32,11 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Advanced Site Analyzer")
     app.setOrganizationName("SiteAnalyzer")
-    app.setStyle("Fusion")
+
+    # Visual theme (F6) — opt-in; 'system' (default) keeps the current look.
+    from core.config import load_settings
+    from gui.theme import apply_theme
+    apply_theme(app, load_settings().get('gui_theme', 'system'))
 
     window = MainWindow()
 
@@ -39,7 +47,7 @@ def main() -> int:
         return 0
 
     window.show()
-    return app.exec_()
+    return app.exec()
 
 
 if __name__ == "__main__":

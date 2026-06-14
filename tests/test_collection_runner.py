@@ -288,34 +288,90 @@ def test_render_html_ct_card():
     assert "<script" not in html.lower()
 
 
-def test_sync_findings_status_persists_and_decorates(tmp_path):
+def test_sync_findings_persists_and_stamps_status(tmp_path):
+    # The findings DB is isolated to a tmp file by the autouse conftest fixture.
     from core.project import ProjectStore
-    from core.findings_status import fingerprint
+    from core.findings_store import FindingsStore
+
     project = ProjectStore(tmp_path).get_or_create("https://x.com")
     report = {"phases": {"vulns": {"status": "Success", "findings": [
-        {"title": "Plain HTTP", "severity": "High"},
-        {"title": "Weak CSP", "severity": "Medium"}]}}}
+        {"title": "Site served over plain HTTP (not HTTPS)", "severity": "High"},
+        {"title": "Weak Content-Security-Policy", "severity": "Medium"}]}}}
     r = CollectionRunner()
-    r._sync_findings_status(report, project, "s1")
-    # Findings are decorated with status, state is persisted + summarized.
+    r._sync_findings(report, project, "s1")
+    # Findings stamped with stored status; report carries the delta summary.
     assert all("status" in f for f in report["phases"]["vulns"]["findings"])
-    assert report["findings_status"]["summary"]["total"] == 2
-    assert project.load_findings()[fingerprint(
-        {"title": "Plain HTTP", "severity": "High"})]["status"] == "open"
+    assert report["findings"]["summary"]["total"] == 2
+    assert report["findings"]["new"] == 2
+    assert FindingsStore().summary(project.slug)["active"] == 2
 
 
-def test_render_html_findings_management_card():
-    from core.findings_status import apply
+def test_render_findings_card():
     r = CollectionRunner()
-    state = apply({}, [{"title": "Plain HTTP", "severity": "High"}], scan_id="s1")
-    report = {
-        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
-        "project_dir": "", "phases": {},
-        "findings_status": {"summary": {"total": 1, "active": 1}, "state": state},
-    }
+    fdata = {"project": "x.com", "new": 1, "reopened": 0, "resolved": 2,
+             "recurring": 3, "summary": {"total": 6, "active": 4,
+             "by_status": {"OPEN": 4, "FIXED": 2}}}
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {}, "findings": fdata}
     html = r._render_html(report)
-    assert "Findings Management" in html and "Plain HTTP" in html
+    assert "Findings Management" in html and "авто-исправлено" in html
     assert "<script" not in html.lower()
+
+
+def test_render_assets_card():
+    r = CollectionRunner()
+    adata = {"project": "x.com", "new": 2, "gone": 1, "reappeared": 0,
+             "recurring": 3, "summary": {"total": 6, "active": 5,
+             "by_type": {"subdomain": 3, "ip": 2, "technology": 1}}}
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {}, "assets": adata}
+    html = r._render_html(report)
+    assert "Asset Inventory" in html and "исчезло" in html
+    assert "subdomain" in html and "5/6 активных" in html
+    assert "<script" not in html.lower()
+
+
+def test_render_trends_card_shows_sparklines_for_multi_scan():
+    r = CollectionRunner()
+    trends = [
+        {"scan_id": "s1", "risk_score": 4, "attack_surface": 10,
+         "secrets": 0, "high": 1},
+        {"scan_id": "s2", "risk_score": 12, "attack_surface": 18,
+         "secrets": 2, "high": 3},
+    ]
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {}, "trends": trends}
+    html = r._render_html(report)
+    assert "Trends" in html and "Risk score" in html
+    assert "История за <b>2</b>" in html
+    assert "<polyline" in html                      # an actual sparkline drawn
+    assert "<script" not in html.lower()
+
+
+def test_render_trends_card_hidden_for_single_scan():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "trends": [{"scan_id": "s1", "risk_score": 4}]}
+    html = r._render_html(report)
+    # A single point is not a trend → no card.
+    assert "Trends" not in html and "История за" not in html
+
+
+def test_build_summary_excludes_inactive_findings():
+    # The risk engine drops fixed/ignored/false-positive findings (status-aware).
+    from core.executive_summary import build_summary
+    findings = [
+        {"title": "Plain HTTP", "severity": "High", "status": "OPEN"},
+        {"title": "Weak CSP", "severity": "Medium", "status": "FIXED"},
+        {"title": "CMS info", "severity": "Info", "status": "IGNORED"},
+    ]
+    report = {"phases": {"vulns": {"status": "Success", "findings": findings,
+              "summary": {"high": 1, "medium": 1, "info": 1, "risk_score": 8}}}}
+    summary = build_summary(report)
+    assert summary["metrics"]["high"] == 1      # open High counts
+    assert summary["metrics"]["medium"] == 0    # FIXED dropped
+    assert summary["metrics"]["info"] == 0      # IGNORED dropped
 
 
 def test_phase_subdomains_feeds_takeover_into_risk_engine(monkeypatch):

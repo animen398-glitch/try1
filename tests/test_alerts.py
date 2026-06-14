@@ -158,3 +158,47 @@ def test_send_test(monkeypatch):
     out = alerts.send_test({'discord': {'webhook_url': 'https://d'}})
     assert out['sent'] == 1
     assert alerts.send_test({})['sent'] == 0
+
+
+# ── delivery journal (F4 — reuses OperationRegistry; ops DB isolated by conftest) ─
+
+def _alert_ops():
+    from utils.operation_registry import OperationRegistry
+    return OperationRegistry().history(phase='alert')
+
+
+def test_notify_records_delivery_to_journal(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+    cfg = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+    alerts.notify(cfg, 'x.com', _diff(
+        secrets={'added': ['aws: AKIA****'], 'removed': [], 'changed': []}))
+    ops = _alert_ops()
+    assert len(ops) == 1
+    op = ops[0]
+    assert op['target'] == 'x.com' and op['phase'] == 'alert'
+    assert op['status'] == 'success'
+    assert op['metadata']['kind'] == 'notify' and op['metadata']['sent'] == 1
+
+
+def test_send_test_records_delivery(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+    alerts.send_test({'discord': {'webhook_url': 'https://d'}})
+    ops = _alert_ops()
+    assert len(ops) == 1 and ops[0]['target'] == 'alert-test'
+    assert ops[0]['metadata']['kind'] == 'test'
+
+
+def test_noop_dispatch_is_not_journaled():
+    # disabled / no-channels never reach dispatch → nothing is journaled.
+    d = _diff(secrets={'added': ['k'], 'removed': [], 'changed': []})
+    alerts.notify({'enabled': False}, 'x.com', d)
+    alerts.notify({'enabled': True}, 'x.com', d)      # no channels configured
+    assert _alert_ops() == []
+
+
+def test_failed_channel_marks_journal_failed(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 500)
+    cfg = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+    alerts.notify(cfg, 'x.com', _diff(
+        secrets={'added': ['k'], 'removed': [], 'changed': []}))
+    assert _alert_ops()[0]['status'] == 'failed'

@@ -11,8 +11,8 @@ installed (the crawl runs in a child process; nothing here imports ``scrapy``),
 so the tab always appears and explains how to enable the feature.
 """
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
     QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )

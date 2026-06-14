@@ -7,8 +7,8 @@ _run_async) and dashboard state flags initialised in MainWindow.__init__.
 
 import json
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import (
     QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
 from core.config import load_settings
 from core.executive_summary import display_cards, load_latest_summary
 from core.paths import get_path_manager
+from gui import theme
 from gui.constants import REGISTRY_DB
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.data_viewer import DataViewer
@@ -362,8 +363,11 @@ class DashboardTabMixin:
                      if c['available']
                      else "Риск: — (нет отчётов Full Collection)")
         self.sec_risk_label.setText(risk_text)
+        # Theme-aware: brighter risk colour on the dark theme (the report keeps
+        # core RISK_COLORS via display_cards; here the label is on the tab bg).
+        risk_col = theme.risk_color(c['risk_level']) or c['risk_color']
         self.sec_risk_label.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {c['risk_color']};")
+            f"font-size: 16px; font-weight: bold; color: {risk_col};")
         self.sec_stats['risk_score'].setText(c['risk_score'])
         surface_text = c['attack_surface']
         if c['available'] and c.get('attack_surface_band') not in ('—', None):

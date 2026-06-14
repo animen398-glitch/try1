@@ -9,10 +9,12 @@ __pycache__/
 # PyInstaller build artefacts
 build/
 dist/
+dist_pyside6/
 *.manifest
 
 # Generated / runtime output
 live_test_output/
+temp/
 ~/
 
 # SQLite operation history (runtime DB; keep the data/ dir tracked)

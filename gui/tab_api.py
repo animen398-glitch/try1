@@ -4,7 +4,7 @@ Mixin folded into MainWindow; relies on shared helpers (_run_async,
 _set_busy, _save_target, self.settings).
 """
 
-from PyQt5.QtWidgets import QHBoxLayout, QLineEdit, QMessageBox, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QHBoxLayout, QLineEdit, QMessageBox, QVBoxLayout, QWidget
 
 from core.api_key_extractor import ApiKeyExtractor
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton

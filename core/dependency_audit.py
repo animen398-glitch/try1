@@ -32,6 +32,10 @@ _LIB_PATTERNS: Dict[str, List[str]] = {
     'jquery-ui': [r'jquery[-.]ui[-@./](\d+\.\d+(?:\.\d+)?)'],
     'handlebars': [r'handlebars[-@./](\d+\.\d+(?:\.\d+)?)'],
     'dompurify': [r'(?:dom)?purify[-@./](\d+\.\d+(?:\.\d+)?)'],
+    'axios': [r'axios[-@./](\d+\.\d+(?:\.\d+)?)'],
+    'underscore': [r'underscore[-@./](\d+\.\d+(?:\.\d+)?)'],
+    # Leading delimiter so 'bookmarked'/'remarked' don't false-positive.
+    'marked': [r'(?:^|[/@._-])marked[-@./](\d+\.\d+(?:\.\d+)?)'],
 }
 
 # library -> list of vulnerable ranges. ``below`` means "any version < below"
@@ -74,13 +78,28 @@ _VULN_DB: Dict[str, List[Dict]] = {
         {'below': '2.4.0', 'severity': 'High',
          'detail': 'DOMPurify < 2.4.0: mutation-XSS sanitiser bypass.'},
     ],
+    'axios': [
+        {'below': '1.6.0', 'severity': 'High',
+         'detail': 'axios < 1.6.0: SSRF / credential leak on cross-host redirect (CVE-2023-45857).'},
+        {'below': '0.21.2', 'severity': 'High',
+         'detail': 'axios < 0.21.2: SSRF & ReDoS in URL/proxy handling (CVE-2021-3749, 2020-28168).'},
+    ],
+    'underscore': [
+        {'below': '1.12.1', 'severity': 'High',
+         'detail': 'underscore < 1.12.1: arbitrary code execution via _.template (CVE-2021-23358).'},
+    ],
+    'marked': [
+        {'below': '4.0.10', 'severity': 'Medium',
+         'detail': 'marked < 4.0.10: ReDoS in block/inline tokenizer (CVE-2022-21680/21681).'},
+    ],
 }
 
 _DISPLAY_NAME = {
     'jquery': 'jQuery', 'jquery-ui': 'jQuery UI', 'angular': 'AngularJS',
     'react': 'React', 'vue': 'Vue.js', 'lodash': 'lodash',
     'bootstrap': 'Bootstrap', 'moment': 'moment', 'handlebars': 'handlebars',
-    'dompurify': 'DOMPurify',
+    'dompurify': 'DOMPurify', 'axios': 'axios', 'underscore': 'Underscore.js',
+    'marked': 'marked',
 }
 
 

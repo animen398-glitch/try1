@@ -13,8 +13,8 @@ The host window is expected to provide a few attributes the runner reads:
   • ``self._set_busy(bool)`` — busy-state toggle (used by _run_async's error path)
 """
 
-from PyQt5.QtCore import QThread
-from PyQt5.QtWidgets import QMessageBox
+from qtpy.QtCore import QThread
+from qtpy.QtWidgets import QMessageBox
 
 from gui.workers import _TaskHandle, _Worker
 
