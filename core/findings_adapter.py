@@ -27,8 +27,8 @@ Pure and stdlib-only (I1/I5).
 """
 
 import re
-from dataclasses import dataclass
-from typing import Dict, List
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 from core.finding_fingerprint import fingerprint, normalize_location
 
@@ -68,6 +68,8 @@ _SEVERITY = {
 _URL_RE = re.compile(r'https?://[^\s\'"|]+')
 _DIGIT_RE = re.compile(r'\d+')
 _SLUG_RE = re.compile(r'[^a-z0-9]+')
+# A CVE id anywhere in a finding's fields — the cross-scanner merge key (B).
+_CVE_RE = re.compile(r'CVE-\d{4}-\d{4,}', re.IGNORECASE)
 # Secret detail shape: key='<k>'  =>  '<preview>'  |  <url>
 _SECRET_RE = re.compile(r"key='(?P<key>[^']*)'\s*=>\s*'(?P<preview>[^']*)'")
 
@@ -119,6 +121,34 @@ def _discriminator(raw: Dict, category: str) -> str:
     return ''
 
 
+def extract_cve(raw: Dict) -> Optional[str]:
+    """The CVE id a raw finding refers to (upper-cased), or ``None``.
+
+    The cross-scanner merge key (B): an explicit ``cve`` field, the
+    ``discriminator`` (OSV sets it to the CVE), or a ``CVE-####-…`` literal in the
+    title/detail (nuclei carries it in the template id). GHSA-only advisories have
+    no CVE → they keep their own identity (not merged)."""
+    explicit = raw.get('cve')
+    if isinstance(explicit, (list, tuple)):
+        explicit = explicit[0] if explicit else ''
+    for value in (explicit, raw.get('discriminator', ''),
+                  raw.get('title', ''), raw.get('detail', '')):
+        m = _CVE_RE.search(str(value or ''))
+        if m:
+            return m.group(0).upper()
+    return None
+
+
+def _sources_of(raw: Dict) -> List[str]:
+    """Every scanner/source that reported a raw finding (a pre-merged ``sources``
+    list wins, else the single ``source``)."""
+    multi = raw.get('sources')
+    if isinstance(multi, (list, tuple)):
+        return [str(s).strip() for s in multi if str(s).strip()]
+    one = str(raw.get('source', '')).strip()
+    return [one] if one else []
+
+
 @dataclass
 class Finding:
     """The unified, identity-bearing finding. ``id`` is its fingerprint."""
@@ -130,6 +160,7 @@ class Finding:
     discriminator: str = ''
     source: str = ''
     detail: str = ''
+    sources: List[str] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -140,6 +171,9 @@ class Finding:
         """Shape expected by :meth:`FindingsStore.upsert` — masked evidence only."""
         evidence = {'location': self.location, 'source': self.source,
                     'detail': self.detail, 'discriminator': self.discriminator}
+        # Keep the cross-scanner reference list only when several tools agree.
+        if len(self.sources) > 1:
+            evidence['sources'] = self.sources
         return {
             'id': self.id, 'category': self.category, 'rule_id': self.rule_id,
             'title': self.title, 'severity': normalize_severity(self.severity),
@@ -148,7 +182,26 @@ class Finding:
 
 
 def from_raw(raw: Dict) -> Finding:
-    """Map one raw scanner finding dict to a :class:`Finding` (pure)."""
+    """Map one raw scanner finding dict to a :class:`Finding` (pure).
+
+    A finding carrying a CVE gets a *canonical, scanner-agnostic* identity
+    (category ``vuln``, rule_id = the CVE), so the same CVE reported by nuclei +
+    OSV + dependency-audit collapses to ONE finding (DefectDojo-style dedup).
+    Non-CVE findings (headers/cookies/secrets/dns…) keep their existing identity.
+    """
+    cve = extract_cve(raw)
+    if cve:
+        return Finding(
+            category='vuln',
+            rule_id=cve.lower(),
+            title=str(raw.get('title', '')),
+            severity=str(raw.get('severity', 'Info')),
+            location=normalize_location(_location(raw)),
+            discriminator='',
+            source=str(raw.get('source', '')),
+            detail=str(raw.get('detail', '')),
+            sources=_sources_of(raw),
+        )
     category = _category(raw)
     return Finding(
         category=category,
@@ -159,18 +212,49 @@ def from_raw(raw: Dict) -> Finding:
         discriminator=_discriminator(raw, category),
         source=str(raw.get('source', '')),
         detail=str(raw.get('detail', '')),
+        sources=_sources_of(raw),
     )
 
 
 def normalize(raw_findings: List[Dict]) -> List[Finding]:
     """Map a scan's raw findings to Findings, de-duplicated by fingerprint.
 
-    Two raw findings that resolve to the same identity (e.g. the same issue
-    reported twice) collapse to one — the store then upserts each id once."""
+    Two raw findings that resolve to the same identity (the same issue reported
+    twice, or the same CVE from different scanners) collapse to one — the first
+    wins for display, but every reporting source is accumulated onto it."""
     seen: Dict[str, Finding] = {}
+    srcs: Dict[str, List[str]] = {}
     for raw in raw_findings or []:
         if not isinstance(raw, dict):
             continue
         f = from_raw(raw)
+        bag = srcs.setdefault(f.id, [])
+        for s in _sources_of(raw):
+            if s and s not in bag:
+                bag.append(s)
         seen.setdefault(f.id, f)
+    for fid, f in seen.items():
+        if len(srcs[fid]) > 1:
+            f.sources = srcs[fid]
     return list(seen.values())
+
+
+def dedup_findings(raw_findings: List[Dict]) -> List[Dict]:
+    """Collapse raw findings that share a finding identity (e.g. the same CVE from
+    different scanners) into one *raw* dict, accumulating every ``source`` into a
+    ``sources`` list. First occurrence wins for display fields. Returns a new list
+    — used to dedup the risk-bearing findings before the risk score + the store
+    sync, so a CVE counts once and the store keeps one merged finding."""
+    out: Dict[str, Dict] = {}
+    for raw in raw_findings or []:
+        if not isinstance(raw, dict):
+            continue
+        fid = from_raw(raw).id
+        if fid not in out:
+            merged = dict(raw)
+            merged['sources'] = []
+            out[fid] = merged
+        for s in _sources_of(raw):
+            if s and s not in out[fid]['sources']:
+                out[fid]['sources'].append(s)
+    return list(out.values())

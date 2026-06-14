@@ -61,7 +61,8 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   source_map_parser.py  security_auditor.py  cookie_auditor.py
   anti_detect_engine.py  cloudflare_bypass.py  scrapy_crawler.py  _scrapy_spider.py
   # — ASM 2.0 платформа (F1–F5) —
-  finding_fingerprint.py  findings_store.py  findings_adapter.py  # F1: SQLite-стор находок + lifecycle
+  finding_fingerprint.py  findings_store.py  findings_adapter.py  # F1: SQLite-стор находок + lifecycle (adapter — кросс-сканерный dedup по CVE)
+  findings_sla.py       # SLA по severity (derive-on-read, DefectDojo-дефолты; breach/age)
   asset_adapter.py  asset_store.py        # Asset Inventory: derive + SQLite-стор активов (data/assets.db) + lifecycle
   timeline.py           # F2: derive-on-read серии+события (находки+активы; без второй таблицы)
   monitor.py  alerts.py                                          # F3 мониторинг (движок) + F4 Alert Center
@@ -254,7 +255,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 
 **Базовая зрелость:** платформа-анализатор + Full Collection + risk-движок +
 Scan Diff + проекты (`Projects/<домен>/`) + ASM 2.0 (F1–F6) + Asset Inventory.
-Тесты: 936 passed / 6 skipped (offline/headless).
+Тесты: 951 passed / 6 skipped (offline/headless).
 
 **Сделано до эпика (legacy #1–#13):** OSINT-бандл #13 (dns_intel, email_intel,
 employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **заменён**
@@ -460,6 +461,19 @@ employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **з
   чекбоксов Collection переведён на `FlowLayout` (`gui/ui_components.py`) —
   переносится на 2+ строк вместо клиппинга за краем экрана (14-й чекбокс OSV
   раньше уходил за правый край на 1536px).
+- **Dedup + SLA находок (стиль DefectDojo).** **SLA** (`core/findings_sla.py`,
+  pure, derive-on-read из `first_seen_at`+severity, без схемы): окна по severity
+  (DefectDojo-дефолты critical 7/high 30/medium 90/low 120; info — нет),
+  `sla_status`/`annotate`/`label`/`breached_count`; колонка «SLA» в GUI Findings
+  (+подсветка просрочки), счётчик в report-карточке, поля в web `/findings`;
+  кастомизация через `settings['findings_sla']`. **Кросс-сканерный dedup по CVE**:
+  `findings_adapter` стал CVE-осведомлённым (`extract_cve`; при наличии CVE
+  identity канонизируется в `category=vuln`/`rule_id=cve-…`), один CVE от
+  nuclei+OSV+dependency-audit схлопывается в одну находку, `sources` копятся в
+  evidence («N references»); `dedup_findings` + `collection_runner._dedup_vuln_findings`
+  дедупят risk-список перед F1-sync/summary (CVE считается раз). Не-CVE находки —
+  identity не тронута. Churn идентичности принят (без миграции, как OSV-вытеснение).
+  Покрыто `test_findings_sla.py`/`test_findings_dedup.py`.
 - **`core/report_export.py`** — CSV-экспорт `findings_csv`/`portfolio_csv`/
   `assets_csv` (stdlib); кнопки «Export CSV» в Findings/Assets/Overview
   (utf-8-sig). PDF — печатью самодостаточного `report.html` (тяжёлый PDF-движок
@@ -487,6 +501,6 @@ employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **з
 пост-эпик инкременты (вкл. Asset Inventory + F5 heatmap-разбивка + тренды в
 HTML-отчёте — **F5 полностью закрыт**) + CVE-корреляция через OSV.dev
 (`core/osv_correlation.py`, opt-in live API, вытесняет хардкод). Тесты:
-**936 passed / 6 skipped** (offline/headless). Дальше — по запросу: вариант B GUI
+**951 passed / 6 skipped** (offline/headless). Дальше — по запросу: вариант B GUI
 (PySide6/qfluent) строго инкрементально; либо новые векторы по согласованию
 (аудит+план+СТОП).

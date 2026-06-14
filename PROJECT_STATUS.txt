@@ -2568,3 +2568,37 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
   клиппинга нет. FlowLayout работает в собранном .exe.
 
 ==============================================================================
+
+  DEDUP + SLA НАХОДОК (стиль DefectDojo). ГОТОВ.
+
+  Решения (утв.): A+B, churn-вариант (a) — без миграции.
+
+  ФАЗА A — SLA (derive-on-read, без схемы): core/findings_sla.py (pure) —
+  DEFAULT_SLA по severity (critical 7 / high 30 / medium 90 / low 120 дн; info —
+  без SLA, дефолты DefectDojo); sla_status(finding, now) -> {applicable, age_days,
+  sla_days, due_at, breached, days_left} только для активных (inactive/info ->
+  applicable=False); annotate() обогащает строки стора полем sla; label() — единый
+  RU-форматтер; breached_count(). Проводка: колонка «SLA» в GUI Findings (+подсветка
+  просрочки, строка в детали), счётчик «Просрочено по SLA» в report-карточке
+  (report['findings']['sla_breached']), аннотация в web GET /findings. Окна можно
+  кастомизировать через settings['findings_sla'].
+
+  ФАЗА B — кросс-сканерный dedup по CVE: findings_adapter стал CVE-осведомлённым —
+  extract_cve() (явное cve | discriminator | regex CVE-####-… в title/detail; GHSA-
+  only НЕ мёржится), from_raw() при наличии CVE даёт каноническую identity
+  (category=vuln, rule_id=cve-XXXX-YYYY, discriminator='') -> один CVE от nuclei+OSV+
+  dependency-audit схлопывается в ОДНУ находку; normalize()/dedup_findings()
+  накапливают sources (=«N references», кладутся в evidence при >1). Risk-dedup:
+  collection_runner._dedup_vuln_findings(report) перед _sync_findings/summary —
+  схлопывает vulns.findings по идентичности + пересчёт summary (CVE считается один
+  раз). Не-CVE находки (заголовки/cookie/секреты/dns) — identity не тронута.
+
+  CHURN (принят, разовый): CVE-находки пере-ключуются -> на следующем скане старые
+  раздельные авто-FIXED, объединённая NEW (прецедент = OSV-вытеснение). Без миграции.
+
+  Тесты: test_findings_sla.py (8) + test_findings_dedup.py (7). Инварианты целы
+  (pure/stdlib I1/I5, стор и публичные сигнатуры не тронуты, derive-on-read I3).
+
+  ВЕРИФИКАЦИЯ: 951 passed/6 skipped (+15); ruff чист; self-check 19 вкладок.
+
+==============================================================================

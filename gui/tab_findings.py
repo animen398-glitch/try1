@@ -18,6 +18,7 @@ from qtpy.QtWidgets import (
     QLineEdit, QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from core.findings_sla import label as format_sla
 from core.findings_store import (
     FindingsStore, SEVERITY_ORDER, STATUS_LABELS, STATUSES,
 )
@@ -34,7 +35,7 @@ class FindingsTabMixin:
     """Builds and drives the Findings Management tab."""
 
     FINDINGS_COLUMNS = ["Severity", "Категория", "Заголовок", "Статус",
-                        "Перв. обнаружено", "Посл. обнаружено"]
+                        "Перв. обнаружено", "Посл. обнаружено", "SLA"]
 
     def _build_findings_tab(self) -> QWidget:
         w = QWidget()
@@ -210,9 +211,11 @@ class FindingsTabMixin:
     @staticmethod
     def _query_findings_table(project, status, severity) -> dict:
         try:
+            from core.findings_sla import annotate as annotate_sla
             store = FindingsStore()
             rows = store.list_findings(project=project, status=status,
                                        severity=severity)
+            annotate_sla(rows)   # add the derived 'sla' field per finding
             summary = store.summary(project)
             return {'rows': rows, 'summary': summary, 'project': project,
                     'status': status, 'severity': severity}
@@ -243,6 +246,7 @@ class FindingsTabMixin:
             self.findings_table.insertRow(r)
             severity = str(rec.get('severity', '')).lower()
             status = rec.get('status', '')
+            sla = rec.get('sla') or {}
             values = [
                 severity,
                 rec.get('category', ''),
@@ -250,6 +254,7 @@ class FindingsTabMixin:
                 STATUS_LABELS.get(status, status),
                 (rec.get('first_seen_at') or '')[:10],
                 (rec.get('last_seen_at') or '')[:10],
+                format_sla(sla),
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(str(val))
@@ -257,6 +262,9 @@ class FindingsTabMixin:
                     color = theme.severity_color(severity)
                     if color:
                         item.setForeground(QColor(color))
+                elif col == 6 and sla.get('breached'):
+                    # Overdue findings stand out in the SLA column.
+                    item.setForeground(QColor(theme.severity_color('critical')))
                 self.findings_table.setItem(r, col, item)
         self.findings_detail.clear()
         self.btn_findings_apply.setEnabled(False)
@@ -312,6 +320,7 @@ class FindingsTabMixin:
             f"Rule:       {rec.get('rule_id', '')}",
             f"ID:         {rec.get('id', '')}",
             f"Обнаружено: {rec.get('first_seen_at', '')} → {rec.get('last_seen_at', '')}",
+            f"SLA:        {format_sla(rec.get('sla') or {})}",
         ]
         evidence = rec.get('evidence')
         if isinstance(evidence, dict) and evidence:

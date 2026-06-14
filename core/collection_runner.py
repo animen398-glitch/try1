@@ -313,6 +313,13 @@ class CollectionRunner:
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
+        # Cross-scanner dedup (DefectDojo-style): collapse findings that share an
+        # identity (the same CVE from nuclei + OSV + dependency-audit) into one,
+        # accumulating their sources — so the risk score counts a CVE once and the
+        # store keeps a single merged finding. Done after every findings-producing
+        # phase, before the F1 sync + risk summary below.
+        self._dedup_vuln_findings(report)
+
         # Findings Management (F1): persist findings + run the lifecycle, and
         # stamp this scan's findings with their stored status — BEFORE the
         # summary, so inactive (fixed/ignored/false-positive) ones drop out of
@@ -835,6 +842,25 @@ class CollectionRunner:
             self._log(f'  OSV correlation failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _dedup_vuln_findings(self, report: Dict) -> None:
+        """Collapse the vuln phase's findings that share an identity (same CVE
+        across scanners) into one + recompute the phase summary. Best-effort: a
+        failure here must never sink the scan (same contract as the syncs)."""
+        try:
+            vulns = report.get('phases', {}).get('vulns')
+            if not (isinstance(vulns, dict) and vulns.get('findings')):
+                return
+            from core.findings_adapter import dedup_findings
+            before = len(vulns['findings'])
+            deduped = dedup_findings(vulns['findings'])
+            if len(deduped) != before:
+                vulns['findings'] = deduped
+                vulns['summary'] = VulnScanner.summarize(deduped)
+                self._log(f'  Dedup: {before} → {len(deduped)} находок '
+                          f'(объединено по идентичности/CVE)')
+        except Exception as e:  # noqa: BLE001 — dedup must not fail a scan
+            self._log(f'  Findings dedup failed: {e}')
+
     def _sync_findings(self, report: Dict, project, scan_id: str) -> None:
         """Persist this scan's findings + run the F1 lifecycle, then stamp each
         finding with its stored status so the risk engine excludes inactive ones.
@@ -879,11 +905,13 @@ class CollectionRunner:
                 if isinstance(raw, dict):
                     sid = scoped_id(project.slug, from_raw(raw).id)
                     raw['status'] = status_by_id.get(sid, 'OPEN')
+            from core.findings_sla import breached_count
             report['findings'] = {
                 'project': project.slug, 'summary': result['summary'],
                 'new': len(result['new']), 'reopened': len(result['reopened']),
                 'resolved': len(result['resolved']),
                 'recurring': len(result['recurring']),
+                'sla_breached': breached_count(store.active_findings(project.slug)),
             }
             s = result['summary']
             self._log(f"  Findings: {s['active']} активных / {s['total']} "
@@ -945,6 +973,10 @@ class CollectionRunner:
                  f'{e(str(fdata.get("resolved", 0)))} авто-исправлено '
                  f'(активных: <b>{e(str(summary.get("active", 0)))}</b> '
                  f'из {e(str(summary.get("total", 0)))})</p>')
+        breached = fdata.get('sla_breached', 0)
+        if breached:
+            delta += (f'<p style="font-size:13px;color:#c62828;">'
+                      f'⚠ Просрочено по SLA: <b>{e(str(breached))}</b></p>')
         rows = ''.join(
             f'<tr><td style="padding:1px 12px 1px 0;">{e(labels.get(st, st))}</td>'
             f'<td style="color:#666;">{e(str(by_status.get(st, 0)))}</td></tr>'
