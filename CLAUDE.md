@@ -569,9 +569,18 @@ score = Σ points — числа для старых сигналов байт-�
 в `render_html`. `build_summary` остался pure над report; раскладка report.json и
 `risk_100`/`RISK_ORDER` целы; новый ключ `summary['risk_factors']` аддитивен.
 
+**Correlation deepening (F-K5→F-K7) — `[ЗАКРЫТ]`.** Backend-фаза. Углублён
+`core/correlation.py`: **F-K5** apex-домен резолвит полную инфра-цепочку
+(`asset_adapter`: domain-актив получил `attrs.ip`/`asn`); **F-K6** netblock-
+вложенность в цепочке (`_netblock_for`: ip ∈ cidr через stdlib `ipaddress`,
+longest-prefix); **F-K7** инфра-exposure «blast radius» (`_build_infra_exposure`:
+свёртка находок вверх по ip/asn/netblock → `infra_exposure` в выводе, секция в
+отчётной карточке, web `/correlation` тащит автоматом). Pure, без новых
+зависимостей, identity/схемы целы.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
-IA-консолидация безопасный срез) + Risk Engine углублён. Отклонено (конфликт
+IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.
