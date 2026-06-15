@@ -441,6 +441,22 @@ def render_html(summary: Dict) -> str:
         lis = ''.join(f'<li style="margin:3px 0;">{e(str(i))}</li>' for i in items)
         return f'<ul style="font-size:13px;margin:6px 0;padding-left:20px;">{lis}</ul>'
 
+    # F-R3: explainable score breakdown — "why is the risk N" as a factor table.
+    factors = summary.get('risk_factors', [])
+    if factors:
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(str(f.get("factor", "")))}'
+            f'</td><td style="text-align:right;color:#c62828;font-weight:bold;">'
+            f'+{e(str(f.get("points", 0)))}</td>'
+            f'<td style="color:#888;padding-left:10px;">'
+            f'{e(str(f.get("detail", "")))}</td></tr>'
+            for f in factors)
+        factors_html = (
+            f'<h3 style="font-size:14px;margin:10px 0 2px;">Из чего риск</h3>'
+            f'<table style="font-size:12px;border-collapse:collapse;">{rows}</table>')
+    else:
+        factors_html = ''
+
     findings = bullets(summary.get('key_findings', []),
                        'Значимых находок не зафиксировано.')
     recs = bullets(summary.get('recommendations', []))
@@ -470,6 +486,7 @@ def render_html(summary: Dict) -> str:
 
     return (
         f'{banner}'
+        f'{factors_html}'
         f'<h3 style="font-size:14px;margin:10px 0 2px;">Находки</h3>{findings}{top_html}'
         f'<h3 style="font-size:14px;margin:12px 0 2px;">Рекомендации</h3>{recs}'
         f'{narrative_html}'

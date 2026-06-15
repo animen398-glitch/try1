@@ -264,3 +264,17 @@ def test_risk_factors_named_and_weighted():
 
 def test_risk_factors_empty_when_clean():
     assert es.build_summary(_report())['risk_factors'] == []
+
+
+# ── F-R3: risk-factor breakdown in the report ─────────────────────────────────
+
+def test_render_html_includes_risk_breakdown():
+    html = es.render_html(es.build_summary(_report(secrets=2, weak_cookies=1)))
+    assert 'Из чего риск' in html
+    assert 'Утёкшие секреты' in html
+    assert '+10' in html                     # 2 secrets × weight 5
+
+
+def test_render_html_no_breakdown_when_clean():
+    html = es.render_html(es.build_summary(_report()))
+    assert 'Из чего риск' not in html
