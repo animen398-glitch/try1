@@ -143,7 +143,10 @@ _SIGNATURES: List[Dict] = [
 
 
 def _norm_headers(headers: Optional[Dict]) -> Dict[str, str]:
-    return {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+    # Tolerate a non-dict ``headers`` (e.g. a list from a mangled response) and
+    # coerce keys/values to str so the matchers below never hit a TypeError.
+    items = headers.items() if isinstance(headers, dict) else ()
+    return {str(k).lower(): str(v) for k, v in items}
 
 
 def _extract_version(spec: Dict, headers: Dict[str, str]) -> Optional[str]:
@@ -225,11 +228,15 @@ def fingerprint(headers: Optional[Dict] = None, html: str = '',
     """
     hmap = _norm_headers(headers)
     set_cookie = hmap.get('set-cookie', '')
-    scripts_blob = '\n'.join(scripts or []).lower()
+    # Skip any non-string script entry (degrade, don't raise) and treat a
+    # non-string body as empty — the regexes below assume ``str`` input.
+    scripts_blob = '\n'.join(s for s in (scripts or [])
+                             if isinstance(s, str)).lower()
+    body = html if isinstance(html, str) else ''
 
     found: Dict[str, Dict] = {}
     for sig in _SIGNATURES:
-        evidence, version = _match(sig, hmap, set_cookie, html or '', scripts_blob)
+        evidence, version = _match(sig, hmap, set_cookie, body, scripts_blob)
         if evidence and sig['name'] not in found:
             found[sig['name']] = {
                 'name': sig['name'], 'category': sig['category'],

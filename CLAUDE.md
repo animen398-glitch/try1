@@ -629,10 +629,24 @@ cert-SAN/CT как первоклассные subdomain-активы — нуж�
 `asset_store.sync` (сейчас gate по типу, `any(phase ran)` → cert-only субдомен
 мигал бы GONE/REAPPEARED). Пока SANs живут как `domain.attrs.tls_sans`.
 
+**Scanner robustness (F-SR1) — `[ЗАКРЫТ]`.** Backend-фаза. Закалка pure-точек
+входа детект-движков на битый ввод (degrade-not-raise). Аудит показал, что
+сетевые парсеры (`osv_correlation`/`asn_intel`/`graphql_discovery`) уже хорошо
+защищены (guarded json+isinstance) — реальные дыры были в pure-функциях,
+принимающих corpus от вызывающего: `dependency_audit.detect_libraries` и
+`tech_fingerprint.fingerprint` падали на `'\n'.join(scripts)`, если в списке
+не-строка (None/dict/bytes) → теперь нестроки скипаются, не-str html → ''.
+`tech_fingerprint._norm_headers` терпит не-dict headers (list → {} вместо
+AttributeError). `dependency_audit.render_html` выбор worst-severity переведён
+с `tuple.index` (ValueError на чужой severity) на rank-dict с дефолтом. Покрыто
+`test_dependency_audit`/`test_tech_fingerprint` (нестроки/bytes/не-dict/чужой
+severity — деградация без падения).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён +
-Findings SLA углублён + Risk↔infra concentration + Asset coverage. Отклонено (конфликт
+Findings SLA углублён + Risk↔infra concentration + Asset coverage + Scanner
+robustness. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

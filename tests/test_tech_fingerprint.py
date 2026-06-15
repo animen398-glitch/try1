@@ -168,3 +168,24 @@ def test_render_html_empty_placeholder():
     out = tf.render_html([])
     assert 'не определены' in out
     assert '<span' not in out
+
+
+# ── robustness: malformed input degrades, never raises ───────────────────────
+
+def test_fingerprint_tolerates_non_string_scripts_and_body():
+    # Non-string script entries and a bytes body must not raise; a valid signal
+    # alongside the junk is still detected.
+    techs = tf.fingerprint(headers={'Server': 'cloudflare'},
+                           html=b'<bytes>',
+                           scripts=['https://connect.facebook.net/x.js', None, 7])
+    assert 'Cloudflare' in _names(techs)
+
+
+def test_fingerprint_tolerates_non_dict_headers():
+    # A non-dict headers value (e.g. a list) degrades to "no header signals".
+    assert tf.fingerprint(headers=['not', 'a', 'dict'], html='') == []
+
+
+def test_norm_headers_coerces_non_string_values():
+    norm = tf._norm_headers({'X-Count': 5, b'Server': b'nginx'})
+    assert norm['x-count'] == '5'

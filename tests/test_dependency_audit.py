@@ -143,3 +143,28 @@ def test_render_html_flags_vulnerable_and_clean():
 def test_render_html_empty_placeholder():
     assert 'не обнаружены' in da.render_html({'libraries': []})
     assert 'не обнаружены' in da.render_html(None)
+
+
+# ── robustness: malformed input degrades, never raises ───────────────────────
+
+def test_detect_libraries_skips_non_string_corpus():
+    # A heterogeneous scripts list (None / dict / bytes) must not raise.
+    scripts = ['https://cdn/jquery-1.8.3.min.js', None, {'x': 1}, 123]
+    libs = da.detect_libraries(scripts=scripts)
+    assert any(lib['library'] == 'jquery' and lib['version'] == '1.8.3'
+               for lib in libs)
+
+
+def test_audit_tolerates_non_string_html():
+    # Non-string html (e.g. bytes) is ignored rather than crashing str.join.
+    res = da.audit(scripts=['/lodash-4.17.20.js'], html=b'<bytes>')
+    assert any(f['severity'] == 'High' for f in res['findings'])  # lodash < 4.17.21
+
+
+def test_render_html_tolerates_unknown_severity():
+    # A hand-built result with an out-of-vocabulary severity must not raise.
+    result = {'libraries': [{'name': 'X', 'version': '1.0',
+                             'vulnerabilities': [{'severity': 'Critical',
+                                                  'detail': 'boom'}]}]}
+    out = da.render_html(result)
+    assert 'boom' in out and 'X 1.0' in out

@@ -127,8 +127,10 @@ def detect_libraries(scripts: Optional[List[str]] = None,
     De-duplicated by (library, version); the highest version wins when a library
     appears more than once with different versions (a page may load several).
     """
-    corpus = list(scripts or [])
-    if html:
+    # Robust to a heterogeneous corpus: skip any non-string element rather than
+    # letting ``str.join`` raise on a None/dict the caller slipped in.
+    corpus = [s for s in (scripts or []) if isinstance(s, str)]
+    if isinstance(html, str) and html:
         corpus.append(html)
     blob = '\n'.join(corpus)
 
@@ -183,6 +185,10 @@ def audit(scripts: Optional[List[str]] = None, html: str = '') -> Dict:
 
 
 _SEV_COLOR = {'High': '#c62828', 'Medium': '#f9a825', 'Info': '#2e7d32'}
+# Severity rank for "pick the worst" — keyed lookup with a safe default so an
+# out-of-vocabulary severity (e.g. a hand-built result) sorts last instead of
+# raising (the old ``tuple.index`` did).
+_SEV_RANK = {'High': 0, 'Medium': 1, 'Info': 2}
 
 
 def render_html(result: Optional[Dict]) -> str:
@@ -197,8 +203,7 @@ def render_html(result: Optional[Dict]) -> str:
     for lib in libraries:
         vulns = lib.get('vulnerabilities') or []
         if vulns:
-            worst = max(vulns, key=lambda v: ('High', 'Medium', 'Info').index(
-                v.get('severity', 'Info')) * -1)
+            worst = min(vulns, key=lambda v: _SEV_RANK.get(v.get('severity'), 99))
             color = _SEV_COLOR.get(worst.get('severity'), '#555')
             detail = (f'<br><span style="color:{color};font-size:11px;">'
                       f'{e(worst["detail"])}</span>')
