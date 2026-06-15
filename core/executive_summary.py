@@ -42,13 +42,15 @@ def _int(value) -> int:
         return 0
 
 
-def _risk_level(score: int, high: int, secrets: int, takeovers: int = 0) -> str:
+def _risk_level(score: int, high: int, secrets: int, takeovers: int = 0,
+                graphql_introspection: int = 0) -> str:
     """Map weighted signals to a verdict. Thresholds are intentionally simple
     and fixed so the verdict is reproducible and easy to reason about. Leaked
-    secrets and subdomain takeovers are both clear-cut Critical signals."""
+    secrets and subdomain takeovers are both clear-cut Critical signals; an open
+    GraphQL schema (introspection) is a clear-cut High signal."""
     if secrets > 0 or takeovers > 0 or high >= 3 or score >= 20:
         return 'Critical'
-    if high >= 1 or score >= 10:
+    if high >= 1 or graphql_introspection > 0 or score >= 10:
         return 'High'
     if score >= 4:
         return 'Medium'
@@ -245,9 +247,10 @@ def build_summary(report: Dict) -> Dict:
     # contributions (leaked secrets / source-maps weigh heaviest after a takeover —
     # the single worst hop). Numbers are unchanged from the old flat formula.
     risk_factors = _risk_factors(vuln_score, high, medium, secrets, takeovers,
-                                 source_map_leaks, weak_cookies)
+                                 source_map_leaks, weak_cookies,
+                                 graphql_introspection)
     score = sum(f['points'] for f in risk_factors)
-    level = _risk_level(score, high, secrets, takeovers)
+    level = _risk_level(score, high, secrets, takeovers, graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
     risk_100 = min(_SCORE_100_CEILING, score * _SCORE_TO_100)
 

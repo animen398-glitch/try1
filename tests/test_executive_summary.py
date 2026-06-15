@@ -119,8 +119,21 @@ def test_graphql_exposure_surfaced_in_metrics():
     s = es.build_summary(report)
     assert s['metrics']['graphql'] == 2
     assert s['metrics']['graphql_introspection'] == 1
-    # Surfacing for display only — GraphQL findings already feed risk via vulns.
-    assert s['risk_score'] == 0
+    # F-R2: an open GraphQL schema now feeds the risk (1 × weight 4) and is a
+    # clear-cut High signal — it no longer scores 0.
+    assert s['risk_score'] == 4
+    assert s['risk_level'] == 'High'
+    by_name = {f['factor']: f for f in s['risk_factors']}
+    assert by_name['GraphQL introspection']['points'] == 4
+
+
+def test_reachable_graphql_without_introspection_scores_zero():
+    # A merely reachable GraphQL API (no introspection) is not a risk signal here.
+    report = _report()
+    report['phases']['security'] = {
+        'data': {'summary': {'graphql': 3, 'graphql_introspection': 0}}}
+    s = es.build_summary(report)
+    assert s['risk_score'] == 0 and s['risk_level'] == 'Clean'
 
 
 def test_render_html_shows_0_100_headline():
