@@ -222,3 +222,32 @@ def test_render_html_includes_headline_strip():
 def test_render_html_clean_chip_when_no_signal():
     html = es.render_html(es.build_summary(_report()))
     assert 'Критичной экспозиции не выявлено' in html
+
+
+# ── F-R1: explainable risk score (equivalence + breakdown) ────────────────────
+
+def test_risk_factors_sum_to_score():
+    s = es.build_summary(_report(high=2, medium=1, risk_score=12, secrets=1,
+                                 weak_cookies=2))
+    assert sum(f['points'] for f in s['risk_factors']) == s['risk_score']
+
+
+def test_risk_score_unchanged_by_refactor():
+    # Old flat formula: vuln_score + secrets*5 + weak_cookies*2 (+others=0).
+    s = es.build_summary(_report(high=1, medium=0, risk_score=10, secrets=1,
+                                 weak_cookies=2))
+    assert s['risk_score'] == 10 + 1 * 5 + 2 * 2     # == 19, as before
+
+
+def test_risk_factors_named_and_weighted():
+    s = es.build_summary(_report(secrets=2, weak_cookies=1))
+    by_name = {f['factor']: f for f in s['risk_factors']}
+    assert by_name['Утёкшие секреты']['points'] == 2 * 5
+    assert by_name['Утёкшие секреты']['weight'] == 5
+    assert by_name['Слабые cookie']['points'] == 1 * 2
+    # Heaviest factor first.
+    assert s['risk_factors'][0]['points'] >= s['risk_factors'][-1]['points']
+
+
+def test_risk_factors_empty_when_clean():
+    assert es.build_summary(_report())['risk_factors'] == []

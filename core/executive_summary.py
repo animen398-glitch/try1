@@ -63,6 +63,53 @@ def _risk_level(score: int, high: int, secrets: int, takeovers: int = 0) -> str:
 _SCORE_TO_100 = 4
 _SCORE_100_CEILING = 100
 
+# Per-signal weights for the explainable risk score (F-R): each contributing
+# signal's points are ``count × weight``, summed into the raw score. Kept as one
+# table so the model is transparent and easy to tune. Vulnerabilities are weighed
+# by the VulnScanner's own risk_score (already weighted), so they have no entry
+# here. Secrets/source-maps weigh heaviest after a takeover (the single worst hop).
+RISK_WEIGHTS = {
+    'secrets': 5,
+    'takeovers': 8,
+    'source_map_leaks': 5,
+    'weak_cookies': 2,
+    'graphql_introspection': 4,   # open GraphQL schema leak (F-R2)
+}
+
+
+def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
+                  takeovers: int, source_map_leaks: int, weak_cookies: int,
+                  graphql_introspection: int = 0) -> List[Dict]:
+    """The explicit, weighted contributions that make up the raw risk score.
+
+    Returns a list of ``{factor, count, weight, points, detail}`` — one per
+    *present* signal — so the score is fully explainable ("why is the risk N").
+    The sum of ``points`` is the raw score; existing signals keep their exact
+    previous weighting, so the number is unchanged from the old flat formula.
+    Sorted by points, heaviest first, for display.
+    """
+    factors: List[Dict] = []
+    if vuln_score:
+        factors.append({
+            'factor': 'Уязвимости (vuln-скан)', 'count': high + medium,
+            'weight': None, 'points': vuln_score,
+            'detail': f'{high} high · {medium} medium'})
+
+    def add(name: str, count: int, key: str, detail: str = '') -> None:
+        if count:
+            weight = RISK_WEIGHTS[key]
+            factors.append({'factor': name, 'count': count, 'weight': weight,
+                            'points': count * weight, 'detail': detail})
+
+    add('Утёкшие секреты', secrets, 'secrets')
+    add('Subdomain takeover', takeovers, 'takeovers')
+    add('Source map с исходниками', source_map_leaks, 'source_map_leaks')
+    add('Слабые cookie', weak_cookies, 'weak_cookies')
+    add('GraphQL introspection', graphql_introspection, 'graphql_introspection',
+        'открытая схема GraphQL')
+    factors.sort(key=lambda f: f['points'], reverse=True)
+    return factors
+
 
 def _count_takeovers(report: Dict) -> int:
     """Subdomain-takeover candidates, if a subdomain phase is present."""
@@ -194,11 +241,12 @@ def build_summary(report: Dict) -> Dict:
     surface = build_surface(report)
     surface_pts = surface_score(surface)
 
-    # Leaked secrets and weak cookies are first-class signals on top of the
-    # vuln-weighted score (secrets weigh heaviest — client-side key exposure;
-    # source-map leaks weigh like secrets; a takeover is the single worst hop).
-    score = (vuln_score + secrets * 5 + weak_cookies * 2
-             + source_map_leaks * 5 + takeovers * 8)
+    # Explainable risk model: the raw score is the sum of named, weighted signal
+    # contributions (leaked secrets / source-maps weigh heaviest after a takeover —
+    # the single worst hop). Numbers are unchanged from the old flat formula.
+    risk_factors = _risk_factors(vuln_score, high, medium, secrets, takeovers,
+                                 source_map_leaks, weak_cookies)
+    score = sum(f['points'] for f in risk_factors)
     level = _risk_level(score, high, secrets, takeovers)
     # Bounded 0–100 headline (the platform's single risk number).
     risk_100 = min(_SCORE_100_CEILING, score * _SCORE_TO_100)
@@ -272,6 +320,7 @@ def build_summary(report: Dict) -> Dict:
         'risk_score': score,        # raw weighted score (weighting / sorting)
         'risk_100': risk_100,       # bounded 0–100 headline
         'metrics': metrics,
+        'risk_factors': risk_factors,   # explainable score breakdown (F-R)
         'key_findings': key_findings,
         'top_findings': top_findings,
         'recommendations': recommendations,
