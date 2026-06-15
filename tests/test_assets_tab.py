@@ -87,6 +87,19 @@ def test_populate_table_rows_and_status_label(qapp):
     assert w.assets_table.item(0, 3).text() == '2026-01-01'
 
 
+def test_rollup_cards_reflect_by_type(qapp):
+    w = _window(qapp)
+    w._on_assets_table_loaded({
+        'rows': [],
+        'summary': {'total': 3, 'active': 3,
+                    'by_type': {'subdomain': 2, 'ip': 1}},
+        'project': 'p1',
+    })
+    assert w.assets_rollup['subdomain'].text() == '2'
+    assert w.assets_rollup['ip'].text() == '1'
+    assert w.assets_rollup['domain'].text() == '0'      # absent type → 0
+
+
 # ── selection wiring (threads stubbed) ─────────────────────────────────────────
 
 def test_selection_shows_detail(qapp):

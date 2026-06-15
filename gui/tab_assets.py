@@ -19,7 +19,9 @@ from qtpy.QtWidgets import (
 
 from core.asset_adapter import ASSET_TYPES
 from core.asset_store import STATUS_LABELS, STATUSES, AssetStore
-from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import (
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+)
 
 
 class AssetsTabMixin:
@@ -27,6 +29,19 @@ class AssetsTabMixin:
 
     ASSETS_COLUMNS = ["Тип", "Значение", "Статус",
                       "Перв. обнаружено", "Посл. обнаружено"]
+
+    # (asset type -> rollup-card caption). The ASM "inventory at a glance" row;
+    # one card per asset type, fed from AssetStore.summary()['by_type'] for the
+    # current project filter. Order/keys mirror core.asset_adapter.ASSET_TYPES.
+    ASSETS_ROLLUP = [
+        ('domain',     'Домены'),
+        ('subdomain',  'Субдомены'),
+        ('ip',         'IP'),
+        ('asn',        'ASN'),
+        ('netblock',   'Netblock'),
+        ('endpoint',   'Эндпоинты'),
+        ('technology', 'Технологии'),
+    ]
 
     def _build_assets_tab(self) -> QWidget:
         w = QWidget()
@@ -69,6 +84,17 @@ class AssetsTabMixin:
         btn_refresh.clicked.connect(self._refresh_assets)
         ctrl.addWidget(btn_refresh)
         layout.addLayout(ctrl)
+
+        # ── rollup cards (inventory at a glance) ────────────────────────────
+        # Reuses the Dashboard stat-card helper; values come from the same
+        # summary() the table load already fetches (no extra I/O).
+        rollup_row = FlowLayout()
+        self.assets_rollup: dict = {}
+        for key, title in self.ASSETS_ROLLUP:
+            card, value_label = self._make_stat_card(title)
+            self.assets_rollup[key] = value_label
+            rollup_row.addWidget(card)
+        layout.addLayout(rollup_row)
 
         # ── assets table ────────────────────────────────────────────────────
         self.assets_table = QTableWidget(0, len(self.ASSETS_COLUMNS))
@@ -202,7 +228,14 @@ class AssetsTabMixin:
         self.assets_status.setText(
             f"Активных: {summary.get('active', 0)} / {summary.get('total', 0)}"
             f"  ·  показано: {len(result.get('rows', []))}")
+        self._populate_assets_rollup(summary)
         self._populate_assets_table(result.get('rows', []))
+
+    def _populate_assets_rollup(self, summary: dict):
+        """Fill the inventory rollup cards from summary()['by_type']."""
+        by_type = summary.get('by_type') or {}
+        for key, label in self.assets_rollup.items():
+            label.setText(str(by_type.get(key, 0)))
 
     def _populate_assets_table(self, rows: list):
         self._assets_records = rows
