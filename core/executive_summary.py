@@ -88,6 +88,62 @@ def _graphql_exposure(report: Dict) -> Tuple[int, int]:
     return _int(summary.get('graphql')), _int(summary.get('graphql_introspection'))
 
 
+# Severity → chip colour for the executive headline (light report background).
+HEADLINE_COLORS = {
+    'critical': '#b71c1c', 'high': '#c62828', 'medium': '#f9a825',
+    'low': '#2e7d32', 'info': '#666', 'clean': '#2e7d32',
+}
+
+
+def headline(summary: Dict) -> Dict:
+    """The "10-second" executive headline: risk verdict + the most important
+    signals as prioritized chips (Cortex-Xpanse-style "show only what matters").
+
+    Pure derive over an executive ``summary``'s ``metrics`` — the chips are the
+    same numbers the report/dashboard already carry, surfaced compactly and in
+    severity priority (secrets/takeovers first, medium noise last), capped so a
+    triager grasps the situation at a glance. Returns
+    ``{risk_level, risk_100, chips:[{label, severity}]}``.
+    """
+    m = summary.get('metrics', {}) if isinstance(summary, dict) else {}
+    chips: List[Dict] = []
+
+    def add(label: str, severity: str) -> None:
+        chips.append({'label': label, 'severity': severity})
+
+    def _plural(n: int, word: str) -> str:
+        return f'{n} {word}' + ('s' if n != 1 else '')
+
+    secrets = _int(m.get('secrets'))
+    if secrets:
+        add(_plural(secrets, 'Secret'), 'critical')
+    takeovers = _int(m.get('takeovers'))
+    if takeovers:
+        add(_plural(takeovers, 'Takeover'), 'critical')
+    source_maps = _int(m.get('source_map_leaks'))
+    if source_maps:
+        add(_plural(source_maps, 'Source map'), 'critical')
+    if _int(m.get('graphql_introspection')):
+        add('GraphQL introspection', 'high')
+    high = _int(m.get('high'))
+    if high:
+        add(f'{high} High', 'high')
+    weak_cookies = _int(m.get('weak_cookies'))
+    if weak_cookies:
+        add(_plural(weak_cookies, 'Weak cookie'), 'medium')
+    if _int(m.get('graphql')) and not _int(m.get('graphql_introspection')):
+        add('GraphQL exposed', 'medium')
+    medium = _int(m.get('medium'))
+    if medium:
+        add(f'{medium} Medium', 'medium')
+
+    return {
+        'risk_level': summary.get('risk_level', 'Clean'),
+        'risk_100': summary.get('risk_100', m.get('risk_100', 0)),
+        'chips': chips[:6],   # cap: a headline shows only what matters most
+    }
+
+
 def build_summary(report: Dict) -> Dict:
     """Derive a structured executive summary from a collection ``report``.
 
@@ -303,6 +359,28 @@ def render_html(summary: Dict) -> str:
         f'<span style="font-size:13px;opacity:.8;"> (raw {e(str(score))})</span>'
         f'</div>'
     )
+
+    # "10-second" headline chip strip — the most important signals, compact and
+    # prioritized (Cortex-Xpanse-style). Rendered above the banner; empty → a
+    # single clean chip so the report still reads at a glance.
+    hl = headline(summary)
+    if hl['chips']:
+        chip_html = ''.join(
+            f'<span style="display:inline-block;background:'
+            f'{HEADLINE_COLORS.get(c["severity"], "#666")};color:#fff;'
+            f'border-radius:12px;padding:3px 10px;margin:2px 6px 2px 0;'
+            f'font-size:12px;font-weight:bold;">{e(str(c["label"]))}</span>'
+            for c in hl['chips'])
+    else:
+        chip_html = (
+            f'<span style="display:inline-block;background:'
+            f'{HEADLINE_COLORS["clean"]};color:#fff;border-radius:12px;'
+            f'padding:3px 10px;font-size:12px;font-weight:bold;">'
+            f'Критичной экспозиции не выявлено</span>')
+    strip = (f'<div style="margin:8px 0 0;">'
+             f'<span style="font-size:12px;color:#888;margin-right:8px;">'
+             f'Главное:</span>{chip_html}</div>')
+    banner = strip + banner
 
     def bullets(items, empty_note=''):
         if not items:

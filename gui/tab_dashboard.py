@@ -18,7 +18,9 @@ from core.executive_summary import display_cards, load_latest_summary
 from core.paths import get_path_manager
 from gui import theme
 from gui.constants import REGISTRY_DB
-from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import (
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+)
 from utils.data_viewer import DataViewer
 from utils.endpoint_index import EndpointIndex
 from utils.site_extractor import SiteExtractor
@@ -122,6 +124,11 @@ class DashboardTabMixin:
         self.sec_risk_label.setStyleSheet(
             "font-size: 16px; font-weight: bold; color: #888;")
         sec_v.addWidget(self.sec_risk_label)
+        # "10-second" headline chip strip — the most important signals, compact
+        # and prioritized (core.executive_summary.headline). Wraps on narrow.
+        self.sec_headline = QWidget()
+        self._sec_headline_layout = FlowLayout(self.sec_headline, spacing=6)
+        sec_v.addWidget(self.sec_headline)
         sec_cards = QHBoxLayout()
         self.sec_stats: dict = {}
         for key, title in self.SECURITY_STATS:
@@ -377,6 +384,28 @@ class DashboardTabMixin:
         self.sec_stats['high'].setText(c['high'])
         self.sec_stats['medium'].setText(c['medium'])
         self.sec_source.setText(f"Источник: {c['source']}" if c['source'] else "")
+        self._set_security_headline(sec if c['available'] else None)
+
+    def _set_security_headline(self, sec):
+        """Rebuild the headline chip strip from a summary (cleared when None)."""
+        lay = self._sec_headline_layout
+        while lay.count():
+            item = lay.takeAt(0)
+            w = item.widget() if item else None
+            if w is not None:
+                w.deleteLater()
+        if not sec:
+            return
+        from core.executive_summary import headline
+        chips = headline(sec)['chips'] or [
+            {'label': 'Критичной экспозиции не выявлено', 'severity': 'clean'}]
+        for c in chips:
+            color = theme.severity_color(c['severity']) or '#2e7d32'
+            chip = QLabel(str(c['label']))
+            chip.setStyleSheet(
+                f"background:{color};color:#fff;border-radius:10px;"
+                f"padding:2px 9px;font-size:11px;font-weight:bold;")
+            lay.addWidget(chip)
 
     def _clear_security(self):
         self._populate_security(None)

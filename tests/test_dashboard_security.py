@@ -94,3 +94,19 @@ def test_display_cards_empty_state():
     assert (c['risk_score'], c['secrets'], c['high'], c['medium']) == \
            ('0', '0', '0', '0')
     assert c['source'] == ''
+
+
+# ── F-P3: "10-second" headline chip strip (Qt headless) ───────────────────────
+
+def test_dashboard_headline_chips(qapp):
+    from gui.main_window import MainWindow
+    w = MainWindow()
+    w._populate_security({'risk_level': 'Critical', 'risk_100': 80,
+                          'metrics': {'secrets': 2, 'high': 1, 'medium': 0}})
+    assert w._sec_headline_layout.count() == 2     # "2 Secrets" + "1 High"
+    # A clean summary shows a single reassuring chip.
+    w._populate_security({'risk_level': 'Clean', 'risk_100': 0, 'metrics': {}})
+    assert w._sec_headline_layout.count() == 1
+    # No report → strip cleared.
+    w._populate_security(None)
+    assert w._sec_headline_layout.count() == 0

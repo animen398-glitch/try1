@@ -189,3 +189,36 @@ def test_render_html_escapes_finding_text():
     out = es.render_html(s)
     assert '<img src=x>' not in out
     assert '&lt;img' in out
+
+
+# ── headline ("10-second" chip strip) ─────────────────────────────────────────
+
+def test_headline_prioritizes_secrets_and_caps():
+    s = es.build_summary(_report(secrets=2, high=4, weak_cookies=1, medium=3))
+    hl = es.headline(s)
+    assert hl['chips'][0] == {'label': '2 Secrets', 'severity': 'critical'}
+    # severity priority: secrets(crit) before high before cookies/medium
+    sevs = [c['severity'] for c in hl['chips']]
+    assert sevs == sorted(sevs, key=lambda x: ('critical', 'high', 'medium',
+                                               'low', 'info').index(x))
+    assert len(hl['chips']) <= 6
+    assert hl['risk_level'] == s['risk_level']
+
+
+def test_headline_singular_plural():
+    one = es.headline(es.build_summary(_report(secrets=1)))
+    assert one['chips'][0]['label'] == '1 Secret'      # no trailing 's'
+
+
+def test_headline_empty_when_clean():
+    assert es.headline(es.build_summary(_report()))['chips'] == []
+
+
+def test_render_html_includes_headline_strip():
+    html = es.render_html(es.build_summary(_report(secrets=1)))
+    assert 'Главное:' in html and '1 Secret' in html
+
+
+def test_render_html_clean_chip_when_no_signal():
+    html = es.render_html(es.build_summary(_report()))
+    assert 'Критичной экспозиции не выявлено' in html
