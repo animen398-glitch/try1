@@ -12,8 +12,60 @@ def _stub(_id, title="T"):
 def test_default_manager_has_all_builtins():
     mgr = default_manager()
     assert len(mgr) == len(BUILTIN_TABS)
-    assert mgr.ids()[0] == "recon"
+    # IA grouping (F-IA): Dashboard leads, System is the last (bottom) utility.
+    assert mgr.ids()[0] == "dashboard"
     assert mgr.ids()[-1] == "system"
+    # Every built-in keeps a stable id (no tab dropped by the regrouping).
+    assert set(mgr.ids()) == {t[0] for t in BUILTIN_TABS}
+
+
+def test_builtin_tabs_carry_section_and_position():
+    mgr = default_manager()
+    by_id = {p.id: p for p in mgr}
+    assert by_id['dashboard'].section == 'Обзор'
+    assert by_id['system'].position == 'bottom'      # utility tabs anchored down
+    assert by_id['recon'].position == 'top'
+
+
+def _grouped_manager():
+    """A manager with stub factories (no MainWindow needed) but real sections."""
+    mgr = PluginManager()
+    mgr.register(TabPlugin('a', 'A', lambda w: None, section='S1', position='top'))
+    mgr.register(TabPlugin('b', 'B', lambda w: None, section='S1', position='top'))
+    mgr.register(TabPlugin('c', 'C', lambda w: None, section='S2', position='top'))
+    mgr.register(TabPlugin('z', 'Z', lambda w: None, section='Sys', position='bottom'))
+    return mgr
+
+
+def test_build_into_passes_grouping_hints():
+    class _Facade:
+        def __init__(self):
+            self.calls = []
+
+        def addTab(self, widget, title, position='top', new_section=False):
+            self.calls.append((title, position, new_section))
+
+    facade = _Facade()
+    _grouped_manager().build_into(None, facade)
+    by_title = {c[0]: c for c in facade.calls}
+    assert by_title['A'][2] is False        # first tab never starts a separator
+    assert by_title['B'][2] is False        # same section as A → no separator
+    assert by_title['C'][2] is True         # S1 → S2 → separator
+    assert by_title['Z'][1] == 'bottom'     # bottom-anchored utility tab
+
+
+def test_build_into_falls_back_for_plain_addtab():
+    # A tab widget whose addTab takes only (widget, title) still works.
+    class _Plain:
+        def __init__(self):
+            self.titles = []
+
+        def addTab(self, widget, title):
+            self.titles.append(title)
+
+    plain = _Plain()
+    _grouped_manager().build_into(None, plain)
+    assert plain.titles == ['A', 'B', 'C', 'Z']
 
 
 def test_register_and_unregister():

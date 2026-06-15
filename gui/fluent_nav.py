@@ -22,7 +22,7 @@ P3b), so qfluentwidgets is a hard dependency here.
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
 from qtpy.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from gui._fluent import FluentIcon, FluentWindow
+from gui._fluent import FluentIcon, FluentWindow, NavigationItemPosition
 
 FluentWindowBase = FluentWindow
 
@@ -71,11 +71,25 @@ class FluentWindowTabs(QObject):
         self._titles: list = []
         self._stack.currentChanged.connect(self.currentChanged)
 
-    def addTab(self, widget: QWidget, title: str) -> int:
+    def addTab(self, widget: QWidget, title: str, position: str = 'top',
+               new_section: bool = False) -> int:
+        """Add a tab to the nav + content stack (plugin contract).
+
+        ``position='bottom'`` anchors a utility tab to the bottom of the nav rail;
+        ``new_section`` draws a separator above a top tab that starts a new IA
+        cluster. Both are best-effort over the live Fluent nav — a failure to draw
+        a separator never blocks the tab from being added."""
         index = self._stack.count()
         # FluentWindow keys interfaces by objectName — must be unique & set.
         widget.setObjectName(f"tab{index}")
-        self._win.addSubInterface(widget, _icon_for(title), title)
+        pos = (NavigationItemPosition.BOTTOM if position == 'bottom'
+               else NavigationItemPosition.TOP)
+        if new_section and pos == NavigationItemPosition.TOP:
+            try:
+                self._win.navigationInterface.addSeparator(pos)
+            except Exception:   # noqa: BLE001 — a separator is cosmetic
+                pass
+        self._win.addSubInterface(widget, _icon_for(title), title, position=pos)
         self._titles.append(title)
         return index
 

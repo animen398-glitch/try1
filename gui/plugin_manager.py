@@ -30,10 +30,17 @@ class TabPlugin:
 
     factory(main_window) -> QWidget. Kept as a callable (not a prebuilt widget)
     so tabs are constructed lazily, in registration order, against the window.
+
+    ``section``/``position`` are optional IA-grouping hints (back-compatible —
+    external plugins keep constructing ``TabPlugin(id, title, factory)``): the
+    Fluent nav inserts a separator when the ``section`` changes, and
+    ``position='bottom'`` anchors utility tabs to the bottom of the rail.
     """
     id: str
     title: str
     factory: Callable[[object], QWidget]
+    section: str = ''
+    position: str = 'top'
 
 
 class PluginManager:
@@ -60,9 +67,24 @@ class PluginManager:
         return len(self._plugins)
 
     def build_into(self, window, tab_widget) -> None:
-        """Construct every registered tab into ``tab_widget``, in order."""
+        """Construct every registered tab into ``tab_widget``, in order.
+
+        Passes the IA-grouping hints (``section`` transition → ``new_section``,
+        ``position``) to a facade that accepts them; falls back to the plain
+        two-arg ``addTab`` for a generic tab widget (the plugin contract)."""
+        last_section = None
         for plugin in self._plugins:
-            tab_widget.addTab(plugin.factory(window), plugin.title)
+            section = getattr(plugin, 'section', '') or ''
+            position = getattr(plugin, 'position', 'top') or 'top'
+            new_section = bool(section) and last_section is not None \
+                and section != last_section
+            widget = plugin.factory(window)
+            try:
+                tab_widget.addTab(widget, plugin.title, position=position,
+                                  new_section=new_section)
+            except TypeError:
+                tab_widget.addTab(widget, plugin.title)
+            last_section = section or last_section
 
     def discover(self, directory: Union[str, Path],
                  on_error: Optional[Callable[[str, Exception], None]] = None
@@ -128,33 +150,38 @@ def _mixin_factory(build_method: str) -> Callable[[object], QWidget]:
     return lambda window: getattr(window, build_method)()
 
 
-# Built-in tabs: (id, display title, MainWindow build-method). Order here is the
-# order tabs appear in the window — the single source of truth for the tab bar.
+# Built-in tabs: (id, display title, MainWindow build-method, section, position).
+# Order here is the order tabs appear in the window — the single source of truth
+# for the tab bar. ``section`` clusters the Fluent nav (a separator is drawn when
+# it changes); ``position='bottom'`` anchors utility tabs to the bottom. Grouped
+# IA (overview → discovery → security → management → reports → tools → system)
+# without merging or removing any tab (the plugin contract is unchanged).
 BUILTIN_TABS = [
-    ("recon",      "Recon & Intel",             "_build_recon_tab"),
-    ("subdomain",  "Subdomain Scanner",         "_build_subdomain_tab"),
-    ("api",        "API Key Scanner",           "_build_api_tab"),
-    ("capture",    "Site Capture",              "_build_capture_tab"),
-    ("clone",      "Clone Frontend",            "_build_clone_tab"),
-    ("video",      "Video Downloader",          "_build_video_tab"),
-    ("image",      "Image Extractor",           "_build_image_tab"),
-    ("design",     "Design Lab",                "_build_design_tab"),
-    ("cookie",     "Cookie Security Audit",     "_build_cookie_tab"),
-    ("security",   "Security Audit",            "_build_security_tab"),
-    ("collection", "Final Report & Collection", "_build_collection_tab"),
-    ("findings",   "Findings",                  "_build_findings_tab"),
-    ("assets",     "Assets",                    "_build_assets_tab"),
-    ("timeline",   "Timeline",                  "_build_timeline_tab"),
-    ("overview",   "Overview",                  "_build_overview_tab"),
-    ("dashboard",  "Dashboard",                 "_build_dashboard_tab"),
-    ("history",    "История операций",          "_build_history_tab"),
-    ("system",     "System",                    "_build_system_tab"),
+    ("dashboard",  "Dashboard",                 "_build_dashboard_tab", "Обзор", "top"),
+    ("overview",   "Overview",                  "_build_overview_tab",  "Обзор", "top"),
+    ("recon",      "Recon & Intel",             "_build_recon_tab",     "Разведка", "top"),
+    ("subdomain",  "Subdomain Scanner",         "_build_subdomain_tab", "Разведка", "top"),
+    ("api",        "API Key Scanner",           "_build_api_tab",       "Разведка", "top"),
+    ("capture",    "Site Capture",              "_build_capture_tab",   "Разведка", "top"),
+    ("security",   "Security Audit",            "_build_security_tab",  "Безопасность", "top"),
+    ("cookie",     "Cookie Security Audit",     "_build_cookie_tab",    "Безопасность", "top"),
+    ("findings",   "Findings",                  "_build_findings_tab",  "Управление", "top"),
+    ("assets",     "Assets",                    "_build_assets_tab",    "Управление", "top"),
+    ("timeline",   "Timeline",                  "_build_timeline_tab",  "Управление", "top"),
+    ("collection", "Final Report & Collection", "_build_collection_tab", "Отчёты", "top"),
+    ("clone",      "Clone Frontend",            "_build_clone_tab",     "Инструменты", "top"),
+    ("video",      "Video Downloader",          "_build_video_tab",     "Инструменты", "top"),
+    ("image",      "Image Extractor",           "_build_image_tab",     "Инструменты", "top"),
+    ("design",     "Design Lab",                "_build_design_tab",    "Инструменты", "top"),
+    ("history",    "История операций",          "_build_history_tab",   "Система", "bottom"),
+    ("system",     "System",                    "_build_system_tab",    "Система", "bottom"),
 ]
 
 
 def default_manager() -> PluginManager:
     """A PluginManager pre-loaded with the built-in tabs in display order."""
     manager = PluginManager()
-    for tab_id, title, build_method in BUILTIN_TABS:
-        manager.register(TabPlugin(tab_id, title, _mixin_factory(build_method)))
+    for tab_id, title, build_method, section, position in BUILTIN_TABS:
+        manager.register(TabPlugin(tab_id, title, _mixin_factory(build_method),
+                                   section=section, position=position))
     return manager

@@ -15,6 +15,7 @@ and, after _build_central runs, this mixin sets ``self.tabs``, ``self.plugins``,
 
 import shutil
 
+from qtpy.QtCore import QTimer
 from qtpy.QtWidgets import QLabel, QMessageBox, QProgressBar
 
 from gui._fluent import FluentIcon, NavigationItemPosition
@@ -64,8 +65,13 @@ class WindowChromeMixin:
         # Mount the status bar (built first) beneath the nav+content row.
         install_status_bar(self, self.status_bar)
 
-        # Lazily load history the first time its tab is opened.
+        # Lazily load a tab's data the first time it is opened.
         self.tabs.currentChanged.connect(self._on_tab_changed)
+        # The first tab is now a lazy one (Dashboard) and currentChanged does not
+        # fire for the initial selection — trigger its load once the event loop is
+        # running. Deferred via singleShot so headless tests (which never exec the
+        # loop) don't spawn the load; the real app loads the first tab on startup.
+        QTimer.singleShot(0, lambda: self._on_tab_changed(self.tabs.currentIndex()))
 
     def _build_statusbar(self):
         self.status_bar = StatusBar()
