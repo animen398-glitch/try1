@@ -559,9 +559,19 @@ report.html). Чистый derive, без новых зависимостей.
 headless-тестах не стреляет). **Вне scope (ломает контракт, отложено):** слияние
 вкладок в под-табы, вынос Video/Image/Clone из главного UI.
 
-**Следующий шаг:** весь отфильтрованный бэклог из внешнего бенчмарка закрыт
-(Company tier, Correlation, Finding Objects, Executive Headline, IA-консолидация —
-безопасный срез). Отклонено (конфликт инвариантов): ECharts/Cytoscape
-(QWebEngine), SQLAlchemy/Postgres, APScheduler/Apprise/WeasyPrint. Дальше — по
-запросу. Детали — память `project-benchmark-direction`. **Рекомендуется** живой
-запуск `.exe` для визуальной проверки сгруппированного nav (как делали в F6 P3b).
+**Risk Engine deepening (F-R1→F-R3) — `[ЗАКРЫТ]`.** Фаза «внутренности до идеала,
+GUI не трогаем» (память `feedback-internals-first-no-gui`). `executive_summary`
+переведён на **объяснимый взвешенный скоринг**: `RISK_WEIGHTS`-таблица +
+`_risk_factors()` (именованные вклады `{factor,count,weight,points,detail}`,
+score = Σ points — числа для старых сигналов байт-в-байт прежние). Закрыта дыра:
+**GraphQL introspection** теперь весит в score (×4) и форсит ≥High в `_risk_level`
+(reachable-only GraphQL по-прежнему 0). Объяснимость в отчёте: блок «Из чего риск»
+в `render_html`. `build_summary` остался pure над report; раскладка report.json и
+`risk_100`/`RISK_ORDER` целы; новый ключ `summary['risk_factors']` аддитивен.
+
+**Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
+бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
+IA-консолидация безопасный срез) + Risk Engine углублён. Отклонено (конфликт
+инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
+APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
+**Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.
