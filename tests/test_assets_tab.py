@@ -115,3 +115,34 @@ def test_selection_shows_detail(qapp):
     assert '1.2.3.4' in text
     assert 'AS13335' in text          # attrs rendered
     assert 'Исчез' in text            # GONE label
+
+
+# ── F-K3: correlated findings in the detail panel ─────────────────────────────
+
+def test_query_assets_table_includes_asset_findings(qapp):
+    from core.asset_adapter import Asset, asset_fingerprint
+    from core.asset_store import AssetStore
+    from core.finding_fingerprint import scoped_id
+    from core.findings_store import FindingsStore
+    AssetStore().sync('pk', 's1', [Asset('endpoint', 'api.acme.com/graphql')])
+    FindingsStore().upsert('pk', {
+        'id': 'f-x', 'category': 'graphql', 'rule_id': 'i',
+        'title': 'GraphQL introspection', 'severity': 'high',
+        'evidence': {'location': 'api.acme.com/graphql'}})
+    out = AssetsTabMixin._query_assets_table('pk', None, None)
+    ep_id = scoped_id('pk', asset_fingerprint('endpoint', 'api.acme.com/graphql'))
+    assert out['asset_findings'][ep_id]['worst'] == 'high'
+
+
+def test_asset_detail_shows_correlated_findings(qapp):
+    w = _window(qapp)
+    w._assets_asset_findings = {'a1': {
+        'findings': [{'severity': 'high', 'title': 'GraphQL introspection'}],
+        'severity_counts': {'critical': 0, 'high': 1, 'medium': 0, 'low': 0,
+                            'info': 0}, 'worst': 'high'}}
+    w._show_asset_detail({'id': 'a1', 'type': 'endpoint',
+                          'value': 'api.acme.com/graphql',
+                          'label': 'api.acme.com/graphql', 'status': 'ACTIVE'})
+    text = w.assets_detail.toPlainText()
+    assert 'Связанные находки: 1' in text
+    assert 'GraphQL introspection' in text

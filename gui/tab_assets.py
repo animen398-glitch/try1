@@ -123,6 +123,9 @@ class AssetsTabMixin:
 
         # Full rows backing the table, so a selection can show untruncated data.
         self._assets_records: list = []
+        # F-K3: asset_id → its correlated findings (severity counts + worst),
+        # filled per single-project load so the detail panel shows exposure.
+        self._assets_asset_findings: dict = {}
         self._assets_widget = w
         return w
 
@@ -210,7 +213,22 @@ class AssetsTabMixin:
             store = AssetStore()
             rows = store.list_assets(project=project, type=atype, status=status)
             summary = store.summary(project)
-            return {'rows': rows, 'summary': summary, 'project': project}
+            # F-K3: correlate the project's active findings with its assets so the
+            # detail panel can show each asset's findings. Uses the *unfiltered*
+            # project assets for chain resolution; skipped for "all projects".
+            asset_findings: dict = {}
+            if project:
+                try:
+                    from core.correlation import build_correlation
+                    from core.findings_store import FindingsStore
+                    all_assets = store.list_assets(project=project)
+                    findings = FindingsStore().active_findings(project)
+                    asset_findings = build_correlation(
+                        findings, all_assets).get('asset_findings', {})
+                except Exception:   # noqa: BLE001 — correlation is best-effort
+                    asset_findings = {}
+            return {'rows': rows, 'summary': summary, 'project': project,
+                    'asset_findings': asset_findings}
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}
 
@@ -228,6 +246,7 @@ class AssetsTabMixin:
         self.assets_status.setText(
             f"Активных: {summary.get('active', 0)} / {summary.get('total', 0)}"
             f"  ·  показано: {len(result.get('rows', []))}")
+        self._assets_asset_findings = result.get('asset_findings', {})
         self._populate_assets_rollup(summary)
         self._populate_assets_table(result.get('rows', []))
 
@@ -306,6 +325,16 @@ class AssetsTabMixin:
             for k, v in attrs.items():
                 if v not in (None, ''):
                     lines.append(f"  {k}: {v}")
+        # F-K3: findings correlated to this asset (exposure).
+        af = (self._assets_asset_findings or {}).get(rec.get('id'))
+        if af and af.get('findings'):
+            counts = af.get('severity_counts', {})
+            breakdown = ", ".join(f"{k}:{v}" for k, v in counts.items() if v)
+            lines.append(f"Связанные находки: {len(af['findings'])} "
+                         f"(worst: {af.get('worst', '—')})"
+                         + (f" · {breakdown}" if breakdown else ""))
+            for f in af['findings'][:8]:
+                lines.append(f"  [{f.get('severity', '')}] {f.get('title', '')}")
         if events:
             lines.append("История:")
             for ev in events:

@@ -126,6 +126,9 @@ class FindingsTabMixin:
 
         # Full rows backing the table, so a selection can show untruncated data.
         self._findings_records: list = []
+        # F-K3: finding_id → resolved asset/infra chain (correlation), filled per
+        # single-project load so the detail panel can show where a finding lives.
+        self._findings_chains: dict = {}
         self._findings_widget = w
         return w
 
@@ -217,8 +220,21 @@ class FindingsTabMixin:
                                        severity=severity)
             annotate_sla(rows)   # add the derived 'sla' field per finding
             summary = store.summary(project)
+            # F-K3: resolve each finding's asset/infra chain for a single project
+            # (cross-store correlation). Skipped for "all projects" (None).
+            finding_chains: dict = {}
+            if project:
+                try:
+                    from core.asset_store import AssetStore
+                    from core.correlation import build_correlation
+                    assets = AssetStore().list_assets(project=project)
+                    finding_chains = build_correlation(
+                        rows, assets).get('finding_chains', {})
+                except Exception:   # noqa: BLE001 — correlation is best-effort
+                    finding_chains = {}
             return {'rows': rows, 'summary': summary, 'project': project,
-                    'status': status, 'severity': severity}
+                    'status': status, 'severity': severity,
+                    'finding_chains': finding_chains}
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}
 
@@ -233,6 +249,7 @@ class FindingsTabMixin:
             self.findings_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         summary = result.get('summary', {})
+        self._findings_chains = result.get('finding_chains', {})
         self.findings_status.setText(
             f"Активных: {summary.get('active', 0)} / {summary.get('total', 0)}"
             f"  ·  показано: {len(result.get('rows', []))}")
@@ -327,6 +344,16 @@ class FindingsTabMixin:
             lines.append("Улики:")
             for k, v in evidence.items():
                 lines.append(f"  {k}: {v}")
+        # F-K3: where this finding lives — endpoint → host → ip → asn.
+        chain = (self._findings_chains or {}).get(rec.get('id'))
+        if chain:
+            asn = chain.get('asn')
+            if asn and chain.get('asn_name'):
+                asn = f"{asn} ({chain['asn_name']})"
+            trail = ' → '.join(str(x) for x in (
+                chain.get('endpoint'), chain.get('host'), chain.get('ip'), asn) if x)
+            if trail:
+                lines.append(f"Цепочка:    {trail}")
         if events:
             lines.append("История:")
             for ev in events:

@@ -122,3 +122,39 @@ def test_write_status_persists(qapp):
     row = s.get(fid)
     assert row['status'] == 'FALSE_POSITIVE' and row['status_source'] == 'user'
     assert s.events(fid)[-1]['note'] == 'not exploitable'
+
+
+# ── F-K3: asset/infra chain in the detail panel ───────────────────────────────
+
+def test_query_findings_table_includes_chain(qapp):
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    s = FindingsStore()
+    s.upsert('pk', {'id': 'f-x', 'category': 'graphql', 'rule_id': 'introspection',
+                    'title': 'GraphQL introspection', 'severity': 'high',
+                    'evidence': {'location': 'api.acme.com/graphql'}})
+    AssetStore().sync('pk', 's1', [
+        Asset('subdomain', 'api.acme.com', attrs={'ip': '1.2.3.4'}),
+        Asset('endpoint', 'api.acme.com/graphql')])
+    out = FindingsTabMixin._query_findings_table('pk', None, None)
+    sid = scoped_id('pk', 'f-x')
+    chain = out['finding_chains'][sid]
+    assert chain['endpoint'] == 'api.acme.com/graphql'
+    assert chain['host'] == 'api.acme.com' and chain['ip'] == '1.2.3.4'
+
+
+def test_query_findings_table_no_chain_for_all_projects(qapp):
+    out = FindingsTabMixin._query_findings_table(None, None, None)
+    assert out['finding_chains'] == {}          # correlation skipped for "all"
+
+
+def test_finding_detail_renders_chain(qapp):
+    w = _window(qapp)
+    w._findings_chains = {'f-x': {'endpoint': 'api.acme.com/graphql',
+                                  'host': 'api.acme.com', 'ip': '1.2.3.4',
+                                  'asn': 'AS13335', 'asn_name': 'CF'}}
+    w._show_finding_detail({'id': 'f-x', 'title': 't', 'category': 'graphql',
+                            'severity': 'high', 'status': 'OPEN', 'evidence': {}})
+    text = w.findings_detail.toPlainText()
+    assert 'Цепочка' in text
+    assert 'api.acme.com/graphql' in text and 'AS13335 (CF)' in text
