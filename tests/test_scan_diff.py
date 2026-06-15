@@ -8,7 +8,8 @@ from core.scan_diff import diff, render_html, summarize_line
 
 def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
             deps=None, headers=None, sec_headers=None, endpoints=None,
-            findings=None, level='Low', risk_100=4, subdomains=None, cert=None):
+            findings=None, level='Low', risk_100=4, subdomains=None, cert=None,
+            graphql=None):
     """A minimal but shape-faithful collection report."""
     phases = {
         'capture': {'status': 'Success',
@@ -33,6 +34,8 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
                                 'data': {'results': subdomains}}
     if cert is not None:
         phases['certificate'] = {'status': 'Success', 'data': cert}
+    if graphql is not None:
+        phases['security'] = {'status': 'Success', 'data': {'graphql': graphql}}
     return {
         'scan_id': scan_id, 'finished_at': f'2026-06-13T0{1 if scan_id == "A" else 2}:00:00',
         'phases': phases,
@@ -139,6 +142,28 @@ def test_certificate_added_field():
     assert sec['added'] == ['sans: x.com, www.x.com']
 
 
+def test_graphql_endpoint_added_and_introspection_opens():
+    a = _report('A', graphql=[{'url': 'https://x.com/graphql', 'graphql': True,
+                               'introspection': False}])
+    b = _report('B', graphql=[
+        {'url': 'https://x.com/graphql', 'graphql': True, 'introspection': True},
+        {'url': 'https://x.com/v2/graphql', 'graphql': True, 'introspection': False},
+    ])
+    sec = diff(a, b)['sections']['graphql']
+    # the new endpoint is an addition; the existing one flipped open → changed
+    assert sec['added'] == ['https://x.com/v2/graphql: reachable']
+    changed = {c['key']: (c['a'], c['b']) for c in sec['changed']}
+    assert changed['https://x.com/graphql'] == ('reachable', 'introspection on')
+
+
+def test_graphql_skipped_when_security_phase_absent_in_one():
+    a = _report('A', graphql=[{'url': 'https://x.com/graphql',
+                               'introspection': False}])
+    b = _report('B')                            # no security phase in B
+    d = diff(a, b)
+    assert 'graphql' in d['skipped'] and 'graphql' not in d['sections']
+
+
 def test_certificate_skipped_when_phase_absent_in_one():
     a = _report('A', cert={'subject': 'x.com'})
     b = _report('B')                            # no certificate phase in B
@@ -217,7 +242,7 @@ def test_tolerates_empty_reports():
                                  'technologies', 'dependencies', 'headers',
                                  'certificates', 'endpoints', 'apis',
                                  'historical', 'dns', 'emails', 'employees',
-                                 'ct', 'findings'}
+                                 'ct', 'graphql', 'findings'}
     assert d['is_empty'] is True
 
 

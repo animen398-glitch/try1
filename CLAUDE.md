@@ -646,6 +646,23 @@ active-проба выигрывает identity (first-occurrence, богаче 
 `test_asset_adapter` (cert/CT promotion, apex/wildcard/out-of-scope drop, probe
 wins) + `test_asset_store` (per-source no-flap + fallback).
 
+**GraphQL in Scan Diff / Timeline (F2 хвост) — `[ЗАКРЫТ]`.** Backend-фаза. Закрыт
+отложенный с F2 GRAPHQL: GraphQL-экспозиция теперь диффится между сканами и течёт
+в Timeline + Alert Center. Раньше SecurityAuditor считал `graphql`/`graphql_
+introspection` только для risk-score, но `scan_diff` не имел секции `security` →
+открывшаяся схема не порождала событий. Добавлена секция `graphql` (фаза-источник
+`security`): `_extract_graphql` (per-endpoint `url → 'introspection on'|'reachable'`,
+field-compare как headers/dns → переход reachable→open виден как *changed*, не
+молчаливый re-discovery). События в общем `diff_events`: `new_graphql` (medium,
+timeline-only — surface discovery как `new_endpoint`) и `graphql_introspection`
+(high — добавленный уже-открытый эндпоинт ИЛИ переход reachable→open; матчит
+risk-движок, форсящий ≥High на открытой интроспекции). `graphql_introspection`
+добавлен в `alerts.ALERT_TYPES` (алертится — схема открылась = регрессия), `new_
+graphql` остаётся timeline-only. Метки в `gui/tab_timeline._EVENT_LABELS` (label-
+константа, прецедент F-S3). Pure, без новых зависимостей, контракт diff/alerts/
+timeline цел. Покрыто `test_scan_diff` (added+introspection-flip, skip без фазы) +
+`test_diff_events` (классификация + alertable-подмножество).
+
 **Scanner robustness (F-SR1) — `[ЗАКРЫТ]`.** Backend-фаза. Закалка pure-точек
 входа детект-движков на битый ввод (degrade-not-raise). Аудит показал, что
 сетевые парсеры (`osv_correlation`/`asn_intel`/`graphql_discovery`) уже хорошо

@@ -38,6 +38,7 @@ SECTION_PHASES = {
     'emails':       'emails',
     'employees':    'employees',
     'ct':           'ct',
+    'graphql':      'security',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -55,6 +56,7 @@ SECTION_TITLES = {
     'emails':       'E-mail адреса',
     'employees':    'Сотрудники',
     'ct':           'CT-сертификаты',
+    'graphql':      'GraphQL',
     'findings':     'Findings',
 }
 
@@ -248,6 +250,22 @@ def _extract_ct(report: Dict) -> Optional[Dict]:
     return out
 
 
+def _extract_graphql(report: Dict) -> Optional[Dict]:
+    # The Security Audit probes conventional GraphQL endpoints and flags open
+    # introspection. Diff per-endpoint with its introspection state as the value,
+    # so a schema that turns from closed to OPEN (the highest-value GraphQL
+    # signal) surfaces as a *changed* row, not just a silent re-discovery.
+    eps = _data(report, 'security').get('graphql')
+    if not isinstance(eps, list):
+        return None
+    out: Dict[str, str] = {}
+    for g in eps:
+        if isinstance(g, dict) and g.get('url'):
+            out[str(g['url'])] = ('introspection on' if g.get('introspection')
+                                  else 'reachable')
+    return out
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -273,6 +291,7 @@ _EXTRACTORS = {
     'emails':       _extract_emails,
     'employees':    _extract_employees,
     'ct':           _extract_ct,
+    'graphql':      _extract_graphql,
     'findings':     _extract_findings,
 }
 
@@ -296,7 +315,7 @@ def _label(section: str, key, value) -> str:
         ver = value.get('version')
         flag = ' ⚠ vulnerable' if value.get('vulnerable') else ''
         return f'{key}' + (f' {ver}' if ver else '') + flag
-    if section in ('headers', 'certificates', 'dns'):
+    if section in ('headers', 'certificates', 'dns', 'graphql'):
         return f'{key}: {value}'
     return str(key)
 
@@ -415,6 +434,8 @@ EVENT_SEVERITY = {
     'tech_version_change': 'info',
     'cert_change':         'medium',
     'new_endpoint':        'info',
+    'new_graphql':         'medium',
+    'graphql_introspection': 'high',
     'risk_increase':       'high',
     'risk_decrease':       'info',
 }
@@ -459,6 +480,19 @@ def diff_events(d: Dict) -> List[Dict]:
     for section in ('endpoints', 'apis'):
         for label in sections.get(section, {}).get('added', []):
             add('new_endpoint', label, section)
+
+    # GraphQL: a newly reachable endpoint is attack surface; one whose schema is
+    # now open to introspection is the high-value signal (matches the risk engine,
+    # which forces ≥High on open introspection). Fire on both an added endpoint
+    # that already exposes introspection and a reachable→open transition.
+    for label in sections.get('graphql', {}).get('added', []):
+        text = str(label)
+        add('graphql_introspection' if 'introspection on' in text
+            else 'new_graphql', text, 'graphql')
+    for ch in sections.get('graphql', {}).get('changed', []):
+        if isinstance(ch, dict) and 'introspection on' in str(ch.get('b', '')):
+            add('graphql_introspection',
+                f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'graphql')
 
     risk = (d or {}).get('risk', {})
     if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):

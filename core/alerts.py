@@ -40,8 +40,11 @@ from core.scan_diff import diff_events
 
 # The change types Alert Center understands. ``new_subdomain`` and ``takeover``
 # both come from the diff's subdomain section (takeover is the dangerous subset).
+# ``graphql_introspection`` (a schema that turned open between scans) is a
+# high-severity signal worth a push; ``new_graphql`` stays timeline-only like
+# ``new_endpoint`` (surface discovery, not a regression).
 ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
-               'cert_change', 'risk_increase')
+               'cert_change', 'risk_increase', 'graphql_introspection')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────

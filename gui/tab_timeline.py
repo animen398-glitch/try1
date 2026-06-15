@@ -31,6 +31,8 @@ _EVENT_LABELS = {
     'tech_version_change': 'Смена версии',
     'cert_change':         'Смена сертификата',
     'new_endpoint':        'Новый эндпоинт',
+    'new_graphql':         'Новый GraphQL',
+    'graphql_introspection': 'GraphQL introspection',
     'risk_increase':       'Риск ↑',
     'risk_decrease':       'Риск ↓',
     'new_finding':         'Новая находка',

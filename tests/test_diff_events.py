@@ -53,6 +53,38 @@ def test_classifies_each_section():
     assert by_type['risk_increase'][0]['severity'] == 'high'
 
 
+def test_graphql_new_endpoint_and_introspection_open():
+    d = _diff(
+        graphql={
+            'added': ['https://x.com/graphql: reachable',
+                      'https://x.com/api/graphql: introspection on'],
+            'removed': [],
+            # an endpoint whose schema flipped open between scans
+            'changed': [{'key': 'https://x.com/v2/graphql',
+                         'a': 'reachable', 'b': 'introspection on'}],
+        })
+    by_type = {}
+    for e in diff_events(d):
+        by_type.setdefault(e['type'], []).append(e)
+    # a plain reachable endpoint is surface discovery (medium, timeline-only)
+    assert by_type['new_graphql'][0]['severity'] == 'medium'
+    # an added-already-open endpoint AND a reachable→open transition both fire high
+    intro = by_type['graphql_introspection']
+    assert len(intro) == 2
+    assert all(e['severity'] == 'high' for e in intro)
+    assert any('→ introspection on' in e['title'] for e in intro)
+
+
+def test_graphql_introspection_is_alertable_but_new_graphql_is_not():
+    d = _diff(graphql={
+        'added': ['https://x.com/graphql: reachable',
+                  'https://x.com/g: introspection on'],
+        'removed': [], 'changed': []})
+    alert_types = {a['type'] for a in alerts.extract_alerts(d)}
+    assert 'graphql_introspection' in alert_types     # high signal → alertable
+    assert 'new_graphql' not in alert_types           # surface discovery only
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})
