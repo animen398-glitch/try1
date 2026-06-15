@@ -8,7 +8,8 @@ so nothing touches the real working tree.
 import pytest
 
 from core.company import (
-    UNASSIGNED, UNASSIGNED_LABEL, CompanyRegistry, company_slug, group_projects,
+    UNASSIGNED, UNASSIGNED_LABEL, CompanyRegistry, build_company_rollup,
+    company_slug, group_projects, load_company_view,
 )
 from core.project import ProjectStore
 
@@ -150,3 +151,73 @@ def test_store_companies_end_to_end(tmp_path):
     assert by_slug["acme_corp"]["name"] == "Acme Corp"
     assert by_slug["acme_corp"]["project_count"] == 1
     assert UNASSIGNED in by_slug
+
+
+# ── build_company_rollup (F-C2 aggregation) ─────────────────────────────────
+
+def _meta(slug, company=None, risk_level=None, risk_score=None, **latest):
+    """Minimal project metadata dict (one scan) for rollup tests."""
+    scan = {'risk_level': risk_level, 'risk_score': risk_score, **latest}
+    m = {'slug': slug, 'updated_at': latest.get('updated_at', '2026-06-01'),
+         'scan_count': 1, 'latest_scan': scan, 'scans': [scan]}
+    if company:
+        m['company'] = company
+    return m
+
+
+def test_rollup_aggregates_worst_risk_and_sums():
+    reg = CompanyRegistry()
+    reg.create("Acme Corp")
+    metas = [
+        _meta('acme.com', 'acme_corp', 'Medium', 40, secrets=1, high=2),
+        _meta('api.acme.io', 'acme_corp', 'Critical', 90, secrets=3, high=1),
+    ]
+    assets = {'acme.com': {'subdomain': 5, 'ip': 2},
+              'api.acme.io': {'subdomain': 3}}
+    out = build_company_rollup(metas, {'acme.com': 4}, assets, reg)
+    row = out['rows'][0]
+    assert row['slug'] == 'acme_corp' and row['name'] == 'Acme Corp'
+    assert row['project_count'] == 2
+    assert row['risk_level'] == 'Critical'            # worst level
+    assert row['risk_score'] == 90                    # worst (max) score
+    assert row['secrets'] == 4 and row['high'] == 3   # summed
+    assert row['active_findings'] == 4
+    assert row['assets'] == {'subdomain': 8, 'ip': 2}  # per-type summed
+    assert row['asset_total'] == 10
+    assert out['totals']['companies'] == 1
+    assert out['totals']['worst_risk_level'] == 'Critical'
+    assert out['totals']['assets'] == 10
+
+
+def test_rollup_unassigned_last_and_risk_delta():
+    metas = [
+        _meta('a.com', 'acme', 'High', 70),
+        # two scans → portfolio computes a risk delta we then sum at company level
+        {'slug': 'b.com', 'updated_at': '2026-06-02', 'scan_count': 2,
+         'latest_scan': {'risk_level': 'Low', 'risk_score': 30},
+         'scans': [{'risk_score': 10}, {'risk_level': 'Low', 'risk_score': 30}]},
+    ]
+    out = build_company_rollup(metas)
+    slugs = [r['slug'] for r in out['rows']]
+    assert slugs[-1] == UNASSIGNED                     # b.com has no company
+    unassigned = next(r for r in out['rows'] if r['slug'] == UNASSIGNED)
+    assert unassigned['risk_delta'] == 20.0            # 30 - 10 summed
+
+
+def test_rollup_empty():
+    out = build_company_rollup([])
+    assert out['rows'] == []
+    assert out['totals']['companies'] == 0
+
+
+def test_load_company_view_end_to_end(tmp_path):
+    store = ProjectStore(tmp_path)
+    store.get_or_create("https://acme.com").set_company("acme_corp")
+    store.get_or_create("https://other.com")
+    CompanyRegistry().create("Acme Corp")
+    view = load_company_view(str(tmp_path))
+    by_slug = {r['slug']: r for r in view['rows']}
+    assert by_slug['acme_corp']['name'] == 'Acme Corp'
+    assert by_slug['acme_corp']['project_count'] == 1
+    assert view['totals']['companies'] == 2            # acme_corp + Unassigned
+    assert view['totals']['projects'] == 2

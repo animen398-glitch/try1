@@ -208,6 +208,25 @@ def build_exposure_matrix(rows: List[Dict]) -> Dict:
     return {'row_labels': row_labels, 'col_labels': col_labels, 'cells': cells}
 
 
+def active_findings_map() -> Dict[str, int]:
+    """Map project slug → active-findings count from the F1 store (guarded).
+
+    Shared by the portfolio and the company roll-up loaders so both read the
+    same source. Best-effort: any store failure yields an empty map so the
+    dashboards still render without findings."""
+    active: Dict[str, int] = {}
+    try:
+        from core.findings_store import FindingsStore
+        store = FindingsStore()
+        for p in store.projects():
+            slug = p.get('project')
+            if slug:
+                active[slug] = _int0(p.get('active'))
+    except Exception:   # noqa: BLE001 — findings are best-effort for the dashboard
+        active = {}
+    return active
+
+
 def load_portfolio(base: str) -> Dict:
     """Load the full portfolio for the projects tree under ``base`` (thin loader).
 
@@ -219,14 +238,4 @@ def load_portfolio(base: str) -> Dict:
     from core.project import ProjectStore
 
     projects_meta = ProjectStore(base).list_projects()
-    active: Dict[str, int] = {}
-    try:
-        from core.findings_store import FindingsStore
-        store = FindingsStore()
-        for p in store.projects():
-            slug = p.get('project')
-            if slug:
-                active[slug] = _int0(p.get('active'))
-    except Exception:   # noqa: BLE001 — findings are best-effort for the portfolio
-        active = {}
-    return build_portfolio(projects_meta, active)
+    return build_portfolio(projects_meta, active_findings_map())
