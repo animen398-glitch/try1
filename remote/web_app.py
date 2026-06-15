@@ -414,6 +414,38 @@ def _overview_summary(base: Optional[str] = None) -> dict:
         return {'rows': [], 'totals': {}, 'error': str(e)}
 
 
+# ── Company / Workspace tier (F-C4, web parity) ─────────────────────────────────
+# Read roll-up over core.company (the same aggregates the GUI Overview tab shows)
+# plus a single user-sourced write (assign a project to a company), mirroring the
+# GUI assign control. Both bound to the server's SiteAnalyzer projects tree.
+
+def _company_view(base: Optional[str] = None) -> dict:
+    """Per-company roll-up (rows + estate totals) for the console."""
+    try:
+        from core.company import load_company_view
+        return load_company_view(base or str(_REPORT_BASE))
+    except Exception as e:
+        return {'rows': [], 'totals': {}, 'error': str(e)}
+
+
+def _company_assign(slug: str, name: Optional[str],
+                    base: Optional[str] = None) -> dict:
+    """Assign (or, with an empty name, clear) a project's company (user-sourced).
+
+    A non-empty name is registered (idempotent) and its slug stored on the
+    project; an empty/absent name unassigns. Returns the assigned company slug,
+    or an ``{'error': ...}`` for an unknown project."""
+    try:
+        from core.company import CompanyRegistry
+        cslug = CompanyRegistry().create(name) if name and name.strip() else None
+        ok = ProjectStore(base or str(_REPORT_BASE)).assign(slug, cslug)
+        if not ok:
+            return {'error': f'project not found: {slug}'}
+        return {'status': 'ok', 'slug': slug, 'company': cslug}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 # ── Continuous Monitoring (#8) ─────────────────────────────────────────────────
 # Thin wrappers over core.monitor (single source of truth, shared with the CLI
 # and GUI). All bound to the same project store the jobs use.
@@ -533,6 +565,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showFindings()">Findings</button>
       <button class="btn sec" onclick="showAssets()">Assets</button>
       <button class="btn sec" onclick="showOverview()">Overview</button>
+      <button class="btn sec" onclick="showCompanies()">Companies</button>
     </div>
   </div>
 
@@ -838,6 +871,20 @@ async function showOverview(){
     });
   }catch(ex){log('Overview failed: '+ex.message,'er');}
 }
+async function showCompanies(){
+  try{
+    const r=await fetch('/companies'); const d=await r.json();
+    const t=d.totals||{};
+    log('Companies: '+(t.companies||0)+' over '+(t.projects||0)+' projects · '
+        +'worst risk: '+(t.worst_risk_level||'—')+' · secrets: '+(t.secrets||0)
+        +' · assets: '+(t.assets||0),'data');
+    (d.rows||[]).slice(0,20).forEach(c=>{
+      log('  '+(c.name||c.slug)+' — '+(c.project_count||0)+' proj · '
+          +(c.risk_level||'—')+' · findings: '+(c.active_findings||0)
+          +' · assets: '+(c.asset_total||0),'info');
+    });
+  }catch(ex){log('Companies failed: '+ex.message,'er');}
+}
 
 loadJobs();
 sse();
@@ -1058,6 +1105,23 @@ if _FASTAPI_OK:
     @app.get('/overview')
     async def overview():
         return JSONResponse(_overview_summary())
+
+    # ── Company / Workspace tier (F-C4) ──────────────────────────────────
+    class CompanyRequest(BaseModel):
+        name: Optional[str] = None        # empty/absent → unassign
+
+    @app.get('/companies')
+    async def companies():
+        return JSONResponse(_company_view())
+
+    @app.post('/projects/{slug}/company')
+    async def project_set_company(slug: str, body: CompanyRequest):
+        out = _company_assign(slug, body.name)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[company] {slug} → {body.name or "Unassigned"}', 'ok')
+        return out
 
     @app.get('/report')
     async def report(file: str):
