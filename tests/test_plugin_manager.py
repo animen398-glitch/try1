@@ -23,8 +23,9 @@ def test_builtin_tabs_carry_section_and_position():
     mgr = default_manager()
     by_id = {p.id: p for p in mgr}
     assert by_id['dashboard'].section == 'Обзор'
-    assert by_id['system'].position == 'bottom'      # utility tabs anchored down
-    assert by_id['recon'].position == 'top'
+    assert by_id['system'].section == 'Система'
+    # All tabs stay in the TOP nav area — the BOTTOM rail is the footer menu.
+    assert all(p.position == 'top' for p in mgr)
 
 
 def _grouped_manager():

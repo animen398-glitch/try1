@@ -153,9 +153,12 @@ def _mixin_factory(build_method: str) -> Callable[[object], QWidget]:
 # Built-in tabs: (id, display title, MainWindow build-method, section, position).
 # Order here is the order tabs appear in the window — the single source of truth
 # for the tab bar. ``section`` clusters the Fluent nav (a separator is drawn when
-# it changes); ``position='bottom'`` anchors utility tabs to the bottom. Grouped
-# IA (overview → discovery → security → management → reports → tools → system)
-# without merging or removing any tab (the plugin contract is unchanged).
+# it changes). Grouped IA (overview → discovery → security → management → reports
+# → tools → system) without merging or removing any tab (the plugin contract is
+# unchanged). NOTE: all tabs stay in the TOP (scrollable) nav area — the BOTTOM
+# of the rail is reserved for the app-level footer menu (Настройки/О программе/
+# Выход, see WindowChromeMixin._build_menu); anchoring tabs there would push the
+# menu off-screen. ``position`` is kept on TabPlugin for future use.
 BUILTIN_TABS = [
     ("dashboard",  "Dashboard",                 "_build_dashboard_tab", "Обзор", "top"),
     ("overview",   "Overview",                  "_build_overview_tab",  "Обзор", "top"),
@@ -173,8 +176,8 @@ BUILTIN_TABS = [
     ("video",      "Video Downloader",          "_build_video_tab",     "Инструменты", "top"),
     ("image",      "Image Extractor",           "_build_image_tab",     "Инструменты", "top"),
     ("design",     "Design Lab",                "_build_design_tab",    "Инструменты", "top"),
-    ("history",    "История операций",          "_build_history_tab",   "Система", "bottom"),
-    ("system",     "System",                    "_build_system_tab",    "Система", "bottom"),
+    ("history",    "История операций",          "_build_history_tab",   "Система", "top"),
+    ("system",     "System",                    "_build_system_tab",    "Система", "top"),
 ]
 
 
