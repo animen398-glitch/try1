@@ -59,6 +59,24 @@ def test_apex_domain_finding_resolves_chain():
     assert chain['asn_name'] == 'Acme ISP'
 
 
+def test_chain_resolves_netblock_containment():
+    # F-K6: the finding's IP is matched into its most specific netblock (CIDR).
+    assets = _infra_assets() + [
+        _asset('a-nb1', 'netblock', '1.2.0.0/16'),
+        _asset('a-nb2', 'netblock', '1.2.3.0/24'),   # tighter → should win
+    ]
+    out = build_correlation([_finding('f', 'api.acme.com/graphql', 'high')],
+                            assets)
+    assert out['finding_chains']['f']['netblock'] == '1.2.3.0/24'
+
+
+def test_chain_no_netblock_when_ip_outside():
+    assets = _infra_assets() + [_asset('a-nb', 'netblock', '10.0.0.0/8')]
+    out = build_correlation([_finding('f', 'api.acme.com/graphql', 'high')],
+                            assets)
+    assert 'netblock' not in out['finding_chains']['f']   # 1.2.3.4 ∉ 10/8
+
+
 def test_host_level_finding_attaches_to_subdomain():
     findings = [_finding('f2', 'api.acme.com', 'high')]
     out = build_correlation(findings, _infra_assets())

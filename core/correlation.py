@@ -22,6 +22,7 @@ is a pure function over already-loaded store rows; ``load_correlation`` is the t
 store reader. Stores are global (project-keyed), so no projects ``base`` is needed.
 """
 
+import ipaddress
 from typing import Dict, List, Optional
 
 # Canonical severity scale (worst → least). Mirrors findings_adapter's lowercase
@@ -39,6 +40,26 @@ def _host(location: str) -> str:
     """Host part of a normalized ``host/path`` finding location (or '')."""
     loc = str(location or '').strip().lower()
     return loc.split('/', 1)[0] if loc else ''
+
+
+def _netblock_for(ip: str, netblocks) -> Optional[str]:
+    """The most specific netblock (CIDR) that contains ``ip``, or None (F-K6).
+
+    Offline, stdlib ``ipaddress``: tests each netblock asset's value as a network
+    and returns the longest-prefix (tightest) match. Bad IPs/CIDRs are skipped."""
+    try:
+        addr = ipaddress.ip_address(str(ip))
+    except ValueError:
+        return None
+    best, best_len = None, -1
+    for cidr in netblocks:
+        try:
+            net = ipaddress.ip_network(str(cidr), strict=False)
+        except ValueError:
+            continue
+        if addr in net and net.prefixlen > best_len:
+            best, best_len = cidr, net.prefixlen
+    return best
 
 
 def _worst(severities) -> Optional[str]:
@@ -79,6 +100,7 @@ def build_correlation(findings: List[Dict], assets: List[Dict]) -> Dict:
     hosts = {**by_type.get('domain', {}), **by_type.get('subdomain', {})}
     ips = by_type.get('ip', {})
     asns = by_type.get('asn', {})
+    netblocks = by_type.get('netblock', {})
 
     def _chain_for_host(host: str) -> Dict:
         chain: Dict = {}
@@ -89,6 +111,9 @@ def build_correlation(findings: List[Dict], assets: List[Dict]) -> Dict:
         ip = (host_asset.get('attrs') or {}).get('ip')
         if ip:
             chain['ip'] = ip
+            netblock = _netblock_for(ip, netblocks)   # F-K6: ip ∈ cidr
+            if netblock:
+                chain['netblock'] = netblock
             ip_asset = ips.get(ip)
             asn = (ip_asset.get('attrs') or {}).get('asn') if ip_asset else None
             if asn:
