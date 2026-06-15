@@ -513,13 +513,24 @@ employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **з
 - **F-C4** web-паритет: `GET /companies` + `POST /projects/{slug}/company`,
   кнопка «Companies» в консоли.
 
-**Следующий шаг:** ASM 2.0 (F1–F6) + пост-эпик инкременты + Company tier
-завершены. Внешний бенчмарк (vs SpiderFoot/Amass/DefectDojo/EASM, 2026-06-15)
-разобран: бóльшая часть «что добавить» уже сделана; новый отфильтрованный
-бэклог (по согласованию, аудит+план+СТОП) — **(1) кросс-сущностная корреляция
-findings↔assets↔endpoints↔IP/ASN** (главное; сейчас сторы не связаны),
-(2) находки как полные объекты (description/impact/remediation),
-(3) executive-плашка «что важно за 10 сек», (4) консолидация IA меню. Отклонено
-как конфликт с инвариантами: ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
-APScheduler/Apprise/WeasyPrint (дублируют существующее). Детали — память
-`project-benchmark-direction`.
+**Cross-Entity Correlation (эпик F-K1→F-K4) — `[ЗАКРЫТ]`.** Связь
+findings↔assets↔infra **вычисляется (derive-on-read)** по уже существующим
+ключам, без новой таблицы/схемы (как F2/F5/Company):
+- **F-K1** ядро: `core/correlation.py` — `build_correlation(findings, assets)`
+  (джойн `Finding.evidence.location`→endpoint-актив, host→subdomain/domain,
+  цепочка через `attrs`: subdomain.ip→ip.asn→asn) → `finding_chains`,
+  `asset_findings` (direct + severity-counts + worst), `exposure` (host-активы с
+  закаченными находками эндпоинтов, worst-first), `summary`;
+  `load_correlation(project)` — тонкий ридер (active findings + assets).
+- **F-K2** отчёт: карточка «Exposure by Asset» (`_build_correlation` +
+  `_render_correlation_card` в `collection_runner`).
+- **F-K3** GUI: детали Findings-вкладки → «Цепочка: endpoint→host→ip→asn»;
+  детали Assets-вкладки → «Связанные находки: N (worst …)».
+- **F-K4** web: `GET /correlation?project=…` + кнопка «Correlation» в консоли.
+
+**Следующий шаг:** ASM 2.0 + Company tier + Correlation завершены. Остаток
+отфильтрованного бэклога (по согласованию, аудит+план+СТОП): (2) находки как
+полные объекты (description/impact/remediation), (3) executive-плашка «что важно
+за 10 сек», (4) консолидация IA меню. Отклонено (конфликт инвариантов):
+ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres, APScheduler/Apprise/
+WeasyPrint. Детали — память `project-benchmark-direction`.
