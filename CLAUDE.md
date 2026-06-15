@@ -528,9 +528,22 @@ findings↔assets↔infra **вычисляется (derive-on-read)** по уж�
   детали Assets-вкладки → «Связанные находки: N (worst …)».
 - **F-K4** web: `GET /correlation?project=…` + кнопка «Correlation» в консоли.
 
-**Следующий шаг:** ASM 2.0 + Company tier + Correlation завершены. Остаток
-отфильтрованного бэклога (по согласованию, аудит+план+СТОП): (2) находки как
-полные объекты (description/impact/remediation), (3) executive-плашка «что важно
-за 10 сек», (4) консолидация IA меню. Отклонено (конфликт инвариантов):
-ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres, APScheduler/Apprise/
-WeasyPrint. Детали — память `project-benchmark-direction`.
+**Finding Objects (эпик F-O1→F-O4) — `[ЗАКРЫТ]`.** description/impact/
+remediation как **чистый offline-каталог, резолвящийся на чтении** (derive-on-read,
+как `findings_sla`) — без миграции схемы, без изменения fingerprint, сканеры почти
+не тронуты:
+- **F-O1** `core/finding_knowledge.py` — per-category каталог + rule-specifics +
+  generic-фоллбэк; `describe(category, rule_id, title, evidence)` (explicit
+  evidence → rule → category → generic); `annotate(findings)`.
+- **F-O2** захват explicit-текста: `findings_adapter.Finding` +опц.
+  description/impact/remediation (в evidence при наличии); `parse_nuclei_jsonl`
+  тащит `info.description/impact/remediation` (реальный remediation от nuclei).
+- **F-O3** поверхности: GUI Findings-деталь (Описание/Воздействие/Remediation);
+  `report_export.findings_csv` +колонки (DefectDojo-style экспорт).
+- **F-O4** web: `/findings` обогащается каталогом рядом с SLA.
+
+**Следующий шаг:** ASM 2.0 + Company tier + Correlation + Finding Objects
+завершены. Остаток отфильтрованного бэклога (по согласованию, аудит+план+СТОП):
+(3) executive-плашка «что важно за 10 сек», (4) консолидация IA меню. Отклонено
+(конфликт инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
+APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
