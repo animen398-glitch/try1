@@ -42,6 +42,14 @@ def test_findings_list_filters():
     assert d['summary']['total'] == 2
 
 
+def test_findings_list_enriches_with_knowledge():
+    # F-O4: each finding carries description/impact/remediation.
+    _seed()
+    f = wa._findings_list(project='p2')['findings'][0]   # the secret finding
+    assert f['description'] and f['impact'] and f['remediation']
+    assert 'ротируйте' in f['remediation']               # secret remediation
+
+
 def test_findings_set_status_ok():
     s = _seed()
     fid = scoped_id('p1', 'f-a')        # the id GET /findings would return

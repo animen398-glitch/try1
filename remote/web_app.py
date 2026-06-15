@@ -353,11 +353,13 @@ def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
                    severity: Optional[str] = None) -> dict:
     """Findings (optionally filtered) + the project list + a status summary."""
     try:
+        from core.finding_knowledge import annotate as annotate_knowledge
         from core.findings_sla import annotate as annotate_sla
         store = FindingsStore()
         findings = store.list_findings(project=project, status=status,
                                        severity=severity)
-        annotate_sla(findings)   # each finding carries a derived 'sla' field
+        annotate_sla(findings)        # each finding carries a derived 'sla' field
+        annotate_knowledge(findings)  # + description/impact/remediation (F-O4)
         return {'projects': store.projects(),
                 'findings': findings,
                 'summary': store.summary(project)}
