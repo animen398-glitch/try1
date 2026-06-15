@@ -36,7 +36,8 @@ class _SubdomainWorker(QObject):
     error       = Signal(str)
 
     def __init__(self, scanner, domain: str, passive: bool, brute: bool,
-                 active: bool = False, amass: bool = False):
+                 active: bool = False, amass: bool = False,
+                 subfinder: bool = False, httpx: bool = False):
         super().__init__()
         self._scanner = scanner
         self._domain  = domain
@@ -44,6 +45,8 @@ class _SubdomainWorker(QObject):
         self._brute   = brute
         self._active  = active
         self._amass   = amass
+        self._subfinder = subfinder
+        self._httpx   = httpx
 
     def run(self):
         try:
@@ -56,6 +59,8 @@ class _SubdomainWorker(QObject):
                 brute=self._brute,
                 active=self._active,
                 amass=self._amass,
+                subfinder=self._subfinder,
+                httpx=self._httpx,
             )
             self.finished.emit(result)
         except Exception as e:

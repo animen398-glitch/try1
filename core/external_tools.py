@@ -21,7 +21,9 @@ from typing import Callable, Dict, List, Optional
 
 from urllib.parse import urlparse
 
-from core.features import has_amass, has_katana, has_nuclei
+from core.features import (
+    has_amass, has_httpx, has_katana, has_nuclei, has_subfinder,
+)
 from core.vuln_scanner import SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM
 
 
@@ -225,11 +227,12 @@ class KatanaRunner:
 
 # ───────────────────────────────── amass ───────────────────────────────────
 
-def parse_amass_lines(text: str, domain: str) -> List[str]:
-    """Parse amass passive output → unique in-scope subdomains (sorted).
+def parse_fqdn_lines(text: str, domain: str) -> List[str]:
+    """Parse one-FQDN-per-line output → unique in-scope subdomains (sorted).
 
-    amass ``enum -passive`` prints one FQDN per line; lines with spaces (graph/
-    relation output) and out-of-scope names are dropped.
+    Shared by the passive subdomain binaries (amass ``enum -passive`` and
+    subfinder ``-silent``), which both print one hostname per line; lines with
+    spaces (graph/relation output) and out-of-scope names are dropped.
     """
     domain = (domain or '').strip().lower()
     out: set = set()
@@ -241,6 +244,10 @@ def parse_amass_lines(text: str, domain: str) -> List[str]:
         if name == domain or name.endswith('.' + domain):
             out.add(name)
     return sorted(out)
+
+
+# Back-compat alias — amass output is the same one-FQDN-per-line shape.
+parse_amass_lines = parse_fqdn_lines
 
 
 class AmassRunner:
@@ -281,10 +288,159 @@ class AmassRunner:
         if run.get('error'):
             result['error'] = run['error']
             return result
-        result['subdomains'] = parse_amass_lines(run['stdout'], domain)
+        result['subdomains'] = parse_fqdn_lines(run['stdout'], domain)
         result['truncated'] = run.get('timed_out', False)
         result['status'] = 'Success'
         result.pop('error', None)
         self._log(f'[amass] {len(result["subdomains"])} subdomains'
+                  + (' (truncated)' if result['truncated'] else ''))
+        return result
+
+
+# ─────────────────────────────── subfinder ─────────────────────────────────
+
+class SubfinderRunner:
+    """Run subfinder passive enumeration and return in-scope subdomains.
+
+    The projectdiscovery counterpart of AmassRunner — same passive-enum shape
+    (one FQDN per line under ``-silent``), so it reuses ``parse_fqdn_lines``.
+    """
+
+    def __init__(self, timeout: int = 180,
+                 extra_args: Optional[List[str]] = None):
+        self.timeout = timeout
+        self.extra_args = list(extra_args) if extra_args else []
+        self.progress_callback: Optional[Callable] = None
+
+    @staticmethod
+    def available() -> bool:
+        return has_subfinder()
+
+    def set_progress_callback(self, cb: Callable):
+        self.progress_callback = cb
+
+    def _log(self, msg: str):
+        if self.progress_callback:
+            self.progress_callback(msg)
+
+    def enumerate(self, domain: str) -> Dict:
+        """Enumerate ``domain``; return ``{status, domain, subdomains, …}``."""
+        domain = urlparse(
+            domain if '://' in domain else '//' + domain).netloc or domain
+        domain = domain.strip().lower().split('/')[0]
+        result: Dict = {'status': 'Error', 'domain': domain, 'subdomains': []}
+        if not self.available():
+            result['status'] = 'Unavailable'
+            result['error'] = ('subfinder not installed '
+                               '(https://github.com/projectdiscovery/subfinder)')
+            return result
+
+        cmd = ['subfinder', '-d', domain, '-silent',
+               '-no-color'] + self.extra_args
+        self._log(f'[subfinder] passive enum {domain}')
+        run = run_command(cmd, self.timeout)
+        if run.get('error'):
+            result['error'] = run['error']
+            return result
+        result['subdomains'] = parse_fqdn_lines(run['stdout'], domain)
+        result['truncated'] = run.get('timed_out', False)
+        result['status'] = 'Success'
+        result.pop('error', None)
+        self._log(f'[subfinder] {len(result["subdomains"])} subdomains'
+                  + (' (truncated)' if result['truncated'] else ''))
+        return result
+
+
+# ───────────────────────────────── httpx ───────────────────────────────────
+
+def parse_httpx_jsonl(text: str) -> List[Dict]:
+    """Parse ``httpx -json`` stdout into per-host probe records.
+
+    Each output line is one JSON object (one probed host). Returns a list of
+    ``{host, url, status_code, title, webserver, tech}`` dicts — only hosts that
+    httpx actually emitted (httpx prints a line only for a reachable host, so a
+    record implies the host is alive). Malformed lines are skipped; field names
+    are read defensively across httpx versions.
+    """
+    out: List[Dict] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith('{'):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        host = (obj.get('input') or obj.get('host') or obj.get('url') or '')
+        tech = obj.get('tech') or obj.get('technologies') or []
+        if not isinstance(tech, list):
+            tech = [str(tech)]
+        out.append({
+            'host': str(host),
+            'url': str(obj.get('url') or ''),
+            'status_code': obj.get('status_code') or obj.get('status-code'),
+            'title': str(obj.get('title') or ''),
+            'webserver': str(obj.get('webserver') or obj.get('web-server') or ''),
+            'tech': [str(t) for t in tech],
+        })
+    return out
+
+
+class HttpxRunner:
+    """Probe a list of hosts with httpx and return per-host HTTP metadata.
+
+    Unlike the enumerators this consumes a host list (fed on stdin) rather than a
+    single domain — the natural "which of these subdomains are live, and what do
+    they run" step. Output normalises to the same shape ``parse_httpx_jsonl``
+    yields; a missing binary or failure degrades to an empty result.
+    """
+
+    def __init__(self, timeout: int = 180,
+                 extra_args: Optional[List[str]] = None):
+        self.timeout = timeout
+        self.extra_args = list(extra_args) if extra_args else []
+        self.progress_callback: Optional[Callable] = None
+
+    @staticmethod
+    def available() -> bool:
+        return has_httpx()
+
+    def set_progress_callback(self, cb: Callable):
+        self.progress_callback = cb
+
+    def _log(self, msg: str):
+        if self.progress_callback:
+            self.progress_callback(msg)
+
+    def probe(self, hosts: List[str]) -> Dict:
+        """Probe ``hosts``; return ``{status, results, truncated?, error?}``.
+
+        ``results`` is the list of live-host records (see ``parse_httpx_jsonl``).
+        """
+        hosts = [h.strip() for h in (hosts or []) if h and h.strip()]
+        result: Dict = {'status': 'Error', 'results': []}
+        if not hosts:
+            result['status'] = 'Success'
+            result.pop('error', None)
+            return result
+        if not self.available():
+            result['status'] = 'Unavailable'
+            result['error'] = ('httpx not installed '
+                               '(https://github.com/projectdiscovery/httpx)')
+            return result
+
+        cmd = ['httpx', '-json', '-silent', '-no-color',
+               '-status-code', '-title', '-web-server',
+               '-tech-detect'] + self.extra_args
+        self._log(f'[httpx] probing {len(hosts)} host(s)')
+        run = run_command(cmd, self.timeout, input_text='\n'.join(hosts) + '\n')
+        if run.get('error'):
+            result['error'] = run['error']
+            return result
+        result['results'] = parse_httpx_jsonl(run['stdout'])
+        result['truncated'] = run.get('timed_out', False)
+        result['status'] = 'Success'
+        result.pop('error', None)
+        self._log(f'[httpx] {len(result["results"])} live host(s)'
                   + (' (truncated)' if result['truncated'] else ''))
         return result

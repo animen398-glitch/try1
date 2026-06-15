@@ -98,7 +98,9 @@ class SubdomainScanner:
         self._cancel = threading.Event()
         self._data_registry = data_registry
         self._active_checker: Optional[ActiveSubdomainChecker] = None
-        self._amass_timeout = 180   # seconds; amass passive enum subprocess
+        self._amass_timeout = 180      # seconds; amass passive enum subprocess
+        self._subfinder_timeout = 180  # seconds; subfinder passive enum subprocess
+        self._httpx_timeout = 180      # seconds; httpx host-probe subprocess
 
     def cancel(self):
         """Signal the scanner to stop at the next checkpoint."""
@@ -130,6 +132,8 @@ class SubdomainScanner:
         active_rate_per_sec: float = 0,
         use_cache: bool = True,
         amass: bool = False,
+        subfinder: bool = False,
+        httpx: bool = False,
     ) -> Dict:
         """
         Run passive + brute-force enumeration, optionally followed by active
@@ -217,6 +221,13 @@ class SubdomainScanner:
                     break
                 _record(name, _resolve(name) or '', 'amass')
 
+        # ── Phase 2e: subfinder passive (external binary, opt-in) ─────────
+        if subfinder and not self._cancel.is_set():
+            for name in self._passive_subfinder(domain):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'subfinder')
+
         # ── Phase 3: DNS brute-force ──────────────────────────────────────
         if brute and not self._cancel.is_set():
             total = len(_WORDLIST)
@@ -235,6 +246,13 @@ class SubdomainScanner:
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
                 list(pool.map(_probe, _WORDLIST))
+
+        # ── Phase 3b: httpx probe (external binary, opt-in) ───────────────
+        # Enriches discovered hosts with HTTP liveness + metadata (status/title/
+        # server/tech). Runs before the native active phase so that, when both
+        # are on, the active checker's takeover verdict keeps the final say.
+        if httpx and found and not self._cancel.is_set():
+            self._enrich_httpx(found, on_update)
 
         # ── Phase 4: Active checks (HTTP liveness + takeover) ─────────────
         if active and found and not self._cancel.is_set():
@@ -350,6 +368,57 @@ class SubdomainScanner:
                 domain).get('subdomains', [])
         except Exception:
             return []
+
+    def _passive_subfinder(self, domain: str) -> List[str]:
+        """Return subfinder passive subdomains (external binary, opt-in, guarded).
+
+        Mirrors ``_passive_amass``: spawns a subprocess only when requested, and
+        any missing-binary/failure yields an empty list (never breaks the scan).
+        """
+        try:
+            from core.external_tools import SubfinderRunner
+            if not SubfinderRunner.available():
+                return []
+            return SubfinderRunner(timeout=self._subfinder_timeout).enumerate(
+                domain).get('subdomains', [])
+        except Exception:
+            return []
+
+    def _enrich_httpx(self, found: Dict[str, Dict],
+                      on_update: Optional[Callable[[Dict], None]]) -> None:
+        """Probe discovered hosts with httpx and merge HTTP metadata in place.
+
+        Opt-in and guarded (external binary): for every host httpx reports as
+        reachable, enrich its entry with ``alive``/``http_status``/``server``/
+        ``title``/``tech`` and update the display status. A missing binary or any
+        failure leaves entries untouched.
+        """
+        try:
+            from core.external_tools import HttpxRunner
+            if not HttpxRunner.available():
+                return
+            data = HttpxRunner(timeout=self._httpx_timeout).probe(
+                list(found.keys()))
+            for rec in data.get('results', []):
+                entry = found.get(rec.get('host', ''))
+                if entry is None:
+                    continue
+                entry['alive'] = True
+                entry['http_status'] = rec.get('status_code')
+                if rec.get('webserver'):
+                    entry['server'] = rec['webserver']
+                if rec.get('title'):
+                    entry['title'] = rec['title']
+                if rec.get('tech'):
+                    entry['tech'] = rec['tech']
+                # Don't clobber a takeover verdict if the active phase set one.
+                if not str(entry.get('status', '')).startswith('TAKEOVER'):
+                    status = rec.get('status_code')
+                    entry['status'] = f'HTTP {status}' if status else 'Live'
+                if on_update:
+                    on_update(entry)
+        except Exception:
+            return
 
     @staticmethod
     def _names_in_domain(names, domain: str) -> List[str]:

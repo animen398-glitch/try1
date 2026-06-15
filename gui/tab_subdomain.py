@@ -14,7 +14,7 @@ from qtpy.QtWidgets import (
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from core.features import has_amass
+from core.features import has_amass, has_httpx, has_subfinder
 from core.subdomain_scanner import SubdomainScanner
 from gui.ui_components import SectionGroupBox, StyledButton
 from gui.workers import _SubdomainWorker
@@ -68,6 +68,27 @@ class SubdomainTabMixin:
             self.subdomain_chk_amass.setToolTip(
                 "Требуется бинарь amass на PATH "
                 "(https://github.com/owasp-amass/amass)")
+        # External subfinder passive source — gated on the binary being on PATH.
+        self.subdomain_chk_subfinder = QCheckBox("subfinder (внешний)")
+        if has_subfinder():
+            self.subdomain_chk_subfinder.setToolTip(
+                "Adds projectdiscovery subfinder passive enumeration as a source.")
+        else:
+            self.subdomain_chk_subfinder.setEnabled(False)
+            self.subdomain_chk_subfinder.setToolTip(
+                "Требуется бинарь subfinder на PATH "
+                "(https://github.com/projectdiscovery/subfinder)")
+        # External httpx prober — enriches discovered hosts with HTTP metadata.
+        self.subdomain_chk_httpx = QCheckBox("httpx (внешний)")
+        if has_httpx():
+            self.subdomain_chk_httpx.setToolTip(
+                "Probes discovered hosts with httpx (liveness + status/title/"
+                "server/tech).")
+        else:
+            self.subdomain_chk_httpx.setEnabled(False)
+            self.subdomain_chk_httpx.setToolTip(
+                "Требуется бинарь httpx на PATH "
+                "(https://github.com/projectdiscovery/httpx)")
         self.btn_subdomain_scan = StyledButton("Start Scanning")
         self.btn_subdomain_scan.clicked.connect(self._run_subdomain_scan)
         self.btn_subdomain_stop = StyledButton("Stop", style='danger')
@@ -80,6 +101,10 @@ class SubdomainTabMixin:
         row_opts.addWidget(self.subdomain_chk_active)
         row_opts.addSpacing(14)
         row_opts.addWidget(self.subdomain_chk_amass)
+        row_opts.addSpacing(14)
+        row_opts.addWidget(self.subdomain_chk_subfinder)
+        row_opts.addSpacing(14)
+        row_opts.addWidget(self.subdomain_chk_httpx)
         row_opts.addStretch()
         row_opts.addWidget(self.btn_subdomain_stop)
         row_opts.addSpacing(8)
@@ -182,11 +207,14 @@ class SubdomainTabMixin:
         brute   = self.subdomain_chk_brute.isChecked()
         active  = self.subdomain_chk_active.isChecked()
         amass   = self.subdomain_chk_amass.isChecked()
+        subfinder = self.subdomain_chk_subfinder.isChecked()
+        httpx   = self.subdomain_chk_httpx.isChecked()
 
         scanner = SubdomainScanner()
         self._active_subdomain_scanner = scanner
 
-        worker = _SubdomainWorker(scanner, domain, passive, brute, active, amass)
+        worker = _SubdomainWorker(scanner, domain, passive, brute, active, amass,
+                                  subfinder, httpx)
         self._start_task(
             worker,
             on_finished=self._on_subdomain_done,

@@ -63,6 +63,16 @@ def has_amass() -> bool:
     return _has_binary('amass')
 
 
+def has_subfinder() -> bool:
+    """projectdiscovery/subfinder — external passive subdomain enum (optional)."""
+    return _has_binary('subfinder')
+
+
+def has_httpx() -> bool:
+    """projectdiscovery/httpx — external HTTP prober / liveness (optional)."""
+    return _has_binary('httpx')
+
+
 def has_ollama() -> bool:
     """A local Ollama answering on localhost (optional LLM narrative).
 
@@ -86,6 +96,8 @@ OPTIONAL_FEATURES = {
     'nuclei':     ('Nuclei vuln templates (external binary)',  has_nuclei),
     'katana':     ('Katana crawler — endpoints (external)',    has_katana),
     'amass':      ('Amass subdomain enum (external)',          has_amass),
+    'subfinder':  ('Subfinder passive subdomain enum (external)', has_subfinder),
+    'httpx':      ('Httpx HTTP prober — live hosts (external)', has_httpx),
 }
 
 
