@@ -102,6 +102,26 @@ def _host_of(url: str) -> str:
     return urlsplit(url).netloc.lower()
 
 
+def _present(**kwargs) -> Dict:
+    """Keep only the truthy/meaningful values — so enriched attrs carry no
+    ``None``/empty noise (cleaner detail panel, smaller stored JSON)."""
+    return {k: v for k, v in kwargs.items() if v not in (None, '', [], {})}
+
+
+def _split_sans(sans) -> List[str]:
+    """Certificate SANs come comma-joined from ``cert_info`` — split into a list
+    of distinct hostnames (``DNS:`` prefixes stripped, lowercased, de-duped)."""
+    items = sans if isinstance(sans, (list, tuple)) else str(sans or '').split(',')
+    out: List[str] = []
+    seen = set()
+    for s in items:
+        h = str(s or '').strip().lower().removeprefix('dns:').strip().rstrip('.')
+        if h and h not in seen:
+            seen.add(h)
+            out.append(h)
+    return out
+
+
 def derive_assets(report: Dict) -> List[Asset]:
     """Extract every asset from a scan ``report``, deduplicated by identity.
 
@@ -116,28 +136,44 @@ def derive_assets(report: Dict) -> List[Asset]:
 
     # domain (the target host). Carry the apex IP/ASN so domain-level findings
     # resolve the full infra chain (ip → asn → netblock), same as subdomains do
-    # via their own ``attrs.ip`` — correlation reads these (F-K5).
+    # via their own ``attrs.ip`` — correlation reads these (F-K5). Enriched with
+    # the served TLS certificate facts (issuer / expiry / subject / SANs) and the
+    # hosting provider/location — all already in the report (F-A1).
+    cert = _phase(report, 'certificate')
     domain = (report.get('domain') or _host_of(report.get('url', '')))
     if domain:
-        out.append(Asset('domain', domain, attrs={
-            'source': 'recon',
-            'ip': recon.get('ip') or infra.get('ip'),
-            'asn': infra.get('asn')}))
+        attrs = {'source': 'recon',
+                 'ip': recon.get('ip') or infra.get('ip'),
+                 'asn': infra.get('asn')}
+        attrs.update(_present(
+            provider=infra.get('provider'), location=infra.get('location'),
+            tls_issuer=cert.get('issuer'), tls_subject=cert.get('subject'),
+            tls_not_after=cert.get('not_after'),
+            tls_sans=_split_sans(cert.get('sans'))))
+        out.append(Asset('domain', domain, attrs=attrs))
 
-    # subdomains (opt-in phase)
+    # subdomains (opt-in phase). The active probe already resolved CNAME / hosting
+    # service / takeover / HTTP status / Server header — surface them as context
+    # (non-identity), so the inventory shows *what* each subdomain is (F-A1).
     sub = _phase(report, 'subdomains')
     results = sub.get('results') if isinstance(sub.get('results'), list) else []
     for e in results:
         if isinstance(e, dict) and e.get('subdomain'):
-            out.append(Asset('subdomain', e['subdomain'],
-                             attrs={'source': 'subdomains',
-                                    'ip': e.get('ip')}))
+            attrs = {'source': 'subdomains', 'ip': e.get('ip')}
+            attrs.update(_present(
+                cname=e.get('cname'), service=e.get('service'),
+                takeover=e.get('takeover') or None, server=e.get('server'),
+                http_status=e.get('http_status'), title=e.get('title'),
+                status=e.get('status')))
+            out.append(Asset('subdomain', e['subdomain'], attrs=attrs))
 
-    # ip (recon + infrastructure chain)
+    # ip (recon + infrastructure chain) — carry the provider/location too.
     for ip in (recon.get('ip'), infra.get('ip')):
         if ip:
-            out.append(Asset('ip', str(ip), attrs={'source': 'recon',
-                                                   'asn': infra.get('asn')}))
+            attrs = {'source': 'recon', 'asn': infra.get('asn')}
+            attrs.update(_present(provider=infra.get('provider'),
+                                  location=infra.get('location')))
+            out.append(Asset('ip', str(ip), attrs=attrs))
 
     # asn
     if infra.get('asn'):
@@ -145,7 +181,9 @@ def derive_assets(report: Dict) -> List[Asset]:
                          f"{infra.get('asn_name', '')}".strip(),
                          attrs={'source': 'recon',
                                 'name': infra.get('asn_name'),
-                                'provider': infra.get('provider')}))
+                                'provider': infra.get('provider'),
+                                **_present(org=infra.get('org'),
+                                           location=infra.get('location'))}))
 
     # netblocks (active ASN intel, opt-in): the IP's CIDR + all ASN prefixes
     asn_intel = _phase(report, 'asn_intel')

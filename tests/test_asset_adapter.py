@@ -102,3 +102,72 @@ def test_derive_tolerates_empty_and_partial():
 def test_source_phases_map_covers_all_types():
     for t in aa.ASSET_TYPES:
         assert t in aa.ASSET_SOURCE_PHASES
+
+
+# ── F-A1: richer attrs (TLS / probe / provider) folded from existing report ───
+
+def _attrs_for(assets, atype, value):
+    for a in assets:
+        if a.type == atype and a.value == value:
+            return a.attrs
+    raise AssertionError(f'no {atype} asset {value!r}')
+
+
+def test_split_sans_cleans_and_dedups():
+    assert aa._split_sans('DNS:example.com, dns:*.example.com, example.com') == [
+        'example.com', '*.example.com']
+    assert aa._split_sans(['a.com.', 'A.com']) == ['a.com']
+    assert aa._split_sans('') == []
+
+
+def test_domain_carries_tls_and_provider_attrs():
+    r = _report()
+    r['phases']['certificate'] = {'status': 'Success', 'data': {
+        'issuer': "Let's Encrypt", 'subject': 'example.com',
+        'not_after': '2026-09-01', 'sans': 'DNS:example.com, DNS:api.example.com'}}
+    r['phases']['recon']['data']['infrastructure']['location'] = 'San Francisco, US'
+    attrs = _attrs_for(aa.derive_assets(r), 'domain', 'example.com')
+    assert attrs['tls_issuer'] == "Let's Encrypt"
+    assert attrs['tls_not_after'] == '2026-09-01'
+    assert attrs['tls_sans'] == ['example.com', 'api.example.com']
+    assert attrs['provider'] == 'Cloudflare'
+    assert attrs['location'] == 'San Francisco, US'
+
+
+def test_subdomain_carries_probe_attrs_and_drops_empty():
+    r = _report()
+    r['phases']['subdomains']['data']['results'] = [
+        {'subdomain': 'api.example.com', 'ip': '1.2.3.5', 'cname': 'cdn.fastly.net',
+         'service': 'Fastly', 'takeover': True, 'http_status': 200,
+         'server': 'nginx', 'title': '', 'status': 'HTTP 200'},
+        {'subdomain': 'dead.example.com', 'ip': '', 'takeover': False},
+    ]
+    assets = aa.derive_assets(r)
+    api = _attrs_for(assets, 'subdomain', 'api.example.com')
+    assert api['service'] == 'Fastly' and api['cname'] == 'cdn.fastly.net'
+    assert api['takeover'] is True and api['server'] == 'nginx'
+    assert 'title' not in api                      # empty dropped
+    dead = _attrs_for(assets, 'subdomain', 'dead.example.com')
+    assert 'takeover' not in dead                  # False dropped (only flag when True)
+    assert 'http_status' not in dead
+
+
+def test_ip_and_asn_carry_provider_location():
+    r = _report()
+    r['phases']['recon']['data']['infrastructure'].update(
+        {'org': 'Cloudflare, Inc.', 'location': 'US'})
+    assets = aa.derive_assets(r)
+    assert _attrs_for(assets, 'ip', '1.2.3.4')['provider'] == 'Cloudflare'
+    assert _attrs_for(assets, 'ip', '1.2.3.4')['location'] == 'US'
+    asn = _attrs_for(assets, 'asn', 'as13335')
+    assert asn['org'] == 'Cloudflare, Inc.' and asn['location'] == 'US'
+
+
+def test_enrichment_does_not_change_identity():
+    # Attrs are non-identity: a richer report yields the SAME asset ids.
+    plain = {a.type: a.id for a in aa.derive_assets(_report())}
+    r = _report()
+    r['phases']['certificate'] = {'data': {'issuer': 'X', 'sans': 'DNS:y.com'}}
+    r['phases']['subdomains']['data']['results'][0]['service'] = 'Fastly'
+    rich = {a.type: a.id for a in aa.derive_assets(r)}
+    assert plain == rich

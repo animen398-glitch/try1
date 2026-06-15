@@ -615,10 +615,24 @@ of-exposure. Новый взвешенный фактор «Концентрац
 не clear-cut). Старые числа байт-в-байт (фактор=0 без correlation/одно-хостовых
 узлов). Покрыто `test_executive_summary` (фактор/score/headline/отсутствие).
 
+**Asset coverage & attrs (F-A1) — `[ЗАКРЫТ]`.** Backend-фаза. `asset_adapter.
+derive_assets` обогащён атрибутами, которые УЖЕ были в report, но дропались (pure
+derive, identity не тронута → ноль churn в сторе; `asset_store.upsert` рефрешит
+attrs через COALESCE): **domain** — TLS-факты из фазы `certificate` (`tls_issuer`/
+`tls_subject`/`tls_not_after`/`tls_sans` через `_split_sans`) + `provider`/`location`;
+**subdomain** — данные active-пробы (`cname`/`service`/`takeover`/`server`/
+`http_status`/`title`/`status`, только непустые через `_present`, takeover лишь при
+True); **ip**/**asn** — `provider`/`location`/`org` из infrastructure. Детали видны
+в Assets-табе автоматически (рендер attrs generic). Покрыто `test_asset_adapter`
+(TLS/probe/provider + identity-инвариант). **Отложено** (риск churn в lifecycle):
+cert-SAN/CT как первоклассные subdomain-активы — нужна per-source GONE-гейтинг в
+`asset_store.sync` (сейчас gate по типу, `any(phase ran)` → cert-only субдомен
+мигал бы GONE/REAPPEARED). Пока SANs живут как `domain.attrs.tls_sans`.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён +
-Findings SLA углублён + Risk↔infra concentration. Отклонено (конфликт
+Findings SLA углублён + Risk↔infra concentration + Asset coverage. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.
