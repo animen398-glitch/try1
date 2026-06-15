@@ -43,6 +43,21 @@ def test_explicit_fields_win():
     assert f.location == 'h/p' and f.discriminator == 'd'
 
 
+def test_knowledge_fields_carried_into_evidence():
+    # F-O2: producer-supplied description/impact/remediation persist in evidence.
+    f = fa.from_raw({'title': 'x', 'severity': 'high', 'category': 'vuln',
+                     'description': 'A flaw', 'remediation': 'Patch'})
+    assert f.description == 'A flaw' and f.remediation == 'Patch'
+    ev = f.to_store()['evidence']
+    assert ev['description'] == 'A flaw' and ev['remediation'] == 'Patch'
+    assert 'impact' not in ev                 # empty fields dropped by to_store
+
+
+def test_knowledge_fields_absent_by_default():
+    ev = fa.from_raw({'title': 'x', 'severity': 'low'}).to_store()['evidence']
+    assert not any(k in ev for k in ('description', 'impact', 'remediation'))
+
+
 # ── rule_id stability (the identity property) ────────────────────────────────
 
 def test_volatile_counts_do_not_fork_identity():

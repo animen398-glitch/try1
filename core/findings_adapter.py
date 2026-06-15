@@ -161,6 +161,12 @@ class Finding:
     source: str = ''
     detail: str = ''
     sources: List[str] = field(default_factory=list)
+    # Producer-supplied knowledge (F-O2) — non-identity, optional. When present
+    # (e.g. a nuclei template's info.*) it persists in evidence and wins over the
+    # finding_knowledge catalog at display time.
+    description: str = ''
+    impact: str = ''
+    remediation: str = ''
 
     @property
     def id(self) -> str:
@@ -170,7 +176,9 @@ class Finding:
     def to_store(self) -> Dict:
         """Shape expected by :meth:`FindingsStore.upsert` — masked evidence only."""
         evidence = {'location': self.location, 'source': self.source,
-                    'detail': self.detail, 'discriminator': self.discriminator}
+                    'detail': self.detail, 'discriminator': self.discriminator,
+                    'description': self.description, 'impact': self.impact,
+                    'remediation': self.remediation}
         # Keep the cross-scanner reference list only when several tools agree.
         if len(self.sources) > 1:
             evidence['sources'] = self.sources
@@ -179,6 +187,12 @@ class Finding:
             'title': self.title, 'severity': normalize_severity(self.severity),
             'evidence': {k: v for k, v in evidence.items() if v},
         }
+
+
+def _knowledge(raw: Dict) -> Dict[str, str]:
+    """Producer-supplied description/impact/remediation (optional, F-O2)."""
+    return {k: str(raw.get(k) or '') for k in ('description', 'impact',
+                                               'remediation')}
 
 
 def from_raw(raw: Dict) -> Finding:
@@ -201,6 +215,7 @@ def from_raw(raw: Dict) -> Finding:
             source=str(raw.get('source', '')),
             detail=str(raw.get('detail', '')),
             sources=_sources_of(raw),
+            **_knowledge(raw),
         )
     category = _category(raw)
     return Finding(
@@ -213,6 +228,7 @@ def from_raw(raw: Dict) -> Finding:
         source=str(raw.get('source', '')),
         detail=str(raw.get('detail', '')),
         sources=_sources_of(raw),
+        **_knowledge(raw),
     )
 
 

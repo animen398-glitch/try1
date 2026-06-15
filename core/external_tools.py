@@ -86,11 +86,17 @@ def parse_nuclei_jsonl(text: str) -> List[Dict]:
         where = (obj.get('matched-at') or obj.get('matched_at')
                  or obj.get('host') or '')
         detail = ' · '.join(p for p in (template, where) if p)
+        # Carry the template's knowledge text (F-O2) — the adapter persists it in
+        # evidence and it wins over the finding_knowledge catalog at display time.
+        remediation = info.get('remediation') or info.get('remediation_steps') or ''
         findings.append({
             'severity': _map_nuclei_severity(info.get('severity', 'info')),
             'title': str(title),
             'detail': detail,
             'source': 'nuclei',
+            'description': str(info.get('description') or ''),
+            'impact': str(info.get('impact') or ''),
+            'remediation': str(remediation),
         })
     return findings
 

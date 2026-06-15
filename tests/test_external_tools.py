@@ -50,6 +50,17 @@ def test_parse_falls_back_to_template_id_for_title():
     assert findings[0]['title'] == 'only-id'
 
 
+def test_parse_captures_template_knowledge():
+    # F-O2: nuclei info.description/impact/remediation carried onto the finding.
+    text = json.dumps({'template-id': 't', 'info': {
+        'name': 'X', 'severity': 'high', 'description': 'A flaw',
+        'impact': 'RCE possible', 'remediation': 'Patch it'}})
+    f = parse_nuclei_jsonl(text)[0]
+    assert f['description'] == 'A flaw'
+    assert f['impact'] == 'RCE possible'
+    assert f['remediation'] == 'Patch it'
+
+
 # ── NucleiRunner ────────────────────────────────────────────────────────────
 
 def test_scan_unavailable_when_binary_missing(monkeypatch):
