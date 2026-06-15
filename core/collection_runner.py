@@ -908,13 +908,17 @@ class CollectionRunner:
                 if isinstance(raw, dict):
                     sid = scoped_id(project.slug, from_raw(raw).id)
                     raw['status'] = status_by_id.get(sid, 'OPEN')
-            from core.findings_sla import breached_count
+            from core.findings_sla import sla_summary
+            active = store.active_findings(project.slug)
+            sla = sla_summary(active, reopened=store.reopen_dates(project.slug))
             report['findings'] = {
                 'project': project.slug, 'summary': result['summary'],
                 'new': len(result['new']), 'reopened': len(result['reopened']),
                 'resolved': len(result['resolved']),
                 'recurring': len(result['recurring']),
-                'sla_breached': breached_count(store.active_findings(project.slug)),
+                'sla_breached': sla['breached'],
+                'sla_due_soon': sla['due_soon'],
+                'sla': sla,
             }
             s = result['summary']
             self._log(f"  Findings: {s['active']} активных / {s['total']} "
@@ -1046,6 +1050,10 @@ class CollectionRunner:
         if breached:
             delta += (f'<p style="font-size:13px;color:#c62828;">'
                       f'⚠ Просрочено по SLA: <b>{e(str(breached))}</b></p>')
+        due_soon = fdata.get('sla_due_soon', 0)
+        if due_soon:
+            delta += (f'<p style="font-size:13px;color:#ef6c00;">'
+                      f'⏳ Скоро срок по SLA: <b>{e(str(due_soon))}</b></p>')
         rows = ''.join(
             f'<tr><td style="padding:1px 12px 1px 0;">{e(labels.get(st, st))}</td>'
             f'<td style="color:#666;">{e(str(by_status.get(st, 0)))}</td></tr>'

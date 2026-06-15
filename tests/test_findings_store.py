@@ -117,6 +117,25 @@ def test_set_status_validates(tmp_path):
         s.set_status('deadbeef', 'FIXED')
 
 
+def test_reopen_dates_tracks_latest_reopen(tmp_path):
+    # reopen_dates feeds the reopen-aware SLA clock: only findings that actually
+    # reopened appear, dated at the most recent REOPENED event.
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    assert s.reopen_dates('proj') == {}                 # never reopened → absent
+    s.set_status(sid, 'FIXED', source='auto', event_type='RESOLVED_AUTO')
+    s.set_status(sid, 'OPEN', source='auto', event_type='REOPENED',
+                 now='2026-01-01T00:00:00')
+    s.set_status(sid, 'FIXED', source='auto', event_type='RESOLVED_AUTO')
+    s.set_status(sid, 'OPEN', source='auto', event_type='REOPENED',
+                 now='2026-06-01T00:00:00')
+    assert s.reopen_dates('proj') == {sid: '2026-06-01T00:00:00'}   # latest wins
+    # project-scoped: an unrelated project does not leak in.
+    assert s.reopen_dates('other') == {}
+
+
 # ── queries / summary ─────────────────────────────────────────────────────────
 
 def test_list_filters_and_project_scoping(tmp_path):

@@ -123,6 +123,19 @@ def test_findings_events_mapped_and_noise_dropped():
     assert events[0]['title'] == '[medium] Weak CSP'
 
 
+def test_sla_breach_events_merged_into_feed():
+    # Already-shaped SLA-breach rows (from findings_sla.sla_events) are folded in
+    # and ordered chronologically with the rest.
+    sla_evts = [{'scan_id': None, 'at': '2026-02-01T00:00:00', 'type': 'sla_breach',
+                 'title': '[high] Stale secret — SLA просрочено',
+                 'severity': 'high', 'section': 'findings'}]
+    fevents = [{'type': 'CREATED', 'scan_id': 's1', 'at': '2026-01-01',
+                'title': 'Stale secret', 'severity': 'high'}]
+    events = timeline.build_events([], fevents, None, sla_evts)
+    types = [e['type'] for e in events]
+    assert types == ['new_finding', 'sla_breach']     # chronological by 'at'
+
+
 def test_events_are_deduped_and_time_ordered():
     a = _report('s1', '2026-01-01')
     b = _report('s2', '2026-01-02', risk=('High', 60))

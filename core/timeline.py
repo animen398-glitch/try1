@@ -81,7 +81,8 @@ def build_series(scan_entries: List[Dict]) -> List[Dict]:
 
 def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  finding_events: Optional[List[Dict]] = None,
-                 asset_events: Optional[List[Dict]] = None) -> List[Dict]:
+                 asset_events: Optional[List[Dict]] = None,
+                 sla_events: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -89,9 +90,10 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     that has a usable report (a missing/legacy report is skipped, never faked).
     ``finding_events`` are the F1 store rows (see ``FindingsStore.project_events``);
     ``asset_events`` are the Asset Inventory store rows (see
-    ``AssetStore.project_events``). Events are de-duplicated by
-    ``(scan_id, type, title)`` and ordered chronologically. Each event is
-    ``{scan_id, at, type, title, severity, section}``.
+    ``AssetStore.project_events``); ``sla_events`` are already-shaped SLA-breach
+    rows (see ``findings_sla.sla_events``) — time-based, not scan-based. Events
+    are de-duplicated by ``(scan_id, type, title)`` and ordered chronologically.
+    Each event is ``{scan_id, at, type, title, severity, section}``.
     """
     events: List[Dict] = []
 
@@ -132,6 +134,10 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                        'severity': _ASSET_EVENT_SEVERITY[etype],
                        'section': 'assets'})
 
+    for se in sla_events or []:
+        if isinstance(se, dict):
+            events.append(se)
+
     seen = set()
     deduped: List[Dict] = []
     for ev in events:
@@ -158,10 +164,18 @@ def build_timeline(project) -> Dict:
     entries = sorted(project.scans(), key=lambda s: str(s.get('id') or ''))
     scans = [(s.get('id'), project.load_scan_report(s.get('id')))
              for s in entries if s.get('id')]
+    finding_events: List[Dict] = []
+    sla_evts: List[Dict] = []
     try:
-        finding_events = FindingsStore().project_events(project.slug)
+        store = FindingsStore()
+        finding_events = store.project_events(project.slug)
+        # Time-based SLA breaches of the still-active findings (reopen-aware).
+        from core import findings_sla
+        sla_evts = findings_sla.sla_events(
+            store.active_findings(project.slug),
+            reopened=store.reopen_dates(project.slug))
     except Exception:   # noqa: BLE001 — timeline must render even if findings fail
-        finding_events = []
+        finding_events, sla_evts = finding_events, sla_evts
     try:
         from core.asset_store import AssetStore
         asset_events = AssetStore().project_events(project.slug)
@@ -170,5 +184,5 @@ def build_timeline(project) -> Dict:
     return {
         'project': project.slug,
         'series': build_series(entries),
-        'events': build_events(scans, finding_events, asset_events),
+        'events': build_events(scans, finding_events, asset_events, sla_evts),
     }

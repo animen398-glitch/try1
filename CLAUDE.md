@@ -578,9 +578,35 @@ longest-prefix); **F-K7** инфра-exposure «blast radius» (`_build_infra_ex
 отчётной карточке, web `/correlation` тащит автоматом). Pure, без новых
 зависимостей, identity/схемы целы.
 
+**Findings SLA & lifecycle deepening (F-S1→F-S5) — `[ЗАКРЫТ]`.** Backend-фаза
+(internals-first, GUI не перестраиваем — память `feedback-internals-first-no-gui`).
+Всё pure / derive-on-read, без миграции схемы, сигнатуры аддитивны (I7):
+- **F-S1** `core/findings_sla.py`: **SLA-часы рестартятся при reopen** — reference
+  = `max(first_seen, last_reopened)` (`_reference`; DefectDojo-семантика: дедлайн
+  считается от текущего открытого эпизода, исходный `first_seen_at` сохранён для
+  истории). Раньше переоткрытая старая находка мгновенно «просрочена» — закрыто.
+  Классификатор `sla_bucket` (breached/due_soon/on_track; `SLA_WARN_DAYS=7`),
+  агрегат `sla_summary` (счётчики бакетов + разбивка по severity + aging-гистограмма),
+  `sla_events` (находки в просрочке как timeline-события — время-, не скан-
+  триггерные). `annotate`/`breached_count` получили опц. `reopened` map.
+- **F-S2** `core/findings_store.py`: `reopen_dates(project)` — read-примитив
+  `finding_id → ts последнего REOPENED` (питает reopen-aware SLA-часы; только
+  реально переоткрытые попадают, иначе fallback на `first_seen`).
+- **F-S3** `core/timeline.py`: `build_events` принял опц. `sla_events`;
+  `build_timeline` деривит просрочки активных находок (reopen-aware) → лента; ярлык
+  `sla_breach` в `gui/tab_timeline._EVENT_LABELS`.
+- **F-S4** тонкая проводка: `reopened` прокинут в web `/findings`, GUI Findings-таб,
+  карточку отчёта (`collection_runner` → `report['findings']['sla']` = `sla_summary`,
+  показ breached + due_soon в карточке).
+- **F-S5** тесты: reopen-рестарт/reference-max, бакеты, summary+aging, sla_events,
+  `reopen_dates` (latest+project-scope), мердж в timeline. Алерт-канал для SLA-
+  просрочки **отложен** (нужна персистентность «было/стало» чтобы не алертить
+  каждый прогон — конфликт с derive-on-read; timeline-событие — верная поверхность).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
-IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён. Отклонено (конфликт
+IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён +
+Findings SLA углублён. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

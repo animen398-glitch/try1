@@ -218,7 +218,8 @@ class FindingsTabMixin:
             store = FindingsStore()
             rows = store.list_findings(project=project, status=status,
                                        severity=severity)
-            annotate_sla(rows)   # add the derived 'sla' field per finding
+            # reopen-aware SLA clock (see FindingsStore.reopen_dates)
+            annotate_sla(rows, reopened=store.reopen_dates(project))
             summary = store.summary(project)
             # F-K3: resolve each finding's asset/infra chain for a single project
             # (cross-store correlation). Skipped for "all projects" (None).

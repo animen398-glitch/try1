@@ -344,6 +344,28 @@ class FindingsStore(SQLiteStore):
         return [{'project': r['project'], 'total': r['total'],
                  'active': r['active'] or 0} for r in rows]
 
+    def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:
+        """``finding_id → timestamp of its most recent REOPENED event``.
+
+        The SLA clock restarts when a fixed finding reappears, so the remediation
+        window must be measured from the latest reopen, not the original
+        discovery (see ``findings_sla._reference``). Pure read; only findings
+        that ever reopened appear in the map (the common case — never reopened —
+        is simply absent, and SLA falls back to ``first_seen_at``)."""
+        if project is not None:
+            sql = ("SELECT e.finding_id fid, MAX(e.at) at FROM finding_events e"
+                   " JOIN findings f ON f.id = e.finding_id"
+                   " WHERE e.type = 'REOPENED' AND f.project = ?"
+                   " GROUP BY e.finding_id")
+            params: tuple = (project,)
+        else:
+            sql = ("SELECT finding_id fid, MAX(at) at FROM finding_events"
+                   " WHERE type = 'REOPENED' GROUP BY finding_id")
+            params = ()
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return {r['fid']: r['at'] for r in rows}
+
     def project_events(self, project: str) -> List[Dict]:
         """All finding events for a project's findings, oldest first, enriched
         with each finding's title/severity/category — the timeline's findings

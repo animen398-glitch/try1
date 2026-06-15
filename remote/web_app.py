@@ -358,7 +358,8 @@ def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
         store = FindingsStore()
         findings = store.list_findings(project=project, status=status,
                                        severity=severity)
-        annotate_sla(findings)        # each finding carries a derived 'sla' field
+        # SLA clock is reopen-aware → pass the latest reopen date per finding.
+        annotate_sla(findings, reopened=store.reopen_dates(project))
         annotate_knowledge(findings)  # + description/impact/remediation (F-O4)
         return {'projects': store.projects(),
                 'findings': findings,
