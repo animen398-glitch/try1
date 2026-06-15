@@ -48,6 +48,18 @@ def _isolate_assets_db(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_companies_registry(tmp_path_factory, monkeypatch):
+    """Redirect the global companies registry to a per-test temp file.
+
+    ``CompanyRegistry()`` defaults to ``data/companies.json`` (a real repo path);
+    it binds the default at construction from the module name, so patch it there
+    (mirrors ``_isolate_findings_db``)."""
+    import core.company as company
+    monkeypatch.setattr(company, "COMPANIES_REGISTRY",
+                        tmp_path_factory.mktemp("companies") / "companies.json")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_operations_db(request, tmp_path_factory, monkeypatch):
     """Redirect the global operations DB to a per-test temp file.
 

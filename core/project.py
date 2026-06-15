@@ -196,6 +196,30 @@ class Project:
         meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
         self._write_metadata(meta)
 
+    # ---------------------------------------------------------------- company
+    def get_company(self) -> Optional[str]:
+        """The project's company slug, or None when unassigned (Epic F-C1).
+
+        Company membership is a logical label stored as a single optional key in
+        ``metadata.json`` — never a directory layer (see ``core.company``)."""
+        company = self.load_metadata().get('company')
+        return company if isinstance(company, str) and company.strip() else None
+
+    def set_company(self, company: Optional[str]) -> None:
+        """Assign (or, with a falsy value, clear) the project's company slug.
+
+        Read-modify-write, composing with ``record_scan``/``set_monitor`` (each
+        preserves the others' keys). The value is a company *slug*
+        (``core.company.company_slug``); the caller owns any registry entity."""
+        self.ensure()
+        meta = self.load_metadata()
+        if company and str(company).strip():
+            meta['company'] = str(company).strip()
+        else:
+            meta.pop('company', None)
+        meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
+        self._write_metadata(meta)
+
 
 class ProjectStore:
     """Manages the ``<base>/Projects/`` tree of projects."""
@@ -223,3 +247,22 @@ class ProjectStore:
                 out.append(Project(d).load_metadata())
         out.sort(key=lambda m: m.get('updated_at') or '', reverse=True)
         return out
+
+    # ---------------------------------------------------------------- company
+    def companies(self) -> List[Dict]:
+        """Projects grouped by company (derive-on-read, Epic F-C1).
+
+        Thin loader over ``list_projects`` + the company registry — mirrors the
+        portfolio split (pure aggregator in ``core.company`` + this loader). One
+        entry per company, with the implicit ``Unassigned`` bucket last."""
+        from core.company import CompanyRegistry, group_projects
+        return group_projects(self.list_projects(), CompanyRegistry())
+
+    def assign(self, slug: str, company: Optional[str]) -> bool:
+        """Set (or clear) a project's company membership; True if the project
+        exists. ``company`` is a company slug (or falsy to unassign)."""
+        project = self.get(slug)
+        if project is None:
+            return False
+        project.set_company(company)
+        return True

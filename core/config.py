@@ -37,6 +37,7 @@ OPERATIONS_DB = DATA_DIR / 'operations.db'
 REGISTRY_DB = DATA_DIR / 'registry.db'
 FINDINGS_DB = DATA_DIR / 'findings.db'
 ASSETS_DB = DATA_DIR / 'assets.db'        # Asset Inventory (cross-scan, lifecycle)
+COMPANIES_REGISTRY = DATA_DIR / 'companies.json'  # Company tier — display names/attrs
 LIVE_TEST_OUTPUT = _PM.data_root / 'live_test_output'
 PLUGINS_DIR = _PM.resource_root / 'plugins'
 
