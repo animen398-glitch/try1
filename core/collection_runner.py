@@ -977,7 +977,9 @@ class CollectionRunner:
             if data.get('error') or (not exposure and not summary.get('correlated')):
                 return
             report['correlation'] = {'summary': summary,
-                                     'exposure': exposure[:10]}
+                                     'exposure': exposure[:10],
+                                     'infra_exposure': (data.get('infra_exposure')
+                                                        or [])[:5]}
             self._log(f"  Correlation: {summary.get('correlated', 0)}/"
                       f"{summary.get('findings', 0)} находок связаны с активами, "
                       f"exposed: {summary.get('exposed_assets', 0)}")
@@ -1009,7 +1011,22 @@ class CollectionRunner:
                  f'<td style="padding-right:12px;"><b>Актив</b></td>'
                  f'<td><b>Worst</b></td><td><b>Находок</b></td></tr>'
                  f'{rows}</table>' if rows else '')
-        return head + table
+        # F-K7: infra blast-radius — which ip/asn/netblock concentrates findings.
+        infra = cdata.get('infra_exposure') or []
+        infra_rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">'
+            f'{e(str(r.get("type", "")))}: {e(str(r.get("node", "")))}</td>'
+            f'<td style="color:{cls._CORR_SEV_COLOR.get(r.get("worst"), "#666")};'
+            f'font-weight:bold;">{e(str(r.get("worst") or "—"))}</td>'
+            f'<td style="color:#666;">{e(str(r.get("findings_count", 0)))} '
+            f'· {e(str(r.get("host_count", 0)))} хост.</td></tr>'
+            for r in infra)
+        infra_table = (
+            f'<p style="font-size:12px;color:#888;margin:8px 0 2px;">'
+            f'Инфраструктура (blast radius):</p>'
+            f'<table style="font-size:12px;">{infra_rows}</table>'
+            if infra_rows else '')
+        return head + table + infra_table
 
     @staticmethod
     def _render_findings_card(fdata: Dict) -> str:

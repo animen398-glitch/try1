@@ -175,6 +175,34 @@ def test_load_correlation_reads_stores():
     assert api['worst'] == 'high'
 
 
+# ── F-K7: infra-level exposure (blast radius) ─────────────────────────────────
+
+def test_infra_exposure_rolls_up_by_ip_asn_netblock():
+    assets = _infra_assets() + [
+        _asset('a-sub2', 'subdomain', 'cdn.acme.com', ip='1.2.3.4'),
+        _asset('a-nb', 'netblock', '1.2.3.0/24'),
+    ]
+    findings = [
+        _finding('f1', 'api.acme.com/graphql', 'critical'),  # api → 1.2.3.4
+        _finding('f2', 'cdn.acme.com', 'high'),              # cdn → 1.2.3.4
+    ]
+    out = build_correlation(findings, assets)
+    by = {(r['type'], r['node']): r for r in out['infra_exposure']}
+    ip = by[('ip', '1.2.3.4')]
+    assert ip['findings_count'] == 2          # both findings on one IP
+    assert ip['host_count'] == 2              # across two hosts
+    assert ip['worst'] == 'critical'
+    # ASN + netblock aggregate the same two findings.
+    assert by[('asn', 'AS13335')]['findings_count'] == 2
+    assert by[('netblock', '1.2.3.0/24')]['findings_count'] == 2
+
+
+def test_infra_exposure_sorted_worst_first():
+    out = build_correlation([_finding('f', 'api.acme.com/graphql', 'critical')],
+                            _infra_assets())
+    assert out['infra_exposure'][0]['worst'] == 'critical'
+
+
 # ── F-K2: report card ─────────────────────────────────────────────────────────
 
 class _Project:
@@ -215,7 +243,11 @@ def test_render_correlation_card_html():
     from core.collection_runner import CollectionRunner
     cdata = {'summary': {'correlated': 2, 'findings': 3, 'exposed_assets': 1},
              'exposure': [{'value': 'api.acme.com', 'label': 'api.acme.com',
-                           'worst': 'critical', 'findings_count': 2}]}
+                           'worst': 'critical', 'findings_count': 2}],
+             'infra_exposure': [{'type': 'asn', 'node': 'AS13335',
+                                 'worst': 'critical', 'findings_count': 2,
+                                 'host_count': 1}]}
     out = CollectionRunner._render_correlation_card(cdata)
     assert 'api.acme.com' in out and 'critical' in out
     assert 'из 3' in out                 # correlated/total in the header
+    assert 'blast radius' in out and 'AS13335' in out   # F-K7 infra line

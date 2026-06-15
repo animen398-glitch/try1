@@ -158,6 +158,7 @@ def build_correlation(findings: List[Dict], assets: List[Dict]) -> Dict:
             x.get('severity') for x in bucket['findings'])
 
     exposure = _build_exposure(hosts, endpoints, asset_findings, findings)
+    infra_exposure = _build_infra_exposure(findings, finding_chains)
 
     totals = _empty_counts()
     for f in findings:
@@ -170,7 +171,8 @@ def build_correlation(findings: List[Dict], assets: List[Dict]) -> Dict:
         'exposed_assets': len(exposure),
     }
     return {'finding_chains': finding_chains, 'asset_findings': asset_findings,
-            'exposure': exposure, 'summary': summary}
+            'exposure': exposure, 'infra_exposure': infra_exposure,
+            'summary': summary}
 
 
 def _build_exposure(hosts: Dict, endpoints: Dict, asset_findings: Dict,
@@ -220,6 +222,52 @@ def _build_exposure(hosts: Dict, endpoints: Dict, asset_findings: Dict,
     return rows
 
 
+def _build_infra_exposure(findings: List[Dict],
+                          finding_chains: Dict[str, Dict]) -> List[Dict]:
+    """Roll findings up the infra chain → exposure per ip / asn / netblock (F-K7).
+
+    Each finding exposes its IP, that IP's ASN and its netblock simultaneously, so
+    it counts once toward each level it resolves to (a finding is de-duped within a
+    node, but an ASN legitimately aggregates findings across its hosts/IPs). The
+    "blast radius" view — which infrastructure node concentrates risk. Returns rows
+    ``{type, node, findings_count, severity_counts, worst, host_count}``,
+    worst-severity first."""
+    nodes: Dict = {}
+    for f in findings:
+        chain = finding_chains.get(f.get('id')) or {}
+        host = chain.get('host')
+        fid = f.get('id')
+        for ntype in ('ip', 'asn', 'netblock'):
+            val = chain.get(ntype)
+            if not val:
+                continue
+            node = nodes.get((ntype, val))
+            if node is None:
+                node = nodes[(ntype, val)] = {
+                    'type': ntype, 'node': val, 'findings': set(),
+                    'severity_counts': _empty_counts(), 'hosts': set()}
+            if fid in node['findings']:
+                continue
+            node['findings'].add(fid)
+            node['severity_counts'][_sev(f.get('severity'))] += 1
+            if host:
+                node['hosts'].add(host)
+
+    rows: List[Dict] = []
+    for node in nodes.values():
+        counts = node['severity_counts']
+        rows.append({
+            'type': node['type'], 'node': node['node'],
+            'findings_count': len(node['findings']),
+            'severity_counts': counts,
+            'worst': _worst(s for s, n in counts.items() for _ in range(n)),
+            'host_count': len(node['hosts']),
+        })
+    rows.sort(key=lambda r: (_SEVERITY_RANK.get(r['worst'], 99),
+                             -r['findings_count']))
+    return rows
+
+
 def load_correlation(project: str) -> Dict:
     """Correlate one project's active findings with its assets (thin reader).
 
@@ -236,4 +284,4 @@ def load_correlation(project: str) -> Dict:
         return build_correlation(findings, assets)
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
         return {'finding_chains': {}, 'asset_findings': {}, 'exposure': [],
-                'summary': {}, 'error': str(e)}
+                'infra_exposure': [], 'summary': {}, 'error': str(e)}
