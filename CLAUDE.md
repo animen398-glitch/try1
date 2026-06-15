@@ -603,10 +603,22 @@ longest-prefix); **F-K7** инфра-exposure «blast radius» (`_build_infra_ex
   просрочки **отложен** (нужна персистентность «было/стало» чтобы не алертить
   каждый прогон — конфликт с derive-on-read; timeline-событие — верная поверхность).
 
+**Risk ↔ infra concentration (F-R4) — `[ЗАКРЫТ]`.** Backend-фаза. Связал F-K7
+«blast radius» с risk-движком: `executive_summary._infra_concentration(report)`
+(pure над `report['correlation'].infra_exposure` — уже деривится ДО build_summary
+в `collection_runner.run`: sync→correlation→summary) считает инфра-узлы (ip/asn/
+netblock), концентрирующие находки на **≥2 хостах** = структурные single-points-
+of-exposure. Новый взвешенный фактор «Концентрация на инфраструктуре»
+(`RISK_WEIGHTS['infra_concentration']=2`, count×weight, worst-узел в detail) →
+аддитивен в score и в таблицу «Из чего риск»; метрика `infra_concentration` +
+чип «N× shared infra» (medium) в headline. `_risk_level` НЕ тронут (амплификатор,
+не clear-cut). Старые числа байт-в-байт (фактор=0 без correlation/одно-хостовых
+узлов). Покрыто `test_executive_summary` (фактор/score/headline/отсутствие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён +
-Findings SLA углублён. Отклонено (конфликт
+Findings SLA углублён + Risk↔infra concentration. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

@@ -76,12 +76,14 @@ RISK_WEIGHTS = {
     'source_map_leaks': 5,
     'weak_cookies': 2,
     'graphql_introspection': 4,   # open GraphQL schema leak (F-R2)
+    'infra_concentration': 2,     # shared-infra choke point / blast radius (F-R4)
 }
 
 
 def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
                   takeovers: int, source_map_leaks: int, weak_cookies: int,
-                  graphql_introspection: int = 0) -> List[Dict]:
+                  graphql_introspection: int = 0, infra_concentration: int = 0,
+                  infra_detail: str = '') -> List[Dict]:
     """The explicit, weighted contributions that make up the raw risk score.
 
     Returns a list of ``{factor, count, weight, points, detail}`` — one per
@@ -109,8 +111,32 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
     add('Слабые cookie', weak_cookies, 'weak_cookies')
     add('GraphQL introspection', graphql_introspection, 'graphql_introspection',
         'открытая схема GraphQL')
+    add('Концентрация на инфраструктуре', infra_concentration,
+        'infra_concentration', infra_detail)
     factors.sort(key=lambda f: f['points'], reverse=True)
     return factors
+
+
+def _infra_concentration(report: Dict) -> Tuple[int, str]:
+    """Shared-infrastructure choke points — the "blast radius" amplifier (F-R4).
+
+    Reads the correlation phase's ``infra_exposure`` (F-K7: findings folded up
+    each finding's ip / asn / netblock) and counts the nodes that concentrate
+    findings across **≥2 hosts**: those are structural single-points-of-exposure
+    — one shared ASN/netblock/IP whose compromise (or whose one fix) touches many
+    hosts at once. Pure over ``report['correlation']`` (already derived before the
+    summary runs), so the risk math stays a pure function of the report. Returns
+    ``(count, detail)`` where ``detail`` names the worst such node."""
+    infra = (report.get('correlation') or {}).get('infra_exposure') or []
+    concentrated = [n for n in infra
+                    if isinstance(n, dict) and _int(n.get('host_count')) >= 2]
+    if not concentrated:
+        return 0, ''
+    worst = concentrated[0]   # infra_exposure is worst-severity-first
+    detail = (f"{worst.get('type', '')} {worst.get('node', '')}: "
+              f"{_int(worst.get('findings_count'))} находок на "
+              f"{_int(worst.get('host_count'))} хостах")
+    return len(concentrated), detail
 
 
 def _count_takeovers(report: Dict) -> int:
@@ -182,6 +208,9 @@ def headline(summary: Dict) -> Dict:
         add(_plural(weak_cookies, 'Weak cookie'), 'medium')
     if _int(m.get('graphql')) and not _int(m.get('graphql_introspection')):
         add('GraphQL exposed', 'medium')
+    infra_conc = _int(m.get('infra_concentration'))
+    if infra_conc:
+        add(f'{infra_conc}× shared infra', 'medium')
     medium = _int(m.get('medium'))
     if medium:
         add(f'{medium} Medium', 'medium')
@@ -243,12 +272,17 @@ def build_summary(report: Dict) -> Dict:
     surface = build_surface(report)
     surface_pts = surface_score(surface)
 
+    # F-R4: shared-infra blast radius as a structural amplifier (0 unless the
+    # correlation phase found infra nodes concentrating findings across hosts).
+    infra_concentration, infra_detail = _infra_concentration(report)
+
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions (leaked secrets / source-maps weigh heaviest after a takeover —
     # the single worst hop). Numbers are unchanged from the old flat formula.
     risk_factors = _risk_factors(vuln_score, high, medium, secrets, takeovers,
                                  source_map_leaks, weak_cookies,
-                                 graphql_introspection)
+                                 graphql_introspection, infra_concentration,
+                                 infra_detail)
     score = sum(f['points'] for f in risk_factors)
     level = _risk_level(score, high, secrets, takeovers, graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
@@ -259,6 +293,7 @@ def build_summary(report: Dict) -> Dict:
         'secrets': secrets, 'weak_cookies': weak_cookies,
         'source_map_leaks': source_map_leaks, 'takeovers': takeovers,
         'graphql': graphql, 'graphql_introspection': graphql_introspection,
+        'infra_concentration': infra_concentration,
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

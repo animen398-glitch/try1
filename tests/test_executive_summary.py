@@ -266,6 +266,51 @@ def test_risk_factors_empty_when_clean():
     assert es.build_summary(_report())['risk_factors'] == []
 
 
+# ── F-R4: shared-infra concentration (blast radius) folds into the score ──────
+
+def _infra_node(node='AS13335', type='asn', host_count=3, findings_count=5,
+                worst='high'):
+    return {'type': type, 'node': node, 'host_count': host_count,
+            'findings_count': findings_count, 'worst': worst}
+
+
+def test_infra_concentration_adds_weighted_factor():
+    r = _report(weak_cookies=1)                       # base score 2
+    r['correlation'] = {'infra_exposure': [
+        _infra_node('AS13335', 'asn', host_count=3),
+        _infra_node('1.2.3.0/24', 'netblock', host_count=3),
+        _infra_node('1.2.3.4', 'ip', host_count=1),   # single host → not counted
+    ]}
+    s = es.build_summary(r)
+    by_name = {f['factor']: f for f in s['risk_factors']}
+    factor = by_name['Концентрация на инфраструктуре']
+    assert factor['count'] == 2                        # asn + netblock (≥2 hosts)
+    assert factor['weight'] == 2
+    assert factor['points'] == 2 * 2
+    assert 'AS13335' in factor['detail']               # worst-first node named
+    assert s['risk_score'] == 2 + 2 * 2                # base + amplifier
+    assert s['metrics']['infra_concentration'] == 2
+
+
+def test_infra_concentration_absent_leaves_score_unchanged():
+    # No correlation phase (the common case) → no new factor, score as before.
+    base = es.build_summary(_report(weak_cookies=1))
+    assert base['metrics']['infra_concentration'] == 0
+    assert 'Концентрация на инфраструктуре' not in {
+        f['factor'] for f in base['risk_factors']}
+    # A correlation with only single-host nodes also adds nothing.
+    r = _report(weak_cookies=1)
+    r['correlation'] = {'infra_exposure': [_infra_node(host_count=1)]}
+    assert es.build_summary(r)['risk_score'] == base['risk_score']
+
+
+def test_infra_concentration_chip_in_headline():
+    r = _report()
+    r['correlation'] = {'infra_exposure': [_infra_node(host_count=4)]}
+    hl = es.headline(es.build_summary(r))
+    assert any('shared infra' in c['label'] for c in hl['chips'])
+
+
 # ── F-R3: risk-factor breakdown in the report ─────────────────────────────────
 
 def test_render_html_includes_risk_breakdown():
