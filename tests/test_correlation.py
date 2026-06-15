@@ -44,6 +44,21 @@ def test_endpoint_finding_resolves_full_chain():
     assert out['asset_findings']['a-ep']['worst'] == 'critical'
 
 
+def test_apex_domain_finding_resolves_chain():
+    # F-K5: a finding on the apex domain resolves ip/asn via the domain asset's
+    # own attrs (parity with subdomains).
+    assets = [
+        _asset('a-dom', 'domain', 'acme.com', ip='9.9.9.9'),
+        _asset('a-ip', 'ip', '9.9.9.9', asn='AS100'),
+        _asset('a-asn', 'asn', 'AS100', name='Acme ISP', provider='Acme ISP'),
+    ]
+    out = build_correlation([_finding('f', 'acme.com', 'high')], assets)
+    chain = out['finding_chains']['f']
+    assert chain['host'] == 'acme.com'
+    assert chain['ip'] == '9.9.9.9' and chain['asn'] == 'AS100'
+    assert chain['asn_name'] == 'Acme ISP'
+
+
 def test_host_level_finding_attaches_to_subdomain():
     findings = [_finding('f2', 'api.acme.com', 'high')]
     out = build_correlation(findings, _infra_assets())

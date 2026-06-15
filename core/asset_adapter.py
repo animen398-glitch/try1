@@ -114,10 +114,15 @@ def derive_assets(report: Dict) -> List[Asset]:
         recon.get('infrastructure'), dict) else {}
     out: List[Asset] = []
 
-    # domain (the target host)
+    # domain (the target host). Carry the apex IP/ASN so domain-level findings
+    # resolve the full infra chain (ip → asn → netblock), same as subdomains do
+    # via their own ``attrs.ip`` — correlation reads these (F-K5).
     domain = (report.get('domain') or _host_of(report.get('url', '')))
     if domain:
-        out.append(Asset('domain', domain, attrs={'source': 'recon'}))
+        out.append(Asset('domain', domain, attrs={
+            'source': 'recon',
+            'ip': recon.get('ip') or infra.get('ip'),
+            'asn': infra.get('asn')}))
 
     # subdomains (opt-in phase)
     sub = _phase(report, 'subdomains')
