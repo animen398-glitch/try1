@@ -497,10 +497,29 @@ employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **з
   `assets.db`. Покрыто `test_asset_*`/`test_assets_tab`/`test_web_assets` +
   расширены `test_timeline`/`test_report_export`.
 
-**Следующий шаг:** **Эпик ASM 2.0 завершён** (F1–F5 + F6 вариант A) + перечисленные
-пост-эпик инкременты (вкл. Asset Inventory + F5 heatmap-разбивка + тренды в
-HTML-отчёте — **F5 полностью закрыт**) + CVE-корреляция через OSV.dev
-(`core/osv_correlation.py`, opt-in live API, вытесняет хардкод). Тесты:
-**951 passed / 6 skipped** (offline/headless). Дальше — по запросу: вариант B GUI
-(PySide6/qfluent) строго инкрементально; либо новые векторы по согласованию
-(аудит+план+СТОП).
+**Company / Workspace tier (эпик F-C1→F-C4) — `[ЗАКРЫТ]`.** Слой группировки
+НАД проектами как логический ярлык, НЕ уровень каталогов (раскладка
+`Projects/<slug>/` и scoped-id-контракты не тронуты, миграции нет):
+- **F-C1** ядро: `core/company.py` (`CompanyRegistry` — тонкий `data/companies.json`
+  только имена/атрибуты, НЕ membership; `company_slug`; `UNASSIGNED`;
+  `group_projects` derive-on-read), membership = ключ `company` в `metadata.json`
+  проекта (`Project.get/set_company`, RMW как `monitor`), `ProjectStore.companies()/
+  assign()`.
+- **F-C2** аналитика: `build_company_rollup` (поверх `portfolio.build_portfolio`,
+  без пересчёта) + `load_company_view`; общий `portfolio.active_findings_map()`.
+- **F-C3** GUI: Overview-вкладка — таблица сводки по компаниям, клик фильтрует
+  таблицу проектов, контрол назначения (editable combo → registry.create +
+  assign, off-thread).
+- **F-C4** web-паритет: `GET /companies` + `POST /projects/{slug}/company`,
+  кнопка «Companies» в консоли.
+
+**Следующий шаг:** ASM 2.0 (F1–F6) + пост-эпик инкременты + Company tier
+завершены. Внешний бенчмарк (vs SpiderFoot/Amass/DefectDojo/EASM, 2026-06-15)
+разобран: бóльшая часть «что добавить» уже сделана; новый отфильтрованный
+бэклог (по согласованию, аудит+план+СТОП) — **(1) кросс-сущностная корреляция
+findings↔assets↔endpoints↔IP/ASN** (главное; сейчас сторы не связаны),
+(2) находки как полные объекты (description/impact/remediation),
+(3) executive-плашка «что важно за 10 сек», (4) консолидация IA меню. Отклонено
+как конфликт с инвариантами: ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
+APScheduler/Apprise/WeasyPrint (дублируют существующее). Детали — память
+`project-benchmark-direction`.
