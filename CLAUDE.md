@@ -548,14 +548,20 @@ chip-строка в report.html (`render_html`) + в Dashboard Security Overvie
 (FlowLayout цветных меток). Web-паритет автоматом (консоль отдаёт тот же
 report.html). Чистый derive, без новых зависимостей.
 
-**Следующий шаг:** весь **аддитивный** отфильтрованный бэклог закрыт (Company
-tier, Correlation, Finding Objects, Executive Headline). Остался только
-**п.4 — консолидация IA меню** (Dashboard/Assets/Discovery/Security/Findings/
-Timeline/Monitoring/Reports/System + вынос Video/Image/Clone в Plugins). Это
-**НЕ аддитив**, а перестройка навигации: трогает контракт вкладок
-(инвариант I4/I7: вкладки из PluginManager, не хардкод), FluentWindow-nav,
-`BUILTIN_TABS` и тесты, проверяющие набор вкладок. По §6/§8 (стабильность №1)
-делать его автономно НЕЛЬЗЯ — нужен отдельный план + явное утверждение + СТОП.
-Отклонено (конфликт инвариантов): ECharts/Cytoscape (QWebEngine),
-SQLAlchemy/Postgres, APScheduler/Apprise/WeasyPrint. Детали — память
-`project-benchmark-direction`.
+**IA Menu Consolidation (бэклог п.4) — `[ЗАКРЫТ, безопасный срез]`.**
+Консолидация nav-рельса **группировкой**, БЕЗ слияния/удаления вкладок —
+контракт плагинов (I4/I7) и тесты целы: `TabPlugin` += опц. `section`/`position`
+(обратносовместимо), `BUILTIN_TABS` переупорядочены в кластеры (Обзор→Разведка→
+Безопасность→Управление→Отчёты→Инструменты→Система) и размечены; `build_into`
+прокидывает хинты (fallback на 2-арг addTab); `FluentWindowTabs.addTab` рисует
+разделитель на смене TOP-секции и якорит `position='bottom'` (System/История)
+вниз рельса; отложенная стартовая подгрузка первой вкладки (singleShot — в
+headless-тестах не стреляет). **Вне scope (ломает контракт, отложено):** слияние
+вкладок в под-табы, вынос Video/Image/Clone из главного UI.
+
+**Следующий шаг:** весь отфильтрованный бэклог из внешнего бенчмарка закрыт
+(Company tier, Correlation, Finding Objects, Executive Headline, IA-консолидация —
+безопасный срез). Отклонено (конфликт инвариантов): ECharts/Cytoscape
+(QWebEngine), SQLAlchemy/Postgres, APScheduler/Apprise/WeasyPrint. Дальше — по
+запросу. Детали — память `project-benchmark-direction`. **Рекомендуется** живой
+запуск `.exe` для визуальной проверки сгруппированного nav (как делали в F6 P3b).
