@@ -156,8 +156,29 @@ class AssetStore(SQLiteStore):
 
     # ── lifecycle orchestration ───────────────────────────────────────────────
 
+    @staticmethod
+    def _gone_in_scope(row: Dict, in_scope: Optional[Callable[[str], bool]],
+                       source_in_scope: Optional[Callable[[str], bool]]) -> bool:
+        """May an absent ACTIVE asset be marked GONE this scan?
+
+        Only when the phase that *produces this asset* actually ran (a skipped
+        opt-in phase must not look like the asset disappeared). Prefer per-source
+        gating — an asset records the ``source`` that derived it (recon /
+        subdomains / certificate / ct / …), and a name seen only in the TLS
+        certificate is not "gone" just because the active subdomain phase ran
+        without it. Falls back to per-type gating for rows with no stored source
+        (legacy rows / callers that pass only ``in_scope``)."""
+        if source_in_scope is not None:
+            src = (row.get('attrs') or {}).get('source')
+            if src:
+                return source_in_scope(src)
+        if in_scope is not None:
+            return in_scope(row['type'])
+        return True
+
     def sync(self, project: str, scan_id: Optional[str], assets: List,
              *, in_scope: Optional[Callable[[str], bool]] = None,
+             source_in_scope: Optional[Callable[[str], bool]] = None,
              now: Optional[str] = None) -> Dict:
         """Reconcile a scan's assets with the stored inventory.
 
@@ -166,8 +187,10 @@ class AssetStore(SQLiteStore):
           * new fingerprint → CREATED / ACTIVE;
           * seen again → SEEN, EXCEPT a GONE asset reappearing → REAPPEARED →
             ACTIVE;
-          * a stored ACTIVE asset NOT seen this scan → GONE, but only when
-            ``in_scope(type)`` (its producing phase actually ran this scan).
+          * a stored ACTIVE asset NOT seen this scan → GONE, but only when its
+            producing phase ran — gated per-source via ``source_in_scope(source)``
+            when given, else per-type via ``in_scope(type)`` (see
+            :meth:`_gone_in_scope`).
 
         Returns ``{new, recurring, reappeared, gone, summary}``.
         """
@@ -190,7 +213,7 @@ class AssetStore(SQLiteStore):
         for row in self.list_assets(project):
             if row['id'] in seen_ids or row['status'] != ACTIVE_STATUS:
                 continue
-            if in_scope is not None and not in_scope(row['type']):
+            if not self._gone_in_scope(row, in_scope, source_in_scope):
                 continue
             self.set_status(row['id'], GONE_STATUS, event_type='GONE',
                             scan_id=scan_id, now=now)

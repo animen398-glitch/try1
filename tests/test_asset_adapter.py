@@ -152,6 +152,43 @@ def test_subdomain_carries_probe_attrs_and_drops_empty():
     assert 'http_status' not in dead
 
 
+def test_cert_sans_promoted_to_subdomain_assets():
+    r = _report()
+    r['phases']['subdomains']['data']['results'] = []        # no active probe
+    r['phases']['certificate'] = {'status': 'Success', 'data': {
+        'sans': 'DNS:example.com, DNS:mail.example.com, DNS:*.example.com'}}
+    bt = _by_type(aa.derive_assets(r))
+    # apex + wildcard excluded; only the concrete SAN host promoted.
+    assert bt['subdomain'] == ['mail.example.com']
+    src = _attrs_for(aa.derive_assets(r), 'subdomain', 'mail.example.com')['source']
+    assert src == 'certificate'
+
+
+def test_ct_names_promoted_to_subdomain_assets():
+    r = _report()
+    r['phases']['subdomains']['data']['results'] = []
+    r['phases']['ct'] = {'status': 'Success', 'data': {
+        'names': ['example.com', 'vpn.example.com', '*.example.com']}}
+    assets = aa.derive_assets(r)
+    bt = _by_type(assets)
+    assert bt['subdomain'] == ['vpn.example.com']            # apex/wildcard dropped
+    assert _attrs_for(assets, 'subdomain', 'vpn.example.com')['source'] == 'ct'
+
+
+def test_active_probe_wins_subdomain_identity_over_cert():
+    # A name found by BOTH the active probe and the certificate is one asset,
+    # keeping the richer probe attrs (first occurrence wins the identity).
+    r = _report()
+    r['phases']['subdomains']['data']['results'] = [
+        {'subdomain': 'api.example.com', 'ip': '1.2.3.5', 'service': 'Fastly'}]
+    r['phases']['certificate'] = {'status': 'Success', 'data': {
+        'sans': 'DNS:api.example.com'}}
+    subs = [a for a in aa.derive_assets(r) if a.type == 'subdomain']
+    assert [a.value for a in subs] == ['api.example.com']    # one asset, not two
+    assert subs[0].attrs['source'] == 'subdomains'           # probe kept
+    assert subs[0].attrs['service'] == 'Fastly'
+
+
 def test_ip_and_asn_carry_provider_location():
     r = _report()
     r['phases']['recon']['data']['infrastructure'].update(

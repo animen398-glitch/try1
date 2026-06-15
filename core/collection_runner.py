@@ -948,11 +948,20 @@ class CollectionRunner:
                 sources = ASSET_SOURCE_PHASES.get(asset_type, ('recon',))
                 return any(phase_ok(s) for s in sources)
 
+            def source_in_scope(source: str) -> bool:
+                # An asset's stored ``source`` is the producing phase name
+                # (recon / subdomains / certificate / ct / asn_intel / katana /
+                # openapi). Gate GONE on exactly that phase, so a name seen only
+                # in the certificate isn't flapped GONE when the cert phase was
+                # skipped but the active subdomain phase ran (F-A1 tail).
+                return phase_ok(source)
+
             assets = derive_assets(report)
             if not assets:
                 return
             result = AssetStore().sync(project.slug, scan_id, assets,
-                                       in_scope=in_scope)
+                                       in_scope=in_scope,
+                                       source_in_scope=source_in_scope)
             s = result['summary']
             report['assets'] = {
                 'project': project.slug, 'summary': s,

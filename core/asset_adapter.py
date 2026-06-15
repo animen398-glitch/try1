@@ -108,6 +108,17 @@ def _present(**kwargs) -> Dict:
     return {k: v for k, v in kwargs.items() if v not in (None, '', [], {})}
 
 
+def _is_concrete_host(host: str, apex: str) -> bool:
+    """A TLS/CT name worth promoting to its own subdomain asset: a concrete name
+    *within the target apex*. Excludes wildcards (``*.x``), the apex itself (that
+    is the ``domain`` asset, not a subdomain) and unrelated names a multi-SAN
+    certificate may carry (only ``*.apex`` hosts are this project's subdomains)."""
+    h = str(host or '').strip().lower().rstrip('.')
+    if not h or h.startswith('*.') or h == apex or not apex:
+        return False
+    return h.endswith('.' + apex)
+
+
 def _split_sans(sans) -> List[str]:
     """Certificate SANs come comma-joined from ``cert_info`` — split into a list
     of distinct hostnames (``DNS:`` prefixes stripped, lowercased, de-duped)."""
@@ -166,6 +177,24 @@ def derive_assets(report: Dict) -> List[Asset]:
                 http_status=e.get('http_status'), title=e.get('title'),
                 status=e.get('status')))
             out.append(Asset('subdomain', e['subdomain'], attrs=attrs))
+
+    # Subdomains observed in TLS material but not actively probed: the served
+    # certificate's SANs and the CT-log history (crt.sh). These are real, owned
+    # names — promote them to first-class subdomain assets (previously they only
+    # rode along in ``domain.attrs.tls_sans``). Their distinct ``source``
+    # ('certificate' / 'ct') lets the store gate GONE per-source, so a scan that
+    # skipped the cert/CT phase never flaps them GONE just because the active
+    # subdomain phase ran (F-A1 tail). Probe results above win the identity (first
+    # occurrence keeps its richer attrs); these only add names not already seen.
+    apex = (domain or '').lower().rstrip('.')
+    for host in _split_sans(cert.get('sans')):
+        if _is_concrete_host(host, apex):
+            out.append(Asset('subdomain', host, attrs={'source': 'certificate'}))
+    ct = _phase(report, 'ct')
+    for host in ct.get('names') or []:
+        if _is_concrete_host(host, apex):
+            out.append(Asset('subdomain', str(host).strip().lower().rstrip('.'),
+                             attrs={'source': 'ct'}))
 
     # ip (recon + infrastructure chain) — carry the provider/location too.
     for ip in (recon.get('ip'), infra.get('ip')):

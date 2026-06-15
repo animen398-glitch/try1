@@ -624,10 +624,27 @@ attrs через COALESCE): **domain** — TLS-факты из фазы `certifi
 `http_status`/`title`/`status`, только непустые через `_present`, takeover лишь при
 True); **ip**/**asn** — `provider`/`location`/`org` из infrastructure. Детали видны
 в Assets-табе автоматически (рендер attrs generic). Покрыто `test_asset_adapter`
-(TLS/probe/provider + identity-инвариант). **Отложено** (риск churn в lifecycle):
-cert-SAN/CT как первоклассные subdomain-активы — нужна per-source GONE-гейтинг в
-`asset_store.sync` (сейчас gate по типу, `any(phase ran)` → cert-only субдомен
-мигал бы GONE/REAPPEARED). Пока SANs живут как `domain.attrs.tls_sans`.
+(TLS/probe/provider + identity-инвариант).
+
+**Asset per-source lifecycle gating (F-A2, хвост F-A1) — `[ЗАКРЫТ]`.** Backend-фаза.
+Закрыт отложенный F-A1: cert-SAN и CT-имена (crt.sh) теперь **первоклассные
+subdomain-активы**, а не только `domain.attrs.tls_sans`. Раньше блокировал churn —
+`asset_store.sync` гейтил GONE по **типу** (`any(phase ran)`), поэтому cert-only
+субдомен мигал бы GONE/REAPPEARED, когда cert-фаза пропущена, а active-subdomains
+гонялась. Фикс: гейтинг **по source**. Каждый актив уже несёт `attrs['source']` =
+имя продьюсящей фазы (recon/subdomains/certificate/ct/asn_intel/katana/openapi), и
+эти строки = имена фаз → `AssetStore.sync` получил опц. `source_in_scope(source)`
+(новый `_gone_in_scope`: source-гейт приоритетно, fallback на type-гейт для legacy-
+строк без source; back-compat — старый `in_scope`-контракт цел при
+`source_in_scope=None`). `collection_runner._sync_assets` строит
+`source_in_scope=phase_ok(source)`. `asset_adapter.derive_assets`: cert SANs →
+`source='certificate'`, CT `names` → `source='ct'` (фильтр `_is_concrete_host`:
+концертный host в пределах apex, без wildcard/apex/чужих multi-SAN доменов);
+active-проба выигрывает identity (first-occurrence, богаче attrs). Endpoint-гейтинг
+заодно стал точнее (katana-эндпоинт GONE только если katana гонялась, не
+`any(katana|openapi)`). Identity не тронута → ноль churn. Покрыто
+`test_asset_adapter` (cert/CT promotion, apex/wildcard/out-of-scope drop, probe
+wins) + `test_asset_store` (per-source no-flap + fallback).
 
 **Scanner robustness (F-SR1) — `[ЗАКРЫТ]`.** Backend-фаза. Закалка pure-точек
 входа детект-движков на битый ввод (degrade-not-raise). Аудит показал, что

@@ -94,6 +94,36 @@ def test_sync_out_of_scope_type_not_marked_gone(tmp_path):
     assert s.summary('p1')['active'] == 1
 
 
+def test_sync_per_source_gating_does_not_flap_cert_only_subdomain(tmp_path):
+    # A subdomain seen only in the TLS certificate (source='certificate').
+    s = _store(tmp_path)
+    cert_sub = _asset('subdomain', 'mail.x.com', source='certificate')
+    s.sync('p1', 's1', [cert_sub])
+    # Next scan ran the active subdomain phase but NOT the cert phase. Per-type
+    # gating would flap it GONE (its type is in scope); per-source must not.
+    ran = {'subdomains'}
+    r = s.sync('p1', 's2', [], in_scope=lambda t: True,
+               source_in_scope=lambda src: src in ran)
+    assert r['gone'] == []
+    assert s.summary('p1')['active'] == 1
+    # When the cert phase DOES run and the name is absent → genuinely GONE.
+    ran = {'subdomains', 'certificate'}
+    r2 = s.sync('p1', 's3', [], in_scope=lambda t: True,
+                source_in_scope=lambda src: src in ran)
+    assert [g['type'] for g in r2['gone']] == ['subdomain']
+    assert s.summary('p1')['active'] == 0
+
+
+def test_sync_source_gating_falls_back_to_type_when_no_source(tmp_path):
+    # A legacy row with no stored source → type gating still applies.
+    s = _store(tmp_path)
+    s.sync('p1', 's1', [_asset('subdomain', 'api.x.com')])   # no source attr
+    r = s.sync('p1', 's2', [], in_scope=lambda t: t != 'subdomain',
+               source_in_scope=lambda src: True)
+    assert r['gone'] == []                                    # type gate wins
+    assert s.summary('p1')['active'] == 1
+
+
 # ── reads ─────────────────────────────────────────────────────────────────────
 
 def test_list_filters_and_summary(tmp_path):
