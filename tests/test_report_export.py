@@ -23,9 +23,23 @@ def test_findings_csv_header_and_row():
              'id': 'abc123'}]
     table = _parse(rx.findings_csv(rows))
     assert table[0] == ['Project', 'Severity', 'Status', 'Category', 'Title',
-                        'Rule', 'First seen', 'Last seen', 'ID']
-    assert table[1] == ['a.com', 'high', 'OPEN', 'header', 'Weak CSP', 'csp',
-                        '2026-01-01', '2026-02-01', 'abc123']
+                        'Rule', 'Description', 'Impact', 'Remediation',
+                        'First seen', 'Last seen', 'ID']
+    row = table[1]
+    assert row[rx_idx('Project')] == 'a.com'
+    assert row[rx_idx('Title')] == 'Weak CSP'
+    assert row[rx_idx('ID')] == 'abc123'
+    # F-O3: knowledge columns filled from the catalog (csp rule specific).
+    assert row[rx_idx('Remediation')]            # non-empty
+    assert 'Content-Security-Policy' in row[rx_idx('Remediation')]
+
+
+def test_findings_csv_uses_producer_remediation():
+    # Explicit evidence remediation wins over the catalog in the export.
+    rows = [{'category': 'vuln', 'title': 'X', 'severity': 'high',
+             'evidence': {'remediation': 'Upgrade to 2.0'}}]
+    table = _parse(rx.findings_csv(rows))
+    assert table[1][rx_idx('Remediation')] == 'Upgrade to 2.0'
 
 
 def test_findings_csv_missing_keys_become_blank():

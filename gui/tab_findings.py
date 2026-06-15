@@ -339,6 +339,17 @@ class FindingsTabMixin:
             f"Обнаружено: {rec.get('first_seen_at', '')} → {rec.get('last_seen_at', '')}",
             f"SLA:        {format_sla(rec.get('sla') or {})}",
         ]
+        # F-O3: the finding "object" — description / impact / remediation (catalog,
+        # with any producer-supplied text winning). Always present (generic
+        # fallback), so a triager always sees what it is and how to fix it.
+        from core.finding_knowledge import describe
+        info = describe(rec.get('category', ''), rec.get('rule_id', ''),
+                        rec.get('title', ''), rec.get('evidence'))
+        lines += [
+            f"Описание:   {info['description']}",
+            f"Воздействие: {info['impact']}",
+            f"Remediation: {info['remediation']}",
+        ]
         evidence = rec.get('evidence')
         if isinstance(evidence, dict) and evidence:
             lines.append("Улики:")

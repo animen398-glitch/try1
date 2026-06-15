@@ -158,3 +158,23 @@ def test_finding_detail_renders_chain(qapp):
     text = w.findings_detail.toPlainText()
     assert 'Цепочка' in text
     assert 'api.acme.com/graphql' in text and 'AS13335 (CF)' in text
+
+
+# ── F-O3: finding object (description/impact/remediation) in the detail ────────
+
+def test_finding_detail_shows_knowledge(qapp):
+    w = _window(qapp)
+    w._show_finding_detail({'id': 'f', 'title': 'Insecure cookie',
+                            'category': 'cookie', 'severity': 'low',
+                            'status': 'OPEN', 'evidence': {}})
+    text = w.findings_detail.toPlainText()
+    assert 'Описание' in text and 'Remediation' in text
+    assert 'Secure' in text                       # cookie remediation from catalog
+
+
+def test_finding_detail_prefers_producer_remediation(qapp):
+    w = _window(qapp)
+    w._show_finding_detail({'id': 'f', 'title': 'X', 'category': 'vuln',
+                            'severity': 'high', 'status': 'OPEN',
+                            'evidence': {'remediation': 'Patch to 2.0'}})
+    assert 'Patch to 2.0' in w.findings_detail.toPlainText()

@@ -16,6 +16,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 _FINDINGS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('project', 'Project'), ('severity', 'Severity'), ('status', 'Status'),
     ('category', 'Category'), ('title', 'Title'), ('rule_id', 'Rule'),
+    ('description', 'Description'), ('impact', 'Impact'),
+    ('remediation', 'Remediation'),
     ('first_seen_at', 'First seen'), ('last_seen_at', 'Last seen'), ('id', 'ID'),
 )
 
@@ -56,8 +58,13 @@ def _rows_to_csv(rows: Optional[List[Dict]],
 
 
 def findings_csv(findings: Optional[List[Dict]]) -> str:
-    """CSV of a findings list (``FindingsStore.list_findings`` rows)."""
-    return _rows_to_csv(findings, _FINDINGS_COLUMNS)
+    """CSV of a findings list (``FindingsStore.list_findings`` rows).
+
+    Each row is enriched with description/impact/remediation from the
+    finding_knowledge catalog (F-O3) so the export carries the full finding
+    object, DefectDojo-style."""
+    from core.finding_knowledge import annotate
+    return _rows_to_csv(annotate(list(findings or [])), _FINDINGS_COLUMNS)
 
 
 def assets_csv(assets: Optional[List[Dict]]) -> str:
