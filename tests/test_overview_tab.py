@@ -159,3 +159,84 @@ def test_query_overview_graph_no_scans(tmp_path):
     ProjectStore(str(tmp_path)).get_or_create('https://empty.com')
     out = OverviewTabMixin._query_overview_graph(str(tmp_path), 'empty.com')
     assert out['svg'] is None
+
+
+# ── F-C3: company roll-up, filter, assignment ─────────────────────────────────
+
+def test_company_table_built(qapp):
+    w = _window(qapp)
+    assert (w.overview_companies_table.columnCount()
+            == len(OverviewTabMixin.OVERVIEW_COMPANY_COLUMNS))
+
+
+def test_query_companies_reads_view(tmp_path):
+    _seed_project(tmp_path, 'https://x.com')
+    ProjectStore(str(tmp_path)).assign('x.com', 'acme_corp')
+    out = OverviewTabMixin._query_companies(str(tmp_path))
+    assert 'error' not in out
+    by_slug = {r['slug']: r for r in out['rows']}
+    assert by_slug['acme_corp']['project_count'] == 1
+    assert by_slug['acme_corp']['risk_level'] == 'High'
+
+
+def test_populate_companies_and_assign_combo(qapp, tmp_path):
+    from core.company import CompanyRegistry
+    w = _window(qapp)
+    CompanyRegistry().create('Acme Corp')
+    rows = [{'slug': 'acme_corp', 'name': 'Acme Corp', 'project_count': 2,
+             'risk_level': 'High', 'risk_score': 70, 'secrets': 3, 'high': 1,
+             'medium': 0, 'active_findings': 5, 'asset_total': 12,
+             'project_slugs': ['a.com', 'b.com']}]
+    w._populate_overview_companies(rows)
+    assert w.overview_companies_table.rowCount() == 1
+    assert w.overview_companies_table.item(0, 0).text() == 'Acme Corp'
+    assert w.overview_companies_table.item(0, 1).text() == '2'
+    w._populate_assign_combo(rows)
+    items = [w.overview_assign_company.itemText(i)
+             for i in range(w.overview_assign_company.count())]
+    assert items == ['', 'Acme Corp']            # "" sentinel + company name
+
+
+def test_company_filter_hides_other_projects(qapp, tmp_path):
+    w = _window(qapp)
+    w._populate_overview_table([
+        {'slug': 'a.com', 'risk_level': 'High'},
+        {'slug': 'b.com', 'risk_level': 'Low'},
+    ])
+    rows = [{'slug': 'acme_corp', 'name': 'Acme', 'project_count': 1,
+             'risk_level': 'High', 'risk_score': 70, 'secrets': 0, 'high': 0,
+             'medium': 0, 'active_findings': 0, 'asset_total': 0,
+             'project_slugs': ['a.com']}]
+    w._overview_companies = rows
+    w._populate_overview_companies(rows)
+    # Select the company row → real signal path filters the projects table.
+    w.overview_companies_table.selectRow(0)
+    w._on_company_row_selected()                 # deterministic under offscreen Qt
+    assert w.overview_table.isRowHidden(0) is False   # a.com kept
+    assert w.overview_table.isRowHidden(1) is True    # b.com hidden
+    w._clear_company_filter()
+    assert w.overview_table.isRowHidden(1) is False   # filter cleared
+
+
+def test_do_assign_sets_and_clears_company(tmp_path):
+    store = ProjectStore(str(tmp_path))
+    store.get_or_create('https://x.com')
+    out = OverviewTabMixin._do_assign(str(tmp_path), 'x.com', 'Acme Corp')
+    assert out['ok'] is True
+    assert store.get('x.com').get_company() == 'acme_corp'
+    # Empty name unassigns.
+    out = OverviewTabMixin._do_assign(str(tmp_path), 'x.com', '')
+    assert out['ok'] is True
+    assert store.get('x.com').get_company() is None
+
+
+def test_do_assign_unknown_project(tmp_path):
+    out = OverviewTabMixin._do_assign(str(tmp_path), 'ghost.com', 'Acme')
+    assert out['ok'] is False
+
+
+def test_on_assign_done_error(qapp):
+    w = _window(qapp)
+    w._refresh_overview = lambda: None           # don't spawn the reload worker
+    w._on_assign_done({'error': 'boom', 'slug': 'x.com'})
+    assert 'boom' in w.overview_status.text()

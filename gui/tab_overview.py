@@ -48,6 +48,11 @@ class OverviewTabMixin:
                         "Secrets", "High", "Medium", "Findings", "Сканов",
                         "Обновлён"]
 
+    # Company roll-up table (F-C3) — one row per company over its projects.
+    OVERVIEW_COMPANY_COLUMNS = ["Компания", "Проектов", "Риск", "Score",
+                                "Secrets", "High", "Medium", "Findings",
+                                "Активы"]
+
     # (totals key -> card caption) for the estate roll-up.
     OVERVIEW_TOTALS = [
         ('projects',        'Проекты'),
@@ -94,6 +99,40 @@ class OverviewTabMixin:
             totals_row.addWidget(card)
         layout.addLayout(totals_row)
 
+        # Companies roll-up (F-C3) — group the estate by company; selecting a
+        # company filters the projects table below to its projects.
+        comp_grp = SectionGroupBox("Компании (сводка по проектам)")
+        comp_v = QVBoxLayout()
+        self.overview_companies_table = QTableWidget(
+            0, len(self.OVERVIEW_COMPANY_COLUMNS))
+        self.overview_companies_table.setHorizontalHeaderLabels(
+            self.OVERVIEW_COMPANY_COLUMNS)
+        self.overview_companies_table.setEditTriggers(
+            QAbstractItemView.NoEditTriggers)
+        self.overview_companies_table.setSelectionBehavior(
+            QAbstractItemView.SelectRows)
+        self.overview_companies_table.setSelectionMode(
+            QAbstractItemView.SingleSelection)
+        self.overview_companies_table.verticalHeader().setVisible(False)
+        self.overview_companies_table.setAlternatingRowColors(True)
+        ch = self.overview_companies_table.horizontalHeader()
+        ch.setSectionResizeMode(QHeaderView.ResizeToContents)
+        ch.setSectionResizeMode(0, QHeaderView.Stretch)
+        self.overview_companies_table.itemSelectionChanged.connect(
+            self._on_company_row_selected)
+        comp_v.addWidget(self.overview_companies_table)
+        filt_row = QHBoxLayout()
+        self.overview_company_filter_label = QLabel("Фильтр проектов: все")
+        filt_row.addWidget(self.overview_company_filter_label)
+        filt_row.addStretch()
+        btn_clear = StyledButton("Показать все", style='secondary')
+        btn_clear.setToolTip("Снять фильтр по компании с таблицы проектов.")
+        btn_clear.clicked.connect(self._clear_company_filter)
+        filt_row.addWidget(btn_clear)
+        comp_v.addLayout(filt_row)
+        comp_grp.setLayout(comp_v)
+        layout.addWidget(comp_grp, stretch=1)
+
         # Portfolio table — one row per project, worst risk first.
         table_grp = SectionGroupBox("Проекты (худший риск сверху)")
         table_v = QVBoxLayout()
@@ -110,6 +149,22 @@ class OverviewTabMixin:
         # Selecting a project drives the trend sparklines below.
         self.overview_table.itemSelectionChanged.connect(self._on_overview_row_selected)
         table_v.addWidget(self.overview_table)
+        # Assign the selected project to a company (F-C3). Editable combo so a
+        # new company can be typed (created on assign) or picked from existing.
+        assign_row = QHBoxLayout()
+        assign_row.addWidget(QLabel("Компания выбранного проекта:"))
+        self.overview_assign_company = QComboBox()
+        self.overview_assign_company.setEditable(True)
+        self.overview_assign_company.setMinimumWidth(200)
+        self.overview_assign_company.setToolTip(
+            "Выберите проект в таблице, укажите/выберите компанию и нажмите "
+            "«Назначить». Пустое поле снимает принадлежность.")
+        assign_row.addWidget(self.overview_assign_company)
+        btn_assign = StyledButton("Назначить", style='secondary')
+        btn_assign.clicked.connect(self._assign_company)
+        assign_row.addWidget(btn_assign)
+        assign_row.addStretch()
+        table_v.addLayout(assign_row)
         table_grp.setLayout(table_v)
         layout.addWidget(table_grp, stretch=2)
 
@@ -156,6 +211,10 @@ class OverviewTabMixin:
 
         # Portfolio rows backing the table/heatmap (for selection → trend).
         self._overview_rows: list = []
+        # Company roll-up rows + the active company filter (set of project slugs
+        # or None for "all") backing the projects-table filter (F-C3).
+        self._overview_companies: list = []
+        self._overview_company_filter = None
         self._overview_widget = w
         return w
 
@@ -222,9 +281,11 @@ class OverviewTabMixin:
         self._overview_rows = rows
         self._populate_overview_totals(result.get('totals', {}))
         self._populate_overview_table(rows)
+        self._apply_company_filter()              # re-apply any active filter
         self._render_overview_heatmap(rows)
         self._populate_overview_projects(rows)
         self.overview_status.setText(f"Проектов: {len(rows)}")
+        self._load_overview_companies()           # F-C3 company roll-up
 
     def _populate_overview_totals(self, totals: dict):
         level = totals.get('worst_risk_level') or '—'
@@ -303,6 +364,156 @@ class OverviewTabMixin:
         combo_idx = self.overview_trend_project.findData(slug)
         if combo_idx >= 0 and self.overview_trend_project.currentIndex() != combo_idx:
             self.overview_trend_project.setCurrentIndex(combo_idx)
+
+    def _selected_overview_slug(self):
+        """Slug of the project selected in the portfolio table, or None."""
+        sel = self.overview_table.selectionModel().selectedRows()
+        if not sel:
+            return None
+        idx = sel[0].row()
+        if not (0 <= idx < len(self._overview_rows)):
+            return None
+        return self._overview_rows[idx].get('slug')
+
+    # ── F-C3: company roll-up + filter + assignment ──────────────────────────────
+
+    def _load_overview_companies(self):
+        """Fire the company roll-up query (chained after the portfolio load)."""
+        if self._overview_companies_loading:
+            return
+        self._overview_companies_loading = True
+        base = self._overview_base()
+        self._run_async(lambda b=base: self._query_companies(b),
+                        self._on_companies_loaded)
+
+    @staticmethod
+    def _query_companies(base: str) -> dict:
+        try:
+            from core.company import load_company_view
+            return load_company_view(base)
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_companies_loaded(self, result: dict):
+        self._overview_companies_loading = False
+        if result.get('error'):
+            self.overview_status.setText(f"Ошибка компаний: {result['error']}")
+            return
+        rows = result.get('rows', [])
+        self._overview_companies = rows
+        self._populate_overview_companies(rows)
+        self._populate_assign_combo(rows)
+
+    def _populate_overview_companies(self, rows: list):
+        from core.company import UNASSIGNED
+        self.overview_companies_table.setRowCount(0)
+        for row in rows:
+            r = self.overview_companies_table.rowCount()
+            self.overview_companies_table.insertRow(r)
+            level = row.get('risk_level') or '—'
+            values = [
+                row.get('name') or row.get('slug', ''),
+                row.get('project_count', 0),
+                level,
+                _str_or_dash(row.get('risk_score')),
+                row.get('secrets', 0),
+                row.get('high', 0),
+                row.get('medium', 0),
+                row.get('active_findings', 0),
+                row.get('asset_total', 0),
+            ]
+            for col, val in enumerate(values):
+                item = QTableWidgetItem(str(val))
+                if col == 2 and row.get('slug') != UNASSIGNED:
+                    rc = theme.risk_color(level)
+                    if rc:
+                        item.setForeground(QColor(rc))
+                if col in range(1, 9):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.overview_companies_table.setItem(r, col, item)
+
+    def _populate_assign_combo(self, rows: list):
+        """Fill the editable company combo with existing company names."""
+        from core.company import UNASSIGNED
+        current = self.overview_assign_company.currentText()
+        self.overview_assign_company.blockSignals(True)
+        self.overview_assign_company.clear()
+        self.overview_assign_company.addItem("")          # "" = unassign
+        for row in rows:
+            if row.get('slug') != UNASSIGNED:
+                self.overview_assign_company.addItem(row.get('name') or row['slug'])
+        self.overview_assign_company.setEditText(current)
+        self.overview_assign_company.blockSignals(False)
+
+    def _on_company_row_selected(self):
+        sel = self.overview_companies_table.selectionModel().selectedRows()
+        if not sel:
+            return
+        idx = sel[0].row()
+        if not (0 <= idx < len(self._overview_companies)):
+            return
+        company = self._overview_companies[idx]
+        self._overview_company_filter = set(company.get('project_slugs') or [])
+        self.overview_company_filter_label.setText(
+            f"Фильтр проектов: {company.get('name') or company.get('slug', '')}")
+        self._apply_company_filter()
+
+    def _clear_company_filter(self):
+        self._overview_company_filter = None
+        self.overview_companies_table.clearSelection()
+        self.overview_company_filter_label.setText("Фильтр проектов: все")
+        self._apply_company_filter()
+
+    def _apply_company_filter(self):
+        """Show only the filtered company's projects in the portfolio table."""
+        keep = self._overview_company_filter
+        for r in range(self.overview_table.rowCount()):
+            item = self.overview_table.item(r, 0)
+            slug = item.text() if item else ''
+            self.overview_table.setRowHidden(r, keep is not None and slug not in keep)
+
+    def _assign_company(self):
+        slug = self._selected_overview_slug()
+        if not slug:
+            self.overview_status.setText("Выберите проект в таблице для назначения")
+            return
+        if self._overview_assign_loading:
+            return
+        self._overview_assign_loading = True
+        self._set_busy(True)
+        base = self._overview_base()
+        name = self.overview_assign_company.currentText().strip()
+        self._run_async(lambda b=base, s=slug, n=name: self._do_assign(b, s, n),
+                        self._on_assign_done)
+
+    @staticmethod
+    def _do_assign(base: str, slug: str, name: str) -> dict:
+        """Assign (or, with an empty name, clear) a project's company off-thread.
+
+        A non-empty name is registered (idempotent) and its slug stored on the
+        project; an empty name unassigns. Read-modify-write, never crashes UI."""
+        try:
+            from core.company import CompanyRegistry
+            from core.project import ProjectStore
+            cslug = CompanyRegistry().create(name) if name else None
+            ok = ProjectStore(base).assign(slug, cslug)
+            return {'ok': ok, 'slug': slug, 'name': name}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e), 'slug': slug}
+
+    def _on_assign_done(self, result: dict):
+        self._overview_assign_loading = False
+        self._set_busy(False)
+        if result.get('error'):
+            self.overview_status.setText(f"Ошибка назначения: {result['error']}")
+            return
+        if not result.get('ok'):
+            self.overview_status.setText(f"Проект не найден: {result.get('slug', '')}")
+            return
+        target = result.get('name') or 'Unassigned'
+        self.overview_status.setText(
+            f"Проект {result.get('slug', '')} → {target}")
+        self._refresh_overview()              # reload portfolio + companies
 
     # ── load: one project's metric series (for the sparklines) ───────────────────
 

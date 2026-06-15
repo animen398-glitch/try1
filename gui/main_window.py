@@ -87,6 +87,8 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._overview_series_loading = False
         self._overview_series_pending = False
         self._overview_graph_loading = False
+        self._overview_companies_loading = False
+        self._overview_assign_loading = False
         self.task_manager = TaskManager()
 
         # Build the window from the mixins (chrome lives in WindowChromeMixin).
