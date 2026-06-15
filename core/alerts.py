@@ -44,7 +44,8 @@ from core.scan_diff import diff_events
 # high-severity signal worth a push; ``new_graphql`` stays timeline-only like
 # ``new_endpoint`` (surface discovery, not a regression).
 ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
-               'cert_change', 'risk_increase', 'graphql_introspection')
+               'cert_change', 'risk_increase', 'graphql_introspection',
+               'sla_breach')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────
@@ -189,14 +190,9 @@ def _record_delivery(target: str, kind: str, result: Dict) -> None:
 
 # ── top-level: notify from a diff ─────────────────────────────────────────────
 
-def notify(config: Optional[Dict], slug: str, diff: Dict) -> Dict:
-    """Extract alerts from ``diff`` and send them over the configured channels.
-
-    Returns ``{alerts, sent, results?, reason?}``. No-ops cleanly when alerts
-    are disabled, nothing is alertable, or no channel is configured."""
-    if not config or not config.get('enabled'):
-        return {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
-    alerts = extract_alerts(diff, config.get('types') or None)
+def _send(config: Dict, slug: str, alerts: List[Dict], kind: str) -> Dict:
+    """Send a prepared alert batch over the configured channels (shared tail of
+    ``notify`` and ``notify_sla``). ``alerts`` are ``{type,title,severity}``."""
     if not alerts:
         return {'alerts': 0, 'sent': 0}
     channels = build_channels(config)
@@ -207,8 +203,61 @@ def notify(config: Optional[Dict], slug: str, diff: Dict) -> Dict:
     sent = sum(1 for r in results if r.get('status') == 'ok')
     out = {'alerts': len(alerts), 'sent': sent, 'results': results,
            'subject': subject}
-    _record_delivery(slug, 'notify', out)
+    _record_delivery(slug, kind, out)
     return out
+
+
+def notify(config: Optional[Dict], slug: str, diff: Dict) -> Dict:
+    """Extract alerts from ``diff`` and send them over the configured channels.
+
+    Returns ``{alerts, sent, results?, reason?}``. No-ops cleanly when alerts
+    are disabled, nothing is alertable, or no channel is configured."""
+    if not config or not config.get('enabled'):
+        return {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
+    alerts = extract_alerts(diff, config.get('types') or None)
+    return _send(config, slug, alerts, 'notify')
+
+
+def collect_sla_alerts(store, project: str, *, now=None) -> List[Dict]:
+    """New SLA-breach alert events for a project (one-shot, deduped via ``store``).
+
+    SLA breach is time-triggered, not scan-triggered, so it never shows up in a
+    Scan Diff — it is detected here from the persisted findings: the active
+    findings past their (reopen-aware) remediation deadline, narrowed to those not
+    yet alerted for their current open episode (``FindingsStore.record_sla_breaches``
+    logs a one-shot ``SLA_BREACH`` marker and returns only the new ones). Returns
+    lean ``{type:'sla_breach', title, severity}`` dicts — empty when nothing newly
+    breached. Pure of network; ``store`` is injected so tests use a temp DB."""
+    from core.findings_sla import sla_events, sla_status
+    active = store.active_findings(project)
+    if not active:
+        return []
+    reopened = store.reopen_dates(project)
+    breached = [f for f in active
+                if sla_status(f, now, None, reopened.get(f['id'])).get('breached')]
+    if not breached:
+        return []
+    now_iso = now.isoformat(timespec='seconds') if now is not None else None
+    new_ids = set(store.record_sla_breaches(
+        project, [f['id'] for f in breached], now=now_iso))
+    new_breached = [f for f in breached if f['id'] in new_ids]
+    return [{'type': e['type'], 'title': e['title'], 'severity': e['severity']}
+            for e in sla_events(new_breached, now=now, reopened=reopened)]
+
+
+def notify_sla(config: Optional[Dict], slug: str,
+               breach_alerts: List[Dict]) -> Dict:
+    """Dispatch already-collected SLA-breach alerts (the time-triggered channel).
+
+    ``breach_alerts`` come from :func:`collect_sla_alerts` (already deduped to NEW
+    breaches). Honors the same ``types`` filter as diff alerts and shares the send
+    tail / delivery journal. No-ops cleanly when disabled or filtered out."""
+    if not config or not config.get('enabled'):
+        return {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
+    want = set(config.get('types') or ALERT_TYPES)
+    alerts = [a for a in breach_alerts
+              if a.get('type') in want and a.get('type') in ALERT_TYPES]
+    return _send(config, slug, alerts, 'sla')
 
 
 def send_test(config: Optional[Dict]) -> Dict:

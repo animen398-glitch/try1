@@ -358,6 +358,34 @@ def test_run_project_fires_alerts_on_diff(tmp_path, monkeypatch):
     assert sent == [1]
 
 
+def test_run_project_fires_sla_breach_alert_once(tmp_path, monkeypatch):
+    # An active finding past its SLA deadline fires an alert on the run that first
+    # observes the breach (time-triggered, diff-independent) — then never again.
+    from core import alerts
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+    FindingsStore().upsert(project.slug, {
+        'id': fingerprint('vuln', 'https', 'https://x.com/'),
+        'category': 'vuln', 'rule_id': 'https', 'title': 'Plain HTTP',
+        'severity': 'high', 'evidence': None}, now='2020-01-01T00:00:00')
+    alert_config = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+
+    run1 = _fake_run_fn(project, [('20260613_010000', ['/a'])])
+    out1 = monitor.run_project(project, run1, now=datetime(2026, 6, 13, 10, 0),
+                               alert_config=alert_config)
+    assert out1['sla_alerts'] and out1['sla_alerts']['alerts'] == 1
+    assert out1['sla_alerts']['sent'] == 1
+
+    run2 = _fake_run_fn(project, [('20260614_010000', ['/a'])])
+    out2 = monitor.run_project(project, run2, now=datetime(2026, 6, 14, 10, 0),
+                               alert_config=alert_config)
+    assert out2['sla_alerts'] is None        # already alerted → nothing new
+
+
 def test_run_project_survives_failing_run_fn(tmp_path):
     project = ProjectStore(tmp_path).get_or_create('https://x.com')
     project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))

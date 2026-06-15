@@ -160,6 +160,58 @@ def test_send_test(monkeypatch):
     assert alerts.send_test({})['sent'] == 0
 
 
+# ── SLA-breach alert channel (time-triggered, one-shot via the findings store) ──
+
+def _finding_dict(severity='high'):
+    from core.finding_fingerprint import fingerprint
+    return {'id': fingerprint('vuln', 'https', 'https://x.com/'),
+            'category': 'vuln', 'rule_id': 'https', 'title': 'Plain HTTP',
+            'severity': severity, 'evidence': None}
+
+
+def _findings_store(tmp_path, *, first_seen):
+    from core.findings_store import FindingsStore
+    s = FindingsStore(tmp_path / 'findings.db')
+    s.upsert('proj', _finding_dict(), now=first_seen)
+    return s
+
+
+def test_collect_sla_alerts_new_breach_then_deduped(tmp_path):
+    # first_seen far past the high (30d) SLA window → breached now.
+    s = _findings_store(tmp_path, first_seen='2020-01-01T00:00:00')
+    first = alerts.collect_sla_alerts(s, 'proj')
+    assert len(first) == 1
+    assert first[0]['type'] == 'sla_breach' and first[0]['severity'] == 'high'
+    assert 'SLA' in first[0]['title']
+    # Second run: still breached but already alerted → nothing new.
+    assert alerts.collect_sla_alerts(s, 'proj') == []
+
+
+def test_collect_sla_alerts_empty_when_within_window(tmp_path):
+    from datetime import datetime
+    s = _findings_store(tmp_path,
+                        first_seen=datetime.now().isoformat(timespec='seconds'))
+    assert alerts.collect_sla_alerts(s, 'proj') == []
+
+
+def test_notify_sla_dispatches_and_honors_types_filter(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+    events = [{'type': 'sla_breach', 'title': '[high] Plain HTTP — SLA просрочено',
+               'severity': 'high'}]
+    cfg = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+    out = alerts.notify_sla(cfg, 'x.com', events)
+    assert out['alerts'] == 1 and out['sent'] == 1
+    # A types filter that omits sla_breach suppresses it.
+    cfg_filtered = {**cfg, 'types': ['new_secret']}
+    assert alerts.notify_sla(cfg_filtered, 'x.com', events)['alerts'] == 0
+
+
+def test_notify_sla_disabled_is_noop():
+    out = alerts.notify_sla({'enabled': False}, 'x.com',
+                            [{'type': 'sla_breach', 'title': 't', 'severity': 'high'}])
+    assert out == {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
+
+
 # ── delivery journal (F4 — reuses OperationRegistry; ops DB isolated by conftest) ─
 
 def _alert_ops():

@@ -46,7 +46,8 @@ SEVERITY_ORDER = ('critical', 'high', 'medium', 'low', 'info')
 INACTIVE_STATUSES = frozenset({'FIXED', 'IGNORED', 'FALSE_POSITIVE'})
 SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
-EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO')
+EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
+               'SLA_BREACH')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -343,6 +344,50 @@ class FindingsStore(SQLiteStore):
                 tuple(INACTIVE_STATUSES)).fetchall()
         return [{'project': r['project'], 'total': r['total'],
                  'active': r['active'] or 0} for r in rows]
+
+    def record_sla_breaches(self, project: str, breached_ids: List[str], *,
+                            scan_id: Optional[str] = None,
+                            now: Optional[str] = None) -> List[str]:
+        """Mark findings as SLA-breached *once* and return the newly-marked ids.
+
+        SLA breach is time-, not scan-triggered (a finding slips past its deadline
+        by the passage of time), so the alert path needs a one-shot guard to fire
+        per breach exactly once across monitor runs — without a second table. We
+        log a ``SLA_BREACH`` event the first time a finding is observed breached
+        and treat a finding as *already alerted* only when its latest
+        ``SLA_BREACH`` event is newer than its latest ``REOPENED`` event: a fixed
+        finding that reappears (REOPENED restarts the SLA clock — see
+        ``findings_sla._reference``) is eligible to alert again on its next breach.
+
+        ``breached_ids`` are the project-scoped stored ids of currently-breached
+        findings (from ``active_findings``). Returns the subset that was not yet
+        alerted for its current open episode (and is now marked), in input order.
+        """
+        ids = list(dict.fromkeys(str(i) for i in (breached_ids or []) if i))
+        if not ids:
+            return []
+        now = now or _now()
+        placeholders = ','.join('?' * len(ids))
+        new: List[str] = []
+        with self._connect() as conn:
+            def latest(event_type: str) -> Dict[str, str]:
+                rows = conn.execute(
+                    f'SELECT finding_id fid, MAX(at) at FROM finding_events'
+                    f' WHERE type = ? AND finding_id IN ({placeholders})'
+                    f' GROUP BY finding_id', (event_type, *ids)).fetchall()
+                return {r['fid']: r['at'] for r in rows}
+
+            breach_at, reopen_at = latest('SLA_BREACH'), latest('REOPENED')
+            for fid in ids:
+                marked = breach_at.get(fid)
+                reopened = reopen_at.get(fid)
+                already = marked is not None and (reopened is None
+                                                  or marked > reopened)
+                if already:
+                    continue
+                self._log_event(conn, fid, 'SLA_BREACH', scan_id=scan_id, at=now)
+                new.append(fid)
+        return new
 
     def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:
         """``finding_id → timestamp of its most recent REOPENED event``.

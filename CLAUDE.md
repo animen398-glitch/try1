@@ -663,6 +663,26 @@ graphql` остаётся timeline-only. Метки в `gui/tab_timeline._EVENT_
 timeline цел. Покрыто `test_scan_diff` (added+introspection-flip, skip без фазы) +
 `test_diff_events` (классификация + alertable-подмножество).
 
+**SLA-breach alert-канал (F-S6, хвост F-S5) — `[ЗАКРЫТ]`.** Backend-фаза. Закрыт
+отложенный в F-S5 алерт-канал для просрочки SLA. Проблема была: просрочка
+*время*-, не скан-триггерная (находка пробивает дедлайн сама по себе), а derive-on-
+read не знает «было/стало» → наивный алерт стрелял бы каждый прогон. Решение —
+**one-shot маркер в существующей events-таблице** (без новой таблицы/схемы):
+`findings_store` += event-тип `SLA_BREACH` + `record_sla_breaches(project, ids)`
+(логирует маркер раз на просрочку, возвращает только новые id; **эпизод-аккуратно**
+— маркер старше последнего `REOPENED` не считается, поэтому переоткрытая-и-снова-
+просроченная находка алертится заново). `alerts`: `collect_sla_alerts(store,
+project)` (детект через `findings_sla.sla_status` reopen-aware → дедуп через стор →
+lean-события только для новых), `notify_sla` (types-фильтр + общий `_send`-хвост,
+выделенный из `notify`; журнал доставки kind='sla'); `sla_breach` в `ALERT_TYPES`.
+`monitor.run_project` зовёт `_dispatch_sla_alerts` каждый успешный прогон
+**независимо от диффа** (просрочка диффом не ловится); `result['sla_alerts']`
+аддитивен. Pure-детект отделён от транспорта (стор инжектится → тесты на temp-БД).
+Покрыто `test_findings_store` (one-shot + reopen-reset + dedup), `test_alerts`
+(collect new→deduped, within-window пусто, notify_sla dispatch/filter/disabled),
+`test_monitor` (run_project шлёт раз, второй прогон молчит). **Все 3 именованных
+backend-пункта закрыты (F-A2, GraphQL-timeline, F-S6).**
+
 **Scanner robustness (F-SR1) — `[ЗАКРЫТ]`.** Backend-фаза. Закалка pure-точек
 входа детект-движков на битый ввод (degrade-not-raise). Аудит показал, что
 сетевые парсеры (`osv_correlation`/`asn_intel`/`graphql_discovery`) уже хорошо

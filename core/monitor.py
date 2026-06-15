@@ -244,7 +244,7 @@ def run_project(project, run_fn: Callable[[str], Dict],
 
     result: Dict = {'slug': slug, 'url': url, 'scan_id': None,
                     'prev_scan_id': prev_id, 'diff_line': None,
-                    'diff_html': None, 'alerts': None,
+                    'diff_html': None, 'alerts': None, 'sla_alerts': None,
                     'status': 'Success', 'error': None}
     emit('scan_start', url=url, prev_scan_id=prev_id)
     try:
@@ -278,6 +278,13 @@ def run_project(project, run_fn: Callable[[str], Dict],
             result['error'] = f'diff failed: {e}'
             emit('diff_error', error=str(e))
 
+    # SLA-breach alerts (Alert Center): time-triggered, so checked every run
+    # independent of the diff — a finding can slip past its deadline with nothing
+    # else changing. One-shot per breach via the findings store's marker.
+    if alert_config and result['status'] == 'Success':
+        result['sla_alerts'] = _dispatch_sla_alerts(project, slug, alert_config,
+                                                     emit)
+
     last_status = 'ok' if result['status'] == 'Success' else 'failed'
     _advance_schedule(project, new_id, now, status=last_status)
     emit('scan_done', scan_id=new_id, diff_line=result['diff_line'])
@@ -293,6 +300,25 @@ def _dispatch_alerts(slug: str, diff: Dict, alert_config: Dict, emit) -> Dict:
         emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
              reason=summary.get('reason'))
     return summary
+
+
+def _dispatch_sla_alerts(project, slug: str, alert_config: Dict, emit) -> Optional[Dict]:
+    """Dispatch one-shot SLA-breach alerts for a project (time-triggered, diff-
+    independent). Best-effort: a failure here never affects the scan/diff result.
+    Returns the send summary, or ``None`` when nothing was newly breached."""
+    try:
+        from core import alerts
+        from core.findings_store import FindingsStore
+        events = alerts.collect_sla_alerts(FindingsStore(), project.slug)
+        if not events:
+            return None
+        summary = alerts.notify_sla(alert_config, slug, events)
+        if summary.get('alerts'):
+            emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
+                 reason=summary.get('reason'), alert_kind='sla')
+        return summary
+    except Exception:   # noqa: BLE001 — SLA alerting must never sink a monitor run
+        return None
 
 
 def _advance_schedule(project, scan_id: Optional[str], now: datetime,

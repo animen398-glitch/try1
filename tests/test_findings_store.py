@@ -136,6 +136,48 @@ def test_reopen_dates_tracks_latest_reopen(tmp_path):
     assert s.reopen_dates('other') == {}
 
 
+def test_record_sla_breaches_is_one_shot(tmp_path):
+    # The SLA-breach alert guard: a breach is recorded (and thus alertable) once,
+    # then suppressed on subsequent runs until the situation changes.
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    # First observation of the breach → marked + returned.
+    assert s.record_sla_breaches('proj', [sid]) == [sid]
+    assert [e['type'] for e in s.events(sid)].count('SLA_BREACH') == 1
+    # Next run, still breached → already alerted → not returned, no new event.
+    assert s.record_sla_breaches('proj', [sid]) == []
+    assert [e['type'] for e in s.events(sid)].count('SLA_BREACH') == 1
+
+
+def test_record_sla_breaches_resets_after_reopen(tmp_path):
+    # A fixed finding that reappears restarts its SLA clock, so a fresh breach of
+    # the new episode is alertable again (its old marker predates the REOPENED).
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    assert s.record_sla_breaches('proj', [sid], now='2026-01-01T00:00:00') == [sid]
+    # Fixed, then reopens later (REOPENED newer than the SLA_BREACH marker).
+    s.set_status(sid, 'FIXED', source='auto', event_type='RESOLVED_AUTO')
+    s.set_status(sid, 'OPEN', source='auto', event_type='REOPENED',
+                 now='2026-03-01T00:00:00')
+    # The new episode breaches → eligible again (marker '2026-01' < reopen '2026-03').
+    assert s.record_sla_breaches('proj', [sid], now='2026-04-01T00:00:00') == [sid]
+    assert [e['type'] for e in s.events(sid)].count('SLA_BREACH') == 2
+
+
+def test_record_sla_breaches_empty_and_dedups(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    assert s.record_sla_breaches('proj', []) == []
+    # Duplicate ids in one call collapse to a single marker.
+    assert s.record_sla_breaches('proj', [sid, sid]) == [sid]
+
+
 # ── queries / summary ─────────────────────────────────────────────────────────
 
 def test_list_filters_and_project_scoping(tmp_path):
