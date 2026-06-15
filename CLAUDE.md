@@ -542,8 +542,20 @@ remediation как **чистый offline-каталог, резолвящийс
   `report_export.findings_csv` +колонки (DefectDojo-style экспорт).
 - **F-O4** web: `/findings` обогащается каталогом рядом с SLA.
 
-**Следующий шаг:** ASM 2.0 + Company tier + Correlation + Finding Objects
-завершены. Остаток отфильтрованного бэклога (по согласованию, аудит+план+СТОП):
-(3) executive-плашка «что важно за 10 сек», (4) консолидация IA меню. Отклонено
-(конфликт инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
-APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
+**Executive Headline (бэклог п.3) — `[ЗАКРЫТ]`.** `executive_summary.headline()`
+(приоритизированные чипы «что важно за 10 сек», Cortex-Xpanse-стиль) →
+chip-строка в report.html (`render_html`) + в Dashboard Security Overview
+(FlowLayout цветных меток). Web-паритет автоматом (консоль отдаёт тот же
+report.html). Чистый derive, без новых зависимостей.
+
+**Следующий шаг:** весь **аддитивный** отфильтрованный бэклог закрыт (Company
+tier, Correlation, Finding Objects, Executive Headline). Остался только
+**п.4 — консолидация IA меню** (Dashboard/Assets/Discovery/Security/Findings/
+Timeline/Monitoring/Reports/System + вынос Video/Image/Clone в Plugins). Это
+**НЕ аддитив**, а перестройка навигации: трогает контракт вкладок
+(инвариант I4/I7: вкладки из PluginManager, не хардкод), FluentWindow-nav,
+`BUILTIN_TABS` и тесты, проверяющие набор вкладок. По §6/§8 (стабильность №1)
+делать его автономно НЕЛЬЗЯ — нужен отдельный план + явное утверждение + СТОП.
+Отклонено (конфликт инвариантов): ECharts/Cytoscape (QWebEngine),
+SQLAlchemy/Postgres, APScheduler/Apprise/WeasyPrint. Детали — память
+`project-benchmark-direction`.
