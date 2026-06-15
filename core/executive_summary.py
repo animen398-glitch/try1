@@ -77,13 +77,15 @@ RISK_WEIGHTS = {
     'weak_cookies': 2,
     'graphql_introspection': 4,   # open GraphQL schema leak (F-R2)
     'infra_concentration': 2,     # shared-infra choke point / blast radius (F-R4)
+    'sla_breach': 1,              # remediation past its deadline — overdue surcharge (F-R5)
 }
 
 
 def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
                   takeovers: int, source_map_leaks: int, weak_cookies: int,
                   graphql_introspection: int = 0, infra_concentration: int = 0,
-                  infra_detail: str = '') -> List[Dict]:
+                  infra_detail: str = '', sla_breaches: int = 0,
+                  sla_detail: str = '') -> List[Dict]:
     """The explicit, weighted contributions that make up the raw risk score.
 
     Returns a list of ``{factor, count, weight, points, detail}`` — one per
@@ -113,6 +115,7 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
         'открытая схема GraphQL')
     add('Концентрация на инфраструктуре', infra_concentration,
         'infra_concentration', infra_detail)
+    add('Просроченная ремедиация (SLA)', sla_breaches, 'sla_breach', sla_detail)
     factors.sort(key=lambda f: f['points'], reverse=True)
     return factors
 
@@ -137,6 +140,31 @@ def _infra_concentration(report: Dict) -> Tuple[int, str]:
               f"{_int(worst.get('findings_count'))} находок на "
               f"{_int(worst.get('host_count'))} хостах")
     return len(concentrated), detail
+
+
+def _sla_breaches(report: Dict) -> Tuple[int, str]:
+    """Overdue-remediation amplifier (F-R5).
+
+    Reads the F1 SLA posture the findings sync already stamped onto
+    ``report['findings']['sla']`` (DefectDojo-style, reopen-aware deadlines over
+    active findings — see ``findings_sla.sla_summary``) and counts findings whose
+    remediation window has lapsed. A breach means the team has *known* about a
+    finding past its deadline and not closed it — a worse posture signal than a
+    fresh finding of the same severity, so it adds a light per-finding surcharge
+    on top of the severity weight already counted. Pure over the report (the SLA
+    block is computed before the summary runs); ``0`` for any report without a
+    synced findings block (older reports / tests). Returns ``(count, detail)``
+    where ``detail`` names the worst overdue severity."""
+    sla = (report.get('findings') or {}).get('sla') or {}
+    breached = _int(sla.get('breached'))
+    if breached <= 0:
+        return 0, ''
+    by_sev = sla.get('by_severity') or {}
+    worst = next((sev for sev in ('critical', 'high', 'medium', 'low')
+                  if _int((by_sev.get(sev) or {}).get('breached')) > 0), '')
+    detail = (f'{breached} находок просрочено'
+              + (f', худшая — {worst}' if worst else ''))
+    return breached, detail
 
 
 def _count_takeovers(report: Dict) -> int:
@@ -208,6 +236,9 @@ def headline(summary: Dict) -> Dict:
         add(_plural(weak_cookies, 'Weak cookie'), 'medium')
     if _int(m.get('graphql')) and not _int(m.get('graphql_introspection')):
         add('GraphQL exposed', 'medium')
+    sla_breaches = _int(m.get('sla_breaches'))
+    if sla_breaches:
+        add(f'{sla_breaches}× SLA overdue', 'high')
     infra_conc = _int(m.get('infra_concentration'))
     if infra_conc:
         add(f'{infra_conc}× shared infra', 'medium')
@@ -275,6 +306,9 @@ def build_summary(report: Dict) -> Dict:
     # F-R4: shared-infra blast radius as a structural amplifier (0 unless the
     # correlation phase found infra nodes concentrating findings across hosts).
     infra_concentration, infra_detail = _infra_concentration(report)
+    # F-R5: overdue-remediation surcharge (0 unless the findings sync stamped a
+    # breached SLA onto the report — older reports / tests degrade to zero).
+    sla_breaches, sla_detail = _sla_breaches(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions (leaked secrets / source-maps weigh heaviest after a takeover —
@@ -282,7 +316,7 @@ def build_summary(report: Dict) -> Dict:
     risk_factors = _risk_factors(vuln_score, high, medium, secrets, takeovers,
                                  source_map_leaks, weak_cookies,
                                  graphql_introspection, infra_concentration,
-                                 infra_detail)
+                                 infra_detail, sla_breaches, sla_detail)
     score = sum(f['points'] for f in risk_factors)
     level = _risk_level(score, high, secrets, takeovers, graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
@@ -294,6 +328,7 @@ def build_summary(report: Dict) -> Dict:
         'source_map_leaks': source_map_leaks, 'takeovers': takeovers,
         'graphql': graphql, 'graphql_introspection': graphql_introspection,
         'infra_concentration': infra_concentration,
+        'sla_breaches': sla_breaches,
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

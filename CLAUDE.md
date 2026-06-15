@@ -642,10 +642,25 @@ AttributeError). `dependency_audit.render_html` выбор worst-severity пер
 `test_dependency_audit`/`test_tech_fingerprint` (нестроки/bytes/не-dict/чужой
 severity — деградация без падения).
 
+**Risk ↔ SLA breach (F-R5) — `[ЗАКРЫТ]`.** Backend-фаза. Связал F-S «просроченная
+ремедиация» с risk-движком: `executive_summary._sla_breaches(report)` (pure над
+`report['findings']['sla']` — уже стампится `_sync_findings` ДО build_summary в
+`collection_runner.run`: sync→correlation→summary) считает активные находки с
+просроченным SLA-окном (DefectDojo-семантика, reopen-aware — из `findings_sla.
+sla_summary`). Просрочка = команда **знала** о находке после дедлайна и не закрыла
+→ хуже свежей того же severity, поэтому лёгкая надбавка ПОВЕРХ severity-веса (уже
+посчитанного через vuln_score). Новый взвешенный фактор «Просроченная ремедиация
+(SLA)» (`RISK_WEIGHTS['sla_breach']=1`, count×weight, худший overdue severity в
+detail) → аддитивен в score и в таблицу «Из чего риск»; метрика `sla_breaches` +
+чип «N× SLA overdue» (high) в headline. `_risk_level` НЕ тронут (амплификатор, как
+infra_concentration). Старые числа байт-в-байт (фактор=0 без `report['findings']`/
+нулевой breached → старые отчёты и тесты деградируют в 0). Покрыто
+`test_executive_summary` (надбавка/score/amplifier-not-clearcut/headline/отсутствие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
-IA-консолидация безопасный срез) + Risk Engine углублён + Correlation углублён +
-Findings SLA углублён + Risk↔infra concentration + Asset coverage + Scanner
+IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA) +
+Correlation углублён + Findings SLA углублён + Asset coverage + Scanner
 robustness. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.

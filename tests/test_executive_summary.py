@@ -311,6 +311,57 @@ def test_infra_concentration_chip_in_headline():
     assert any('shared infra' in c['label'] for c in hl['chips'])
 
 
+# ── F-R5: overdue-remediation (SLA breach) surcharge folds into the score ─────
+
+def _with_sla(report, breached=0, by_severity=None):
+    """Inject the F1 SLA block the findings sync stamps onto a real report."""
+    report['findings'] = {'sla': {'breached': breached,
+                                  'by_severity': by_severity or {}}}
+    return report
+
+
+def test_sla_breach_adds_weighted_surcharge():
+    r = _with_sla(_report(weak_cookies=1), breached=3,        # base score 2
+                  by_severity={'high': {'breached': 2}, 'low': {'breached': 1}})
+    s = es.build_summary(r)
+    by_name = {f['factor']: f for f in s['risk_factors']}
+    factor = by_name['Просроченная ремедиация (SLA)']
+    assert factor['count'] == 3
+    assert factor['weight'] == 1
+    assert factor['points'] == 3 * 1
+    assert 'худшая — high' in factor['detail']              # worst overdue severity
+    assert s['risk_score'] == 2 + 3 * 1                     # base + surcharge
+    assert s['metrics']['sla_breaches'] == 3
+
+
+def test_sla_breach_absent_leaves_score_unchanged():
+    # No findings block (older reports / tests) → no new factor, score as before.
+    base = es.build_summary(_report(weak_cookies=1))
+    assert base['metrics']['sla_breaches'] == 0
+    assert 'Просроченная ремедиация (SLA)' not in {
+        f['factor'] for f in base['risk_factors']}
+    # A synced findings block with zero breaches also adds nothing.
+    r = _with_sla(_report(weak_cookies=1), breached=0)
+    assert es.build_summary(r)['risk_score'] == base['risk_score']
+
+
+def test_sla_breach_is_amplifier_not_clearcut():
+    # An overdue backlog nudges the score but does not by itself force High/Critical
+    # (mirrors infra_concentration — _risk_level is untouched).
+    r = _with_sla(_report(), breached=2,
+                  by_severity={'medium': {'breached': 2}})
+    s = es.build_summary(r)
+    assert s['risk_score'] == 2          # 2 breaches × weight 1
+    assert s['risk_level'] == 'Low'      # score 2 → Low band, not escalated
+
+
+def test_sla_breach_chip_in_headline():
+    r = _with_sla(_report(), breached=4,
+                  by_severity={'critical': {'breached': 4}})
+    hl = es.headline(es.build_summary(r))
+    assert any('SLA overdue' in c['label'] for c in hl['chips'])
+
+
 # ── F-R3: risk-factor breakdown in the report ─────────────────────────────────
 
 def test_render_html_includes_risk_breakdown():
