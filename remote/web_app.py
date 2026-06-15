@@ -446,6 +446,22 @@ def _company_assign(slug: str, name: Optional[str],
         return {'error': str(e)}
 
 
+# ── Cross-entity correlation (F-K4, web parity) ─────────────────────────────────
+# Read-only over core.correlation — the same exposure (findings ↔ assets ↔ infra)
+# the GUI surfaces. Inherently per-project: an empty project yields an empty view.
+
+def _correlation_view(project: Optional[str] = None) -> dict:
+    """Exposure-by-asset correlation for one project (empty without a project)."""
+    if not project:
+        return {'exposure': [], 'asset_findings': {}, 'finding_chains': {},
+                'summary': {}}
+    try:
+        from core.correlation import load_correlation
+        return load_correlation(project)
+    except Exception as e:
+        return {'exposure': [], 'summary': {}, 'error': str(e)}
+
+
 # ── Continuous Monitoring (#8) ─────────────────────────────────────────────────
 # Thin wrappers over core.monitor (single source of truth, shared with the CLI
 # and GUI). All bound to the same project store the jobs use.
@@ -566,6 +582,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showAssets()">Assets</button>
       <button class="btn sec" onclick="showOverview()">Overview</button>
       <button class="btn sec" onclick="showCompanies()">Companies</button>
+      <button class="btn sec" onclick="showCorrelation()">Correlation</button>
     </div>
   </div>
 
@@ -885,6 +902,21 @@ async function showCompanies(){
     });
   }catch(ex){log('Companies failed: '+ex.message,'er');}
 }
+async function showCorrelation(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Correlation: no projects','data'); return;}
+    const r=await fetch('/correlation?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Correlation ['+proj+']: '+(s.correlated||0)+'/'+(s.findings||0)
+        +' findings linked to assets · exposed: '+(s.exposed_assets||0),'data');
+    (d.exposure||[]).slice(0,15).forEach(a=>{
+      log('  '+(a.label||a.value)+' — '+(a.worst||'—')+' · '
+          +(a.findings_count||0)+' finding(s)','info');
+    });
+  }catch(ex){log('Correlation failed: '+ex.message,'er');}
+}
 
 loadJobs();
 sse();
@@ -1122,6 +1154,10 @@ if _FASTAPI_OK:
             return JSONResponse(out, status_code=code)
         await _push(f'[company] {slug} → {body.name or "Unassigned"}', 'ok')
         return out
+
+    @app.get('/correlation')
+    async def correlation(project: Optional[str] = None):
+        return JSONResponse(_correlation_view(project))
 
     @app.get('/report')
     async def report(file: str):
