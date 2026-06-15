@@ -140,3 +140,49 @@ def test_load_correlation_reads_stores():
     assert out['summary']['correlated'] == 1
     api = next(r for r in out['exposure'] if r['value'] == 'api.acme.com')
     assert api['worst'] == 'high'
+
+
+# ── F-K2: report card ─────────────────────────────────────────────────────────
+
+class _Project:
+    def __init__(self, slug):
+        self.slug = slug
+
+
+def _seed_stores(project='p'):
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    from core.findings_store import FindingsStore
+    FindingsStore().sync(project, 's1', [{
+        'category': 'graphql', 'title': 'GraphQL introspection',
+        'severity': 'high', 'location': 'https://api.acme.com/graphql'}])
+    AssetStore().sync(project, 's1', [
+        Asset('subdomain', 'api.acme.com', attrs={'ip': '1.2.3.4'}),
+        Asset('endpoint', 'api.acme.com/graphql')])
+
+
+def test_build_correlation_populates_report():
+    from core.collection_runner import CollectionRunner
+    _seed_stores('p')
+    report: dict = {}
+    CollectionRunner()._build_correlation(report, _Project('p'))
+    assert 'correlation' in report
+    assert report['correlation']['summary']['correlated'] == 1
+    assert report['correlation']['exposure'][0]['value'] == 'api.acme.com'
+
+
+def test_build_correlation_skips_when_nothing():
+    from core.collection_runner import CollectionRunner
+    report: dict = {}
+    CollectionRunner()._build_correlation(report, _Project('empty'))
+    assert 'correlation' not in report   # no findings/assets → no card
+
+
+def test_render_correlation_card_html():
+    from core.collection_runner import CollectionRunner
+    cdata = {'summary': {'correlated': 2, 'findings': 3, 'exposed_assets': 1},
+             'exposure': [{'value': 'api.acme.com', 'label': 'api.acme.com',
+                           'worst': 'critical', 'findings_count': 2}]}
+    out = CollectionRunner._render_correlation_card(cdata)
+    assert 'api.acme.com' in out and 'critical' in out
+    assert 'из 3' in out                 # correlated/total in the header

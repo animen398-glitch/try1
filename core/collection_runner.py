@@ -328,6 +328,9 @@ class CollectionRunner:
         # Asset Inventory: persist this scan's assets + run their lifecycle
         # (CREATED/SEEN/GONE/REAPPEARED) across scans — the head of the chain.
         self._sync_assets(report, project, scan_dir.name)
+        # Cross-entity correlation (F-K2): derive findings↔assets↔infra exposure
+        # from the two stores just synced (read-only, no new store).
+        self._build_correlation(report, project)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -959,6 +962,55 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — asset sync must not fail a scan
             self._log(f'  Asset sync failed: {e}')
 
+    def _build_correlation(self, report: Dict, project) -> None:
+        """Derive cross-entity correlation for the report (F-K2, best-effort).
+
+        Read-only over the findings + asset stores already synced this scan; a
+        failure must never sink the scan (same contract as the sync steps).
+        Stored compactly in ``report['correlation']`` (summary + top exposed
+        assets) for the report card."""
+        try:
+            from core.correlation import load_correlation
+            data = load_correlation(project.slug)
+            summary = data.get('summary') or {}
+            exposure = data.get('exposure') or []
+            if data.get('error') or (not exposure and not summary.get('correlated')):
+                return
+            report['correlation'] = {'summary': summary,
+                                     'exposure': exposure[:10]}
+            self._log(f"  Correlation: {summary.get('correlated', 0)}/"
+                      f"{summary.get('findings', 0)} находок связаны с активами, "
+                      f"exposed: {summary.get('exposed_assets', 0)}")
+        except Exception as e:  # noqa: BLE001 — correlation must not fail a scan
+            self._log(f'  Correlation failed: {e}')
+
+    # Severity → cell colour for the light-background report card.
+    _CORR_SEV_COLOR = {'critical': '#c62828', 'high': '#e64a19',
+                       'medium': '#f9a825', 'low': '#2e7d32', 'info': '#666'}
+
+    @classmethod
+    def _render_correlation_card(cls, cdata: Dict) -> str:
+        """Offline HTML for the Exposure-by-Asset card: which assets carry which
+        findings (worst severity + count), derived by correlation (F-K2)."""
+        e = html.escape
+        summary = cdata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Находок связано с активами: '
+                f'<b>{e(str(summary.get("correlated", 0)))}</b> из '
+                f'{e(str(summary.get("findings", 0)))} · затронуто активов: '
+                f'<b>{e(str(summary.get("exposed_assets", 0)))}</b></p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">'
+            f'{e(str(r.get("label") or r.get("value", "")))}</td>'
+            f'<td style="color:{cls._CORR_SEV_COLOR.get(r.get("worst"), "#666")};'
+            f'font-weight:bold;">{e(str(r.get("worst") or "—"))}</td>'
+            f'<td style="color:#666;">{e(str(r.get("findings_count", 0)))}</td></tr>'
+            for r in cdata.get('exposure', []))
+        table = (f'<table style="font-size:12px;"><tr>'
+                 f'<td style="padding-right:12px;"><b>Актив</b></td>'
+                 f'<td><b>Worst</b></td><td><b>Находок</b></td></tr>'
+                 f'{rows}</table>' if rows else '')
+        return head + table
+
     @staticmethod
     def _render_findings_card(fdata: Dict) -> str:
         """Offline HTML for the Findings Management card: this scan's delta +
@@ -1416,6 +1468,14 @@ class CollectionRunner:
             body_parts.append(card(
                 'Asset Inventory', self._render_assets_card(adata),
                 f"{asum.get('active', 0)}/{asum.get('total', 0)} активных"))
+
+        # Exposure by Asset (F-K2) — findings ↔ assets correlation.
+        cdata = report.get('correlation')
+        if isinstance(cdata, dict) and cdata.get('summary'):
+            csum = cdata['summary']
+            body_parts.append(card(
+                'Exposure by Asset', self._render_correlation_card(cdata),
+                f"{csum.get('correlated', 0)}/{csum.get('findings', 0)} связано"))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')
