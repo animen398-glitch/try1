@@ -3,6 +3,8 @@
 All offline and model-free: pure functions over a collection ``report`` dict.
 """
 
+from datetime import datetime, timedelta
+
 from core import executive_summary as es
 
 
@@ -360,6 +362,65 @@ def test_sla_breach_chip_in_headline():
                   by_severity={'critical': {'breached': 4}})
     hl = es.headline(es.build_summary(r))
     assert any('SLA overdue' in c['label'] for c in hl['chips'])
+
+
+# ── F-R6: served TLS cert expiry amplifier ────────────────────────────────────
+
+def _with_cert(report, not_after):
+    """Inject the (opt-in) certificate phase carrying a served-cert not_after."""
+    report['phases']['certificate'] = {'data': {'not_after': not_after}}
+    return report
+
+
+def test_parse_cert_date_handles_formats():
+    p = es._parse_cert_date
+    assert p('2026-09-01').year == 2026                  # ISO date
+    assert p('2026-09-01T00:00:00').month == 9           # ISO datetime
+    assert p('Aug  1 00:00:00 2026 GMT').year == 2026    # OpenSSL double-space + zone
+    assert p('Aug 1 2026').day == 1                       # bare %b %d %Y
+    assert p('') is None and p(None) is None
+    assert p('whenever') is None                          # unparseable → degrade
+
+
+def test_cert_expiry_classifies_against_injected_now():
+    now = datetime(2026, 6, 16)
+    c, detail, expired = es._cert_expiry(_with_cert(_report(), '2026-06-01'), now=now)
+    assert c == 1 and expired and 'истёк' in detail
+    c, detail, expired = es._cert_expiry(_with_cert(_report(), '2026-06-20'), now=now)
+    assert c == 1 and not expired and 'истекает' in detail
+    c, _, expired = es._cert_expiry(_with_cert(_report(), '2027-06-01'), now=now)
+    assert c == 0 and not expired                         # comfortably valid
+    assert es._cert_expiry(_report(), now=now) == (0, '', False)        # no phase
+    assert es._cert_expiry(_with_cert(_report(), 'nope'), now=now) == (0, '', False)
+
+
+def test_expired_cert_adds_weighted_factor_and_chip():
+    past = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
+    s = es.build_summary(_with_cert(_report(weak_cookies=1), past))   # base score 2
+    factor = {f['factor']: f for f in s['risk_factors']}['TLS-сертификат истёк/истекает']
+    assert factor['count'] == 1 and factor['weight'] == 2 and factor['points'] == 2
+    assert s['risk_score'] == 2 + 2                       # base + amplifier
+    assert s['metrics']['cert_expiry'] == 1 and s['metrics']['cert_expired'] == 1
+    assert any(c['label'] == 'Cert expired' for c in es.headline(s)['chips'])
+
+
+def test_expiring_cert_is_amplifier_not_clearcut():
+    soon = (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')
+    s = es.build_summary(_with_cert(_report(), soon))
+    assert s['metrics']['cert_expiry'] == 1 and s['metrics']['cert_expired'] == 0
+    assert s['risk_score'] == 2                           # 1 × weight 2
+    assert s['risk_level'] == 'Low'                       # amplifier — not escalated
+    assert any(c['label'] == 'Cert expiring' for c in es.headline(s)['chips'])
+
+
+def test_cert_expiry_absent_leaves_score_unchanged():
+    base = es.build_summary(_report(weak_cookies=1))
+    assert base['metrics']['cert_expiry'] == 0 and base['metrics']['cert_expired'] == 0
+    assert 'TLS-сертификат истёк/истекает' not in {
+        f['factor'] for f in base['risk_factors']}
+    far = (datetime.now() + timedelta(days=200)).strftime('%Y-%m-%d')
+    assert es.build_summary(_with_cert(_report(weak_cookies=1), far))['risk_score'] \
+        == base['risk_score']
 
 
 # ── F-R3: risk-factor breakdown in the report ─────────────────────────────────

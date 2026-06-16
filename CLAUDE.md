@@ -711,11 +711,26 @@ infra_concentration). Старые числа байт-в-байт (фактор
 нулевой breached → старые отчёты и тесты деградируют в 0). Покрыто
 `test_executive_summary` (надбавка/score/amplifier-not-clearcut/headline/отсутствие).
 
+**Risk ↔ cert expiry (F-R6) — `[ЗАКРЫТ]`.** Backend-фаза. Закрыл пробел: TLS-факты
+УЖЕ собирались (`cert_info`→`report['phases']['certificate'].data.not_after`,
+`tls_not_after` на domain-активах, `expired_count` в CT-истории), но истечение
+leaf-сертификата нигде не вливалось в risk. `executive_summary._cert_expiry(report,
+now=None)` (pure derive, инжектируемый `now` для детерминизма) флагует **истёкший**
+ИЛИ истекающий в пределах `CERT_EXPIRY_WARN_DAYS=14` сертификат; толерантный
+`_parse_cert_date` (ISO / OpenSSL-«Aug  1 00:00:00 2026 GMT» / `%b %d %Y`,
+degrade→None на битом, F-SR1-этос). Новый лёгкий взвешенный фактор «TLS-сертификат
+истёк/истекает» (`RISK_WEIGHTS['cert_expiry']=2`) → аддитивен в score и в таблицу
+«Из чего риск»; метрики `cert_expiry`/`cert_expired` + чип «Cert expired» (high) /
+«Cert expiring» (medium) в headline. `_risk_level` НЕ тронут (амплификатор, как
+infra/SLA). Старые числа байт-в-байт (0 без certificate-фазы/непарсимой даты).
+Покрыто `test_executive_summary` (parse-форматы/классификация по injected-now/
+фактор+чип/amplifier-not-clearcut/отсутствие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
-IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA) +
-Correlation углублён + Findings SLA углублён + Asset coverage + Scanner
-robustness. Отклонено (конфликт
+IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
+F-R6 cert-expiry) + Correlation углублён + Findings SLA углублён + Asset coverage +
+Scanner robustness. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

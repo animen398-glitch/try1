@@ -15,6 +15,7 @@ without the nondeterminism or runtime surface of a local model.
 
 import html
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -78,14 +79,19 @@ RISK_WEIGHTS = {
     'graphql_introspection': 4,   # open GraphQL schema leak (F-R2)
     'infra_concentration': 2,     # shared-infra choke point / blast radius (F-R4)
     'sla_breach': 1,              # remediation past its deadline — overdue surcharge (F-R5)
+    'cert_expiry': 2,            # served TLS cert expired / expiring soon (F-R6)
 }
+
+# How close to expiry (days) a still-valid leaf cert is flagged as a risk signal.
+CERT_EXPIRY_WARN_DAYS = 14
 
 
 def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
                   takeovers: int, source_map_leaks: int, weak_cookies: int,
                   graphql_introspection: int = 0, infra_concentration: int = 0,
                   infra_detail: str = '', sla_breaches: int = 0,
-                  sla_detail: str = '') -> List[Dict]:
+                  sla_detail: str = '', cert_expiry: int = 0,
+                  cert_detail: str = '') -> List[Dict]:
     """The explicit, weighted contributions that make up the raw risk score.
 
     Returns a list of ``{factor, count, weight, points, detail}`` — one per
@@ -116,6 +122,7 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
     add('Концентрация на инфраструктуре', infra_concentration,
         'infra_concentration', infra_detail)
     add('Просроченная ремедиация (SLA)', sla_breaches, 'sla_breach', sla_detail)
+    add('TLS-сертификат истёк/истекает', cert_expiry, 'cert_expiry', cert_detail)
     factors.sort(key=lambda f: f['points'], reverse=True)
     return factors
 
@@ -165,6 +172,53 @@ def _sla_breaches(report: Dict) -> Tuple[int, str]:
     detail = (f'{breached} находок просрочено'
               + (f', худшая — {worst}' if worst else ''))
     return breached, detail
+
+
+def _parse_cert_date(value) -> Optional[datetime]:
+    """Best-effort parse of a certificate validity date into a naive datetime.
+
+    Served-cert ``not_after`` comes in several shapes across the pipeline —
+    OpenSSL/RFC ("Aug  1 00:00:00 2026 GMT"), ISO ("2026-09-01" /
+    "2026-09-01T00:00:00"), or a bare "%b %d %Y". Tries each, collapsing the
+    OpenSSL double-space and dropping a trailing zone; returns ``None`` on
+    anything unparseable (degrade-not-raise, F-SR1 ethos)."""
+    if not value:
+        return None
+    s = ' '.join(str(value).split())            # collapse OpenSSL double spaces
+    try:                                         # ISO (date or datetime)
+        return datetime.fromisoformat(s.replace(' ', 'T').rstrip('Z'))
+    except ValueError:
+        pass
+    s2 = s.removesuffix(' GMT').removesuffix(' UTC').strip()
+    for fmt in ('%b %d %H:%M:%S %Y', '%b %d %Y', '%Y-%m-%d %H:%M:%S'):
+        try:
+            return datetime.strptime(s2, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _cert_expiry(report: Dict, now: Optional[datetime] = None
+                 ) -> Tuple[int, str, bool]:
+    """Served-TLS-cert expiry amplifier (F-R6).
+
+    Reads the ``not_after`` of the leaf certificate the (opt-in) ``certificate``
+    phase already captured (``cert_info``) and flags a cert that has **expired**
+    or is within :data:`CERT_EXPIRY_WARN_DAYS` of expiry. An expired/expiring
+    leaf cert is a classic EASM exposure/hygiene signal (broken browser trust,
+    imminent outage), so it adds a light per-host amplifier on top of the score.
+    Pure derive over the report; ``(0, '', False)`` for a report without a
+    certificate phase or an unparseable date. ``now`` is injectable for
+    deterministic tests. Returns ``(count, detail, expired)``."""
+    expiry = _parse_cert_date(_phase_data(report, 'certificate').get('not_after'))
+    if expiry is None:
+        return 0, '', False
+    days = (expiry - (now or datetime.now())).days
+    if days < 0:
+        return 1, f'сертификат истёк {abs(days)} дн. назад', True
+    if days <= CERT_EXPIRY_WARN_DAYS:
+        return 1, f'сертификат истекает через {days} дн.', False
+    return 0, '', False
 
 
 def _count_takeovers(report: Dict) -> int:
@@ -236,6 +290,10 @@ def headline(summary: Dict) -> Dict:
         add(_plural(weak_cookies, 'Weak cookie'), 'medium')
     if _int(m.get('graphql')) and not _int(m.get('graphql_introspection')):
         add('GraphQL exposed', 'medium')
+    if _int(m.get('cert_expired')):
+        add('Cert expired', 'high')
+    elif _int(m.get('cert_expiry')):
+        add('Cert expiring', 'medium')
     sla_breaches = _int(m.get('sla_breaches'))
     if sla_breaches:
         add(f'{sla_breaches}× SLA overdue', 'high')
@@ -309,6 +367,9 @@ def build_summary(report: Dict) -> Dict:
     # F-R5: overdue-remediation surcharge (0 unless the findings sync stamped a
     # breached SLA onto the report — older reports / tests degrade to zero).
     sla_breaches, sla_detail = _sla_breaches(report)
+    # F-R6: served TLS cert expired / expiring soon (0 unless the certificate
+    # phase ran and carried a parseable not_after).
+    cert_expiry, cert_detail, cert_expired = _cert_expiry(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions (leaked secrets / source-maps weigh heaviest after a takeover —
@@ -316,7 +377,8 @@ def build_summary(report: Dict) -> Dict:
     risk_factors = _risk_factors(vuln_score, high, medium, secrets, takeovers,
                                  source_map_leaks, weak_cookies,
                                  graphql_introspection, infra_concentration,
-                                 infra_detail, sla_breaches, sla_detail)
+                                 infra_detail, sla_breaches, sla_detail,
+                                 cert_expiry, cert_detail)
     score = sum(f['points'] for f in risk_factors)
     level = _risk_level(score, high, secrets, takeovers, graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
@@ -329,6 +391,7 @@ def build_summary(report: Dict) -> Dict:
         'graphql': graphql, 'graphql_introspection': graphql_introspection,
         'infra_concentration': infra_concentration,
         'sla_breaches': sla_breaches,
+        'cert_expiry': cert_expiry, 'cert_expired': int(cert_expired),
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,
