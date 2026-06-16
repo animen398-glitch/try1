@@ -91,7 +91,7 @@ def test_findings_category_excludes_source_map_and_graphql():
                          'introspection': True}]}},
         vulns={'summary': {}, 'findings': [
             {'title': 'Source map exposes original source',
-             'category': 'source-map'},
+             'category': 'sourcemap'},
             {'title': 'GraphQL introspection enabled', 'category': 'graphql'},
             {'title': 'Exposed .env'}]})   # only this is a generic finding
     names = {c['name']: c for c in asf.build_surface(report)['categories']}

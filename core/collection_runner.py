@@ -571,7 +571,7 @@ class CollectionRunner:
                     'severity': 'High',
                     'title': 'Source map exposes original source',
                     'detail': f'{loc} — served .map leaks original source code.',
-                    'source': 'security-audit', 'category': 'source-map',
+                    'source': 'security-audit', 'category': 'sourcemap',
                     'location': loc})
         for g in data.get('graphql') or []:
             if not (isinstance(g, dict) and g.get('graphql')):

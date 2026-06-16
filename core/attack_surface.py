@@ -157,7 +157,7 @@ def build_surface(report: Dict) -> Dict:
         # them here too would double them in the surface score.
         _category('Findings', [f.get('title', '') for f in findings
                                if isinstance(f, dict)
-                               and f.get('category') not in ('source-map', 'graphql')]),
+                               and f.get('category') not in ('sourcemap', 'graphql')]),
     ]
     return {'domain': str(domain),
             'categories': [c for c in candidates if c]}

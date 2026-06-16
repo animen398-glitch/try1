@@ -786,8 +786,10 @@ Web-консоль намеренно гоняет базовый пайплай
 аудита теперь **первоклассные findings** (персист, lifecycle, SLA, триаж), а не
 только метрики: `collection_runner._security_findings(data)` синтезирует raw-
 находки (утёкший source map → **High**, GraphQL introspection → **High**,
-reachable-only GraphQL → **Info**; явные `category='source-map'/'graphql'` +
-`location=url` → стабильная Findings-identity, одна на URL) и фолдит их в
+reachable-only GraphQL → **Info**; канонические `category='sourcemap'/'graphql'`
+из `finding_fingerprint.CATEGORIES` + `location=url` → стабильная Findings-
+identity, одна на URL; категория — часть fingerprint, поэтому каноническое имя
+важно) и фолдит их в
 `vulns['findings']` + ресуммирует (паттерн `_phase_dns`) → они идут через F1-sync
 (`_sync_findings`) и считаются в risk через severity (vuln_score). **Двойной счёт
 разведён:** из `executive_summary` убраны выделенные score-факторы
@@ -803,6 +805,10 @@ recommendations/key_findings. `attack_surface`: категории Source Maps/G
 (Source Maps/GraphQL категории + score + exclude-из-Findings), `test_collection_runner`
 (фолд severity/identity + reachable=Info), `test_executive_summary` (метрика
 сохранена/фактор убран/level сохранён), `test_monitor` (проброс флага).
+**Finding Objects (F-O) автоматом:** канонические категории `sourcemap`/`graphql`
+УЖЕ есть в каталоге `finding_knowledge._CATEGORY` (+ rule-specific `introspection`)
+→ description/impact/remediation резолвятся в specific-знание (не generic) в GUI/
+CSV/web без правок каталога. Покрыто `test_finding_knowledge`.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

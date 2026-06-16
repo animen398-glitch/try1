@@ -113,8 +113,8 @@ def test_phase_security_writes_artifact(tmp_path, monkeypatch):
     # they live through Findings Management and score via their severity.
     folded = report['phases']['vulns']['findings']
     cats = {f['category'] for f in folded}
-    assert cats == {'source-map', 'graphql'}
-    smap = next(f for f in folded if f['category'] == 'source-map')
+    assert cats == {'sourcemap', 'graphql'}
+    smap = next(f for f in folded if f['category'] == 'sourcemap')
     assert smap['severity'] == 'High' and smap['location'] == 'https://x.com/app.js.map'
     gql = next(f for f in folded if f['category'] == 'graphql')
     assert gql['severity'] == 'High'   # introspection on -> High
