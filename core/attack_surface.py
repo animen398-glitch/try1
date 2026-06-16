@@ -152,7 +152,12 @@ def build_surface(report: Dict) -> Dict:
         _category('Source Maps', smap_items),
         _category('GraphQL', gql_items),
         _category('Pages', page_items),
-        _category('Findings', [f.get('title', '') for f in findings]),
+        # Findings excludes the source-map / GraphQL findings: those exposures
+        # are their own categories above (from the security phase), so counting
+        # them here too would double them in the surface score.
+        _category('Findings', [f.get('title', '') for f in findings
+                               if isinstance(f, dict)
+                               and f.get('category') not in ('source-map', 'graphql')]),
     ]
     return {'domain': str(domain),
             'categories': [c for c in candidates if c]}

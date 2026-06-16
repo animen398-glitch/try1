@@ -277,7 +277,8 @@ class CollectionRunner:
         # maps, reachable GraphQL endpoints. Feeds the risk engine (source-map
         # leaks + GraphQL introspection) and the attack-surface graph.
         if self.security and not self._cancelled(report):
-            report['phases']['security'] = self._phase_security(url, scan_dir)
+            report['phases']['security'] = self._phase_security(
+                url, scan_dir, report)
         # 7b. Subdomain enumeration (opt-in) → feeds the takeover risk signal
         # and the Scan Diff subdomain section.
         if self.subdomains and not self._cancelled(report):
@@ -510,14 +511,18 @@ class CollectionRunner:
             self._log(f'  Vuln scan failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
-    def _phase_security(self, url: str, project_dir: Path) -> Dict:
+    def _phase_security(self, url: str, project_dir: Path, report: Dict) -> Dict:
         """Opt-in security audit (SecurityAuditor): secrets in served JS, leaking
         source maps, and reachable GraphQL endpoints.
 
-        Stored as ``phases.security.data`` — the exact shape the risk engine
-        (``executive_summary._count_sourcemap_leaks``/``_graphql_exposure``),
-        the attack-surface graph and Scan Diff already read (invariant I3, no
-        re-probing). Guarded — a failure never sinks the scan.
+        Stored as ``phases.security.data`` — the shape the attack-surface graph,
+        Scan Diff and the heatmap metrics already read (invariant I3, no
+        re-probing). The two risk-bearing exposures (leaking source maps + open
+        GraphQL) are also **folded into the vuln phase as findings** (same
+        pattern as ``_phase_dns``), so they persist through Findings Management
+        (lifecycle / SLA / triage) and feed the risk score via their severity —
+        the dedicated risk factors were removed to avoid double counting.
+        Guarded — a failure never sinks the scan.
         """
         self._log('[+] Security audit (JS secrets / source maps / GraphQL)…')
         try:
@@ -537,10 +542,56 @@ class CollectionRunner:
                 json.dumps(data, indent=2, ensure_ascii=False, default=str),
                 encoding='utf-8',
             )
+            # Fold the risk-bearing exposures into the vuln phase as findings, so
+            # they live through Findings Management and score via their severity.
+            added = self._security_findings(data)
+            vulns = report['phases'].get('vulns')
+            if added and isinstance(vulns, dict):
+                findings = vulns.get('findings', []) + added
+                vulns['findings'] = findings
+                vulns['summary'] = VulnScanner.summarize(findings)
             return {'status': data.get('status', 'Success'), 'data': data}
         except Exception as e:
             self._log(f'  Security audit failed: {e}')
             return {'status': 'Error', 'error': str(e)}
+
+    @staticmethod
+    def _security_findings(data: Dict) -> List[Dict]:
+        """Turn the audit's risk-bearing exposures into raw finding dicts.
+
+        Leaking source maps (original source served) → High; an open GraphQL
+        schema (introspection) → High; a merely reachable GraphQL API → Info.
+        The explicit ``category``/``location`` give each a stable Findings
+        identity (one per URL) without re-probing."""
+        findings: List[Dict] = []
+        for m in data.get('source_maps') or []:
+            if isinstance(m, dict) and m.get('has_content'):
+                loc = str(m.get('url', ''))
+                findings.append({
+                    'severity': 'High',
+                    'title': 'Source map exposes original source',
+                    'detail': f'{loc} — served .map leaks original source code.',
+                    'source': 'security-audit', 'category': 'source-map',
+                    'location': loc})
+        for g in data.get('graphql') or []:
+            if not (isinstance(g, dict) and g.get('graphql')):
+                continue
+            loc = str(g.get('url', ''))
+            if g.get('introspection'):
+                findings.append({
+                    'severity': 'High',
+                    'title': 'GraphQL introspection enabled',
+                    'detail': f'{loc} — full schema exposed via introspection.',
+                    'source': 'security-audit', 'category': 'graphql',
+                    'location': loc})
+            else:
+                findings.append({
+                    'severity': 'Info',
+                    'title': 'GraphQL endpoint exposed',
+                    'detail': f'{loc} — reachable GraphQL API (introspection off).',
+                    'source': 'security-audit', 'category': 'graphql',
+                    'location': loc})
+        return findings
 
     def _phase_analyzers(self, report: Dict) -> Dict:
         """Run user-supplied analyzer plugins over the whole report and fold any

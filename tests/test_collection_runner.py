@@ -100,12 +100,42 @@ def test_phase_security_writes_artifact(tmp_path, monkeypatch):
     }
     monkeypatch.setattr(SecurityAuditor, 'audit', lambda self, url: audit_result)
     r = CollectionRunner(security=True)
-    phase = r._phase_security('https://x.com', tmp_path)
+    report = {'phases': {'vulns': {'status': 'Success', 'findings': [],
+                                   'summary': {}}}}
+    phase = r._phase_security('https://x.com', tmp_path, report)
 
     assert phase['status'] == 'Success'
     assert phase['data']['summary']['maps_with_content'] == 1
     assert phase['data']['summary']['graphql_introspection'] == 1
     assert (tmp_path / 'security' / 'audit.json').exists()
+
+    # The risk-bearing exposures are folded into the vuln phase as findings, so
+    # they live through Findings Management and score via their severity.
+    folded = report['phases']['vulns']['findings']
+    cats = {f['category'] for f in folded}
+    assert cats == {'source-map', 'graphql'}
+    smap = next(f for f in folded if f['category'] == 'source-map')
+    assert smap['severity'] == 'High' and smap['location'] == 'https://x.com/app.js.map'
+    gql = next(f for f in folded if f['category'] == 'graphql')
+    assert gql['severity'] == 'High'   # introspection on -> High
+    # Summary recomputed over the folded findings (2 High).
+    assert report['phases']['vulns']['summary']['high'] == 2
+
+
+def test_security_findings_reachable_graphql_is_info():
+    # A merely reachable GraphQL API (introspection off) is a managed Info
+    # finding; a leaking map and an open schema are High.
+    data = {
+        'source_maps': [{'url': 'https://x/a.map', 'has_content': True},
+                        {'url': 'https://x/b.map', 'has_content': False}],
+        'graphql': [{'url': 'https://x/g1', 'graphql': True, 'introspection': False},
+                    {'url': 'https://x/g2', 'graphql': False}],
+    }
+    found = CollectionRunner._security_findings(data)
+    by_loc = {f['location']: f for f in found}
+    assert set(by_loc) == {'https://x/a.map', 'https://x/g1'}  # non-leaking dropped
+    assert by_loc['https://x/a.map']['severity'] == 'High'
+    assert by_loc['https://x/g1']['severity'] == 'Info'
 
 
 def test_render_html_security_card():

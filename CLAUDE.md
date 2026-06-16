@@ -778,10 +778,31 @@ SecurityAuditor-секреты в risk НЕ вливаются (secrets идут
 attack-surface. Проводка-паритет: `monitor._build_run_fn` (`security=opts.get(...)`),
 чекбокс «Security audit (JS/maps/GraphQL)» в Collection + `_collection_options`.
 Web-консоль намеренно гоняет базовый пайплайн (все opt-in off) → web-правок нет
-(как osv/asn). Покрыто `test_attack_surface` (Source Maps/GraphQL категории +
-score), `test_collection_runner` (фаза пишет артефакт + карточка), `test_monitor`
-(проброс флага). Opt-in решение — память пользователя (GraphQL активно зондирует
+(как osv/asn). Opt-in решение — память пользователя (GraphQL активно зондирует
 пути; дефолтный пайплайн остаётся быстрым).
+
+**Хвост F-SEC2 — source-map/GraphQL как полноценные F1-находки `[ЗАКРЫТ]`.**
+Решение пользователя: «F1-находки, без дубля score». Risk-несущие экспозиции
+аудита теперь **первоклассные findings** (персист, lifecycle, SLA, триаж), а не
+только метрики: `collection_runner._security_findings(data)` синтезирует raw-
+находки (утёкший source map → **High**, GraphQL introspection → **High**,
+reachable-only GraphQL → **Info**; явные `category='source-map'/'graphql'` +
+`location=url` → стабильная Findings-identity, одна на URL) и фолдит их в
+`vulns['findings']` + ресуммирует (паттерн `_phase_dns`) → они идут через F1-sync
+(`_sync_findings`) и считаются в risk через severity (vuln_score). **Двойной счёт
+разведён:** из `executive_summary` убраны выделенные score-факторы
+`source_map_leaks`/`graphql_introspection` (+ ключи из `RISK_WEIGHTS`) — сигнал
+считается один раз через находку. **Сохранено** (display, не score): metrics
+`source_map_leaks`/`graphql`/`graphql_introspection` (heatmap/headline читают из
+metadata), `_risk_level` graphql-force (level-гейт, не score-адденд),
+recommendations/key_findings. `attack_surface`: категории Source Maps/GraphQL
+**остались**, но findings с `category in (source-map,graphql)` исключены из общей
+категории «Findings» → нет дубля в surface_score. **Числа risk изменились
+сознательно** (одинокий source-map leak теперь High-находка → level High через
+`high>=1`; reachable GraphQL +1 Info). Покрыто `test_attack_surface`
+(Source Maps/GraphQL категории + score + exclude-из-Findings), `test_collection_runner`
+(фолд severity/identity + reachable=Info), `test_executive_summary` (метрика
+сохранена/фактор убран/level сохранён), `test_monitor` (проброс флага).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

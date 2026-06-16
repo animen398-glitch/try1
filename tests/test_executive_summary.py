@@ -95,13 +95,19 @@ def test_takeover_signal_forces_critical_and_weights():
     assert any('takeover' in r.lower() for r in s['recommendations'])
 
 
-def test_source_map_leak_signal_weights_like_secret():
+def test_source_map_leak_surfaced_but_scored_via_findings():
+    # Source-map leaks are surfaced as a metric (for the heatmap/headline) and a
+    # recommendation, but they no longer add a *dedicated* risk factor — the
+    # signal is scored once via the High finding the security phase folds in
+    # (here only the summary is present, so the dedicated path contributes 0).
     report = _report()
     report['phases']['security'] = {
         'data': {'summary': {'maps_with_content': 2}}}
     s = es.build_summary(report)
     assert s['metrics']['source_map_leaks'] == 2
-    assert s['risk_score'] == 10                        # 2 × 5
+    assert s['risk_score'] == 0                         # no dedicated factor
+    assert 'Source map с исходниками' not in {
+        f['factor'] for f in s['risk_factors']}
     assert any('source map' in r.lower() for r in s['recommendations'])
 
 
@@ -121,12 +127,13 @@ def test_graphql_exposure_surfaced_in_metrics():
     s = es.build_summary(report)
     assert s['metrics']['graphql'] == 2
     assert s['metrics']['graphql_introspection'] == 1
-    # F-R2: an open GraphQL schema now feeds the risk (1 × weight 4) and is a
-    # clear-cut High signal — it no longer scores 0.
-    assert s['risk_score'] == 4
+    # An open GraphQL schema is surfaced as a metric and stays a clear-cut High
+    # signal (the level gate), but it is no longer a *dedicated* score factor —
+    # it scores once via the High finding the security phase folds in (absent
+    # here, only the summary is present, so the dedicated path contributes 0).
+    assert s['risk_score'] == 0
     assert s['risk_level'] == 'High'
-    by_name = {f['factor']: f for f in s['risk_factors']}
-    assert by_name['GraphQL introspection']['points'] == 4
+    assert 'GraphQL introspection' not in {f['factor'] for f in s['risk_factors']}
 
 
 def test_reachable_graphql_without_introspection_scores_zero():
