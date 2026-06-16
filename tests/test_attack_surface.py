@@ -57,6 +57,28 @@ def test_build_surface_includes_subdomains_when_phase_ran():
     assert set(names['Subdomains']['items']) == {'a.ex.com', 'b.ex.com'}
 
 
+def test_build_surface_includes_leaking_source_maps():
+    # Only maps that exposed original source (has_content) are surfaced — a map
+    # without content is not a leak and stays off the graph.
+    report = _report(security={'data': {'source_maps': [
+        {'url': 'https://ex.com/app.js.map', 'has_content': True},
+        {'url': 'https://ex.com/vendor.js.map', 'has_content': False}]}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Source Maps']['count'] == 1
+    assert names['Source Maps']['items'] == ['https://ex.com/app.js.map']
+
+
+def test_build_surface_includes_reachable_graphql():
+    report = _report(security={'data': {'graphql': [
+        {'url': 'https://ex.com/graphql', 'graphql': True, 'introspection': True},
+        {'url': 'https://ex.com/v2', 'graphql': True, 'introspection': False},
+        {'url': 'https://ex.com/none', 'graphql': False}]}})   # not reachable
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['GraphQL']['count'] == 2
+    assert 'https://ex.com/graphql [introspection]' in names['GraphQL']['items']
+    assert 'https://ex.com/v2' in names['GraphQL']['items']
+
+
 def test_build_surface_omits_empty_categories():
     surface = asf.build_surface(_report(recon={'data': {'cms': ['Vue']}}))
     names = [c['name'] for c in surface['categories']]
@@ -93,8 +115,10 @@ def test_surface_score_weights_risk_categories():
         {'name': 'Secrets', 'count': 2},        # 2 × 5 = 10
         {'name': 'Technologies', 'count': 3},   # 3 × 1 = 3
         {'name': 'Findings', 'count': 1},        # 1 × 3 = 3
+        {'name': 'Source Maps', 'count': 1},     # 1 × 3 = 3
+        {'name': 'GraphQL', 'count': 1},         # 1 × 3 = 3
     ]}
-    assert asf.surface_score(surface) == 16
+    assert asf.surface_score(surface) == 22
 
 
 def test_surface_score_empty_is_zero():

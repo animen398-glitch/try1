@@ -33,6 +33,7 @@ _CATEGORY_COLORS = {
     'APIs': '#00695c',
     'Historical': '#827717',
     'Source Maps': '#ad1457',
+    'GraphQL': '#512da8',
 }
 _DEFAULT_COLOR = '#555'
 _MAX_ITEMS = 10            # items kept per category (for the hover tooltip)
@@ -66,6 +67,7 @@ def build_surface(report: Dict) -> Dict:
     recon = data('recon')
     api = data('api')
     capture = data('capture')
+    security = data('security')
     katana = data('katana')
     openapi = data('openapi')
     historical = data('historical')
@@ -124,6 +126,21 @@ def build_surface(report: Dict) -> Dict:
     hist_items = historical.get('interesting') if isinstance(
         historical.get('interesting'), list) else []
 
+    # Source Maps: the served .map files that leaked original source
+    # (has_content) — the risk-bearing subset the risk engine also counts.
+    smaps = security.get('source_maps') if isinstance(
+        security.get('source_maps'), list) else []
+    smap_items = [m.get('url', '') for m in smaps
+                  if isinstance(m, dict) and m.get('has_content')]
+
+    # GraphQL: reachable endpoints (introspection ones are flagged in the
+    # tooltip) — exposed query surface, opt-in security phase only.
+    gql = security.get('graphql') if isinstance(
+        security.get('graphql'), list) else []
+    gql_items = [str(g.get('url', '')) + (' [introspection]'
+                 if g.get('introspection') else '')
+                 for g in gql if isinstance(g, dict) and g.get('graphql')]
+
     candidates = [
         _category('Technologies', tech_items),
         _category('Infrastructure', infra_items),
@@ -132,6 +149,8 @@ def build_surface(report: Dict) -> Dict:
         _category('Endpoints', katana.get('endpoints') or []),
         _category('APIs', api_items),
         _category('Historical', hist_items),
+        _category('Source Maps', smap_items),
+        _category('GraphQL', gql_items),
         _category('Pages', page_items),
         _category('Findings', [f.get('title', '') for f in findings]),
     ]
@@ -140,11 +159,12 @@ def build_surface(report: Dict) -> Dict:
 
 
 # Per-category weight for the Attack Surface Score — risk-bearing categories
-# (secrets, findings, source maps) count for more than mere breadth (pages/tech).
+# (secrets, findings, source maps, GraphQL) count for more than mere breadth
+# (pages/tech).
 _SCORE_WEIGHTS = {
-    'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'Endpoints': 2,
-    'APIs': 2, 'Historical': 2, 'Subdomains': 2, 'Technologies': 1,
-    'Infrastructure': 1, 'Pages': 1,
+    'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'GraphQL': 3,
+    'Endpoints': 2, 'APIs': 2, 'Historical': 2, 'Subdomains': 2,
+    'Technologies': 1, 'Infrastructure': 1, 'Pages': 1,
 }
 
 
