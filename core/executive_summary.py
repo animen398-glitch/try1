@@ -80,6 +80,7 @@ RISK_WEIGHTS = {
     'infra_concentration': 2,     # shared-infra choke point / blast radius (F-R4)
     'sla_breach': 1,              # remediation past its deadline — overdue surcharge (F-R5)
     'cert_expiry': 2,            # served TLS cert expired / expiring soon (F-R6)
+    'regression': 2,             # a fixed finding came back this scan (F-R7)
 }
 
 # How close to expiry (days) a still-valid leaf cert is flagged as a risk signal.
@@ -91,7 +92,7 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
                   graphql_introspection: int = 0, infra_concentration: int = 0,
                   infra_detail: str = '', sla_breaches: int = 0,
                   sla_detail: str = '', cert_expiry: int = 0,
-                  cert_detail: str = '') -> List[Dict]:
+                  cert_detail: str = '', regressions: int = 0) -> List[Dict]:
     """The explicit, weighted contributions that make up the raw risk score.
 
     Returns a list of ``{factor, count, weight, points, detail}`` — one per
@@ -123,6 +124,8 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
         'infra_concentration', infra_detail)
     add('Просроченная ремедиация (SLA)', sla_breaches, 'sla_breach', sla_detail)
     add('TLS-сертификат истёк/истекает', cert_expiry, 'cert_expiry', cert_detail)
+    add('Регрессия (переоткрытые находки)', regressions, 'regression',
+        'фикс не удержался')
     factors.sort(key=lambda f: f['points'], reverse=True)
     return factors
 
@@ -172,6 +175,19 @@ def _sla_breaches(report: Dict) -> Tuple[int, str]:
     detail = (f'{breached} находок просрочено'
               + (f', худшая — {worst}' if worst else ''))
     return breached, detail
+
+
+def _reopened_regressions(report: Dict) -> int:
+    """Findings that were fixed and came back *this scan* — regressions (F-R7).
+
+    Reads the per-scan ``reopened`` count the findings sync already stamped onto
+    ``report['findings']`` (a finding auto-FIXED in an earlier scan that
+    reappeared → REOPENED). A regression means a previous fix did not hold — a
+    worse posture than a fresh finding of the same severity, so it adds a light
+    surcharge on top of the severity weight already counted (the reopened finding
+    is OPEN again, so it is already in the vuln score). ``0`` for reports without
+    a synced findings block (older reports / tests)."""
+    return _int((report.get('findings') or {}).get('reopened'))
 
 
 def parse_cert_date(value) -> Optional[datetime]:
@@ -320,6 +336,9 @@ def headline(summary: Dict) -> Dict:
         add('Cert expired', 'high')
     elif _int(m.get('cert_expiry')):
         add('Cert expiring', 'medium')
+    regressions = _int(m.get('regressions'))
+    if regressions:
+        add(f'{regressions}× regression', 'high')
     sla_breaches = _int(m.get('sla_breaches'))
     if sla_breaches:
         add(f'{sla_breaches}× SLA overdue', 'high')
@@ -396,6 +415,9 @@ def build_summary(report: Dict) -> Dict:
     # F-R6: served TLS cert expired / expiring soon (0 unless the certificate
     # phase ran and carried a parseable not_after).
     cert_expiry, cert_detail, cert_expired = _cert_expiry(report)
+    # F-R7: regressions — findings that were fixed and reappeared this scan
+    # (0 unless the findings sync stamped a reopened count onto the report).
+    regressions = _reopened_regressions(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions (leaked secrets / source-maps weigh heaviest after a takeover —
@@ -404,7 +426,7 @@ def build_summary(report: Dict) -> Dict:
                                  source_map_leaks, weak_cookies,
                                  graphql_introspection, infra_concentration,
                                  infra_detail, sla_breaches, sla_detail,
-                                 cert_expiry, cert_detail)
+                                 cert_expiry, cert_detail, regressions)
     score = sum(f['points'] for f in risk_factors)
     level = _risk_level(score, high, secrets, takeovers, graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
@@ -418,6 +440,7 @@ def build_summary(report: Dict) -> Dict:
         'infra_concentration': infra_concentration,
         'sla_breaches': sla_breaches,
         'cert_expiry': cert_expiry, 'cert_expired': int(cert_expired),
+        'regressions': regressions,
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

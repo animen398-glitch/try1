@@ -741,11 +741,28 @@ valid→expiring→expired виден как *changed* (рефреш-серти�
 Покрыто `test_scan_diff` (статус по scan-time/переход/рефреш-флип) + `test_diff_events`
 (классификация added+changed, рефреш=не-событие, alertable-подмножество).
 
+**Risk ↔ regression (F-R7) — `[ЗАКРЫТ]`.** Backend-фаза. Связал F1-lifecycle
+«переоткрытая находка» с risk-движком: `executive_summary._reopened_regressions(report)`
+(pure над `report['findings']['reopened']` — per-scan счётчик, который
+`_sync_findings` УЖЕ стампит из `FindingsStore.sync()['reopened']`; правка
+collection_runner НЕ нужна, как F-R5 с `sla`) считает находки, которые были
+auto-FIXED и вернулись (REOPENED) в этом скане. Регрессия = прошлый фикс не
+удержался → хуже свежей находки того же severity, поэтому лёгкая надбавка ПОВЕРХ
+severity-веса (переоткрытая снова OPEN → уже в vuln_score). Новый взвешенный фактор
+«Регрессия (переоткрытые находки)» (`RISK_WEIGHTS['regression']=2`, count×weight) →
+аддитивен в score и в таблицу «Из чего риск»; метрика `regressions` + чип
+«N× regression» (high) в headline. `_risk_level` НЕ тронут (амплификатор, как
+infra/SLA/cert). Семантика per-scan: «регрессировало в этом скане» (как diff-
+триггер — следующий скан, если всё ещё OPEN но не переоткрыто заново, надбавки нет;
+обычная активная находка уже в score). Старые числа байт-в-байт (0 без
+`report['findings']`). Карточка findings в report уже показывает `reopened`. Покрыто
+`test_executive_summary` (надбавка/score/amplifier-not-clearcut/headline/отсутствие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
-F-R6 cert-expiry) + Correlation углублён + Findings SLA углублён + Asset coverage +
-Scanner robustness. Отклонено (конфликт
+F-R6 cert-expiry + F-R7 regression) + Correlation углублён + Findings SLA углублён +
+Asset coverage + Scanner robustness. Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

@@ -423,6 +423,45 @@ def test_cert_expiry_absent_leaves_score_unchanged():
         == base['risk_score']
 
 
+# ── F-R7: reopened-finding regression surcharge ───────────────────────────────
+
+def _with_reopened(report, reopened=0):
+    """Inject the per-scan reopened count the findings sync stamps on a report."""
+    report.setdefault('findings', {})['reopened'] = reopened
+    return report
+
+
+def test_regression_adds_weighted_surcharge():
+    r = _with_reopened(_report(weak_cookies=1), reopened=2)        # base score 2
+    s = es.build_summary(r)
+    factor = {f['factor']: f
+              for f in s['risk_factors']}['Регрессия (переоткрытые находки)']
+    assert factor['count'] == 2 and factor['weight'] == 2 and factor['points'] == 4
+    assert s['risk_score'] == 2 + 2 * 2                            # base + surcharge
+    assert s['metrics']['regressions'] == 2
+
+
+def test_regression_absent_leaves_score_unchanged():
+    base = es.build_summary(_report(weak_cookies=1))
+    assert base['metrics']['regressions'] == 0
+    assert 'Регрессия (переоткрытые находки)' not in {
+        f['factor'] for f in base['risk_factors']}
+    # a synced findings block with zero reopened also adds nothing
+    assert es.build_summary(_with_reopened(_report(weak_cookies=1), 0))['risk_score'] \
+        == base['risk_score']
+
+
+def test_regression_is_amplifier_not_clearcut():
+    s = es.build_summary(_with_reopened(_report(), reopened=1))
+    assert s['risk_score'] == 2          # 1 × weight 2
+    assert s['risk_level'] == 'Low'      # amplifier — not escalated
+
+
+def test_regression_chip_in_headline():
+    hl = es.headline(es.build_summary(_with_reopened(_report(), reopened=3)))
+    assert any('regression' in c['label'] for c in hl['chips'])
+
+
 # ── F-R3: risk-factor breakdown in the report ─────────────────────────────────
 
 def test_render_html_includes_risk_breakdown():
