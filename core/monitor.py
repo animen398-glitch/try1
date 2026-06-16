@@ -210,6 +210,7 @@ def _build_run_fn(base: str, options: Optional[Dict] = None) -> Callable[[str], 
             ct=opts.get('ct', False),
             asn_intel=opts.get('asn_intel', False),
             osv=opts.get('osv', False),
+            security=opts.get('security', False),
         )
         return runner.run(url, base)
 

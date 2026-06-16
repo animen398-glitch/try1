@@ -187,6 +187,17 @@ class FinalReportTabMixin:
             "advisory/CVE на каждую версию вместо встроенной таблицы (которая "
             "остаётся запасной). Доп. сетевые запросы к публичному API OSV.")
         opt_row.addWidget(self.collect_osv)
+
+        # Opt-in security audit (SecurityAuditor) — JS secrets, leaking source
+        # maps, reachable GraphQL endpoints; feeds risk + attack-surface graph.
+        self.collect_security = QCheckBox("Security audit (JS/maps/GraphQL)")
+        self.collect_security.setToolTip(
+            "Аудит безопасности: секреты в отданных JS-файлах, утёкшие source "
+            "map (с исходниками) и достижимые GraphQL-эндпоинты (с проверкой "
+            "introspection). Питает risk-движок (source-map/GraphQL) и граф "
+            "attack-surface. Доп. сетевые запросы: загрузка JS + зондирование "
+            "типовых GraphQL-путей.")
+        opt_row.addWidget(self.collect_security)
         g.addLayout(opt_row)
 
         btn_row = QHBoxLayout()
@@ -315,6 +326,7 @@ class FinalReportTabMixin:
             'ct': self.collect_ct.isChecked(),
             'asn_intel': self.collect_asn_intel.isChecked(),
             'osv': self.collect_osv.isChecked(),
+            'security': self.collect_security.isChecked(),
         }
 
     def _run_collection(self):

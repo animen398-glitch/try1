@@ -84,7 +84,7 @@ class CollectionRunner:
                  historical: bool = False, dns: bool = False,
                  emails: bool = False, employees: bool = False,
                  ct: bool = False, asn_intel: bool = False,
-                 osv: bool = False):
+                 osv: bool = False, security: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -133,6 +133,12 @@ class CollectionRunner:
         # library; supersedes the bundled dependency-audit table (extra network;
         # off by default).
         self.osv = osv
+        # Opt-in security audit (SecurityAuditor) — secrets in served JS,
+        # leaking source maps, and reachable GraphQL endpoints. Feeds the risk
+        # engine (source-map leaks + GraphQL introspection) and the attack-
+        # surface graph. Off by default (extra network: fetches JS + probes
+        # conventional GraphQL paths).
+        self.security = security
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -154,7 +160,8 @@ class CollectionRunner:
                   employees: Optional[bool] = None,
                   ct: Optional[bool] = None,
                   asn_intel: Optional[bool] = None,
-                  osv: Optional[bool] = None):
+                  osv: Optional[bool] = None,
+                  security: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -191,6 +198,8 @@ class CollectionRunner:
             self.asn_intel = asn_intel
         if osv is not None:
             self.osv = osv
+        if security is not None:
+            self.security = security
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -264,6 +273,11 @@ class CollectionRunner:
         # 7. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
             report['phases']['vulns'] = self._phase_vulns(report, scan_dir)
+        # 7a. Security audit (opt-in) → secrets in served JS, leaking source
+        # maps, reachable GraphQL endpoints. Feeds the risk engine (source-map
+        # leaks + GraphQL introspection) and the attack-surface graph.
+        if self.security and not self._cancelled(report):
+            report['phases']['security'] = self._phase_security(url, scan_dir)
         # 7b. Subdomain enumeration (opt-in) → feeds the takeover risk signal
         # and the Scan Diff subdomain section.
         if self.subdomains and not self._cancelled(report):
@@ -494,6 +508,38 @@ class CollectionRunner:
             return {'status': 'Success', 'findings': findings, 'summary': summary}
         except Exception as e:
             self._log(f'  Vuln scan failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_security(self, url: str, project_dir: Path) -> Dict:
+        """Opt-in security audit (SecurityAuditor): secrets in served JS, leaking
+        source maps, and reachable GraphQL endpoints.
+
+        Stored as ``phases.security.data`` — the exact shape the risk engine
+        (``executive_summary._count_sourcemap_leaks``/``_graphql_exposure``),
+        the attack-surface graph and Scan Diff already read (invariant I3, no
+        re-probing). Guarded — a failure never sinks the scan.
+        """
+        self._log('[+] Security audit (JS secrets / source maps / GraphQL)…')
+        try:
+            from core.security_auditor import SecurityAuditor
+            auditor = SecurityAuditor(profile=self.profile)
+            auditor.set_progress_callback(self.progress_callback)
+            auditor.set_cancel_event(self._cancel)
+            data = auditor.audit(url)
+            summary = data.get('summary', {})
+            self._log(
+                f"  Source maps: {summary.get('maps_with_content', 0)} с исходниками, "
+                f"GraphQL: {summary.get('graphql', 0)} "
+                f"(introspection: {summary.get('graphql_introspection', 0)})")
+            out = project_dir / 'security'
+            out.mkdir(exist_ok=True)
+            (out / 'audit.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            return {'status': data.get('status', 'Success'), 'data': data}
+        except Exception as e:
+            self._log(f'  Security audit failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_analyzers(self, report: Dict) -> Dict:
@@ -1464,6 +1510,47 @@ class CollectionRunner:
             f'слабых: <b>{e(str(ckd.get("weak", 0)))}</b></p>',
             ck.get('status', '—'),
         ))
+
+        # Security audit (opt-in) — leaking source maps + reachable GraphQL.
+        security = phases.get('security')
+        if security:
+            secd = security.get('data', {})
+            ssum = secd.get('summary', {})
+            smaps = [m for m in secd.get('source_maps', [])
+                     if isinstance(m, dict) and m.get('has_content')]
+            gql = [g for g in secd.get('graphql', [])
+                   if isinstance(g, dict) and g.get('graphql')]
+            if smaps or gql or ssum:
+                map_items = ''.join(
+                    f'<li style="margin:1px 0;">{e(str(m.get("url", "")))}</li>'
+                    for m in smaps[:25])
+                gql_items = ''.join(
+                    f'<li style="margin:1px 0;'
+                    f'{"color:#c62828;font-weight:bold;" if g.get("introspection") else ""}">'
+                    f'{e(str(g.get("url", "")))}'
+                    f'{" ⚠ introspection" if g.get("introspection") else ""}</li>'
+                    for g in gql[:25])
+                secbody = (
+                    f'<p style="font-size:13px;">Source maps с исходниками: '
+                    f'<b>{e(str(ssum.get("maps_with_content", len(smaps))))}</b>, '
+                    f'GraphQL-эндпоинтов: <b>{e(str(ssum.get("graphql", len(gql))))}</b> '
+                    f'(introspection: '
+                    f'<b>{e(str(ssum.get("graphql_introspection", 0)))}</b>)</p>')
+                if map_items:
+                    secbody += (f'<p style="font-size:12px;color:#666;margin:6px 0 2px;">'
+                                f'Source maps:</p><ul style="font-size:12px;color:#444;'
+                                f'margin:0 0 6px;max-height:160px;overflow:auto;">'
+                                f'{map_items}</ul>')
+                if gql_items:
+                    secbody += (f'<p style="font-size:12px;color:#666;margin:6px 0 2px;">'
+                                f'GraphQL:</p><ul style="font-size:12px;color:#444;'
+                                f'margin:0 0 6px;max-height:160px;overflow:auto;">'
+                                f'{gql_items}</ul>')
+            else:
+                secbody = (f'<p style="font-size:13px;color:#999;">'
+                           f'{e(security.get("reason", "ничего не обнаружено"))}</p>')
+            body_parts.append(card('Security Audit', secbody,
+                                   security.get('status', '—')))
 
         # Vulnerabilities
         vuln = phases.get('vulns', {})

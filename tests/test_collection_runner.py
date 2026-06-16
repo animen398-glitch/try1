@@ -82,6 +82,57 @@ def test_render_html_certificate_card():
     assert "<script" not in html.lower()
 
 
+def test_default_collection_has_security_off():
+    assert CollectionRunner().security is False
+
+
+def test_phase_security_writes_artifact(tmp_path, monkeypatch):
+    """The opt-in security phase wraps SecurityAuditor.audit and stores the
+    result at phases.security.data — the shape risk/surface/diff already read."""
+    from core.security_auditor import SecurityAuditor
+    audit_result = {
+        'status': 'Success', 'url': 'https://x.com', 'secrets': [],
+        'source_maps': [{'url': 'https://x.com/app.js.map', 'has_content': True}],
+        'graphql': [{'url': 'https://x.com/graphql', 'graphql': True,
+                     'introspection': True}],
+        'summary': {'maps_with_content': 1, 'graphql': 1,
+                    'graphql_introspection': 1},
+    }
+    monkeypatch.setattr(SecurityAuditor, 'audit', lambda self, url: audit_result)
+    r = CollectionRunner(security=True)
+    phase = r._phase_security('https://x.com', tmp_path)
+
+    assert phase['status'] == 'Success'
+    assert phase['data']['summary']['maps_with_content'] == 1
+    assert phase['data']['summary']['graphql_introspection'] == 1
+    assert (tmp_path / 'security' / 'audit.json').exists()
+
+
+def test_render_html_security_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"security": {"status": "Success", "data": {
+            "source_maps": [
+                {"url": "https://x/app.js.map", "has_content": True},
+                {"url": "https://x/vendor.js.map", "has_content": False}],
+            "graphql": [
+                {"url": "https://x/graphql", "graphql": True,
+                 "introspection": True},
+                {"url": "https://x/none", "graphql": False}],
+            "summary": {"maps_with_content": 1, "graphql": 1,
+                        "graphql_introspection": 1}}}},
+    }
+    html = r._render_html(report)
+    assert "Security Audit" in html
+    # Leaking map surfaced; the non-leaking one is not listed.
+    assert "app.js.map" in html and "vendor.js.map" not in html
+    # Reachable GraphQL surfaced with the introspection flag.
+    assert "x/graphql" in html and "introspection" in html
+    assert "<script" not in html.lower()
+
+
 def test_phase_openapi_writes_artifact(tmp_path, monkeypatch):
     """The opt-in OpenAPI phase wraps discover() and writes openapi.json."""
     import core.collection_runner as cr

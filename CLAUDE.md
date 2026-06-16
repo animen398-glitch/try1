@@ -758,6 +758,31 @@ infra/SLA/cert). Семантика per-scan: «регрессировало в 
 `report['findings']`). Карточка findings в report уже показывает `reopened`. Покрыто
 `test_executive_summary` (надбавка/score/amplifier-not-clearcut/headline/отсутствие).
 
+**Security signals → attack-surface + Full Collection (F-SEC1) — `[ЗАКРЫТ]`.**
+Backend-фаза, два связанных инкремента. **(1) Attack-surface graph**:
+`attack_surface.build_surface` получил две risk-несущие категории, которые
+risk-движок УЖЕ считал, но граф ронял — **Source Maps** (отданные `.map` с
+`has_content` — только реальная утечка) и **GraphQL** (достижимые эндпоинты,
+`[introspection]` в тултипе). Читаются из `phases.security.data.{source_maps,
+graphql}` — тот же контракт, что `executive_summary`/`scan_diff` (I3, без
+повторного зондирования); вес 3 в `surface_score` (risk-несущие, как Findings/
+Source Maps), цвет GraphQL `#512da8`. **(2) Security-фаза в Full Collection**:
+раньше `phases.security` писал только standalone SecurityAuditor (GUI/web tab),
+поэтому source-map/GraphQL-сигналы в обычном скане были 0. Заведена opt-in фаза
+`security` в `CollectionRunner` (флаг `security=False`, мирроринг osv/asn:
+`__init__`/`configure`/`run` фаза 7a сразу после vulns, `_phase_security` →
+`SecurityAuditor.audit` → `phases.security.data` = полный audit-результат, артефакт
+`security/audit.json`, карточка отчёта «Security Audit» с утёкшими maps + GraphQL).
+SecurityAuditor-секреты в risk НЕ вливаются (secrets идут из `api.keys_found` —
+без двойного счёта); фаза питает только source-map/GraphQL-сигналы +
+attack-surface. Проводка-паритет: `monitor._build_run_fn` (`security=opts.get(...)`),
+чекбокс «Security audit (JS/maps/GraphQL)» в Collection + `_collection_options`.
+Web-консоль намеренно гоняет базовый пайплайн (все opt-in off) → web-правок нет
+(как osv/asn). Покрыто `test_attack_surface` (Source Maps/GraphQL категории +
+score), `test_collection_runner` (фаза пишет артефакт + карточка), `test_monitor`
+(проброс флага). Opt-in решение — память пользователя (GraphQL активно зондирует
+пути; дефолтный пайплайн остаётся быстрым).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

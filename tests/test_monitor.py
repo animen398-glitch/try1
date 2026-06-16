@@ -94,12 +94,13 @@ def test_build_run_fn_maps_options_to_runner(monkeypatch):
 
     monkeypatch.setattr('core.collection_runner.CollectionRunner', FakeRunner)
     rf = monitor._build_run_fn('/base', {'nuclei': True, 'subdomains': False,
-                                         'osv': True,
+                                         'osv': True, 'security': True,
                                          'profile': 'firefox_windows'})
     out = rf('https://x.com')
     assert out['base'] == '/base'
     assert captured['nuclei'] is True and captured['subdomains'] is False
     assert captured['osv'] is True            # opt-in OSV correlation maps through
+    assert captured['security'] is True       # opt-in security audit maps through
     assert captured['profile'] == 'firefox_windows'
     assert captured['certificate'] is True        # default preserved on merge
 
