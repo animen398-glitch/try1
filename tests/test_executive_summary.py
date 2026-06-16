@@ -373,7 +373,7 @@ def _with_cert(report, not_after):
 
 
 def test_parse_cert_date_handles_formats():
-    p = es._parse_cert_date
+    p = es.parse_cert_date
     assert p('2026-09-01').year == 2026                  # ISO date
     assert p('2026-09-01T00:00:00').month == 9           # ISO datetime
     assert p('Aug  1 00:00:00 2026 GMT').year == 2026    # OpenSSL double-space + zone

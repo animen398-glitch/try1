@@ -85,6 +85,39 @@ def test_graphql_introspection_is_alertable_but_new_graphql_is_not():
     assert 'new_graphql' not in alert_types           # surface discovery only
 
 
+def test_certificate_expiry_classified_from_status_field():
+    d = _diff(certificates={
+        'added': ['expiry: expiring', 'subject: x.com'],   # newly-tracked, near deadline
+        'removed': [],
+        # a cert that crossed its deadline between scans; not_after change is generic
+        'changed': [{'key': 'expiry', 'a': 'valid', 'b': 'expired'},
+                    {'key': 'not_after', 'a': 'Aug 1', 'b': 'Sep 1'}]})
+    by_type = {}
+    for e in diff_events(d):
+        by_type.setdefault(e['type'], []).append(e)
+    assert by_type['cert_expiring'][0]['severity'] == 'medium'   # added near-deadline
+    assert by_type['cert_expired'][0]['severity'] == 'high'      # valid→expired
+    assert '→ expired' in by_type['cert_expired'][0]['title']
+    assert by_type['cert_change'][0]['title'].startswith('not_after:')  # generic field
+
+
+def test_certificate_renewal_emits_no_expiry_event():
+    # expired/expiring → valid (renewed) is not an expiry regression.
+    d = _diff(certificates=_changed({'key': 'expiry', 'a': 'expired', 'b': 'valid'}))
+    types = {e['type'] for e in diff_events(d)}
+    assert 'cert_expired' not in types and 'cert_expiring' not in types
+
+
+def test_cert_expired_is_alertable_but_expiring_is_not():
+    d = _diff(certificates={
+        'added': ['expiry: expiring'],
+        'removed': [],
+        'changed': [{'key': 'expiry', 'a': 'valid', 'b': 'expired'}]})
+    alert_types = {a['type'] for a in alerts.extract_alerts(d)}
+    assert 'cert_expired' in alert_types        # crossed the deadline → alertable
+    assert 'cert_expiring' not in alert_types   # heads-up only → timeline
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})

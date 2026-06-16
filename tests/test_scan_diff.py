@@ -36,8 +36,9 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
         phases['certificate'] = {'status': 'Success', 'data': cert}
     if graphql is not None:
         phases['security'] = {'status': 'Success', 'data': {'graphql': graphql}}
+    ts = f'2026-06-13T0{1 if scan_id == "A" else 2}:00:00'
     return {
-        'scan_id': scan_id, 'finished_at': f'2026-06-13T0{1 if scan_id == "A" else 2}:00:00',
+        'scan_id': scan_id, 'finished_at': ts, 'started_at': ts,
         'phases': phases,
         'executive_summary': {'risk_level': level, 'risk_100': risk_100,
                               'metrics': {'risk_100': risk_100}},
@@ -140,6 +141,31 @@ def test_certificate_added_field():
                            'sans': 'x.com, www.x.com'})       # SAN appeared
     sec = diff(a, b)['sections']['certificates']
     assert sec['added'] == ['sans: x.com, www.x.com']
+
+
+def test_certificate_expiry_status_classified_against_scan_time():
+    # B's cert is already past its deadline relative to B's scan time → the
+    # synthetic expiry status surfaces it (judged against started_at, not today).
+    a = _report('A', cert={'subject': 'x.com'})                  # no not_after
+    b = _report('B', cert={'subject': 'x.com', 'not_after': '2026-06-01'})
+    sec = diff(a, b)['sections']['certificates']
+    assert 'expiry: expired' in sec['added']
+
+
+def test_certificate_expires_between_scans_is_changed():
+    a = _report('A', cert={'subject': 'x.com', 'not_after': '2027-01-01'})  # valid
+    b = _report('B', cert={'subject': 'x.com', 'not_after': '2026-06-01'})  # expired
+    changed = {c['key']: (c['a'], c['b'])
+               for c in diff(a, b)['sections']['certificates']['changed']}
+    assert changed['expiry'] == ('valid', 'expired')
+
+
+def test_certificate_renewal_flips_expiry_status_back():
+    a = _report('A', cert={'subject': 'x.com', 'not_after': '2026-06-20'})  # expiring
+    b = _report('B', cert={'subject': 'x.com', 'not_after': '2027-06-20'})  # valid
+    changed = {c['key']: (c['a'], c['b'])
+               for c in diff(a, b)['sections']['certificates']['changed']}
+    assert changed['expiry'] == ('expiring', 'valid')
 
 
 def test_graphql_endpoint_added_and_introspection_opens():

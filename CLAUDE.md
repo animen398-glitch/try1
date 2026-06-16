@@ -724,7 +724,22 @@ degrade→None на битом, F-SR1-этос). Новый лёгкий взв�
 «Cert expiring» (medium) в headline. `_risk_level` НЕ тронут (амплификатор, как
 infra/SLA). Старые числа байт-в-байт (0 без certificate-фазы/непарсимой даты).
 Покрыто `test_executive_summary` (parse-форматы/классификация по injected-now/
-фактор+чип/amplifier-not-clearcut/отсутствие).
+фактор+чип/amplifier-not-clearcut/отсутствие). **Хвост F-R6 — cert expiry в
+Diff/Timeline/Alerts** `[ЗАКРЫТ]`: `_parse_cert_date`→**публичный** `parse_cert_date`
++ единый классификатор `cert_expiry_status(not_after, ref)` (источник правды порога,
+шарится risk-фактором и diff'ом; `_cert_expiry` отрефакторён через общий
+`_cert_status_days`). `scan_diff._extract_certificate` добавляет **синтетическое**
+поле `expiry` (valid/expiring/expired), оцениваемое против **времени самого скана**
+(`report['started_at']`, а не «сегодня» — исторический дифф корректен) → переход
+valid→expiring→expired виден как *changed* (рефреш-сертификат→valid НЕ событие).
+`diff_events`: `cert_expired` (high) / `cert_expiring` (medium) из added/changed
+`expiry` (generic `cert_change` для прочих полей цел). `cert_expired` в
+`alerts.ALERT_TYPES` (diff-триггер → дедуп естественный, одно событие на переход —
+без one-shot-маркера как F-S6); `cert_expiring` timeline-only (как `new_graphql`).
+Метки в `gui/tab_timeline._EVENT_LABELS` + подпись в `gui/dialogs` (fallback на raw
+ключ цел). Web-паритет автоматом (общий `diff_events`→`extract_alerts`/timeline).
+Покрыто `test_scan_diff` (статус по scan-time/переход/рефреш-флип) + `test_diff_events`
+(классификация added+changed, рефреш=не-событие, alertable-подмножество).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

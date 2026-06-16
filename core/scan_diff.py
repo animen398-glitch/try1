@@ -19,7 +19,7 @@ anything rendered or serialized from it — never carries a full leaked key.
 import html
 from typing import Dict, List, Optional
 
-from core.executive_summary import RISK_COLORS
+from core.executive_summary import RISK_COLORS, cert_expiry_status, parse_cert_date
 
 # Section -> the phase whose success it depends on (single place to extend
 # when the collection pipeline gains new phases, e.g. subdomains).
@@ -168,6 +168,13 @@ def _extract_certificate(report: Dict) -> Optional[Dict]:
     # The certificate phase stores the flat cert summary as its ``data``.
     data = _data(report, 'certificate')
     fields = {k: str(v) for k, v in data.items() if v not in (None, '')}
+    # Synthetic expiry status, judged against *this scan's* timestamp so a
+    # historical diff sees the transition into expired/expiring as a changed
+    # field (not against today). The risk engine shares the same classifier.
+    status = cert_expiry_status(data.get('not_after'),
+                                parse_cert_date(report.get('started_at')))
+    if status:
+        fields['expiry'] = status
     return fields or None
 
 
@@ -433,6 +440,8 @@ EVENT_SEVERITY = {
     'new_technology':      'info',
     'tech_version_change': 'info',
     'cert_change':         'medium',
+    'cert_expiring':       'medium',
+    'cert_expired':        'high',
     'new_endpoint':        'info',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
@@ -471,8 +480,30 @@ def diff_events(d: Dict) -> List[Dict]:
             add('tech_version_change',
                 f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'technologies')
 
-    for ch in sections.get('certificates', {}).get('changed', []):
-        if isinstance(ch, dict):
+    # Certificates: a renewed/changed field is a generic cert_change, but the
+    # synthetic ``expiry`` status carries the semantic signal — a cert that has
+    # crossed into expired (high) or expiring-soon (medium). Fire on both a
+    # newly-tracked cert that is already past/near its deadline and a
+    # valid→expiring→expired transition. A renewal (→ valid) is not an event.
+    cert = sections.get('certificates', {})
+    for label in cert.get('added', []):
+        text = str(label)
+        if text.startswith('expiry: expired'):
+            add('cert_expired', 'сертификат истёк', 'certificates')
+        elif text.startswith('expiry: expiring'):
+            add('cert_expiring', 'сертификат скоро истечёт', 'certificates')
+    for ch in cert.get('changed', []):
+        if not isinstance(ch, dict):
+            continue
+        if ch.get('key') == 'expiry':
+            b = str(ch.get('b', ''))
+            if b == 'expired':
+                add('cert_expired',
+                    f"сертификат истёк ({ch.get('a')} → {b})", 'certificates')
+            elif b == 'expiring':
+                add('cert_expiring',
+                    f"сертификат скоро истечёт ({ch.get('a')} → {b})", 'certificates')
+        else:
             add('cert_change',
                 f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'certificates')
 

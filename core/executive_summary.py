@@ -174,14 +174,16 @@ def _sla_breaches(report: Dict) -> Tuple[int, str]:
     return breached, detail
 
 
-def _parse_cert_date(value) -> Optional[datetime]:
+def parse_cert_date(value) -> Optional[datetime]:
     """Best-effort parse of a certificate validity date into a naive datetime.
 
     Served-cert ``not_after`` comes in several shapes across the pipeline —
     OpenSSL/RFC ("Aug  1 00:00:00 2026 GMT"), ISO ("2026-09-01" /
     "2026-09-01T00:00:00"), or a bare "%b %d %Y". Tries each, collapsing the
     OpenSSL double-space and dropping a trailing zone; returns ``None`` on
-    anything unparseable (degrade-not-raise, F-SR1 ethos)."""
+    anything unparseable (degrade-not-raise, F-SR1 ethos). Also parses the ISO
+    scan timestamps the report carries (``started_at``), so callers can use it
+    as the reference instant."""
     if not value:
         return None
     s = ' '.join(str(value).split())            # collapse OpenSSL double spaces
@@ -198,6 +200,32 @@ def _parse_cert_date(value) -> Optional[datetime]:
     return None
 
 
+def _cert_status_days(not_after, ref: Optional[datetime]) -> Tuple[str, int]:
+    """Classify a cert ``not_after`` against ``ref`` (default now).
+
+    Returns ``(status, days_until_expiry)`` where status is
+    ``'expired' | 'expiring' | 'valid'`` (or ``''`` for a missing/unparseable
+    date); ``days`` is negative once expired. The single source of truth for the
+    expiry threshold, shared by the risk amplifier and the Scan-Diff event."""
+    expiry = parse_cert_date(not_after)
+    if expiry is None:
+        return '', 0
+    days = (expiry - (ref or datetime.now())).days
+    if days < 0:
+        return 'expired', days
+    if days <= CERT_EXPIRY_WARN_DAYS:
+        return 'expiring', days
+    return 'valid', days
+
+
+def cert_expiry_status(not_after, ref: Optional[datetime] = None) -> str:
+    """``'expired' | 'expiring' | 'valid' | ''`` for a cert ``not_after``.
+
+    ``ref`` is the reference instant — pass a scan's own timestamp so a
+    historical diff judges each scan against when it ran, not against today."""
+    return _cert_status_days(not_after, ref)[0]
+
+
 def _cert_expiry(report: Dict, now: Optional[datetime] = None
                  ) -> Tuple[int, str, bool]:
     """Served-TLS-cert expiry amplifier (F-R6).
@@ -210,13 +238,11 @@ def _cert_expiry(report: Dict, now: Optional[datetime] = None
     Pure derive over the report; ``(0, '', False)`` for a report without a
     certificate phase or an unparseable date. ``now`` is injectable for
     deterministic tests. Returns ``(count, detail, expired)``."""
-    expiry = _parse_cert_date(_phase_data(report, 'certificate').get('not_after'))
-    if expiry is None:
-        return 0, '', False
-    days = (expiry - (now or datetime.now())).days
-    if days < 0:
+    status, days = _cert_status_days(
+        _phase_data(report, 'certificate').get('not_after'), now)
+    if status == 'expired':
         return 1, f'сертификат истёк {abs(days)} дн. назад', True
-    if days <= CERT_EXPIRY_WARN_DAYS:
+    if status == 'expiring':
         return 1, f'сертификат истекает через {days} дн.', False
     return 0, '', False
 

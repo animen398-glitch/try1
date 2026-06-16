@@ -182,6 +182,7 @@ class SettingsDialog(QDialog):
             'new_secret': 'Новый секрет', 'new_subdomain': 'Новый субдомен',
             'takeover': 'Takeover', 'new_technology': 'Новая технология',
             'cert_change': 'Смена сертификата', 'risk_increase': 'Рост риска',
+            'cert_expired': 'Сертификат истёк',
         }
         enabled_types = set(cfg.get('types') or [])
         for key in alert_center.ALERT_TYPES:

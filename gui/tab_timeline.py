@@ -30,6 +30,8 @@ _EVENT_LABELS = {
     'new_technology':      'Новая технология',
     'tech_version_change': 'Смена версии',
     'cert_change':         'Смена сертификата',
+    'cert_expiring':       'Сертификат истекает',
+    'cert_expired':        'Сертификат истёк',
     'new_endpoint':        'Новый эндпоинт',
     'new_graphql':         'Новый GraphQL',
     'graphql_introspection': 'GraphQL introspection',
