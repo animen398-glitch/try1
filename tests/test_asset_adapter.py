@@ -104,6 +104,31 @@ def test_source_phases_map_covers_all_types():
         assert t in aa.ASSET_SOURCE_PHASES
 
 
+def test_security_audit_endpoints_become_assets():
+    # URLs the deep-JS audit extracted become endpoint assets gated on the
+    # security phase (so a skipped audit doesn't mark them gone).
+    r = {'url': 'https://x.com', 'phases': {
+        'security': {'status': 'Success', 'data': {'endpoints': [
+            {'url': 'https://x.com/api/hidden', 'found_in': 'https://x.com/app.js'}]}}}}
+    bt = _by_type(aa.derive_assets(r))
+    assert any('api/hidden' in e for e in bt['endpoint'])
+    attrs = _attrs_for(aa.derive_assets(r), 'endpoint',
+                       aa._normalize_value('endpoint', 'https://x.com/api/hidden'))
+    assert attrs['source'] == 'security'
+
+
+def test_endpoint_shared_by_katana_and_audit_keeps_katana_source():
+    # An endpoint found by both keeps Katana's source (derive is first-wins), so
+    # its GONE gating stays on the always-available crawl, not the opt-in audit.
+    r = {'url': 'https://x.com', 'phases': {
+        'katana': {'status': 'Success', 'data': {'endpoints': ['https://x.com/api']}},
+        'security': {'status': 'Success', 'data': {'endpoints': [
+            {'url': 'https://x.com/api', 'found_in': 'js'}]}}}}
+    attrs = _attrs_for(aa.derive_assets(r), 'endpoint',
+                       aa._normalize_value('endpoint', 'https://x.com/api'))
+    assert attrs['source'] == 'katana'
+
+
 # ── F-A1: richer attrs (TLS / probe / provider) folded from existing report ───
 
 def _attrs_for(assets, atype, value):

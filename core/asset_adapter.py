@@ -33,11 +33,12 @@ from core.finding_fingerprint import scoped_id  # noqa: F401 (re-exported for st
 ASSET_TYPES = ('domain', 'subdomain', 'ip', 'asn', 'netblock', 'endpoint',
                'technology')
 
-# type → producing phase(s). 'endpoint' comes from either katana or openapi.
+# type → producing phase(s). 'endpoint' comes from katana, openapi, or the
+# deep-JS security audit.
 ASSET_SOURCE_PHASES = {
     'domain': ('recon',), 'ip': ('recon',), 'asn': ('recon',),
     'technology': ('recon',), 'subdomain': ('subdomains',),
-    'netblock': ('asn_intel',), 'endpoint': ('katana', 'openapi'),
+    'netblock': ('asn_intel',), 'endpoint': ('katana', 'openapi', 'security'),
 }
 
 _SEP = '\x1f'   # ASCII Unit Separator — never in a normalized value (collision-safe)
@@ -245,6 +246,14 @@ def derive_assets(report: Dict) -> List[Asset]:
             out.append(Asset('endpoint', ep['path'],
                              attrs={'source': 'openapi',
                                     'method': ep.get('method')}))
+    # URLs the deep-JS security audit extracted ({url, found_in}) — endpoints the
+    # initial crawl can miss. Added after katana/openapi so an overlap keeps their
+    # source (_dedup is first-wins); audit-only endpoints gate GONE on 'security'.
+    security = _phase(report, 'security')
+    for ep in security.get('endpoints') or []:
+        u = ep.get('url') if isinstance(ep, dict) else ep
+        if u:
+            out.append(Asset('endpoint', str(u), attrs={'source': 'security'}))
 
     return _dedup(out)
 

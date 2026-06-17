@@ -1104,6 +1104,21 @@ Attack-surface: типы audit-секретов влиты в breadth «Secrets�
 secret-audit/location/плейсхолдер-skip/без plaintext), `test_timeline` (F1 владеет при
 наличии secret-находок; legacy сохраняет scan-diff), `test_attack_surface` (типы влиты).
 
+**Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
+извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
+но они были orphaned: attack-surface «Endpoints» читала только `katana.endpoints`, а
+asset-inventory/diff их не видели → при пропущенной katana JS-endpoints терялись.
+Фикс: (1) `attack_surface.build_surface` мёржит URL audit-endpoints в breadth
+«Endpoints» (дедуп с katana); (2) `asset_adapter.derive_assets` деривит их как
+endpoint-активы с `source='security'` (после katana/openapi — `_dedup` first-wins, так
+overlap сохраняет katana-source; audit-only гейтит GONE на фазе security),
+`ASSET_SOURCE_PHASES['endpoint']` += `'security'`. Через asset-инвентарь они автоматом
+попадают в Timeline (asset-события new_asset/gone) и web. Scan-diff `endpoints` секция
+НЕ тронута (гейт на katana — мёрж opt-in security туда нарушил бы comparison-honesty,
+как с audit-секретами; asset-путь — корректная поверхность для diff). derive-on-read,
+без новых зависимостей. Покрыто `test_asset_adapter` (audit-endpoint→актив source=security
+/ shared с katana сохраняет katana-source), `test_attack_surface` (katana+audit мёрж+дедуп).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

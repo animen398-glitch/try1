@@ -127,6 +127,18 @@ def test_build_surface_includes_leaking_source_maps():
     assert names['Source Maps']['items'] == ['https://ex.com/app.js.map']
 
 
+def test_endpoints_merge_katana_and_audit():
+    # The Endpoints breadth merges Katana's crawl with the deep-JS audit's
+    # discovered URLs, de-duplicated.
+    report = _report(
+        katana={'data': {'endpoints': ['https://ex.com/a']}},
+        security={'data': {'endpoints': [
+            {'url': 'https://ex.com/b', 'found_in': 'https://ex.com/app.js'},
+            {'url': 'https://ex.com/a'}]}})       # dup with katana → merged once
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert set(names['Endpoints']['items']) == {'https://ex.com/a', 'https://ex.com/b'}
+
+
 def test_build_surface_includes_reachable_graphql():
     report = _report(security={'data': {'graphql': [
         {'url': 'https://ex.com/graphql', 'graphql': True, 'introspection': True},

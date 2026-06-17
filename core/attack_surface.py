@@ -190,13 +190,22 @@ def build_surface(report: Dict) -> Dict:
                  if g.get('introspection') else '')
                  for g in gql if isinstance(g, dict) and g.get('graphql')]
 
+    # Endpoints: the opt-in Katana crawl plus the URLs the deep-JS security audit
+    # extracted ({url, found_in}) — merged and de-duplicated so the breadth
+    # reflects both crawlers, not just Katana.
+    endpoint_items = list(katana.get('endpoints') or [])
+    for e in (security.get('endpoints') or []):
+        u = e.get('url') if isinstance(e, dict) else str(e)
+        if u and u not in endpoint_items:
+            endpoint_items.append(u)
+
     candidates = [
         _category('Technologies', tech_items),
         _category('Infrastructure', infra_items),
         _category('Secrets', secret_items),
         _category('Subdomains', sub_items),
         _category('Takeovers', takeover_items),
-        _category('Endpoints', katana.get('endpoints') or []),
+        _category('Endpoints', endpoint_items),
         _category('APIs', api_items),
         _category('Historical', hist_items),
         _category('Source Maps', smap_items),
