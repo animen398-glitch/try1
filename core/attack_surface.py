@@ -163,12 +163,14 @@ def build_surface(report: Dict) -> Dict:
         _category('GraphQL', gql_items),
         _category('Weak Cookies', cookie_items),
         _category('Pages', page_items),
-        # Findings excludes the source-map / GraphQL findings: those exposures
-        # are their own categories above (from the security phase), so counting
-        # them here too would double them in the surface score.
+        # Findings excludes the source-map / GraphQL / weak-cookie findings:
+        # those exposures are their own categories above (Source Maps / GraphQL
+        # from the security phase, Weak Cookies from the cookie phase), so
+        # counting them here too would double them in the surface score.
         _category('Findings', [f.get('title', '') for f in findings
                                if isinstance(f, dict)
-                               and f.get('category') not in ('sourcemap', 'graphql')]),
+                               and f.get('category')
+                               not in ('sourcemap', 'graphql', 'cookie')]),
     ]
     return {'domain': str(domain),
             'categories': [c for c in candidates if c]}

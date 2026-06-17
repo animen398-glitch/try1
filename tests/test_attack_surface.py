@@ -79,25 +79,29 @@ def test_build_surface_includes_reachable_graphql():
     assert 'https://ex.com/v2' in names['GraphQL']['items']
 
 
-def test_findings_category_excludes_source_map_and_graphql():
-    # Source-map / GraphQL exposures are their own categories (from the security
-    # phase); the same findings folded into the vuln phase must NOT also appear
-    # in the generic Findings category, or they'd double the surface score.
+def test_findings_category_excludes_source_map_graphql_and_cookies():
+    # Source-map / GraphQL / weak-cookie exposures are their own categories (from
+    # the security and cookie phases); the same findings folded into the vuln
+    # phase must NOT also appear in the generic Findings category, or they'd
+    # double the surface score.
     report = _report(
         security={'data': {
             'source_maps': [{'url': 'https://ex.com/app.js.map',
                              'has_content': True}],
             'graphql': [{'url': 'https://ex.com/graphql', 'graphql': True,
                          'introspection': True}]}},
+        cookies={'data': {'cookies': [{'name': 'sid', 'verdict': 'Weak'}]}},
         vulns={'summary': {}, 'findings': [
             {'title': 'Source map exposes original source',
              'category': 'sourcemap'},
             {'title': 'GraphQL introspection enabled', 'category': 'graphql'},
+            {'title': "Weakly protected cookie: sid", 'category': 'cookie'},
             {'title': 'Exposed .env'}]})   # only this is a generic finding
     names = {c['name']: c for c in asf.build_surface(report)['categories']}
     assert names['Findings']['items'] == ['Exposed .env']
     assert names['Source Maps']['count'] == 1
     assert names['GraphQL']['count'] == 1
+    assert names['Weak Cookies']['count'] == 1
 
 
 def test_build_surface_includes_weak_cookies_only():

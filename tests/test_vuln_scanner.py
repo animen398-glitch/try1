@@ -24,6 +24,9 @@ def test_cookie_samesite_none_without_secure_is_high():
     cookie_findings = [f for f in findings if "csrf" in f["title"]]
     assert len(cookie_findings) == 1
     assert cookie_findings[0]["severity"] == SEVERITY_HIGH
+    # Tagged with the canonical category so consumers (attack-surface graph)
+    # can tell it apart without title sniffing.
+    assert cookie_findings[0]["category"] == "cookie"
 
 
 def test_cookie_weak_is_medium():
@@ -37,6 +40,7 @@ def test_cookie_weak_is_medium():
     findings = VulnScanner().scan({}, {}, cookie_result)
     weak = [f for f in findings if "track" in f["title"]]
     assert weak and weak[0]["severity"] == SEVERITY_MEDIUM
+    assert weak[0]["category"] == "cookie"
 
 
 def test_cookie_strong_produces_no_finding():

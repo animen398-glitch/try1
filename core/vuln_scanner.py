@@ -190,7 +190,13 @@ class VulnScanner:
             findings.extend(dep.get('findings', []))
 
     def _check_cookies(self, cookie_result: Optional[Dict], findings: List[Dict]):
-        """Flag insecure cookies from a CookieAuditor result (if provided)."""
+        """Flag insecure cookies from a CookieAuditor result (if provided).
+
+        Tagged ``category='cookie'`` (the canonical finding_fingerprint category
+        the adapter already infers from the title — explicit here so consumers
+        like the attack-surface graph can tell a cookie finding apart without
+        title sniffing, e.g. to avoid double-counting it against the dedicated
+        'Weak Cookies' surface category)."""
         if not cookie_result or cookie_result.get('status') != 'Success':
             return
         for c in cookie_result.get('cookies', []):
@@ -201,12 +207,14 @@ class VulnScanner:
                     'severity': SEVERITY_HIGH,
                     'title': f"Cookie '{c.get('name', '')}' SameSite=None without Secure",
                     'detail': 'Rejected by modern browsers and exposed cross-site.',
+                    'category': 'cookie',
                 })
             elif c.get('verdict') == 'Weak':
                 findings.append({
                     'severity': SEVERITY_MEDIUM,
                     'title': f"Weakly protected cookie: {c.get('name', '')}",
                     'detail': '; '.join(c.get('issues', [])) or 'missing security flags',
+                    'category': 'cookie',
                 })
 
     def _check_sensitive_paths(self, dynamic: Dict, findings: List[Dict]):
