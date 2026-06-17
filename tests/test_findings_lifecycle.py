@@ -88,6 +88,54 @@ def test_sync_keeps_nuclei_finding_open_when_nuclei_disabled(tmp_path):
     assert FindingsStore().get(fid)['status'] == 'OPEN'
 
 
+def _takeover():
+    return {'title': 'Subdomain takeover possible: bad.x.com', 'severity': 'High',
+            'source': 'subdomain-active', 'category': 'takeover',
+            'location': 'bad.x.com'}
+
+
+def test_sync_auto_fixes_takeover_when_subdomain_phase_ran(tmp_path):
+    p = ProjectStore(tmp_path).get_or_create('https://a.com')
+    r = CollectionRunner()
+    fid = _stored_id(p, _takeover())
+    r._sync_findings({'phases': {'vulns': _vulns([_takeover()]),
+                                 'subdomains': {'status': 'Success'}}}, p, 's1')
+    # Gone, and the subdomain phase ran again → really fixed → auto-FIXED.
+    r._sync_findings({'phases': {'vulns': _vulns([]),
+                                 'subdomains': {'status': 'Success'}}}, p, 's2')
+    assert FindingsStore().get(fid)['status'] == 'FIXED'
+
+
+def test_sync_keeps_takeover_open_when_subdomain_phase_skipped(tmp_path):
+    # The opt-in subdomain phase was off in s2 (only vulns ran). A takeover must
+    # not flap to FIXED just because the enumeration didn't look for it.
+    p = ProjectStore(tmp_path).get_or_create('https://a.com')
+    r = CollectionRunner()
+    fid = _stored_id(p, _takeover())
+    r._sync_findings({'phases': {'vulns': _vulns([_takeover()]),
+                                 'subdomains': {'status': 'Success'}}}, p, 's1')
+    r._sync_findings({'phases': {'vulns': _vulns([])}}, p, 's2')
+    assert FindingsStore().get(fid)['status'] == 'OPEN'
+
+
+def _sourcemap():
+    return {'title': 'Source map exposes original source', 'severity': 'High',
+            'source': 'security-audit', 'category': 'sourcemap',
+            'location': 'https://x/a.map'}
+
+
+def test_sync_keeps_sourcemap_open_when_security_phase_skipped(tmp_path):
+    # security-audit findings come from the opt-in security phase; a skipped
+    # audit (vulns still runs) must not auto-FIX them.
+    p = ProjectStore(tmp_path).get_or_create('https://a.com')
+    r = CollectionRunner()
+    fid = _stored_id(p, _sourcemap())
+    r._sync_findings({'phases': {'vulns': _vulns([_sourcemap()]),
+                                 'security': {'status': 'Success'}}}, p, 's1')
+    r._sync_findings({'phases': {'vulns': _vulns([])}}, p, 's2')
+    assert FindingsStore().get(fid)['status'] == 'OPEN'
+
+
 # ── triage → stamp → risk exclusion (the point of F1) ─────────────────────────
 
 def test_user_triage_stamps_next_scan_and_drops_from_risk(tmp_path):

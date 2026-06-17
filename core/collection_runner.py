@@ -1026,6 +1026,14 @@ class CollectionRunner:
                     return bool(self.nuclei) and phase_ok('vulns')
                 if s == 'dependency-audit':
                     return phase_ok('recon')
+                if s == 'security-audit':
+                    # leaked source maps / open GraphQL come from the opt-in
+                    # security phase — not 'fixed' just because it was skipped.
+                    return phase_ok('security')
+                if s == 'subdomain-active':
+                    # subdomain-takeover findings come from the opt-in subdomain
+                    # phase — a skipped enumeration must not auto-FIX them.
+                    return phase_ok('subdomains')
                 return phase_ok('vulns')
 
             store = FindingsStore()
