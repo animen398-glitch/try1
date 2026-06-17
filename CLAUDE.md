@@ -935,6 +935,23 @@ takeover-находка **исключена из «Findings»** (рядом с 
 `test_attack_surface` (своя категория + остаётся в Subdomains + omit-when-none +
 exclude-из-Findings + вес).
 
+**Auto-FIX scope-guard для opt-in источников — `[ЗАКРЫТ, баг-фикс]`.** Backend-фаза.
+`_sync_findings.in_scope(source)` гейтит авто-FIX находки по тому, отработала ли
+её **фаза-продьюсер** (пропущенная opt-in фаза ≠ «исправлено»). Маппинг покрывал
+`dns`/`nuclei`/`dependency-audit`, а всё прочее падало в дефолт `phase_ok('vulns')`
+(vulns всегда идёт). Из-за этого находки с источником из **opt-in**-фаз авто-
+FIXились, когда их фаза просто не запускалась: `subdomain-active` (takeover, фаза
+subdomains) и `security-audit` (source-map/GraphQL, фаза security). Симптом —
+**флаппинг FIXED/REOPENED** между сканами (ложный lifecycle, сброс SLA, ложные
+regression-алерты) в зависимости от того, включил ли пользователь opt-in фазу.
+Фикс: `in_scope` маппит `security-audit`→`phase_ok('security')`,
+`subdomain-active`→`phase_ok('subdomains')`. Затрагивает мою takeover-находку и
+ретроактивно F-SEC2 source-map/GraphQL. Cookie/header-находки идут из always-on
+vulns → дефолт корректен (не тронут). OSV-нюанс (`dependency-audit` из opt-in osv)
+оставлен — это документированный accepted churn вытеснения. Покрыто
+`test_findings_lifecycle` (takeover ran→FIXED / skipped→OPEN; source-map
+skipped→OPEN).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
