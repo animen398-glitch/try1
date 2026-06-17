@@ -22,12 +22,27 @@ def _report(*, high=0, medium=0, info=0, risk_score=0, secrets=0,
         findings.append({'severity': 'Medium', 'category': 'cookie',
                          'location': f'cookie:c{i}',
                          'title': f'Weakly protected cookie c{i}'})
-    # secret_details ({type: [values]}) exercises the offline structural validator
-    # path; without it the legacy flat keys_found is used (behaviour unchanged).
+    # Secrets are first-class High vuln findings (CollectionRunner._secret_findings):
+    # each plausible key (placeholders dropped by the structural validator) folds in
+    # as High (weight 5), counted once via severity — not a dedicated factor. Model
+    # that here. secret_details ({type: [values]}) exercises the validator path;
+    # without it the legacy flat keys_found is treated as N plausible high-value keys.
+    from core.secret_validator import INVALID as _SV_INVALID
+    from core.secret_validator import validate as _sv_validate
     api_data = {'keys_found': secrets}
     if secret_details is not None:
         api_data = {'keys_found': sum(len(v) for v in secret_details.values()),
                     'details': secret_details}
+        plausible = [(t, v) for t, vals in secret_details.items() for v in vals
+                     if _sv_validate(str(t), str(v)).get('status') != _SV_INVALID]
+    else:
+        plausible = [('secret', f'k{i}') for i in range(secrets)]
+    high += len(plausible)
+    risk_score += len(plausible) * 5
+    for j, (ktype, _v) in enumerate(plausible):
+        findings.append({'severity': 'High', 'category': 'secret',
+                         'location': 'secret', 'discriminator': f'{ktype}:{j}',
+                         'title': f'Leaked secret: {ktype}'})
     return {
         'phases': {
             'recon': {'data': {'cms': cms or []}},
@@ -101,39 +116,37 @@ def test_legacy_keys_found_unchanged_without_details():
 
 
 def test_generic_secret_is_high_not_critical():
-    # A plausible but generic/opaque key (not a high-value credential) weighs less
-    # and is a High signal, not Critical.
+    # A plausible but generic/opaque key (not a high-value credential) is a High
+    # vuln finding → High verdict, not Critical (no high-value gate).
     s = es.build_summary(_report(
         secret_details={'Generic API Key': ['aB3cD4eF5gH6iJ7k']}))
     assert s['metrics']['secrets'] == 1
     assert s['metrics']['secrets_high_value'] == 0
-    assert s['risk_score'] == 3                       # generic tier weight
+    assert s['risk_score'] == 5                       # one High finding
     assert s['risk_level'] == 'High'
-    factor = {f['factor']: f for f in s['risk_factors']}['Утёкшие секреты']
-    assert factor['weight'] == 3 and factor['points'] == 3
+    # Secrets are no longer a dedicated factor — they ride the vuln factor.
+    assert 'Утёкшие секреты' not in {f['factor'] for f in s['risk_factors']}
     # Headline chip downgrades to High too (mirrors the verdict).
     assert es.headline(s)['chips'][0]['severity'] == 'high'
 
 
-def test_high_value_secret_weighs_more_than_generic():
-    # A high-value credential (AWS) + a generic key: score is the per-tier sum and
-    # the high-value key forces Critical.
+def test_high_value_secret_forces_critical_via_gate():
+    # A high-value credential (AWS) + a generic key: both are High findings (5
+    # each), and the high-value key forces Critical via the verdict gate.
     s = es.build_summary(_report(secret_details={
         'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE'],
         'Generic API Key': ['aB3cD4eF5gH6iJ7k']}))
     assert s['metrics']['secrets'] == 2
     assert s['metrics']['secrets_high_value'] == 1
-    assert s['risk_score'] == 5 + 3
+    assert s['risk_score'] == 5 + 5                   # two High findings
     assert s['risk_level'] == 'Critical'
-    factor = {f['factor']: f for f in s['risk_factors']}['Утёкшие секреты']
-    assert factor['weight'] is None and factor['points'] == 8
-    assert 'высокоценных' in factor['detail']
 
 
-def test_secrets_weight_dropped_for_per_tier():
-    # The flat secret weight is gone; per-tier weights live in SECRET_WEIGHTS.
+def test_secrets_are_not_a_dedicated_factor():
+    # Convergence: secrets count once via their High finding severity, so there is
+    # no separate secret weight any more.
     assert 'secrets' not in es.RISK_WEIGHTS
-    assert es.SECRET_WEIGHTS['critical'] > es.SECRET_WEIGHTS['generic']
+    assert not hasattr(es, 'SECRET_WEIGHTS')
 
 
 def test_three_high_is_critical():
@@ -364,12 +377,12 @@ def test_risk_score_unchanged_by_refactor():
 def test_risk_factors_named_and_weighted():
     s = es.build_summary(_report(secrets=2, weak_cookies=1))
     by_name = {f['factor']: f for f in s['risk_factors']}
-    assert by_name['Утёкшие секреты']['points'] == 2 * 5
-    assert by_name['Утёкшие секреты']['weight'] == 5
-    # Weak cookies are counted once, via their Medium vuln finding's severity —
-    # no dedicated factor (no double count); they show under the vuln factor.
+    # Secrets (2 × High = 10) and the weak cookie (1 × Medium = 2) are all counted
+    # once via the vuln factor's severity — no dedicated 'Утёкшие секреты' /
+    # 'Слабые cookie' factor (no double count).
+    assert 'Утёкшие секреты' not in by_name
     assert 'Слабые cookie' not in by_name
-    assert by_name['Уязвимости (vuln-скан)']['points'] == 1 * 2
+    assert by_name['Уязвимости (vuln-скан)']['points'] == 2 * 5 + 1 * 2
     # Heaviest factor first.
     assert s['risk_factors'][0]['points'] >= s['risk_factors'][-1]['points']
 
@@ -586,8 +599,9 @@ def test_regression_chip_in_headline():
 def test_render_html_includes_risk_breakdown():
     html = es.render_html(es.build_summary(_report(secrets=2, weak_cookies=1)))
     assert 'Из чего риск' in html
-    assert 'Утёкшие секреты' in html
-    assert '+10' in html                     # 2 secrets × weight 5
+    # Secrets + weak cookie all ride the vuln factor now (2×High 5 + 1×Medium 2).
+    assert 'Уязвимости' in html
+    assert '+12' in html
 
 
 def test_render_html_no_breakdown_when_clean():

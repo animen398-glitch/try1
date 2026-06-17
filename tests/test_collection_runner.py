@@ -154,6 +154,26 @@ def test_takeover_findings_empty_without_subdomain_phase():
     assert CollectionRunner._takeover_findings({'phases': {}}) == []
 
 
+def test_secret_findings_are_high_with_nonleaking_identity():
+    # Plausible keys become High secret findings; placeholders are dropped; the
+    # plaintext never appears (only a masked discriminator/detail).
+    report = {'url': 'https://x.com', 'phases': {'api': {'data': {'details': {
+        'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE'],
+        'Generic API Key': ['your_api_key_here']}}}}}
+    found = CollectionRunner._secret_findings(report)
+    assert len(found) == 1                                 # placeholder dropped
+    f = found[0]
+    assert f['severity'] == 'High' and f['category'] == 'secret'
+    assert f['location'] == 'https://x.com'
+    assert f['source'] == 'secret' and f['discriminator']
+    # No plaintext anywhere in the finding.
+    assert 'AKIAIOSFODNN7EXAMPLE' not in str(f)
+
+
+def test_secret_findings_empty_without_api_details():
+    assert CollectionRunner._secret_findings({'phases': {}}) == []
+
+
 def test_render_html_security_card():
     r = CollectionRunner()
     report = {

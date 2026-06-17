@@ -44,16 +44,16 @@ def _int(value) -> int:
 
 
 def _risk_level(score: int, high: int, secrets_critical: int, takeovers: int = 0,
-                graphql_introspection: int = 0, secrets_generic: int = 0) -> str:
+                graphql_introspection: int = 0) -> str:
     """Map weighted signals to a verdict. Thresholds are intentionally simple
     and fixed so the verdict is reproducible and easy to reason about. A leaked
     *high-value* credential (cloud/payment/VCS key) and a subdomain takeover are
-    both clear-cut Critical signals; a leaked *generic/opaque* key and an open
-    GraphQL schema (introspection) are clear-cut High signals."""
+    both clear-cut Critical signals; an open GraphQL schema (introspection) is a
+    clear-cut High signal. A leaked generic/opaque key needs no gate here — it is
+    a High vuln finding, so it already lands at High via the ``high`` count."""
     if secrets_critical > 0 or takeovers > 0 or high >= 3 or score >= 20:
         return 'Critical'
-    if (high >= 1 or graphql_introspection > 0 or secrets_generic > 0
-            or score >= 10):
+    if high >= 1 or graphql_introspection > 0 or score >= 10:
         return 'High'
     if score >= 4:
         return 'Medium'
@@ -76,9 +76,10 @@ _SCORE_100_CEILING = 100
 # subdomain takeovers: those are all first-class vuln findings (source maps +
 # GraphQL + takeovers folded into the vuln phase; weak cookies emitted by
 # VulnScanner._check_cookies), counted once via their severity, not a second time
-# as a dedicated factor. A takeover still forces a Critical verdict via
-# _risk_level (a clear-cut level gate, not a score addend). Secrets weigh heaviest
-# (their per-tier weights live in SECRET_WEIGHTS below).
+# as a dedicated factor — and neither do leaked secrets: they are first-class
+# vuln findings too (folded into the vuln phase by CollectionRunner._secret_findings),
+# counted once via their High severity. A high-value secret / takeover still forces
+# a Critical verdict via _risk_level (a clear-cut level gate, not a score addend).
 RISK_WEIGHTS = {
     'infra_concentration': 2,     # shared-infra choke point / blast radius (F-R4)
     'sla_breach': 1,              # remediation past its deadline — overdue surcharge (F-R5)
@@ -86,16 +87,12 @@ RISK_WEIGHTS = {
     'regression': 2,             # a fixed finding came back this scan (F-R7)
 }
 
-# Per-tier weight for a leaked secret (F-R, per-type severity): a high-value
-# credential — a cloud / payment / VCS / messaging key with an exact format that
-# grants real access — weighs more than a generic / opaque match, whose detection
-# is lower-confidence or whose value is not itself sensitive. A high-value key
-# still forces a Critical verdict via _risk_level; a generic-only set forces ≥High.
-SECRET_WEIGHTS = {'critical': 5, 'generic': 3}
-
 # Secret types treated as generic / opaque / not-high-value (everything else —
 # AWS / Google / Stripe-secret / GitHub / Slack / Twilio / … — is high-value, so a
-# new exact-format provider rule defaults to Critical, not silently demoted).
+# new exact-format provider rule defaults to high-value, not silently demoted).
+# This split no longer weights the score (every plausible secret is one High vuln
+# finding); it decides the *verdict gate* only — a high-value key forces Critical
+# via _risk_level, a generic-only set lands at High via the finding's severity.
 # ``Stripe Publishable`` (pk_live) is designed to be public; ``JWT`` / ``Bearer``
 # are opaque tokens often not secret; the two ``Generic`` rules are low-confidence.
 _GENERIC_SECRET_TYPES = frozenset({
@@ -107,9 +104,8 @@ _GENERIC_SECRET_TYPES = frozenset({
 CERT_EXPIRY_WARN_DAYS = 14
 
 
-def _risk_factors(vuln_score: int, high: int, medium: int, secret_count: int,
-                  secret_points: int = 0, secret_weight=None,
-                  secret_detail: str = '', infra_concentration: int = 0,
+def _risk_factors(vuln_score: int, high: int, medium: int,
+                  infra_concentration: int = 0,
                   infra_detail: str = '', sla_breaches: int = 0,
                   sla_detail: str = '', cert_expiry: int = 0,
                   cert_detail: str = '', regressions: int = 0) -> List[Dict]:
@@ -127,14 +123,6 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secret_count: int,
             'factor': 'Уязвимости (vuln-скан)', 'count': high + medium,
             'weight': None, 'points': vuln_score,
             'detail': f'{high} high · {medium} medium'})
-
-    # Secrets are weighted per tier (SECRET_WEIGHTS), so their points are passed
-    # in explicitly: ``weight`` is the tier weight when the set is homogeneous, or
-    # ``None`` (with a breakdown in ``detail``) when high-value and generic mix.
-    if secret_count:
-        factors.append({'factor': 'Утёкшие секреты', 'count': secret_count,
-                        'weight': secret_weight, 'points': secret_points,
-                        'detail': secret_detail})
 
     def add(name: str, count: int, key: str, detail: str = '') -> None:
         if count:
@@ -286,29 +274,30 @@ def _cert_expiry(report: Dict, now: Optional[datetime] = None
 
 
 def _secret_signal(api: Dict) -> Dict:
-    """Risk-bearing secret signal, graded by confidence and type.
+    """Risk-bearing secret signal for the metrics + the verdict gate.
 
-    Two filters over what the ``api`` phase detected:
+    Secrets are scored via the High vuln findings ``CollectionRunner._secret_findings``
+    folds into the vuln phase (so they are NOT a dedicated score factor); this
+    helper only supplies the display metrics (``secrets`` / ``secrets_high_value``
+    / ``secrets_detected``) and the ``_risk_level`` Critical gate. Two filters over
+    what the always-on ``api`` phase detected:
       * *plausibility* — a key whose structure is a clear placeholder / false
         positive (``secret_validator`` → ``invalid_format`` — e.g.
-        ``your_api_key_here``) does not count toward risk (``valid_format`` and
-        ``unverifiable`` both count);
-      * *severity tier* — a high-value credential (cloud/payment/VCS/messaging
-        key) weighs ``SECRET_WEIGHTS['critical']``; a generic/opaque match weighs
-        ``SECRET_WEIGHTS['generic']`` (see ``_GENERIC_SECRET_TYPES``).
+        ``your_api_key_here``) is dropped (``valid_format`` / ``unverifiable`` count);
+      * *severity tier* — a high-value credential (cloud/payment/VCS/messaging key)
+        vs a generic/opaque match (see ``_GENERIC_SECRET_TYPES``); only the count of
+        high-value keys forces a Critical verdict.
 
     Derive-on-read over ``api['details']`` — the matched values are already there,
     so this is offline and re-fetch-free (invariant I3) and reuses the single
     validation source of truth (``core.secret_validator``). Falls back to a flat
     ``keys_found`` (treated as high-value) when no per-key details exist (legacy
-    reports / tests), preserving the previous behaviour byte-for-byte. Returns
-    ``{plausible, detected, critical, generic, points}``."""
+    reports / tests). Returns ``{plausible, detected, critical, generic}``."""
     detected = _int(api.get('keys_found'))
     details = api.get('details')
     if not isinstance(details, dict) or not details:
         return {'plausible': detected, 'detected': detected,
-                'critical': detected, 'generic': 0,
-                'points': detected * SECRET_WEIGHTS['critical']}
+                'critical': detected, 'generic': 0}
     from core.secret_validator import INVALID, validate
     critical = generic = 0
     for key_type, values in details.items():
@@ -320,9 +309,7 @@ def _secret_signal(api: Dict) -> Dict:
             else:
                 critical += 1
     return {'plausible': critical + generic, 'detected': detected,
-            'critical': critical, 'generic': generic,
-            'points': (critical * SECRET_WEIGHTS['critical']
-                       + generic * SECRET_WEIGHTS['generic'])}
+            'critical': critical, 'generic': generic}
 
 
 def _count_takeovers(report: Dict) -> int:
@@ -452,25 +439,15 @@ def build_summary(report: Dict) -> Dict:
     medium = _int(vsum.get('medium'))
     info = _int(vsum.get('info'))
     vuln_score = _int(vsum.get('risk_score'))
-    # Secrets: the risk-bearing count drops obvious placeholders / false positives
-    # (offline structural validation), so a single ``your_api_key_here`` no longer
-    # counts; the survivors are graded by tier — a high-value credential weighs
-    # more and forces Critical, a generic/opaque key weighs less and forces ≥High.
-    # ``secrets_detected`` keeps the raw match count for transparency.
+    # Secrets: now first-class High vuln findings (folded by
+    # CollectionRunner._secret_findings) → already in vuln_score / the high count
+    # above, NOT a dedicated factor. This signal only drives the display metrics
+    # and the Critical verdict gate: the count drops obvious placeholders (offline
+    # structural validation) and splits high-value vs generic; ``secrets_detected``
+    # keeps the raw match count for transparency.
     sig = _secret_signal(api)
     secrets = sig['plausible']
     secrets_detected = sig['detected']
-    # Factor weight is the tier weight when the set is homogeneous, else None with
-    # a breakdown in the detail (so the "why is the risk N" table stays honest).
-    if sig['critical'] and sig['generic']:
-        secret_weight = None
-        secret_detail = (f"{sig['critical']} высокоценных · "
-                         f"{sig['generic']} generic/opaque")
-    else:
-        secret_weight = (SECRET_WEIGHTS['critical'] if sig['critical']
-                         else SECRET_WEIGHTS['generic'] if sig['generic']
-                         else None)
-        secret_detail = ''
     weak_cookies = _int(cookies.get('weak'))
     # Unified risk engine: pull every available security signal (Security Audit
     # source maps + subdomain takeovers are zero unless those phases ran).
@@ -503,18 +480,17 @@ def build_summary(report: Dict) -> Dict:
     regressions = _reopened_regressions(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
-    # contributions (leaked secrets weigh heaviest). Leaking source maps / open
-    # GraphQL / weak cookies / subdomain takeovers are counted via the vuln
-    # findings they produce, not a dedicated factor (no double count); a takeover
-    # still forces a Critical verdict below via _risk_level.
-    risk_factors = _risk_factors(vuln_score, high, medium, secrets,
-                                 sig['points'], secret_weight, secret_detail,
+    # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
+    # cookies / subdomain takeovers are all counted via the vuln findings they
+    # produce, not a dedicated factor (no double count); a high-value secret or a
+    # takeover still forces a Critical verdict below via _risk_level.
+    risk_factors = _risk_factors(vuln_score, high, medium,
                                  infra_concentration,
                                  infra_detail, sla_breaches, sla_detail,
                                  cert_expiry, cert_detail, regressions)
     score = sum(f['points'] for f in risk_factors)
     level = _risk_level(score, high, sig['critical'], takeovers,
-                        graphql_introspection, sig['generic'])
+                        graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
     risk_100 = min(_SCORE_100_CEILING, score * _SCORE_TO_100)
 

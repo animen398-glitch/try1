@@ -1006,12 +1006,41 @@ config из веб-архивов) диффилась и была в attack-surf
 `test_diff_events` (классификация + не-алертабелен) и `test_scan_diff` (end-to-end
 added → событие).
 
+**Утёкшие секреты → первоклассные F1-находки (convergence) — `[ЗАКРЫТ]`.** Backend-фаза.
+Закрыт последний асимметричный пробел: секрет — самый тяжёлый risk-сигнал — был
+**единственной** экспозицией без lifecycle/SLA/triage (питал только risk-счёт,
+attack-surface, scan-diff). Фундамент уже был построен и не использован (`'secret'`
+в `finding_fingerprint.CATEGORIES`, неутекающий `secret_discriminator`, ветка в
+`findings_adapter`, запись `finding_knowledge['secret']`) — не хватало **продьюсера**.
+Решение пользователя — **1b (полная конвергенция, паттерн F-SEC2)**: каждый
+**plausible** секрет (плейсхолдеры отброшены `secret_validator`) фолдится из
+always-on api-фазы в vuln-фазу как **High**-находка (`CollectionRunner._secret_findings`:
+`category='secret'`, `location=url`, явный неутекающий `discriminator` = vendor+маска;
+маскирование как в Scan Diff) сразу после vulns — паттерн takeover. Теперь секреты
+**считаются один раз** через severity (vuln_score), а не выделенным фактором: из
+`executive_summary` убраны `SECRET_WEIGHTS` и секрет-фактор (`_risk_factors` без
+секрет-аргументов). `_secret_signal(api)` оставлен ТОЛЬКО для display-метрик
+(`secrets`/`secrets_high_value`/`secrets_detected`) и **Critical-гейта** `_risk_level`
+(high-value ключ → Critical, паттерн takeover; generic-гейт убран — generic-секрет
+теперь High-находка → High через `high>=1`). attack-surface: `'secret'` добавлен в
+exclude-кортеж «Findings» (нет дубля с категорией «Secrets»). scope-guard:
+`source='secret'`→`phase_ok('api')`. **Вердикты сохранены** (high-value→Critical,
+generic→High, плейсхолдер→none); **числа сдвинулись сознательно** (generic-секрет
+3→5 как High-находка; #3-веса вытеснены severity). Lifecycle/SLA/triage/finding-objects/
+dedup работают автоматом (downstream уже поддерживал `secret`). **Известный
+компромисс:** метрика/гейт api-derived (status-независимы) — триаж секрета снижает
+score (находки фильтруются), но не вердикт-гейт; задокументировано. Покрыто
+`test_collection_runner` (producer: High/неутекающая identity/плейсхолдер-skip/пусто),
+`test_attack_surface` (secret исключён из «Findings»), `test_executive_summary`
+(generic=High / high-value→Critical-гейт / нет выделенного фактора / SECRET_WEIGHTS
+удалён / плейсхолдер не считается).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
 F-R6 cert-expiry + F-R7 regression) + Correlation углублён + Findings SLA углублён +
 Asset coverage + Scanner robustness + Secret confidence (валидатор в risk/diff/alerts +
-по-tier severity). Отклонено (конфликт
+по-tier severity + секреты как первоклассные F1-находки). Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

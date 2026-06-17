@@ -273,6 +273,17 @@ class CollectionRunner:
         # 7. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
             report['phases']['vulns'] = self._phase_vulns(report, scan_dir)
+            # Fold leaked secrets (the always-on api phase) into the vuln phase as
+            # first-class High findings — so they persist through Findings
+            # Management (lifecycle / SLA / triage) and are counted once via their
+            # severity, not a second time as a dedicated risk factor. A high-value
+            # key still forces a Critical verdict via executive_summary._risk_level
+            # (same pattern as takeovers / security-audit exposures).
+            added = self._secret_findings(report)
+            vulns = report['phases'].get('vulns')
+            if added and isinstance(vulns, dict):
+                vulns['findings'] = vulns.get('findings', []) + added
+                vulns['summary'] = VulnScanner.summarize(vulns['findings'])
         # 7a. Security audit (opt-in) → secrets in served JS, leaking source
         # maps, reachable GraphQL endpoints. Feeds the risk engine (source-map
         # leaks + GraphQL introspection) and the attack-surface graph.
@@ -601,6 +612,40 @@ class CollectionRunner:
                     'detail': f'{loc} — reachable GraphQL API (introspection off).',
                     'source': 'security-audit', 'category': 'graphql',
                     'location': loc})
+        return findings
+
+    @staticmethod
+    def _secret_findings(report: Dict) -> List[Dict]:
+        """Turn detected API keys / secrets into first-class findings (High).
+
+        The always-on api phase stores ``details`` = {type: [values]}. Each
+        *plausible* secret (offline structural validation drops placeholders like
+        ``your_api_key_here``) becomes a High finding so it lives through Findings
+        Management (lifecycle / SLA / triage) and is counted once via its severity
+        in the risk score — the dedicated secret risk factor was removed to avoid
+        double counting (the verdict still forces Critical on a high-value key via
+        executive_summary._risk_level). Canonical ``category='secret'`` + an
+        explicit non-leaking ``discriminator`` (vendor + masked prefix + length,
+        never the plaintext) give each a stable Findings identity (one per distinct
+        key), reusing the same masking Scan Diff / reports already apply."""
+        from core.finding_fingerprint import mask_value, secret_discriminator
+        from core.secret_validator import INVALID, validate
+        api = (report.get('phases', {}).get('api') or {}).get('data') or {}
+        details = api.get('details')
+        if not isinstance(details, dict):
+            return []
+        loc = str(report.get('url') or report.get('domain') or '')
+        findings: List[Dict] = []
+        for key_type, values in details.items():
+            for v in (values if isinstance(values, list) else [values]):
+                if validate(str(key_type), str(v)).get('status') == INVALID:
+                    continue
+                findings.append({
+                    'severity': 'High',
+                    'title': f'Leaked secret: {key_type}',
+                    'detail': f'{loc} — exposed {key_type} ({mask_value(str(v))}).',
+                    'source': 'secret', 'category': 'secret', 'location': loc,
+                    'discriminator': secret_discriminator(str(key_type), str(v))})
         return findings
 
     @staticmethod
@@ -1020,6 +1065,9 @@ class CollectionRunner:
                 # Only auto-FIX an absent finding when the phase that produces
                 # its source actually ran this scan (skipped opt-in phase ≠ fixed).
                 s = (source or '').lower()
+                if s == 'secret':
+                    # leaked keys come from the always-on api phase.
+                    return phase_ok('api')
                 if s == 'dns':
                     return phase_ok('dns')
                 if s == 'nuclei':

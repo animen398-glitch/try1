@@ -117,6 +117,7 @@ def test_findings_category_excludes_source_map_graphql_and_cookies():
             {'title': "Weakly protected cookie: sid", 'category': 'cookie'},
             {'title': 'Subdomain takeover possible: bad.ex.com',
              'category': 'takeover'},
+            {'title': 'Leaked secret: AWS Access Key', 'category': 'secret'},
             {'title': 'Exposed .env'}]})   # only this is a generic finding
     names = {c['name']: c for c in asf.build_surface(report)['categories']}
     assert names['Findings']['items'] == ['Exposed .env']
