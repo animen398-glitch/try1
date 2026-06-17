@@ -1055,6 +1055,18 @@ secret-находок) не затронуты — их `new_secret` в Timeline
 (high-value→high / generic→medium / оба алертабельны), `test_timeline`
 (secret new_finding дедуплицирован, non-secret и resolve/reopen сохранены).
 
+**Attack-surface secret plausibility filter — `[ЗАКРЫТ]`.** Backend-фаза, замыкает
+secret-confidence на последней оси (граф/surface_score). `attack_surface.build_surface`
+сёрфил типы секретов прямо из `api.details.keys()` без проверки правдоподобности —
+плейсхолдер-only тип (`your_api_key_here`) инфлейтил граф и surface_score (вес 5).
+Фикс: тип попадает в категорию «Secrets», только если у него есть ≥1 plausible-значение
+(тот же `secret_validator` SSOT, что risk-движок/Scan Diff — без второй системы оценки).
+Все-плейсхолдер details схлопывают категорию (без fallback на сырой `keys_found`, иначе
+вернулись бы false-positive). **Обратная совместимость:** легаси-отчёт без `details`, но
+с `keys_found` → прежний `"N keys"`-узел цел (fallback срабатывает только при отсутствии
+details). derive-on-read, без новых зависимостей. Покрыто `test_attack_surface`
+(плейсхолдер-тип отброшен / все-плейсхолдер → нет категории / legacy keys_found fallback).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

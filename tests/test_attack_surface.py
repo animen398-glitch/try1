@@ -32,6 +32,33 @@ def test_build_surface_extracts_present_categories():
     assert names['Findings']['items'] == ['Exposed .env']
 
 
+def test_secrets_drop_placeholder_only_types():
+    # A type whose only value is a placeholder (false positive) must not surface;
+    # a type with a plausible value stays. Consistent with the risk engine.
+    report = _report(api={'data': {'keys_found': 2, 'details': {
+        'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE'],     # plausible → kept
+        'Generic API Key': ['your_api_key_here']}}})    # placeholder → dropped
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Secrets']['items'] == ['AWS Access Key']
+
+
+def test_secrets_omitted_when_all_placeholder():
+    # All-placeholder details collapse the Secrets category away (no fallback to a
+    # raw keys_found count, which would re-introduce the false positives).
+    report = _report(api={'data': {'keys_found': 1,
+                                   'details': {'Generic API Key': ['changeme']}}})
+    names = {c['name'] for c in asf.build_surface(report)['categories']}
+    assert 'Secrets' not in names
+
+
+def test_secrets_legacy_keys_found_fallback():
+    # A legacy report with only a keys_found count (no per-key details) still
+    # surfaces a Secrets node — backward compatible.
+    report = _report(api={'data': {'keys_found': 3}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Secrets']['items'] == ['3 keys']
+
+
 def test_build_surface_merges_technologies_and_infra_chain():
     report = _report(recon={'data': {
         'ip': '1.2.3.4',

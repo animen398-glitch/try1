@@ -82,10 +82,21 @@ def build_surface(report: Dict) -> Dict:
 
     # Secrets: surface the secret *types* found (api_key_extractor.details maps
     # type -> [matches]); fall back to a count when only a number is present.
+    # Only surface a type with at least one *plausible* value — a placeholder-only
+    # match (your_api_key_here) is a false positive and must not inflate the graph
+    # or surface score (the same offline validator the risk engine and Scan Diff
+    # use; consistent with the secret-confidence work).
     secret_details = api.get('details') if isinstance(api.get('details'), dict) else {}
-    secret_items = list(secret_details.keys())
-    if not secret_items and api.get('keys_found'):
-        secret_items = [f"{api['keys_found']} keys"]
+    if secret_details:
+        from core.secret_validator import INVALID, validate
+        secret_items = [
+            t for t, vals in secret_details.items()
+            if any(validate(str(t), str(v)).get('status') != INVALID
+                   for v in (vals if isinstance(vals, list) else [vals]))]
+    elif api.get('keys_found'):
+        secret_items = [f"{api['keys_found']} keys"]   # legacy: no per-key detail
+    else:
+        secret_items = []
 
     pages = capture.get('site_map') or []
     page_items = [p.get('url', '') for p in pages if isinstance(p, dict)]
