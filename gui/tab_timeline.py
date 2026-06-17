@@ -35,6 +35,7 @@ _EVENT_LABELS = {
     'new_endpoint':        'Новый эндпоинт',
     'new_graphql':         'Новый GraphQL',
     'graphql_introspection': 'GraphQL introspection',
+    'new_sourcemap':       'Утёкший source map',
     'risk_increase':       'Риск ↑',
     'risk_decrease':       'Риск ↓',
     'new_finding':         'Новая находка',

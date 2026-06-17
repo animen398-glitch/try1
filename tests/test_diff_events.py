@@ -85,6 +85,17 @@ def test_graphql_introspection_is_alertable_but_new_graphql_is_not():
     assert 'new_graphql' not in alert_types           # surface discovery only
 
 
+def test_sourcemap_leak_classified_and_alertable():
+    d = _diff(sourcemap=_added('https://x.com/app.js.map'))
+    events = diff_events(d)
+    smap = [e for e in events if e['type'] == 'new_sourcemap']
+    assert len(smap) == 1
+    assert smap[0]['severity'] == 'high' and smap[0]['section'] == 'sourcemap'
+    # A newly-leaking source map is a regression worth a push (like an opened
+    # GraphQL schema).
+    assert 'new_sourcemap' in {a['type'] for a in alerts.extract_alerts(d)}
+
+
 def test_certificate_expiry_classified_from_status_field():
     d = _diff(certificates={
         'added': ['expiry: expiring', 'subject: x.com'],   # newly-tracked, near deadline

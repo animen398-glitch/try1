@@ -39,6 +39,7 @@ SECTION_PHASES = {
     'employees':    'employees',
     'ct':           'ct',
     'graphql':      'security',
+    'sourcemap':    'security',
     'findings':     'vulns',
 }
 SECTION_TITLES = {
@@ -57,6 +58,7 @@ SECTION_TITLES = {
     'employees':    'Сотрудники',
     'ct':           'CT-сертификаты',
     'graphql':      'GraphQL',
+    'sourcemap':    'Source maps (исходники)',
     'findings':     'Findings',
 }
 
@@ -273,6 +275,19 @@ def _extract_graphql(report: Dict) -> Optional[Dict]:
     return out
 
 
+def _extract_sourcemap(report: Dict) -> Optional[Dict]:
+    # The Security Audit fetches served .map files; one that leaks the original
+    # source (has_content) is the risk-bearing subset. Surface those by URL so a
+    # newly-served source-code leak appears as an added row between scans (a map
+    # that stops leaking just drops out — not an event).
+    maps = _data(report, 'security').get('source_maps')
+    if not isinstance(maps, list):
+        return None
+    return {str(m['url']): str(m['url'])
+            for m in maps
+            if isinstance(m, dict) and m.get('url') and m.get('has_content')}
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -299,13 +314,14 @@ _EXTRACTORS = {
     'employees':    _extract_employees,
     'ct':           _extract_ct,
     'graphql':      _extract_graphql,
+    'sourcemap':    _extract_sourcemap,
     'findings':     _extract_findings,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
 # there is no meaningful "changed" state for it.
 _SET_LIKE = {'subdomains', 'secrets', 'endpoints', 'apis', 'historical',
-             'emails', 'employees', 'ct', 'findings'}
+             'emails', 'employees', 'ct', 'sourcemap', 'findings'}
 
 
 def _label(section: str, key, value) -> str:
@@ -445,6 +461,7 @@ EVENT_SEVERITY = {
     'new_endpoint':        'info',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
+    'new_sourcemap':       'high',
     'risk_increase':       'high',
     'risk_decrease':       'info',
 }
@@ -524,6 +541,11 @@ def diff_events(d: Dict) -> List[Dict]:
         if isinstance(ch, dict) and 'introspection on' in str(ch.get('b', '')):
             add('graphql_introspection',
                 f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'graphql')
+
+    # A source map that newly leaks the original source code (Security Audit) is a
+    # regression worth alerting — high-value, like an opened GraphQL schema.
+    for label in sections.get('sourcemap', {}).get('added', []):
+        add('new_sourcemap', label, 'sourcemap')
 
     risk = (d or {}).get('risk', {})
     if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):

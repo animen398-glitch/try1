@@ -183,6 +183,7 @@ class SettingsDialog(QDialog):
             'takeover': 'Takeover', 'new_technology': 'Новая технология',
             'cert_change': 'Смена сертификата', 'risk_increase': 'Рост риска',
             'cert_expired': 'Сертификат истёк',
+            'new_sourcemap': 'Утёкший source map',
         }
         enabled_types = set(cfg.get('types') or [])
         for key in alert_center.ALERT_TYPES:

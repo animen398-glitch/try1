@@ -9,7 +9,7 @@ from core.scan_diff import diff, render_html, summarize_line
 def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
             deps=None, headers=None, sec_headers=None, endpoints=None,
             findings=None, level='Low', risk_100=4, subdomains=None, cert=None,
-            graphql=None):
+            graphql=None, source_maps=None):
     """A minimal but shape-faithful collection report."""
     phases = {
         'capture': {'status': 'Success',
@@ -34,8 +34,13 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
                                 'data': {'results': subdomains}}
     if cert is not None:
         phases['certificate'] = {'status': 'Success', 'data': cert}
-    if graphql is not None:
-        phases['security'] = {'status': 'Success', 'data': {'graphql': graphql}}
+    if graphql is not None or source_maps is not None:
+        data = {}
+        if graphql is not None:
+            data['graphql'] = graphql
+        if source_maps is not None:
+            data['source_maps'] = source_maps
+        phases['security'] = {'status': 'Success', 'data': data}
     ts = f'2026-06-13T0{1 if scan_id == "A" else 2}:00:00'
     return {
         'scan_id': scan_id, 'finished_at': ts, 'started_at': ts,
@@ -190,6 +195,28 @@ def test_graphql_skipped_when_security_phase_absent_in_one():
     assert 'graphql' in d['skipped'] and 'graphql' not in d['sections']
 
 
+def test_sourcemap_leak_added_between_scans():
+    # Only a map that leaks the original source (has_content) is surfaced; a map
+    # without content is not a leak and must not appear. A newly-leaking map
+    # shows as an added row between scans.
+    a = _report('A', source_maps=[
+        {'url': 'https://x.com/vendor.js.map', 'has_content': False}])
+    b = _report('B', source_maps=[
+        {'url': 'https://x.com/vendor.js.map', 'has_content': False},
+        {'url': 'https://x.com/app.js.map', 'has_content': True}])
+    sec = diff(a, b)['sections']['sourcemap']
+    assert sec['added'] == ['https://x.com/app.js.map']
+    assert sec['removed'] == []
+
+
+def test_sourcemap_skipped_when_security_phase_absent_in_one():
+    a = _report('A', source_maps=[{'url': 'https://x.com/app.js.map',
+                                   'has_content': True}])
+    b = _report('B')                            # no security phase in B
+    d = diff(a, b)
+    assert 'sourcemap' in d['skipped'] and 'sourcemap' not in d['sections']
+
+
 def test_certificate_skipped_when_phase_absent_in_one():
     a = _report('A', cert={'subject': 'x.com'})
     b = _report('B')                            # no certificate phase in B
@@ -268,7 +295,7 @@ def test_tolerates_empty_reports():
                                  'technologies', 'dependencies', 'headers',
                                  'certificates', 'endpoints', 'apis',
                                  'historical', 'dns', 'emails', 'employees',
-                                 'ct', 'graphql', 'findings'}
+                                 'ct', 'graphql', 'sourcemap', 'findings'}
     assert d['is_empty'] is True
 
 
