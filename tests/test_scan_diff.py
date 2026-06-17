@@ -1,7 +1,7 @@
 """Scan Diff — pure offline diff of two collection reports (no network)."""
 
 from core.project import ProjectStore
-from core.scan_diff import diff, render_html, summarize_line
+from core.scan_diff import diff, diff_events, render_html, summarize_line
 
 
 # ── synthetic report builders ────────────────────────────────────────────────
@@ -97,6 +97,18 @@ def test_dependency_vulnerable_flag_change():
                             'vulnerabilities': [{'severity': 'High'}]}])
     sec = diff(a, b)['sections']['dependencies']
     assert sec['changed'] == [{'key': 'jquery', 'a': '3.6.0', 'b': '1.8.0 ⚠'}]
+
+
+def test_added_vulnerable_dependency_emits_event():
+    # End-to-end: a newly-present vulnerable library yields the ' ⚠ vulnerable'
+    # label the diff_events classifier keys on → a high, alertable event.
+    a = _report('A', deps=[])
+    b = _report('B', deps=[{'name': 'jquery', 'version': '1.8.0',
+                            'vulnerabilities': [{'severity': 'High'}]}])
+    d = diff(a, b)
+    assert d['sections']['dependencies']['added'] == ['jquery 1.8.0 ⚠ vulnerable']
+    types = {e['type'] for e in diff_events(d)}
+    assert 'new_vulnerable_dependency' in types
 
 
 def test_headers_merge_server_and_security():

@@ -480,6 +480,8 @@ EVENT_SEVERITY = {
     'new_sourcemap':       'high',
     'weak_cookie':         'medium',
     'cookie_weakened':     'high',
+    'new_vulnerable_dependency': 'high',
+    'dependency_vulnerable':     'high',
     'risk_increase':       'high',
     'risk_decrease':       'info',
 }
@@ -576,6 +578,20 @@ def diff_events(d: Dict) -> List[Dict]:
         if isinstance(ch, dict) and str(ch.get('b')) == 'Weak':
             add('cookie_weakened',
                 f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'cookies')
+
+    # Dependencies (JS library inventory + CVE audit): a vulnerable library that
+    # newly appears, or an existing one that turned vulnerable (a new CVE matched
+    # its version, or it was bumped to a vulnerable release), is a clear new risk
+    # — alertable, like a newly-leaking source map. The diff already flags
+    # vulnerable entries with ⚠ in their label (added) / fields (changed).
+    for label in sections.get('dependencies', {}).get('added', []):
+        if str(label).endswith(' ⚠ vulnerable'):
+            add('new_vulnerable_dependency', label, 'dependencies')
+    for ch in sections.get('dependencies', {}).get('changed', []):
+        if (isinstance(ch, dict) and '⚠' in str(ch.get('b'))
+                and '⚠' not in str(ch.get('a'))):
+            add('dependency_vulnerable',
+                f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'dependencies')
 
     risk = (d or {}).get('risk', {})
     if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):

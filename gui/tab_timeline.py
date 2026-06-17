@@ -38,6 +38,8 @@ _EVENT_LABELS = {
     'new_sourcemap':       'Утёкший source map',
     'weak_cookie':         'Слабая cookie',
     'cookie_weakened':     'Cookie ослаблена',
+    'new_vulnerable_dependency': 'Уязвимая зависимость',
+    'dependency_vulnerable':     'Зависимость стала уязвимой',
     'risk_increase':       'Риск ↑',
     'risk_decrease':       'Риск ↓',
     'new_finding':         'Новая находка',

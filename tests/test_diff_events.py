@@ -117,6 +117,31 @@ def test_cookie_weakened_is_alertable_but_new_weak_cookie_is_not():
     assert 'weak_cookie' not in alert_types        # discovery only
 
 
+def test_vulnerable_dependency_classified_and_alertable():
+    d = _diff(dependencies={
+        # a vulnerable library that newly appears, plus a clean one (no event)
+        'added': ['jquery 1.7 ⚠ vulnerable', 'lodash 4.17.21'],
+        'removed': [],
+        # an existing library that turned vulnerable, plus a benign version bump
+        'changed': [{'key': 'axios', 'a': '0.21', 'b': '0.21 ⚠'},
+                    {'key': 'react', 'a': '17', 'b': '18'}]})
+    by_type = {}
+    for e in diff_events(d):
+        by_type.setdefault(e['type'], []).append(e)
+    # only the vulnerable newcomer is an event (the clean lib is not)
+    assert len(by_type['new_vulnerable_dependency']) == 1
+    assert by_type['new_vulnerable_dependency'][0]['severity'] == 'high'
+    assert by_type['new_vulnerable_dependency'][0]['section'] == 'dependencies'
+    # only the safe→vulnerable transition is an event (the benign bump is not)
+    assert len(by_type['dependency_vulnerable']) == 1
+    assert by_type['dependency_vulnerable'][0]['severity'] == 'high'
+    assert by_type['dependency_vulnerable'][0]['title'].startswith('axios:')
+    # both are clear new risk → alertable (like a newly-leaking source map)
+    alert_types = {a['type'] for a in alerts.extract_alerts(d)}
+    assert 'new_vulnerable_dependency' in alert_types
+    assert 'dependency_vulnerable' in alert_types
+
+
 def test_certificate_expiry_classified_from_status_field():
     d = _diff(certificates={
         'added': ['expiry: expiring', 'subject: x.com'],   # newly-tracked, near deadline

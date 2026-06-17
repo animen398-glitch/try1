@@ -185,6 +185,8 @@ class SettingsDialog(QDialog):
             'cert_expired': 'Сертификат истёк',
             'new_sourcemap': 'Утёкший source map',
             'cookie_weakened': 'Cookie ослаблена',
+            'new_vulnerable_dependency': 'Уязвимая зависимость',
+            'dependency_vulnerable': 'Зависимость стала уязвимой',
         }
         enabled_types = set(cfg.get('types') or [])
         for key in alert_center.ALERT_TYPES:
