@@ -57,6 +57,24 @@ def test_build_surface_includes_subdomains_when_phase_ran():
     assert set(names['Subdomains']['items']) == {'a.ex.com', 'b.ex.com'}
 
 
+def test_build_surface_takeovers_are_own_category_and_kept_in_subdomains():
+    # A takeover host is breadth (Subdomains) AND a critical exposure (Takeovers);
+    # both dimensions count. A clean host stays only in Subdomains.
+    report = _report(subdomains={'data': {
+        'results': [{'subdomain': 'bad.ex.com'}, {'subdomain': 'ok.ex.com'}],
+        'summary': {'takeover_candidates': ['bad.ex.com']}}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Takeovers']['items'] == ['bad.ex.com']
+    assert set(names['Subdomains']['items']) == {'bad.ex.com', 'ok.ex.com'}
+
+
+def test_build_surface_omits_takeovers_when_none():
+    report = _report(subdomains={'data': {
+        'results': [{'subdomain': 'ok.ex.com'}], 'summary': {}}})
+    names = [c['name'] for c in asf.build_surface(report)['categories']]
+    assert 'Takeovers' not in names
+
+
 def test_build_surface_includes_leaking_source_maps():
     # Only maps that exposed original source (has_content) are surfaced — a map
     # without content is not a leak and stays off the graph.
@@ -80,10 +98,9 @@ def test_build_surface_includes_reachable_graphql():
 
 
 def test_findings_category_excludes_source_map_graphql_and_cookies():
-    # Source-map / GraphQL / weak-cookie exposures are their own categories (from
-    # the security and cookie phases); the same findings folded into the vuln
-    # phase must NOT also appear in the generic Findings category, or they'd
-    # double the surface score.
+    # Source-map / GraphQL / weak-cookie / takeover exposures are their own
+    # categories; the same findings folded into the vuln phase must NOT also
+    # appear in the generic Findings category, or they'd double the surface score.
     report = _report(
         security={'data': {
             'source_maps': [{'url': 'https://ex.com/app.js.map',
@@ -91,17 +108,22 @@ def test_findings_category_excludes_source_map_graphql_and_cookies():
             'graphql': [{'url': 'https://ex.com/graphql', 'graphql': True,
                          'introspection': True}]}},
         cookies={'data': {'cookies': [{'name': 'sid', 'verdict': 'Weak'}]}},
+        subdomains={'data': {'results': [{'subdomain': 'bad.ex.com'}],
+                             'summary': {'takeover_candidates': ['bad.ex.com']}}},
         vulns={'summary': {}, 'findings': [
             {'title': 'Source map exposes original source',
              'category': 'sourcemap'},
             {'title': 'GraphQL introspection enabled', 'category': 'graphql'},
             {'title': "Weakly protected cookie: sid", 'category': 'cookie'},
+            {'title': 'Subdomain takeover possible: bad.ex.com',
+             'category': 'takeover'},
             {'title': 'Exposed .env'}]})   # only this is a generic finding
     names = {c['name']: c for c in asf.build_surface(report)['categories']}
     assert names['Findings']['items'] == ['Exposed .env']
     assert names['Source Maps']['count'] == 1
     assert names['GraphQL']['count'] == 1
     assert names['Weak Cookies']['count'] == 1
+    assert names['Takeovers']['count'] == 1
 
 
 def test_build_surface_includes_weak_cookies_only():
@@ -162,8 +184,9 @@ def test_surface_score_weights_risk_categories():
         {'name': 'Source Maps', 'count': 1},     # 1 × 3 = 3
         {'name': 'GraphQL', 'count': 1},         # 1 × 3 = 3
         {'name': 'Weak Cookies', 'count': 2},    # 2 × 2 = 4
+        {'name': 'Takeovers', 'count': 1},       # 1 × 5 = 5 (top tier)
     ]}
-    assert asf.surface_score(surface) == 26
+    assert asf.surface_score(surface) == 31
 
 
 def test_surface_score_empty_is_zero():

@@ -35,6 +35,7 @@ _CATEGORY_COLORS = {
     'Source Maps': '#ad1457',
     'GraphQL': '#512da8',
     'Weak Cookies': '#ef6c00',
+    'Takeovers': '#b71c1c',
 }
 _DEFAULT_COLOR = '#555'
 _MAX_ITEMS = 10            # items kept per category (for the hover tooltip)
@@ -118,6 +119,19 @@ def build_surface(report: Dict) -> Dict:
     sub_items = [e.get('subdomain', '') for e in sub_results
                  if isinstance(e, dict)]
 
+    # Takeovers: the dangling subdomains the active checker flagged — the
+    # risk-bearing subset of Subdomains (same shape as Weak Cookies vs cookies),
+    # surfaced as their own critical category. The hosts also stay in Subdomains
+    # (breadth/presence is a separate dimension); their findings are excluded
+    # from Findings below so the takeover is not counted twice.
+    sub_summary = subdomains.get('summary') if isinstance(
+        subdomains.get('summary'), dict) else {}
+    tc = sub_summary.get('takeover_candidates') if isinstance(
+        sub_summary.get('takeover_candidates'), list) else []
+    takeover_items = [(c.get('subdomain', '') if isinstance(c, dict) else str(c))
+                      for c in tc]
+    takeover_items = [t for t in takeover_items if t]
+
     # APIs: discovered OpenAPI endpoints ("METHOD /path"), opt-in phase only.
     api_endpoints = openapi.get('endpoints') if isinstance(
         openapi.get('endpoints'), list) else []
@@ -156,6 +170,7 @@ def build_surface(report: Dict) -> Dict:
         _category('Infrastructure', infra_items),
         _category('Secrets', secret_items),
         _category('Subdomains', sub_items),
+        _category('Takeovers', takeover_items),
         _category('Endpoints', katana.get('endpoints') or []),
         _category('APIs', api_items),
         _category('Historical', hist_items),
@@ -163,23 +178,27 @@ def build_surface(report: Dict) -> Dict:
         _category('GraphQL', gql_items),
         _category('Weak Cookies', cookie_items),
         _category('Pages', page_items),
-        # Findings excludes the source-map / GraphQL / weak-cookie findings:
-        # those exposures are their own categories above (Source Maps / GraphQL
-        # from the security phase, Weak Cookies from the cookie phase), so
-        # counting them here too would double them in the surface score.
+        # Findings excludes the source-map / GraphQL / weak-cookie / takeover
+        # findings: those exposures are their own categories above (Source Maps /
+        # GraphQL from the security phase, Weak Cookies from the cookie phase,
+        # Takeovers from the subdomain phase), so counting them here too would
+        # double them in the surface score.
         _category('Findings', [f.get('title', '') for f in findings
                                if isinstance(f, dict)
                                and f.get('category')
-                               not in ('sourcemap', 'graphql', 'cookie')]),
+                               not in ('sourcemap', 'graphql', 'cookie',
+                                       'takeover')]),
     ]
     return {'domain': str(domain),
             'categories': [c for c in candidates if c]}
 
 
 # Per-category weight for the Attack Surface Score — risk-bearing categories
-# (secrets, findings, source maps, GraphQL, weak cookies) count for more than
-# mere breadth (pages/tech).
+# (takeovers, secrets, findings, source maps, GraphQL, weak cookies) count for
+# more than mere breadth (pages/tech). A takeover is the most severe single
+# exposure, so it weighs at the top alongside secrets.
 _SCORE_WEIGHTS = {
+    'Takeovers': 5,
     'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'GraphQL': 3,
     'Weak Cookies': 2,
     'Endpoints': 2, 'APIs': 2, 'Historical': 2, 'Subdomains': 2,
