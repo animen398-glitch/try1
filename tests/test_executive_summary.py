@@ -142,6 +142,23 @@ def test_high_value_secret_forces_critical_via_gate():
     assert s['risk_level'] == 'Critical'
 
 
+def test_triaged_secret_relaxes_critical_gate():
+    # A high-value secret finding forces Critical; triaging it away (FALSE_POSITIVE)
+    # drops it from the count AND the verdict gate, not just the score.
+    secret = {'severity': 'High', 'category': 'secret', 'location': 'https://x',
+              'title': 'Leaked secret: AWS Access Key', 'status': 'OPEN'}
+    s = es.build_summary(_report(findings=[secret]))
+    assert s['metrics']['secrets'] == 1
+    assert s['metrics']['secrets_high_value'] == 1
+    assert s['risk_level'] == 'Critical'
+
+    fp = dict(secret, status='FALSE_POSITIVE')
+    s2 = es.build_summary(_report(findings=[fp]))
+    assert s2['metrics']['secrets'] == 0
+    assert s2['metrics']['secrets_high_value'] == 0
+    assert s2['risk_level'] != 'Critical'
+
+
 def test_secrets_are_not_a_dedicated_factor():
     # Convergence: secrets count once via their High finding severity, so there is
     # no separate secret weight any more.

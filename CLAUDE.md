@@ -1027,9 +1027,9 @@ exclude-кортеж «Findings» (нет дубля с категорией «S
 `source='secret'`→`phase_ok('api')`. **Вердикты сохранены** (high-value→Critical,
 generic→High, плейсхолдер→none); **числа сдвинулись сознательно** (generic-секрет
 3→5 как High-находка; #3-веса вытеснены severity). Lifecycle/SLA/triage/finding-objects/
-dedup работают автоматом (downstream уже поддерживал `secret`). **Известный
-компромисс:** метрика/гейт api-derived (status-независимы) — триаж секрета снижает
-score (находки фильтруются), но не вердикт-гейт; задокументировано. Покрыто
+dedup работают автоматом (downstream уже поддерживал `secret`). (Изначальный
+компромисс «гейт api-derived, триаж не снижает вердикт» закрыт следующим
+инкрементом — status-aware гейт.) Покрыто
 `test_collection_runner` (producer: High/неутекающая identity/плейсхолдер-skip/пусто),
 `test_attack_surface` (secret исключён из «Findings»), `test_executive_summary`
 (generic=High / high-value→Critical-гейт / нет выделенного фактора / SECRET_WEIGHTS
@@ -1066,6 +1066,20 @@ secret-confidence на последней оси (граф/surface_score). `atta
 с `keys_found` → прежний `"N keys"`-узел цел (fallback срабатывает только при отсутствии
 details). derive-on-read, без новых зависимостей. Покрыто `test_attack_surface`
 (плейсхолдер-тип отброшен / все-плейсхолдер → нет категории / legacy keys_found fallback).
+
+**Status-aware Critical-гейт секретов — `[ЗАКРЫТ]`.** Backend-фаза, закрыт компромисс
+#1b. Гейт `secrets_critical → Critical` читался из `_secret_signal(api)` (status-
+независимо) → триаж секрета в FALSE_POSITIVE/IGNORED/FIXED снижал score (находки
+фильтруются из vsum), но НЕ вердикт-гейт (оставался Critical). Фикс: когда секреты —
+находки (post-#1b), `secrets`/`secrets_high_value` (и питаемый ими гейт) деривятся из
+**активных** (triage-filtered) secret-находок, а не из api. Tier (high-value) восстановлен
+из стабильного тайтла продьюсера `'Leaked secret: {type}'` через `is_high_value_secret`
+SSOT (новый `_is_high_value_secret_finding`; неузнаваемый тайтл → high-value, консервативно).
+**Fallback:** легаси-отчёт без secret-находок → прежний `_secret_signal(api)` (триажа там
+нет). `secrets_detected` остаётся сырым api-счётом (детекция, не триаж). Теперь триаж
+high-value секрета в FALSE_POSITIVE снимает Critical-вердикт, а не только score. derive-on-read,
+без новых зависимостей, без второй системы оценки. Покрыто `test_executive_summary`
+(OPEN high-value→Critical/secrets=1; FALSE_POSITIVE→secrets=0/не Critical).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

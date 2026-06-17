@@ -110,6 +110,22 @@ def is_high_value_secret(secret_type: str) -> bool:
     high-value (a new exact-format provider rule is not silently demoted)."""
     return str(secret_type).strip() not in _GENERIC_SECRET_TYPES
 
+
+_SECRET_TITLE_PREFIX = 'Leaked secret:'
+
+
+def _is_high_value_secret_finding(finding: Dict) -> bool:
+    """Whether a secret-category finding is a high-value credential.
+
+    The tier is not stored on the finding (all secret findings are High severity),
+    so recover the vendor type from the producer's stable title
+    ``'Leaked secret: {type}'`` and reuse the ``is_high_value_secret`` SSOT. An
+    unrecognisable title degrades to high-value (the conservative default)."""
+    title = str(finding.get('title', ''))
+    stype = (title.split(_SECRET_TITLE_PREFIX, 1)[1].strip()
+             if _SECRET_TITLE_PREFIX in title else '')
+    return is_high_value_secret(stype)
+
 # How close to expiry (days) a still-valid leaf cert is flagged as a risk signal.
 CERT_EXPIRY_WARN_DAYS = 14
 
@@ -432,6 +448,7 @@ def build_summary(report: Dict) -> Dict:
     vulns = report.get('phases', {}).get('vulns', {})
     vsum = vulns.get('summary', {}) if isinstance(vulns, dict) else {}
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
+    all_findings = findings   # full list (pre active-filter) — for secret detection
 
     # Findings Management (F1): once findings carry a triage status (stamped by
     # FindingsStore.sync), drop the inactive ones (FIXED / IGNORED /
@@ -452,12 +469,24 @@ def build_summary(report: Dict) -> Dict:
     # Secrets: now first-class High vuln findings (folded by
     # CollectionRunner._secret_findings) → already in vuln_score / the high count
     # above, NOT a dedicated factor. This signal only drives the display metrics
-    # and the Critical verdict gate: the count drops obvious placeholders (offline
-    # structural validation) and splits high-value vs generic; ``secrets_detected``
-    # keeps the raw match count for transparency.
-    sig = _secret_signal(api)
-    secrets = sig['plausible']
-    secrets_detected = sig['detected']
+    # (``secrets`` / ``secrets_high_value``) and the Critical verdict gate.
+    # Status-aware: when secrets are findings, derive the counts from the *active*
+    # (triage-filtered) secret findings, so marking a secret FALSE_POSITIVE /
+    # IGNORED / FIXED relaxes the verdict gate too — not just the score. Fall back
+    # to the api signal for legacy reports that have no secret findings.
+    # ``secrets_detected`` keeps the raw api match count for transparency.
+    secrets_detected = _int(api.get('keys_found'))
+    if any(isinstance(f, dict) and f.get('category') == 'secret'
+           for f in all_findings):
+        active_secrets = [f for f in findings if isinstance(f, dict)
+                          and f.get('category') == 'secret']
+        secrets = len(active_secrets)
+        secrets_high_value = sum(1 for f in active_secrets
+                                 if _is_high_value_secret_finding(f))
+    else:
+        sig = _secret_signal(api)
+        secrets = sig['plausible']
+        secrets_high_value = sig['critical']
     weak_cookies = _int(cookies.get('weak'))
     # Unified risk engine: pull every available security signal (Security Audit
     # source maps + subdomain takeovers are zero unless those phases ran).
@@ -499,7 +528,7 @@ def build_summary(report: Dict) -> Dict:
                                  infra_detail, sla_breaches, sla_detail,
                                  cert_expiry, cert_detail, regressions)
     score = sum(f['points'] for f in risk_factors)
-    level = _risk_level(score, high, sig['critical'], takeovers,
+    level = _risk_level(score, high, secrets_high_value, takeovers,
                         graphql_introspection)
     # Bounded 0–100 headline (the platform's single risk number).
     risk_100 = min(_SCORE_100_CEILING, score * _SCORE_TO_100)
@@ -507,7 +536,7 @@ def build_summary(report: Dict) -> Dict:
     metrics = {
         'high': high, 'medium': medium, 'info': info,
         'secrets': secrets, 'secrets_detected': secrets_detected,
-        'secrets_high_value': sig['critical'],
+        'secrets_high_value': secrets_high_value,
         'weak_cookies': weak_cookies,
         'source_map_leaks': source_map_leaks, 'takeovers': takeovers,
         'graphql': graphql, 'graphql_introspection': graphql_introspection,
