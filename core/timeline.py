@@ -115,6 +115,13 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
         etype = _FINDING_EVENT_TYPE.get(fe.get('type'))
         if not etype:
             continue
+        # Secrets are first-class findings (F1) AND carry a tier-aware Scan-Diff
+        # event (new_secret / new_secret_generic). Their *appearance* is already
+        # represented by that diff event above, so drop the F1 'new_finding' for a
+        # secret to avoid double-counting it in the timeline; the secret's fix /
+        # reopen lifecycle (which the diff has no equivalent for) is kept.
+        if etype == 'new_finding' and fe.get('category') == 'secret':
+            continue
         severity = _FINDING_EVENT_SEVERITY[etype] or (fe.get('severity') or 'info')
         title = f"[{fe.get('severity', '')}] {fe.get('title', '')}".strip()
         events.append({'scan_id': fe.get('scan_id'), 'at': fe.get('at'),

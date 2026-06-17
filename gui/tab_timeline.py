@@ -25,6 +25,7 @@ from gui.ui_components import SectionGroupBox, StyledButton
 # Event type → RU label for the feed.
 _EVENT_LABELS = {
     'new_secret':          'Новый секрет',
+    'new_secret_generic':  'Новый секрет (generic)',
     'takeover':            'Takeover',
     'new_subdomain':       'Новый субдомен',
     'new_technology':      'Новая технология',

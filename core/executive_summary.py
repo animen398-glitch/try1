@@ -100,6 +100,16 @@ _GENERIC_SECRET_TYPES = frozenset({
     'Stripe Publishable',
 })
 
+
+def is_high_value_secret(secret_type: str) -> bool:
+    """Whether a secret *type* is a high-value credential (vs generic/opaque).
+
+    The single source of truth for secret severity tiering (``_GENERIC_SECRET_TYPES``),
+    shared by the risk gate (_secret_signal) and the Scan-Diff secret events so the
+    two never diverge into separate scoring systems. Unknown types default to
+    high-value (a new exact-format provider rule is not silently demoted)."""
+    return str(secret_type).strip() not in _GENERIC_SECRET_TYPES
+
 # How close to expiry (days) a still-valid leaf cert is flagged as a risk signal.
 CERT_EXPIRY_WARN_DAYS = 14
 
@@ -304,10 +314,10 @@ def _secret_signal(api: Dict) -> Dict:
         for v in (values if isinstance(values, list) else [values]):
             if validate(str(key_type), str(v)).get('status') == INVALID:
                 continue
-            if str(key_type) in _GENERIC_SECRET_TYPES:
-                generic += 1
-            else:
+            if is_high_value_secret(key_type):
                 critical += 1
+            else:
+                generic += 1
     return {'plausible': critical + generic, 'detected': detected,
             'critical': critical, 'generic': generic}
 

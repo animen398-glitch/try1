@@ -123,6 +123,28 @@ def test_findings_events_mapped_and_noise_dropped():
     assert events[0]['title'] == '[medium] Weak CSP'
 
 
+def test_secret_finding_new_finding_is_deduped_against_diff_event():
+    # Secrets are first-class findings AND carry a tier-aware Scan-Diff event, so
+    # the F1 'new_finding' for a secret is dropped from the timeline (the diff
+    # event owns its appearance) — but a non-secret finding's new_finding is kept,
+    # and the secret's resolve/reopen lifecycle is kept.
+    fevents = [
+        {'type': 'CREATED', 'scan_id': 's1', 'at': '2026-01-01',
+         'title': 'Leaked secret: AWS Access Key', 'severity': 'high',
+         'category': 'secret'},                              # dropped (diff owns it)
+        {'type': 'CREATED', 'scan_id': 's1', 'at': '2026-01-01',
+         'title': 'Weak CSP', 'severity': 'medium', 'category': 'header'},
+        {'type': 'RESOLVED_AUTO', 'scan_id': 's2', 'at': '2026-01-02',
+         'title': 'Leaked secret: AWS Access Key', 'severity': 'high',
+         'category': 'secret'},                              # lifecycle → kept
+    ]
+    events = timeline.build_events([], fevents)
+    kinds = [(e['type'], e['title']) for e in events]
+    assert ('new_finding', '[high] Leaked secret: AWS Access Key') not in kinds
+    assert ('new_finding', '[medium] Weak CSP') in kinds
+    assert ('finding_resolved', '[high] Leaked secret: AWS Access Key') in kinds
+
+
 def test_sla_breach_events_merged_into_feed():
     # Already-shaped SLA-breach rows (from findings_sla.sla_events) are folded in
     # and ordered chronologically with the rest.

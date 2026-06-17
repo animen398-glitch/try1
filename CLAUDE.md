@@ -1035,6 +1035,26 @@ score (находки фильтруются), но не вердикт-гейт
 (generic=High / high-value→Critical-гейт / нет выделенного фактора / SECRET_WEIGHTS
 удалён / плейсхолдер не считается).
 
+**Tier-aware secret events + dedup с F1-находками — `[ЗАКРЫТ]`.** Backend-фаза, хвост
+secret-конвергенции. (1) **Tier-aware:** scan-diff `new_secret` был всегда `high`;
+теперь tiered по **единому источнику истины** — новый публичный
+`executive_summary.is_high_value_secret(type)` (обёртка `_GENERIC_SECRET_TYPES`,
+переиспользована и в `_secret_signal`, и в diff — без второй системы оценки).
+`diff_events` разбивает по типу из лейбла: high-value → `new_secret` (high),
+generic/opaque → `new_secret_generic` (medium); оба алертабельны (тип в
+`alerts.ALERT_TYPES`), метки в `gui/tab_timeline` + `gui/dialogs`. (2) **Dedup:**
+аудит выявил дубль, внесённый #1b — секрет в Timeline шёл и как scan-diff
+`new_secret`, и как F1 `new_finding` («[High] Leaked secret: …»). Фикс в
+`timeline.build_events`: F1 `new_finding` с `category=='secret'` пропускается
+(scan-diff-событие, теперь tier-aware, владеет «появлением»; fix/reopen-lifecycle
+секрета из F1 сохранён — у diff его нет). `project_events` уже отдаёт `category`
+(джойн), так что дедуп точечный. **Обратная совместимость:** старые проекты (без
+secret-находок) не затронуты — их `new_secret` в Timeline цел; alerts берут diff
+напрямую (фильтр build_events их не трогает). derive-on-read сохранён, без новых
+зависимостей, раскладка отчётов цела. Покрыто `test_diff_events`
+(high-value→high / generic→medium / оба алертабельны), `test_timeline`
+(secret new_finding дедуплицирован, non-secret и resolve/reopen сохранены).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

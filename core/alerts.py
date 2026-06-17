@@ -38,7 +38,11 @@ from typing import Dict, List, Optional
 
 from core.scan_diff import diff_events
 
-# The change types Alert Center understands. ``new_subdomain`` and ``takeover``
+# The change types Alert Center understands. ``new_secret`` (a high-value
+# cloud/payment/VCS credential) and ``new_secret_generic`` (a generic/opaque key)
+# both come from the diff's secret section, tiered by severity (high vs medium) so
+# a generic-key leak does not page at the same level as an AWS key.
+# ``new_subdomain`` and ``takeover``
 # both come from the diff's subdomain section (takeover is the dangerous subset).
 # ``graphql_introspection`` (a schema that turned open between scans) is a
 # high-severity signal worth a push; ``new_graphql`` stays timeline-only like
@@ -55,8 +59,8 @@ from core.scan_diff import diff_events
 # risk, like a newly-leaking source map. ``security_header_removed`` (a dropped
 # HSTS / CSP / X-Frame-Options … between scans) is alertable too — a protection
 # that regressed, like a degraded cookie.
-ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
-               'cert_change', 'cert_expired', 'risk_increase',
+ALERT_TYPES = ('new_secret', 'new_secret_generic', 'new_subdomain', 'takeover',
+               'new_technology', 'cert_change', 'cert_expired', 'risk_increase',
                'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
                'new_vulnerable_dependency', 'dependency_vulnerable',
                'security_header_removed', 'sla_breach')

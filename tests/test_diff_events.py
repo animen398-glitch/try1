@@ -53,6 +53,18 @@ def test_classifies_each_section():
     assert by_type['risk_increase'][0]['severity'] == 'high'
 
 
+def test_secret_events_are_tier_aware():
+    # A high-value credential → new_secret (high); a generic/opaque key →
+    # new_secret_generic (medium). Both alertable, severity reflects the tier.
+    d = _diff(secrets=_added('AWS Access Key: AKIAIO…(20)',
+                             'Generic API Key: abcdef…(20)'))
+    by_type = {e['type']: e for e in diff_events(d)}
+    assert by_type['new_secret']['severity'] == 'high'
+    assert by_type['new_secret_generic']['severity'] == 'medium'
+    atypes = {a['type'] for a in alerts.extract_alerts(d)}
+    assert {'new_secret', 'new_secret_generic'} <= atypes
+
+
 def test_placeholder_secret_is_not_an_event():
     # A secret the diff tagged ⚠ placeholder (offline-validated false positive) is
     # neither alertable nor a timeline event; a plain secret still is.

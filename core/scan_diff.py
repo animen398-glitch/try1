@@ -19,7 +19,8 @@ anything rendered or serialized from it — never carries a full leaked key.
 import html
 from typing import Dict, List, Optional
 
-from core.executive_summary import RISK_COLORS, cert_expiry_status, parse_cert_date
+from core.executive_summary import (RISK_COLORS, cert_expiry_status,
+                                     is_high_value_secret, parse_cert_date)
 from core.security_headers import SECURITY_HEADER_NAMES
 
 # Section -> the phase whose success it depends on (single place to extend
@@ -476,6 +477,7 @@ def summarize_line(d: Dict) -> str:
 # Timeline takes them all. Each event is {type, title, severity, section}.
 EVENT_SEVERITY = {
     'new_secret':          'high',
+    'new_secret_generic':  'medium',
     'takeover':            'critical',
     'new_subdomain':       'medium',
     'new_technology':      'info',
@@ -514,9 +516,17 @@ def diff_events(d: Dict) -> List[Dict]:
     # A newly-detected secret alerts — unless offline validation tagged it a clear
     # placeholder / false positive (⚠ placeholder), which would otherwise force a
     # bogus alert and timeline noise. The HTML diff still lists it (with the tag).
+    # Tier-aware: a high-value credential (cloud/payment/VCS key) → new_secret
+    # (high); a generic/opaque key → new_secret_generic (medium). The tier comes
+    # from the label's leading type via the shared is_high_value_secret SSOT, so
+    # the events and the risk gate never diverge into separate scoring systems.
     for label in sections.get('secrets', {}).get('added', []):
-        if '⚠ placeholder' not in str(label):
-            add('new_secret', label, 'secrets')
+        text = str(label)
+        if '⚠ placeholder' in text:
+            continue
+        key_type = text.split(':', 1)[0].strip()
+        add('new_secret' if is_high_value_secret(key_type)
+            else 'new_secret_generic', text, 'secrets')
 
     # Subdomains: a takeover candidate is the dangerous subset (its label carries
     # the marker core.scan_diff attaches).

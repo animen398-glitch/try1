@@ -179,7 +179,9 @@ class SettingsDialog(QDialog):
         tg_layout = QVBoxLayout()
         self._alert_type_cbs = {}
         _TYPE_LABELS = {
-            'new_secret': 'Новый секрет', 'new_subdomain': 'Новый субдомен',
+            'new_secret': 'Новый секрет',
+            'new_secret_generic': 'Новый секрет (generic)',
+            'new_subdomain': 'Новый субдомен',
             'takeover': 'Takeover', 'new_technology': 'Новая технология',
             'cert_change': 'Смена сертификата', 'risk_increase': 'Рост риска',
             'cert_expired': 'Сертификат истёк',
