@@ -34,6 +34,7 @@ _CATEGORY_COLORS = {
     'Historical': '#827717',
     'Source Maps': '#ad1457',
     'GraphQL': '#512da8',
+    'Weak Cookies': '#ef6c00',
 }
 _DEFAULT_COLOR = '#555'
 _MAX_ITEMS = 10            # items kept per category (for the hover tooltip)
@@ -67,6 +68,7 @@ def build_surface(report: Dict) -> Dict:
     recon = data('recon')
     api = data('api')
     capture = data('capture')
+    cookies = data('cookies')
     security = data('security')
     katana = data('katana')
     openapi = data('openapi')
@@ -133,6 +135,14 @@ def build_surface(report: Dict) -> Dict:
     smap_items = [m.get('url', '') for m in smaps
                   if isinstance(m, dict) and m.get('has_content')]
 
+    # Weak Cookies: the Set-Cookie entries the Cookie Audit scored Weak (missing
+    # Secure/HttpOnly/SameSite) — the risk-bearing subset the risk engine counts;
+    # strong/moderate cookies are not attack surface and stay off the graph.
+    cookie_list = cookies.get('cookies') if isinstance(
+        cookies.get('cookies'), list) else []
+    cookie_items = [str(c.get('name', '')) for c in cookie_list
+                    if isinstance(c, dict) and c.get('verdict') == 'Weak']
+
     # GraphQL: reachable endpoints (introspection ones are flagged in the
     # tooltip) — exposed query surface, opt-in security phase only.
     gql = security.get('graphql') if isinstance(
@@ -151,6 +161,7 @@ def build_surface(report: Dict) -> Dict:
         _category('Historical', hist_items),
         _category('Source Maps', smap_items),
         _category('GraphQL', gql_items),
+        _category('Weak Cookies', cookie_items),
         _category('Pages', page_items),
         # Findings excludes the source-map / GraphQL findings: those exposures
         # are their own categories above (from the security phase), so counting
@@ -164,10 +175,11 @@ def build_surface(report: Dict) -> Dict:
 
 
 # Per-category weight for the Attack Surface Score — risk-bearing categories
-# (secrets, findings, source maps, GraphQL) count for more than mere breadth
-# (pages/tech).
+# (secrets, findings, source maps, GraphQL, weak cookies) count for more than
+# mere breadth (pages/tech).
 _SCORE_WEIGHTS = {
     'Secrets': 5, 'Source Maps': 3, 'Findings': 3, 'GraphQL': 3,
+    'Weak Cookies': 2,
     'Endpoints': 2, 'APIs': 2, 'Historical': 2, 'Subdomains': 2,
     'Technologies': 1, 'Infrastructure': 1, 'Pages': 1,
 }

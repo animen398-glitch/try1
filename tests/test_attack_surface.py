@@ -100,6 +100,25 @@ def test_findings_category_excludes_source_map_and_graphql():
     assert names['GraphQL']['count'] == 1
 
 
+def test_build_surface_includes_weak_cookies_only():
+    # Only cookies the audit scored Weak are attack surface; strong/moderate
+    # ones (a proper Set-Cookie) stay off the graph.
+    report = _report(cookies={'data': {'cookies': [
+        {'name': 'sid', 'verdict': 'Weak'},
+        {'name': 'csrf', 'verdict': 'Strong'},
+        {'name': 'pref', 'verdict': 'Moderate'}]}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Weak Cookies']['count'] == 1
+    assert names['Weak Cookies']['items'] == ['sid']
+
+
+def test_build_surface_omits_weak_cookies_when_none_weak():
+    report = _report(cookies={'data': {'cookies': [
+        {'name': 'sid', 'verdict': 'Strong'}]}})
+    names = [c['name'] for c in asf.build_surface(report)['categories']]
+    assert 'Weak Cookies' not in names
+
+
 def test_build_surface_omits_empty_categories():
     surface = asf.build_surface(_report(recon={'data': {'cms': ['Vue']}}))
     names = [c['name'] for c in surface['categories']]
@@ -138,8 +157,9 @@ def test_surface_score_weights_risk_categories():
         {'name': 'Findings', 'count': 1},        # 1 × 3 = 3
         {'name': 'Source Maps', 'count': 1},     # 1 × 3 = 3
         {'name': 'GraphQL', 'count': 1},         # 1 × 3 = 3
+        {'name': 'Weak Cookies', 'count': 2},    # 2 × 2 = 4
     ]}
-    assert asf.surface_score(surface) == 22
+    assert asf.surface_score(surface) == 26
 
 
 def test_surface_score_empty_is_zero():
