@@ -851,6 +851,20 @@ cookie-насыщенных целей **снизились сознательн
 находки (числа скоринга совпадают с продакшеном); добавлен регресс-тест
 no-double-count. Покрыто `test_executive_summary`.
 
+**Weak-cookie attack-surface double-count — `[ЗАКРЫТ]`.** Backend-фаза,
+тот же дефект, но во **второй** оси (surface_score, не risk). Категория
+«Findings» в `attack_surface.build_surface` уже исключала source-map/GraphQL-
+находки, чтобы не дублировать их выделенные категории, но для cookie был пробел:
+cookie verdict=Weak попадала и в «Weak Cookies» (вес 2), и её находка от
+`VulnScanner._check_cookies` — в «Findings» (вес 3) → 5 очков охвата на cookie
+вместо 2. Фикс: cookie-находки помечены канонической `category='cookie'`
+(адаптер УЖЕ выводил её из title → fingerprint байт-в-байт, ноль churn в сторе),
+и `'cookie'` добавлена в исключающий кортеж «Findings» рядом с
+sourcemap/graphql. Cookie SameSite=None-without-Secure всегда score≤1 → всегда
+Weak → уже представлена в «Weak Cookies», сигнал не теряется. Покрыто
+`test_attack_surface` (расширен exclude-тест) + `test_vuln_scanner`
+(category на High/Medium cookie-находках).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
