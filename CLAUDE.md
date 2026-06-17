@@ -976,12 +976,30 @@ key_findings/recommendation) = plausible; добавлена метрика `sec
 mixed только plausible / легаси без details), `test_scan_diff` (пометка+не-алертабелен),
 `test_diff_events` (плейсхолдер не событие).
 
+**Per-type secret severity (хвост secret confidence) — `[ЗАКРЫТ]`.** Backend-фаза.
+Плоский вес секрета (5 за любой) заменён на **по-tier**: высокоценный credential
+(cloud/payment/VCS/messaging-ключ с точным форматом) весит `SECRET_WEIGHTS['critical']=5`
+и форсит Critical; generic/opaque-матч (`_GENERIC_SECRET_TYPES`: Generic API Key/
+Generic Secret/Bearer/JWT/Stripe Publishable) весит `SECRET_WEIGHTS['generic']=3` и
+форсит **≥High** (не Critical). `_plausible_secrets` → `_secret_signal(api)` (возвращает
+`{plausible,detected,critical,generic,points}`, derive-on-read над `api['details']`,
+переиспользует `secret_validator`). `_risk_level` стал tier-aware (`secrets_critical`→
+Critical, `secrets_generic`→High); `_risk_factors` принимает явные `secret_points`/
+`secret_weight`/`secret_detail` (вес = tier при однородном наборе, иначе None +
+разбивка в detail). Метрика `secrets_high_value` + headline-чип красится critical/high
+по ней. **Вердикты для generic-only целей снизились сознательно** (Critical→High; как
+F-SEC2). Back-compat: легаси-`keys_found` без details → высокоценный tier → байт-в-байт
+(вес 5, Critical). `'secrets'` убран из `RISK_WEIGHTS` (вытеснён `SECRET_WEIGHTS`).
+attack-surface «Secrets» (breadth) и portfolio-heatmap (any plausible key = critical
+cell) не тронуты — отдельные оси. Покрыто `test_executive_summary` (generic=High/вес 3 /
+mixed=Critical+score 8 / high-value форсит / SECRET_WEIGHTS).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
 F-R6 cert-expiry + F-R7 regression) + Correlation углублён + Findings SLA углублён +
-Asset coverage + Scanner robustness + Secret confidence (валидатор в risk/diff/alerts).
-Отклонено (конфликт
+Asset coverage + Scanner robustness + Secret confidence (валидатор в risk/diff/alerts +
+по-tier severity). Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

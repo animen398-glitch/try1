@@ -100,6 +100,42 @@ def test_legacy_keys_found_unchanged_without_details():
     assert s['risk_level'] == 'Critical'
 
 
+def test_generic_secret_is_high_not_critical():
+    # A plausible but generic/opaque key (not a high-value credential) weighs less
+    # and is a High signal, not Critical.
+    s = es.build_summary(_report(
+        secret_details={'Generic API Key': ['aB3cD4eF5gH6iJ7k']}))
+    assert s['metrics']['secrets'] == 1
+    assert s['metrics']['secrets_high_value'] == 0
+    assert s['risk_score'] == 3                       # generic tier weight
+    assert s['risk_level'] == 'High'
+    factor = {f['factor']: f for f in s['risk_factors']}['Утёкшие секреты']
+    assert factor['weight'] == 3 and factor['points'] == 3
+    # Headline chip downgrades to High too (mirrors the verdict).
+    assert es.headline(s)['chips'][0]['severity'] == 'high'
+
+
+def test_high_value_secret_weighs_more_than_generic():
+    # A high-value credential (AWS) + a generic key: score is the per-tier sum and
+    # the high-value key forces Critical.
+    s = es.build_summary(_report(secret_details={
+        'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE'],
+        'Generic API Key': ['aB3cD4eF5gH6iJ7k']}))
+    assert s['metrics']['secrets'] == 2
+    assert s['metrics']['secrets_high_value'] == 1
+    assert s['risk_score'] == 5 + 3
+    assert s['risk_level'] == 'Critical'
+    factor = {f['factor']: f for f in s['risk_factors']}['Утёкшие секреты']
+    assert factor['weight'] is None and factor['points'] == 8
+    assert 'высокоценных' in factor['detail']
+
+
+def test_secrets_weight_dropped_for_per_tier():
+    # The flat secret weight is gone; per-tier weights live in SECRET_WEIGHTS.
+    assert 'secrets' not in es.RISK_WEIGHTS
+    assert es.SECRET_WEIGHTS['critical'] > es.SECRET_WEIGHTS['generic']
+
+
 def test_three_high_is_critical():
     s = es.build_summary(_report(high=3, risk_score=15))
     assert s['risk_level'] == 'Critical'
