@@ -203,6 +203,18 @@ def test_cert_expired_is_alertable_but_expiring_is_not():
     assert 'cert_expiring' not in alert_types   # heads-up only → timeline
 
 
+def test_new_historical_url_is_timeline_only():
+    # A newly-surfaced interesting archived URL is a medium discovery note, but
+    # not alertable (archival presence is discovery, not a live regression).
+    d = _diff(historical=_added('https://x.com/admin/login'))
+    events = diff_events(d)
+    assert [e['type'] for e in events] == ['new_historical_url']
+    assert events[0]['severity'] == 'medium'
+    assert events[0]['section'] == 'historical'
+    assert alerts.extract_alerts(d) == []
+    assert 'new_historical_url' not in alerts.ALERT_TYPES
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})

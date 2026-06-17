@@ -33,6 +33,7 @@ _EVENT_LABELS = {
     'cert_expiring':       'Сертификат истекает',
     'cert_expired':        'Сертификат истёк',
     'new_endpoint':        'Новый эндпоинт',
+    'new_historical_url':  'Новый историч. URL',
     'new_graphql':         'Новый GraphQL',
     'graphql_introspection': 'GraphQL introspection',
     'new_sourcemap':       'Утёкший source map',

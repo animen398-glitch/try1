@@ -994,6 +994,18 @@ attack-surface «Secrets» (breadth) и portfolio-heatmap (any plausible key = c
 cell) не тронуты — отдельные оси. Покрыто `test_executive_summary` (generic=High/вес 3 /
 mixed=Critical+score 8 / high-value форсит / SECRET_WEIGHTS).
 
+**Historical-URL → Timeline-событие — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел: секция `historical` (интересные архивные URL — admin/auth/api/
+config из веб-архивов) диффилась и была в attack-surface, но `diff_events` не имел
+обработчика → ново-всплывший интересный URL не давал события. Добавлен
+`new_historical_url` (medium, **timeline-only** — НЕ в `alerts.ALERT_TYPES`: архивное
+наличие = discovery, не живая регрессия; URL мог быть заархивирован давно и лишь
+ново-замечен этим сканом) поверх существующих diff-данных секции. `EVENT_SEVERITY` +
+метка в `gui/tab_timeline._EVENT_LABELS`. Reappeared-актив уже был покрыт
+(`asset_reappeared` в `timeline`). Pure, web-паритет автоматом. Покрыто
+`test_diff_events` (классификация + не-алертабелен) и `test_scan_diff` (end-to-end
+added → событие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

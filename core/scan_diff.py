@@ -484,6 +484,7 @@ EVENT_SEVERITY = {
     'cert_expiring':       'medium',
     'cert_expired':        'high',
     'new_endpoint':        'info',
+    'new_historical_url':  'medium',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
     'new_sourcemap':       'high',
@@ -562,6 +563,15 @@ def diff_events(d: Dict) -> List[Dict]:
     for section in ('endpoints', 'apis'):
         for label in sections.get(section, {}).get('added', []):
             add('new_endpoint', label, section)
+
+    # A newly-surfaced interesting archived URL (the admin/auth/api/config subset
+    # the historical phase curates from web archives) is attack-surface discovery
+    # worth a timeline note — like a new endpoint, but pre-filtered to security-
+    # relevant paths so it warrants medium. Timeline-only (not alertable): archival
+    # presence is discovery, not a live regression — the URL may have been archived
+    # long ago and merely newly observed by this scan.
+    for label in sections.get('historical', {}).get('added', []):
+        add('new_historical_url', label, 'historical')
 
     # GraphQL: a newly reachable endpoint is attack surface; one whose schema is
     # now open to introspection is the high-value signal (matches the risk engine,

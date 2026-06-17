@@ -9,7 +9,7 @@ from core.scan_diff import diff, diff_events, render_html, summarize_line
 def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
             deps=None, headers=None, sec_headers=None, endpoints=None,
             findings=None, level='Low', risk_100=4, subdomains=None, cert=None,
-            graphql=None, source_maps=None, cookies=None):
+            graphql=None, source_maps=None, cookies=None, historical=None):
     """A minimal but shape-faithful collection report."""
     phases = {
         'capture': {'status': 'Success',
@@ -36,6 +36,9 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
         phases['certificate'] = {'status': 'Success', 'data': cert}
     if cookies is not None:
         phases['cookies'] = {'status': 'Success', 'data': {'cookies': cookies}}
+    if historical is not None:
+        phases['historical'] = {'status': 'Success',
+                                'data': {'interesting': historical}}
     if graphql is not None or source_maps is not None:
         data = {}
         if graphql is not None:
@@ -93,6 +96,19 @@ def test_placeholder_secret_tagged_and_not_alertable():
     secret_events = [e for e in diff_events(d) if e['type'] == 'new_secret']
     assert len(secret_events) == 1
     assert 'AKIAIO' in secret_events[0]['title']
+
+
+def test_new_historical_url_event():
+    # A newly-surfaced interesting archived URL produces a timeline event.
+    a = _report('A', historical=['https://x.com/api/v1'])
+    b = _report('B', historical=['https://x.com/api/v1',
+                                 'https://x.com/admin/login'])
+    sec = diff(a, b)['sections']['historical']
+    assert sec['added'] == ['https://x.com/admin/login']
+    events = [e for e in diff_events(diff(a, b))
+              if e['type'] == 'new_historical_url']
+    assert len(events) == 1
+    assert 'admin/login' in events[0]['title']
 
 
 def test_technology_version_change_and_cms_union():
