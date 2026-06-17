@@ -900,6 +900,25 @@ Pure, web-паритет автоматом. Покрыто `test_diff_events` (
 не-security removal игнор + alertable) и `test_scan_diff` (end-to-end removal →
 label → событие).
 
+**Subdomain takeover → first-class finding — `[ЗАКРЫТ]`.** Backend-фаза, решение
+пользователя. Кандидат на takeover (субдомен, CNAME-ящий на неактивный сторонний
+сервис) был только risk-фактором + метрикой — не персистился как находка (нет
+lifecycle/SLA/triage). Теперь каждый кандидат фолдится в vuln-фазу как **High**-
+находка (`category='takeover'`, `location=host`) сразу после subdomain-фазы — тот
+же паттерн, что security-audit экспозиции (`CollectionRunner._takeover_findings` +
+инлайн-фолд в `run`). **Считается один раз** через severity находки, не вторым
+выделенным фактором: вес `takeovers` убран из `RISK_WEIGHTS`/`_risk_factors`.
+**Вердикт не изменился** — `_risk_level` по-прежнему форсит Critical на любом
+takeover (clear-cut level-гейт, как GraphQL introspection форсит High); меняется
+лишь raw-score за takeover (High=5 через находку вместо 8 через фактор). Метрика
+`takeovers`, рекомендация и headline-чип сохранены. `'takeover'` добавлен в
+канон-вокабуляр `finding_fingerprint.CATEGORIES` и каталог `finding_knowledge`
+(description/impact/remediation). Двойного счёта в attack-surface нет: «Subdomains»
+= breadth (все субдомены), takeover-находка идёт в «Findings» — разные оси (как
+dependencies vs Technologies, не как cookies). Покрыто `test_collection_runner`
+(High/host-located/empty) и `test_executive_summary` (Critical-force + score=2×High
++ нет фактора).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
