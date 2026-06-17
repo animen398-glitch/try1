@@ -138,6 +138,27 @@ def test_security_findings_reachable_graphql_is_info():
     assert by_loc['https://x/g1']['severity'] == 'Info'
 
 
+def test_security_findings_fold_audit_secrets():
+    # Secrets the deep-JS audit finds become High secret findings (source
+    # 'secret-audit', located at the script URL); placeholders are dropped and no
+    # plaintext leaks. They share the shape of api-phase secrets (dedup by id).
+    data = {
+        'source_maps': [], 'graphql': [],
+        'secrets': [
+            {'type': 'AWS Access Key', 'match': 'AKIAIOSFODNN7EXAMPLE',
+             'source': 'https://x.com/app.js'},
+            {'type': 'Generic API Key', 'match': 'your_api_key_here',
+             'source': 'https://x.com/app.js'}],          # placeholder → dropped
+    }
+    found = CollectionRunner._security_findings(data)
+    secrets = [f for f in found if f['category'] == 'secret']
+    assert len(secrets) == 1
+    s = secrets[0]
+    assert s['severity'] == 'High' and s['source'] == 'secret-audit'
+    assert s['location'] == 'https://x.com/app.js'
+    assert 'AKIAIOSFODNN7EXAMPLE' not in str(s)          # no plaintext
+
+
 def test_takeover_findings_are_high_and_host_located():
     # Each takeover candidate becomes a High finding keyed by its host, with the
     # canonical category so Findings Management / risk count it once.

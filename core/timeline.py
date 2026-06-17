@@ -97,6 +97,17 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     """
     events: List[Dict] = []
 
+    # Secrets are first-class findings (api phase + the deep-JS security audit), so
+    # the F1 finding events (new_finding / resolved / reopened) are the canonical
+    # secret timeline — they cover both producers, the correct first-seen scan, and
+    # the lifecycle. When the project has secret findings, drop the Scan-Diff
+    # ``secrets`` section from the feed to avoid double-counting a secret's
+    # appearance (the tier-aware diff events still drive Alert Center, which reads
+    # diff_events directly). Backward-compatible: an old project with no secret
+    # findings keeps its Scan-Diff secret events.
+    has_secret_findings = any(isinstance(fe, dict) and fe.get('category') == 'secret'
+                              for fe in (finding_events or []))
+
     prev: Optional[Tuple[str, Dict]] = None
     for scan_id, report in scans or []:
         if not isinstance(report, dict):
@@ -104,6 +115,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
         if prev is not None:
             at = report.get('finished_at') or ''
             for ev in diff_events(diff(prev[1], report)):
+                if has_secret_findings and ev['section'] == 'secrets':
+                    continue
                 events.append({'scan_id': scan_id, 'at': at, 'type': ev['type'],
                                'title': ev['title'], 'severity': ev['severity'],
                                'section': ev['section']})
@@ -114,13 +127,6 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
             continue
         etype = _FINDING_EVENT_TYPE.get(fe.get('type'))
         if not etype:
-            continue
-        # Secrets are first-class findings (F1) AND carry a tier-aware Scan-Diff
-        # event (new_secret / new_secret_generic). Their *appearance* is already
-        # represented by that diff event above, so drop the F1 'new_finding' for a
-        # secret to avoid double-counting it in the timeline; the secret's fix /
-        # reopen lifecycle (which the diff has no equivalent for) is kept.
-        if etype == 'new_finding' and fe.get('category') == 'secret':
             continue
         severity = _FINDING_EVENT_SEVERITY[etype] or (fe.get('severity') or 'info')
         title = f"[{fe.get('severity', '')}] {fe.get('title', '')}".strip()

@@ -123,26 +123,37 @@ def test_findings_events_mapped_and_noise_dropped():
     assert events[0]['title'] == '[medium] Weak CSP'
 
 
-def test_secret_finding_new_finding_is_deduped_against_diff_event():
-    # Secrets are first-class findings AND carry a tier-aware Scan-Diff event, so
-    # the F1 'new_finding' for a secret is dropped from the timeline (the diff
-    # event owns its appearance) — but a non-secret finding's new_finding is kept,
-    # and the secret's resolve/reopen lifecycle is kept.
+def test_secret_timeline_owned_by_f1_when_secret_findings_exist():
+    # Secrets are findings (api phase + deep-JS audit), so F1 events own the secret
+    # timeline: the Scan-Diff 'secrets' section is dropped (to avoid a double
+    # appearance), but the F1 new_finding / lifecycle is kept and non-secret diff
+    # events remain.
+    a = _report('s1', '2026-01-01')
+    b = _report('s2', '2026-01-02', secrets={'aws': ['AKIAEXAMPLE0001']},
+                techs=[{'name': 'React', 'version': '18'}])
     fevents = [
-        {'type': 'CREATED', 'scan_id': 's1', 'at': '2026-01-01',
+        {'type': 'CREATED', 'scan_id': 's2', 'at': '2026-01-02',
          'title': 'Leaked secret: AWS Access Key', 'severity': 'high',
-         'category': 'secret'},                              # dropped (diff owns it)
-        {'type': 'CREATED', 'scan_id': 's1', 'at': '2026-01-01',
-         'title': 'Weak CSP', 'severity': 'medium', 'category': 'header'},
-        {'type': 'RESOLVED_AUTO', 'scan_id': 's2', 'at': '2026-01-02',
+         'category': 'secret'},
+        {'type': 'RESOLVED_AUTO', 'scan_id': 's3', 'at': '2026-01-03',
          'title': 'Leaked secret: AWS Access Key', 'severity': 'high',
-         'category': 'secret'},                              # lifecycle → kept
+         'category': 'secret'},
     ]
-    events = timeline.build_events([], fevents)
-    kinds = [(e['type'], e['title']) for e in events]
-    assert ('new_finding', '[high] Leaked secret: AWS Access Key') not in kinds
-    assert ('new_finding', '[medium] Weak CSP') in kinds
-    assert ('finding_resolved', '[high] Leaked secret: AWS Access Key') in kinds
+    events = timeline.build_events([('s1', a), ('s2', b)], fevents)
+    types = [e['type'] for e in events]
+    assert 'new_secret' not in types          # Scan-Diff secrets section dropped
+    assert 'new_finding' in types             # F1 owns the secret's appearance
+    assert 'finding_resolved' in types        # …and its lifecycle
+    assert 'new_technology' in types          # non-secret diff events kept
+
+
+def test_secret_diff_events_kept_when_no_secret_findings():
+    # Backward compatible: a legacy project with no secret findings keeps its
+    # Scan-Diff secret events in the timeline.
+    a = _report('s1', '2026-01-01')
+    b = _report('s2', '2026-01-02', secrets={'aws': ['AKIAEXAMPLE0001']})
+    events = timeline.build_events([('s1', a), ('s2', b)], [])
+    assert 'new_secret' in {e['type'] for e in events}
 
 
 def test_sla_breach_events_merged_into_feed():

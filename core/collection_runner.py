@@ -612,24 +612,52 @@ class CollectionRunner:
                     'detail': f'{loc} — reachable GraphQL API (introspection off).',
                     'source': 'security-audit', 'category': 'graphql',
                     'location': loc})
+        # Secrets the deep-JS audit found (the api phase sees only the initial
+        # page). Folded as first-class secret findings — identical shape to the
+        # api-phase secrets, so an overlapping key at the same location dedups by
+        # fingerprint. ``source='secret-audit'`` so the auto-FIX scope-guard ties
+        # them to the opt-in security phase (a skipped audit ≠ "fixed").
+        for s in data.get('secrets') or []:
+            if isinstance(s, dict) and s.get('match'):
+                f = CollectionRunner._secret_finding(
+                    s.get('type', ''), s['match'], s.get('source') or '',
+                    source='secret-audit')
+                if f:
+                    findings.append(f)
         return findings
+
+    @staticmethod
+    def _secret_finding(key_type, value, location: str,
+                        source: str = 'secret') -> Optional[Dict]:
+        """One secret finding dict (High), or ``None`` if the value is a clear
+        placeholder / false positive (offline structural validation).
+
+        Shared by the api-phase (``_secret_findings``) and the security-audit
+        (``_security_findings``) secret folders so they emit identical,
+        fingerprint-dedupable findings. Canonical ``category='secret'`` + an
+        explicit non-leaking ``discriminator`` (vendor + masked prefix + length,
+        never the plaintext) give a stable identity (one per distinct key);
+        ``source`` ties the finding's auto-FIX scope-guard to its producing phase."""
+        from core.finding_fingerprint import mask_value, secret_discriminator
+        from core.secret_validator import INVALID, validate
+        if validate(str(key_type), str(value)).get('status') == INVALID:
+            return None
+        return {
+            'severity': 'High',
+            'title': f'Leaked secret: {key_type}',
+            'detail': f'{location} — exposed {key_type} ({mask_value(str(value))}).',
+            'source': source, 'category': 'secret', 'location': str(location),
+            'discriminator': secret_discriminator(str(key_type), str(value))}
 
     @staticmethod
     def _secret_findings(report: Dict) -> List[Dict]:
         """Turn detected API keys / secrets into first-class findings (High).
 
         The always-on api phase stores ``details`` = {type: [values]}. Each
-        *plausible* secret (offline structural validation drops placeholders like
-        ``your_api_key_here``) becomes a High finding so it lives through Findings
+        *plausible* secret becomes a High finding so it lives through Findings
         Management (lifecycle / SLA / triage) and is counted once via its severity
-        in the risk score — the dedicated secret risk factor was removed to avoid
-        double counting (the verdict still forces Critical on a high-value key via
-        executive_summary._risk_level). Canonical ``category='secret'`` + an
-        explicit non-leaking ``discriminator`` (vendor + masked prefix + length,
-        never the plaintext) give each a stable Findings identity (one per distinct
-        key), reusing the same masking Scan Diff / reports already apply."""
-        from core.finding_fingerprint import mask_value, secret_discriminator
-        from core.secret_validator import INVALID, validate
+        in the risk score (the verdict still forces Critical on a high-value key via
+        executive_summary._risk_level). Built via the shared ``_secret_finding``."""
         api = (report.get('phases', {}).get('api') or {}).get('data') or {}
         details = api.get('details')
         if not isinstance(details, dict):
@@ -638,14 +666,9 @@ class CollectionRunner:
         findings: List[Dict] = []
         for key_type, values in details.items():
             for v in (values if isinstance(values, list) else [values]):
-                if validate(str(key_type), str(v)).get('status') == INVALID:
-                    continue
-                findings.append({
-                    'severity': 'High',
-                    'title': f'Leaked secret: {key_type}',
-                    'detail': f'{loc} — exposed {key_type} ({mask_value(str(v))}).',
-                    'source': 'secret', 'category': 'secret', 'location': loc,
-                    'discriminator': secret_discriminator(str(key_type), str(v))})
+                f = CollectionRunner._secret_finding(key_type, v, loc)
+                if f:
+                    findings.append(f)
         return findings
 
     @staticmethod
@@ -1068,6 +1091,10 @@ class CollectionRunner:
                 if s == 'secret':
                     # leaked keys come from the always-on api phase.
                     return phase_ok('api')
+                if s == 'secret-audit':
+                    # deep-JS secrets come from the opt-in security audit — a
+                    # skipped audit must not auto-FIX them.
+                    return phase_ok('security')
                 if s == 'dns':
                     return phase_ok('dns')
                 if s == 'nuclei':

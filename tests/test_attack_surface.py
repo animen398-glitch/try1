@@ -51,6 +51,20 @@ def test_secrets_omitted_when_all_placeholder():
     assert 'Secrets' not in names
 
 
+def test_secrets_include_audit_types():
+    # Types the deep-JS audit finds join the Secrets breadth (plausibility-filtered),
+    # merged with the api-phase types and de-duplicated.
+    report = _report(
+        api={'data': {'keys_found': 1,
+                      'details': {'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE']}}},
+        security={'data': {'secrets': [
+            {'type': 'Slack Token', 'match': 'xoxb-abcdef28291',
+             'source': 'https://ex.com/app.js'},
+            {'type': 'Generic API Key', 'match': 'your_api_key_here'}]}})  # dropped
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert set(names['Secrets']['items']) == {'AWS Access Key', 'Slack Token'}
+
+
 def test_secrets_legacy_keys_found_fallback():
     # A legacy report with only a keys_found count (no per-key details) still
     # surfaces a Secrets node — backward compatible.

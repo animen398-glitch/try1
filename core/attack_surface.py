@@ -97,6 +97,20 @@ def build_surface(report: Dict) -> Dict:
         secret_items = [f"{api['keys_found']} keys"]   # legacy: no per-key detail
     else:
         secret_items = []
+    # The deep-JS security audit finds secrets the api phase (initial page) misses
+    # — surface their types too (plausibility-filtered), so the Secrets breadth
+    # reflects every detected key, not just the initial page's.
+    audit_secrets = security.get('secrets') if isinstance(
+        security.get('secrets'), list) else []
+    if audit_secrets:
+        from core.secret_validator import INVALID, validate
+        for s in audit_secrets:
+            if not (isinstance(s, dict) and s.get('match')):
+                continue
+            t = str(s.get('type', ''))
+            if (t and t not in secret_items
+                    and validate(t, str(s['match'])).get('status') != INVALID):
+                secret_items.append(t)
 
     pages = capture.get('site_map') or []
     page_items = [p.get('url', '') for p in pages if isinstance(p, dict)]

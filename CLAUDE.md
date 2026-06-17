@@ -1081,6 +1081,29 @@ high-value секрета в FALSE_POSITIVE снимает Critical-вердик
 без новых зависимостей, без второй системы оценки. Покрыто `test_executive_summary`
 (OPEN high-value→Critical/secrets=1; FALSE_POSITIVE→secrets=0/не Critical).
 
+**Security-audit секреты → первоклассные находки — `[ЗАКРЫТ]`.** Backend-фаза. #1b
+сделал находками секреты api-фазы (начальная страница); SecurityAuditor (opt-in,
+глубокий скан inline+внешнего JS) находил БОЛЬШЕ секретов (`result['secrets']`), но
+они шли только в счётчик+валидацию report-карточки — НЕ находки/risk/гейт/surface/diff.
+Фикс: общий хелпер `CollectionRunner._secret_finding(type, value, location, source)`
+(одна secret-находка или None для плейсхолдера; переиспользуют api- и audit-фолдеры —
+без дублирования). `_security_findings` фолдит `data['secrets']` (`source='secret-audit'`,
+`location`=URL скрипта); `_secret_findings` (api) — `source='secret'`. Пересечение
+дедупится по fingerprint. Risk/гейт/SLA/triage — автоматом (обе category='secret' High-
+находки; status-aware гейт считает их → high-value audit-секрет форсит Critical).
+Scope-guard: `'secret-audit'→phase_ok('security')` (пропущенный opt-in аудит ≠ «fixed»).
+**Timeline (пересмотр дедупа #3):** audit-секретов НЕТ в scan-diff секции `secrets`
+(api.details only), поэтому пер-event подавление #3 спрятало бы их. Новый подход —
+**F1 владеет secret-таймлайном, когда у проекта есть secret-находки**: scan-diff секция
+`secrets` исключается из ленты (F1 new_finding/lifecycle покрывает api+audit, верный
+first-seen), tier-aware secret-АЛЕРТЫ не тронуты (читают diff_events напрямую). Обратная
+совместимость: старый проект без secret-находок сохраняет scan-diff `new_secret` в ленте.
+Attack-surface: типы audit-секретов влиты в breadth «Secrets» (plausibility-filtered).
+**Остаток (документирован):** алерты для audit-ONLY секретов (нет diff-представления —
+нужен finding-based alert-канал). Покрыто `test_collection_runner` (audit-фолд: High/
+secret-audit/location/плейсхолдер-skip/без plaintext), `test_timeline` (F1 владеет при
+наличии secret-находок; legacy сохраняет scan-diff), `test_attack_surface` (типы влиты).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
