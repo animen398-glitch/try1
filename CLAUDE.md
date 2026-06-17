@@ -810,6 +810,24 @@ recommendations/key_findings. `attack_surface`: категории Source Maps/G
 → description/impact/remediation резолвятся в specific-знание (не generic) в GUI/
 CSV/web без правок каталога. Покрыто `test_finding_knowledge`.
 
+**Diff-coverage добивка — Source maps & Cookies в Scan Diff/Timeline/Alerts
+`[ЗАКРЫТ]`.** Backend-фаза, два инкремента по образцу «GraphQL в Scan Diff»
+(risk-несущий сигнал считался, но не диффился → не порождал событий). **(1)
+Source maps:** секция `sourcemap` (фаза-источник `security`, `_extract_sourcemap`
+сёрфит только утёкшие карты `has_content` по URL; set-like, added-only — карта,
+переставшая течь, просто выпадает) → `diff_events` эмитит `new_sourcemap` (high,
+alertable, как открытая GraphQL-схема). **(2) Cookies:** секция `cookies`
+(фаза-источник `cookies`, `_extract_cookies` keyed by name, value = verdict аудита
+через generic header-style label/changed → cookie, потерявшая Secure/HttpOnly/
+SameSite, видна как *changed* Strong/Moderate→Weak, не churn) → `cookie_weakened`
+(high, **alertable** — регрессия) на degrade и `weak_cookie` (medium,
+timeline-only — discovery, как `new_graphql`) на ново-поданную слабую cookie.
+Метки в `gui/tab_timeline._EVENT_LABELS` + Settings alert-types (`gui/dialogs`,
+fallback на raw-ключ цел). Pure, без новых зависимостей; контракт diff/alerts/
+timeline цел. Покрыто `test_scan_diff` (added+has_content-гейт / degrade=changed+
+newly-weak=added / skip без фазы) и `test_diff_events` (классификация + alertable-
+подмножество). Web-паритет автоматом (общий `diff_events`→`extract_alerts`/timeline).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
