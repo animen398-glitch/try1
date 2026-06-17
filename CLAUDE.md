@@ -865,6 +865,23 @@ Weak → уже представлена в «Weak Cookies», сигнал не 
 `test_attack_surface` (расширен exclude-тест) + `test_vuln_scanner`
 (category на High/Medium cookie-находках).
 
+**Vulnerable-dependency в Timeline/Alerts — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел (risk-несущий сигнал диффился, но не порождал событий), что
+закрыт для cookies/source-maps. Секция `dependencies` уже диффилась (с флагом
+`⚠ vulnerable` на каждой либе), но `diff_events` не имел обработчика → ново-
+поданная известно-уязвимая JS-либа (или существующая, ставшая уязвимой при
+матче нового CVE на её версию) не давала ни timeline-события, ни алерта (только
+слабый косвенный `risk_increase`). Добавлены два события поверх существующих
+diff-данных (без повторного зондирования, без списка имён — `⚠` уже в
+label/changed): `new_vulnerable_dependency` (уязвимая либа появилась) и
+`dependency_vulnerable` (существующая деградировала до уязвимой). Оба high и
+**alertable** — матч CVE = явный новый риск, как ново-утёкший source map.
+`EVENT_SEVERITY` + `alerts.ALERT_TYPES` расширены; метки в
+`gui/tab_timeline._EVENT_LABELS` и в Settings alert-types (`gui/dialogs`).
+Pure, контракт diff/alerts/timeline цел, web-паритет автоматом. Покрыто
+`test_diff_events` (классификация + alertable-подмножество) и `test_scan_diff`
+(end-to-end: added vulnerable → label → событие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
