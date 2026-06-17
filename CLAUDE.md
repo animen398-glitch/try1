@@ -827,6 +827,15 @@ fallback на raw-ключ цел). Pure, без новых зависимост
 timeline цел. Покрыто `test_scan_diff` (added+has_content-гейт / degrade=changed+
 newly-weak=added / skip без фазы) и `test_diff_events` (классификация + alertable-
 подмножество). Web-паритет автоматом (общий `diff_events`→`extract_alerts`/timeline).
+**(3) Weak Cookies в attack-surface** `[ЗАКРЫТ]`: тот же асимметричный пробел, что
+F-SEC1 закрыл для Source Maps/GraphQL — слабые cookie risk-несущие (вес 2) и теперь
+диффятся, но граф атак-поверхности их ронял. `attack_surface.build_surface` получил
+категорию «Weak Cookies» (сёрфит только cookie с verdict=Weak из
+`phases.cookies.data.cookies`; strong/moderate — не attack surface, как source_maps
+сёрфит только утёкшие); `_SCORE_WEIGHTS['Weak Cookies']=2` (risk-несущий, ниже
+source-map/findings-тира). Pure. Покрыто `test_attack_surface` (weak-only,
+omit-when-none, score). Cookie-колонка в exposure-heatmap уже была (метрика
+`weak_cookies`).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
