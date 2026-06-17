@@ -882,6 +882,24 @@ Pure, контракт diff/alerts/timeline цел, web-паритет авто�
 `test_diff_events` (классификация + alertable-подмножество) и `test_scan_diff`
 (end-to-end: added vulnerable → label → событие).
 
+**Security-header regression в Timeline/Alerts — `[ЗАКРЫТ]`.** Backend-фаза, тот
+же асимметричный пробел, что закрыт для cookies/source-maps/dependencies. Убранный
+security-заголовок (HSTS/CSP/X-Frame-Options…) — регрессировавшая защита, но
+сёрфился слабо: через сменившуюся находку «Missing security headers (N)» (без
+события) + возможный косвенный `risk_increase`. `diff_events` теперь эмитит
+`security_header_removed` (high, **alertable**), когда security-заголовок был в
+скане A и пропал в B. Ново-поданный/сменивший значение заголовок — НЕ регрессия
+(скип): добавление = улучшение, смену значения нельзя обобщённо счесть ослаблением.
+**SSOT-рефактор:** словарь security-заголовков вынесен из `recon_engine` в новый
+чистый `core/security_headers.py` (`SECURITY_HEADER_NAMES`), чтобы offline-
+`scan_diff` шарил единый источник без тяжёлой цепочки импортов recon (recon
+импортирует оттуда; usage не изменился). `EVENT_SEVERITY` + `alerts.ALERT_TYPES`
+расширены; метки в `gui/tab_timeline._EVENT_LABELS` и Settings alert-types
+(`gui/dialogs`). recon хранит имена в lower-case → матч без доп. нормализации.
+Pure, web-паритет автоматом. Покрыто `test_diff_events` (классификация +
+не-security removal игнор + alertable) и `test_scan_diff` (end-to-end removal →
+label → событие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
