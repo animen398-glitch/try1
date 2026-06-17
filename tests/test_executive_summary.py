@@ -10,6 +10,17 @@ from core import executive_summary as es
 
 def _report(*, high=0, medium=0, info=0, risk_score=0, secrets=0,
             weak_cookies=0, status_summary=None, findings=None, cms=None):
+    # A weak cookie is a first-class Medium vuln finding (VulnScanner._check_cookies),
+    # so model it as such: it counts once, via the vuln phase's severity, not via a
+    # dedicated risk factor. Bump the medium count / risk_score the way the real
+    # pipeline does (Medium weighs 2) so the score math matches production.
+    findings = list(findings or [])
+    medium += weak_cookies
+    risk_score += weak_cookies * 2
+    for i in range(weak_cookies):
+        findings.append({'severity': 'Medium', 'category': 'cookie',
+                         'location': f'cookie:c{i}',
+                         'title': f'Weakly protected cookie c{i}'})
     return {
         'phases': {
             'recon': {'data': {'cms': cms or []}},
@@ -20,7 +31,7 @@ def _report(*, high=0, medium=0, info=0, risk_score=0, secrets=0,
             'vulns': {
                 'summary': {'high': high, 'medium': medium, 'info': info,
                             'risk_score': risk_score},
-                'findings': findings or [],
+                'findings': findings,
             },
         },
     }
@@ -54,7 +65,8 @@ def test_single_high_is_high():
 
 
 def test_medium_band():
-    # weak cookies (2 each) push score into the Medium band without any high.
+    # weak cookies (Medium findings, 2 each) push score into the Medium band
+    # without any high.
     s = es.build_summary(_report(weak_cookies=2))
     assert s['risk_score'] == 4
     assert s['risk_level'] == 'Medium'
@@ -255,10 +267,11 @@ def test_risk_factors_sum_to_score():
 
 
 def test_risk_score_unchanged_by_refactor():
-    # Old flat formula: vuln_score + secrets*5 + weak_cookies*2 (+others=0).
+    # Score = vuln_score + secrets*5 (+others=0). Weak cookies fold into vuln_score
+    # as Medium findings (2 each) rather than a dedicated factor — same total, 19.
     s = es.build_summary(_report(high=1, medium=0, risk_score=10, secrets=1,
                                  weak_cookies=2))
-    assert s['risk_score'] == 10 + 1 * 5 + 2 * 2     # == 19, as before
+    assert s['risk_score'] == (10 + 2 * 2) + 1 * 5     # == 19, as before
 
 
 def test_risk_factors_named_and_weighted():
@@ -266,13 +279,25 @@ def test_risk_factors_named_and_weighted():
     by_name = {f['factor']: f for f in s['risk_factors']}
     assert by_name['Утёкшие секреты']['points'] == 2 * 5
     assert by_name['Утёкшие секреты']['weight'] == 5
-    assert by_name['Слабые cookie']['points'] == 1 * 2
+    # Weak cookies are counted once, via their Medium vuln finding's severity —
+    # no dedicated factor (no double count); they show under the vuln factor.
+    assert 'Слабые cookie' not in by_name
+    assert by_name['Уязвимости (vuln-скан)']['points'] == 1 * 2
     # Heaviest factor first.
     assert s['risk_factors'][0]['points'] >= s['risk_factors'][-1]['points']
 
 
 def test_risk_factors_empty_when_clean():
     assert es.build_summary(_report())['risk_factors'] == []
+
+
+def test_weak_cookie_counted_once_not_double():
+    # A weak cookie surfaces both as a metric (cookies.data.weak) and as a Medium
+    # vuln finding. It must score once (via the finding's severity, 2), not twice.
+    s = es.build_summary(_report(weak_cookies=1))
+    assert s['risk_score'] == 2                       # 1 × Medium(2), not 2+2
+    assert s['metrics']['weak_cookies'] == 1          # display metric kept
+    assert 'weak_cookies' not in es.RISK_WEIGHTS      # no dedicated factor
 
 
 # ── F-R4: shared-infra concentration (blast radius) folds into the score ──────

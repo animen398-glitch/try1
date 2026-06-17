@@ -70,13 +70,14 @@ _SCORE_100_CEILING = 100
 # signal's points are ``count × weight``, summed into the raw score. Kept as one
 # table so the model is transparent and easy to tune. Vulnerabilities are weighed
 # by the VulnScanner's own risk_score (already weighted), so they have no entry
-# here — and so are leaking source maps + open GraphQL: those are now first-class
-# findings (folded into the vuln phase), counted once via their severity, not a
-# second time as a dedicated factor. Secrets weigh heaviest after a takeover.
+# here — and neither do leaking source maps, open GraphQL, nor weak cookies:
+# those are all first-class vuln findings (source maps + GraphQL folded into the
+# vuln phase; weak cookies emitted by VulnScanner._check_cookies), counted once
+# via their severity, not a second time as a dedicated factor. Secrets weigh
+# heaviest after a takeover.
 RISK_WEIGHTS = {
     'secrets': 5,
     'takeovers': 8,
-    'weak_cookies': 2,
     'infra_concentration': 2,     # shared-infra choke point / blast radius (F-R4)
     'sla_breach': 1,              # remediation past its deadline — overdue surcharge (F-R5)
     'cert_expiry': 2,            # served TLS cert expired / expiring soon (F-R6)
@@ -88,7 +89,7 @@ CERT_EXPIRY_WARN_DAYS = 14
 
 
 def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
-                  takeovers: int, weak_cookies: int,
+                  takeovers: int,
                   infra_concentration: int = 0,
                   infra_detail: str = '', sla_breaches: int = 0,
                   sla_detail: str = '', cert_expiry: int = 0,
@@ -116,7 +117,6 @@ def _risk_factors(vuln_score: int, high: int, medium: int, secrets: int,
 
     add('Утёкшие секреты', secrets, 'secrets')
     add('Subdomain takeover', takeovers, 'takeovers')
-    add('Слабые cookie', weak_cookies, 'weak_cookies')
     add('Концентрация на инфраструктуре', infra_concentration,
         'infra_concentration', infra_detail)
     add('Просроченная ремедиация (SLA)', sla_breaches, 'sla_breach', sla_detail)
@@ -418,10 +418,10 @@ def build_summary(report: Dict) -> Dict:
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions (leaked secrets weigh heaviest after a takeover — the single
-    # worst hop). Leaking source maps / open GraphQL are counted via the vuln
-    # findings they now produce, not a dedicated factor (no double count).
+    # worst hop). Leaking source maps / open GraphQL / weak cookies are counted
+    # via the vuln findings they produce, not a dedicated factor (no double count).
     risk_factors = _risk_factors(vuln_score, high, medium, secrets, takeovers,
-                                 weak_cookies, infra_concentration,
+                                 infra_concentration,
                                  infra_detail, sla_breaches, sla_detail,
                                  cert_expiry, cert_detail, regressions)
     score = sum(f['points'] for f in risk_factors)
