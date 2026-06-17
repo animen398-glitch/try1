@@ -837,6 +837,20 @@ source-map/findings-тира). Pure. Покрыто `test_attack_surface` (weak-
 omit-when-none, score). Cookie-колонка в exposure-heatmap уже была (метрика
 `weak_cookies`).
 
+**Weak-cookie risk double-count — `[ЗАКРЫТ]`.** Backend-фаза, замыкает
+cookie-паритет на последней поверхности (risk-score). Слабая cookie считалась
+**дважды**: как Medium-находка от `VulnScanner._check_cookies` (вес 2 в
+`vuln_score`) И повторно как выделенный фактор `weak_cookies` (вес 2) → 4 очка
+вместо 2. Приведено к принципу F-SEC2 (source-maps/GraphQL): risk-несущая
+экспозиция, ставшая первоклассной находкой, считается **один раз** через
+severity, не вторым выделенным фактором. Убран `weak_cookies` из `RISK_WEIGHTS`
+и фактор «Слабые cookie» из `_risk_factors`; **display-метрика** `weak_cookies`
+(heatmap/headline-чип/key_findings/recommendations) не тронута. Числа риска для
+cookie-насыщенных целей **снизились сознательно** (как F-SEC2). Тест-хелпер
+`test_executive_summary._report` теперь моделирует слабые cookie как Medium-
+находки (числа скоринга совпадают с продакшеном); добавлен регресс-тест
+no-double-count. Покрыто `test_executive_summary`.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
