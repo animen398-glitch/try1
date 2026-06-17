@@ -187,6 +187,7 @@ class SettingsDialog(QDialog):
             'cookie_weakened': 'Cookie ослаблена',
             'new_vulnerable_dependency': 'Уязвимая зависимость',
             'dependency_vulnerable': 'Зависимость стала уязвимой',
+            'security_header_removed': 'Security-заголовок убран',
         }
         enabled_types = set(cfg.get('types') or [])
         for key in alert_center.ALERT_TYPES:

@@ -20,6 +20,7 @@ import html
 from typing import Dict, List, Optional
 
 from core.executive_summary import RISK_COLORS, cert_expiry_status, parse_cert_date
+from core.security_headers import SECURITY_HEADER_NAMES
 
 # Section -> the phase whose success it depends on (single place to extend
 # when the collection pipeline gains new phases, e.g. subdomains).
@@ -482,6 +483,7 @@ EVENT_SEVERITY = {
     'cookie_weakened':     'high',
     'new_vulnerable_dependency': 'high',
     'dependency_vulnerable':     'high',
+    'security_header_removed':   'high',
     'risk_increase':       'high',
     'risk_decrease':       'info',
 }
@@ -592,6 +594,17 @@ def diff_events(d: Dict) -> List[Dict]:
                 and '⚠' not in str(ch.get('a'))):
             add('dependency_vulnerable',
                 f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'dependencies')
+
+    # Headers: a dropped security header (HSTS / CSP / X-Frame-Options …) is a
+    # protection that regressed — alertable, like a degraded cookie. The headers
+    # section merges server + security headers; the label is "name: value", and
+    # recon stores security-header names lowercased, so match the name against the
+    # canonical set. A new/changed header is not a regression (skipped): adding one
+    # is an improvement, and a changed value can't be judged weaker generically.
+    for label in sections.get('headers', {}).get('removed', []):
+        name = str(label).split(':', 1)[0].strip().lower()
+        if name in SECURITY_HEADER_NAMES:
+            add('security_header_removed', label, 'headers')
 
     risk = (d or {}).get('risk', {})
     if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):

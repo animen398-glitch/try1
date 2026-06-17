@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 
 from core.dependency_audit import audit as audit_dependencies
 from core.infrastructure import build_infrastructure
+from core.security_headers import SECURITY_HEADER_NAMES
 from core.tech_fingerprint import extract_script_srcs
 from core.tech_fingerprint import fingerprint as fingerprint_tech
 from utils.browser_utils import SessionBuilder
@@ -27,15 +28,6 @@ def clear_geo_cache() -> int:
     n = len(_GEO_CACHE)
     _GEO_CACHE.clear()
     return n
-
-_SECURITY_HEADER_NAMES = frozenset({
-    'strict-transport-security',
-    'content-security-policy',
-    'x-frame-options',
-    'x-content-type-options',
-    'referrer-policy',
-    'permissions-policy',
-})
 
 _CMS_SIGNATURES: List[Tuple[str, List[str]]] = [
     ('WordPress',  ['wp-content/', 'wp-includes/', '/wp-json/', 'wp-embed.min.js']),
@@ -356,7 +348,7 @@ class ReconEngine:
         }
         result['security_headers'] = {
             k.lower(): v for k, v in resp_headers.items()
-            if k.lower() in _SECURITY_HEADER_NAMES
+            if k.lower() in SECURITY_HEADER_NAMES
         }
 
         cms, cms_details       = self._detect_cms(html, resp_headers)

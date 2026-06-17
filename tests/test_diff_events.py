@@ -142,6 +142,24 @@ def test_vulnerable_dependency_classified_and_alertable():
     assert 'dependency_vulnerable' in alert_types
 
 
+def test_security_header_removed_classified_and_alertable():
+    d = _diff(headers={
+        # HSTS dropped (regression); Server header changed (not a security header)
+        'added': [],
+        'removed': ['strict-transport-security: max-age=31536000',
+                    'X-Cache: HIT'],   # non-security removal → no event
+        'changed': [{'key': 'Server', 'a': 'nginx', 'b': 'cloudflare'}]})
+    by_type = {}
+    for e in diff_events(d):
+        by_type.setdefault(e['type'], []).append(e)
+    # only the dropped security header is an event (the X-Cache removal is not)
+    assert len(by_type['security_header_removed']) == 1
+    assert by_type['security_header_removed'][0]['severity'] == 'high'
+    assert by_type['security_header_removed'][0]['section'] == 'headers'
+    # a dropped protection is a regression worth a push
+    assert 'security_header_removed' in {a['type'] for a in alerts.extract_alerts(d)}
+
+
 def test_certificate_expiry_classified_from_status_field():
     d = _diff(certificates={
         'added': ['expiry: expiring', 'subject: x.com'],   # newly-tracked, near deadline

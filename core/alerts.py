@@ -52,12 +52,14 @@ from core.scan_diff import diff_events
 # not a regression. ``new_vulnerable_dependency`` (a known-vulnerable JS library
 # newly present) and ``dependency_vulnerable`` (an existing library that turned
 # vulnerable between scans) are both alertable — a matched CVE is a clear new
-# risk, like a newly-leaking source map.
+# risk, like a newly-leaking source map. ``security_header_removed`` (a dropped
+# HSTS / CSP / X-Frame-Options … between scans) is alertable too — a protection
+# that regressed, like a degraded cookie.
 ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
                'cert_change', 'cert_expired', 'risk_increase',
                'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
                'new_vulnerable_dependency', 'dependency_vulnerable',
-               'sla_breach')
+               'security_header_removed', 'sla_breach')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────

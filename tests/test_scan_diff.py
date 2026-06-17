@@ -111,6 +111,19 @@ def test_added_vulnerable_dependency_emits_event():
     assert 'new_vulnerable_dependency' in types
 
 
+def test_removed_security_header_emits_event():
+    # End-to-end: a security header present in A and gone in B lands in the
+    # headers section's 'removed' list and classifies as a high, alertable
+    # regression. recon stores security-header names lowercased.
+    a = _report('A', sec_headers={'strict-transport-security': 'max-age=31536000'})
+    b = _report('B', sec_headers={})
+    d = diff(a, b)
+    assert 'strict-transport-security: max-age=31536000' \
+        in d['sections']['headers']['removed']
+    types = {e['type'] for e in diff_events(d)}
+    assert 'security_header_removed' in types
+
+
 def test_headers_merge_server_and_security():
     a = _report('A', headers={'Server': 'nginx'},
                 sec_headers={'X-Frame-Options': 'DENY'})
