@@ -919,6 +919,22 @@ dependencies vs Technologies, не как cookies). Покрыто `test_collect
 (High/host-located/empty) и `test_executive_summary` (Critical-force + score=2×High
 + нет фактора).
 
+**Takeovers как attack-surface категория — `[ЗАКРЫТ]`.** Backend-фаза, хвост
+takeover-находок: достроил параллель с Source Maps/GraphQL/Weak Cookies в графе
+атак-поверхности. Takeover — risk-несущее подмножество субдоменов (форма как
+«Weak Cookies» vs cookies), но в surface_score шёл только как breadth «Subdomains»
+(вес 2) + «Findings» (вес 3). Заведена отдельная категория «Takeovers»
+(`attack_surface.build_surface` сёрфит `subdomains.summary.takeover_candidates`),
+вес `_SCORE_WEIGHTS['Takeovers']=5` (top-tier, как Secrets — takeover самый
+тяжёлый одиночный exposure), цвет `#b71c1c`. Хост ОСТАЁТСЯ в «Subdomains»
+(breadth/presence — отдельное измерение, как уязвимая либа в «Technologies»), но
+takeover-находка **исключена из «Findings»** (рядом с sourcemap/graphql/cookie),
+чтобы не дублировать в surface_score. Итог per-takeover: было 2(Subdomains)+
+3(Findings)=5, стало 2(Subdomains)+5(Takeovers)=7 — точнее отражает критичность
+(меняется метрика surface_score/сортировка, НЕ risk-вердикт). Pure. Покрыто
+`test_attack_surface` (своя категория + остаётся в Subdomains + omit-when-none +
+exclude-из-Findings + вес).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
