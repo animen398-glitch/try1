@@ -96,6 +96,27 @@ def test_sourcemap_leak_classified_and_alertable():
     assert 'new_sourcemap' in {a['type'] for a in alerts.extract_alerts(d)}
 
 
+def test_cookie_weakened_is_alertable_but_new_weak_cookie_is_not():
+    d = _diff(cookies={
+        'added': ['tracker: Weak', 'csrf: Strong'],   # newly-served cookies
+        'removed': [],
+        # an existing cookie that lost protection between scans
+        'changed': [{'key': 'sid', 'a': 'Strong', 'b': 'Weak'}]})
+    by_type = {}
+    for e in diff_events(d):
+        by_type.setdefault(e['type'], []).append(e)
+    # a brand-new weak cookie is surface discovery (medium, timeline-only); a
+    # new Strong cookie is not an event at all
+    assert len(by_type['weak_cookie']) == 1
+    assert by_type['weak_cookie'][0]['severity'] == 'medium'
+    # a cookie that degraded to Weak is a regression worth a push
+    assert by_type['cookie_weakened'][0]['severity'] == 'high'
+    assert '→ Weak' in by_type['cookie_weakened'][0]['title']
+    alert_types = {a['type'] for a in alerts.extract_alerts(d)}
+    assert 'cookie_weakened' in alert_types        # regression → alertable
+    assert 'weak_cookie' not in alert_types        # discovery only
+
+
 def test_certificate_expiry_classified_from_status_field():
     d = _diff(certificates={
         'added': ['expiry: expiring', 'subject: x.com'],   # newly-tracked, near deadline

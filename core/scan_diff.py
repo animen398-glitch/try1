@@ -30,6 +30,7 @@ SECTION_PHASES = {
     'technologies': 'recon',
     'dependencies': 'recon',
     'headers':      'recon',
+    'cookies':      'cookies',
     'certificates': 'certificate',
     'endpoints':    'katana',
     'apis':         'openapi',
@@ -49,6 +50,7 @@ SECTION_TITLES = {
     'technologies': 'Технологии',
     'dependencies': 'Зависимости (JS)',
     'headers':      'HTTP-заголовки',
+    'cookies':      'Cookies',
     'certificates': 'TLS-сертификат',
     'endpoints':    'Эндпоинты (Katana)',
     'apis':         'API (OpenAPI)',
@@ -288,6 +290,19 @@ def _extract_sourcemap(report: Dict) -> Optional[Dict]:
             if isinstance(m, dict) and m.get('url') and m.get('has_content')}
 
 
+def _extract_cookies(report: Dict) -> Optional[Dict]:
+    # The Cookie Audit scores every Set-Cookie by its security attributes
+    # (HttpOnly / Secure / SameSite). Diff per-cookie with its verdict as the
+    # value, so a cookie that loses protection (Strong/Moderate → Weak) surfaces
+    # as a *changed* row — a regression — not just a silent re-discovery.
+    cookies = _data(report, 'cookies').get('cookies')
+    if not isinstance(cookies, list):
+        return None
+    return {str(c['name']): str(c.get('verdict') or '—')
+            for c in cookies
+            if isinstance(c, dict) and c.get('name')}
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -315,6 +330,7 @@ _EXTRACTORS = {
     'ct':           _extract_ct,
     'graphql':      _extract_graphql,
     'sourcemap':    _extract_sourcemap,
+    'cookies':      _extract_cookies,
     'findings':     _extract_findings,
 }
 
@@ -338,7 +354,7 @@ def _label(section: str, key, value) -> str:
         ver = value.get('version')
         flag = ' ⚠ vulnerable' if value.get('vulnerable') else ''
         return f'{key}' + (f' {ver}' if ver else '') + flag
-    if section in ('headers', 'certificates', 'dns', 'graphql'):
+    if section in ('headers', 'certificates', 'dns', 'graphql', 'cookies'):
         return f'{key}: {value}'
     return str(key)
 
@@ -462,6 +478,8 @@ EVENT_SEVERITY = {
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
     'new_sourcemap':       'high',
+    'weak_cookie':         'medium',
+    'cookie_weakened':     'high',
     'risk_increase':       'high',
     'risk_decrease':       'info',
 }
@@ -546,6 +564,18 @@ def diff_events(d: Dict) -> List[Dict]:
     # regression worth alerting — high-value, like an opened GraphQL schema.
     for label in sections.get('sourcemap', {}).get('added', []):
         add('new_sourcemap', label, 'sourcemap')
+
+    # Cookie security posture (Cookie Audit): a newly-served Weak cookie is a
+    # surface-discovery note (timeline-only, like new_graphql); an existing
+    # cookie that *degraded* to Weak (lost Secure/HttpOnly/SameSite) is a
+    # regression worth a push, like an opened GraphQL schema.
+    for label in sections.get('cookies', {}).get('added', []):
+        if str(label).endswith(': Weak'):
+            add('weak_cookie', label, 'cookies')
+    for ch in sections.get('cookies', {}).get('changed', []):
+        if isinstance(ch, dict) and str(ch.get('b')) == 'Weak':
+            add('cookie_weakened',
+                f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'cookies')
 
     risk = (d or {}).get('risk', {})
     if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):

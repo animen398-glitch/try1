@@ -9,7 +9,7 @@ from core.scan_diff import diff, render_html, summarize_line
 def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
             deps=None, headers=None, sec_headers=None, endpoints=None,
             findings=None, level='Low', risk_100=4, subdomains=None, cert=None,
-            graphql=None, source_maps=None):
+            graphql=None, source_maps=None, cookies=None):
     """A minimal but shape-faithful collection report."""
     phases = {
         'capture': {'status': 'Success',
@@ -34,6 +34,8 @@ def _report(scan_id='A', pages=None, secrets=None, techs=None, cms=None,
                                 'data': {'results': subdomains}}
     if cert is not None:
         phases['certificate'] = {'status': 'Success', 'data': cert}
+    if cookies is not None:
+        phases['cookies'] = {'status': 'Success', 'data': {'cookies': cookies}}
     if graphql is not None or source_maps is not None:
         data = {}
         if graphql is not None:
@@ -217,6 +219,34 @@ def test_sourcemap_skipped_when_security_phase_absent_in_one():
     assert 'sourcemap' in d['skipped'] and 'sourcemap' not in d['sections']
 
 
+def _cookie(name, verdict):
+    return {'name': name, 'verdict': verdict}
+
+
+def test_cookie_degrade_is_a_changed_row_not_rediscovery():
+    # A cookie present in both scans that loses protection (Strong → Weak) must
+    # surface as a *changed* row keyed by name, not an add/remove churn.
+    a = _report('A', cookies=[_cookie('sid', 'Strong')])
+    b = _report('B', cookies=[_cookie('sid', 'Weak')])
+    sec = diff(a, b)['sections']['cookies']
+    assert sec['added'] == [] and sec['removed'] == []
+    assert sec['changed'] == [{'key': 'sid', 'a': 'Strong', 'b': 'Weak'}]
+
+
+def test_cookie_newly_served_weak_is_added():
+    a = _report('A', cookies=[_cookie('sid', 'Strong')])
+    b = _report('B', cookies=[_cookie('sid', 'Strong'), _cookie('tracker', 'Weak')])
+    sec = diff(a, b)['sections']['cookies']
+    assert sec['added'] == ['tracker: Weak']
+
+
+def test_cookies_skipped_when_phase_absent_in_one():
+    a = _report('A', cookies=[_cookie('sid', 'Weak')])
+    b = _report('B')                            # no cookies phase in B
+    d = diff(a, b)
+    assert 'cookies' in d['skipped'] and 'cookies' not in d['sections']
+
+
 def test_certificate_skipped_when_phase_absent_in_one():
     a = _report('A', cert={'subject': 'x.com'})
     b = _report('B')                            # no certificate phase in B
@@ -295,7 +325,8 @@ def test_tolerates_empty_reports():
                                  'technologies', 'dependencies', 'headers',
                                  'certificates', 'endpoints', 'apis',
                                  'historical', 'dns', 'emails', 'employees',
-                                 'ct', 'graphql', 'sourcemap', 'findings'}
+                                 'ct', 'graphql', 'sourcemap', 'cookies',
+                                 'findings'}
     assert d['is_empty'] is True
 
 

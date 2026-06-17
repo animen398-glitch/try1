@@ -184,6 +184,7 @@ class SettingsDialog(QDialog):
             'cert_change': 'Смена сертификата', 'risk_increase': 'Рост риска',
             'cert_expired': 'Сертификат истёк',
             'new_sourcemap': 'Утёкший source map',
+            'cookie_weakened': 'Cookie ослаблена',
         }
         enabled_types = set(cfg.get('types') or [])
         for key in alert_center.ALERT_TYPES:

@@ -46,10 +46,14 @@ from core.scan_diff import diff_events
 # cert that crossed its deadline between scans) is alertable; ``cert_expiring``
 # stays timeline-only — a heads-up, not yet a regression. ``new_sourcemap`` (a
 # served .map that newly leaks original source between scans) is alertable —
-# like an opened GraphQL schema, a clear regression.
+# like an opened GraphQL schema, a clear regression. ``cookie_weakened`` (a
+# cookie that lost Secure/HttpOnly/SameSite between scans) is alertable too;
+# ``weak_cookie`` (a newly-served weak cookie) stays timeline-only — discovery,
+# not a regression.
 ALERT_TYPES = ('new_secret', 'new_subdomain', 'takeover', 'new_technology',
                'cert_change', 'cert_expired', 'risk_increase',
-               'graphql_introspection', 'new_sourcemap', 'sla_breach')
+               'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
+               'sla_breach')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────
