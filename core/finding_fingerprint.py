@@ -41,7 +41,7 @@ from utils.endpoint_index import EndpointIndex
 # adapters (T1.3) will emit, kept here as the single reference list.
 CATEGORIES = (
     'secret', 'sourcemap', 'cookie', 'graphql', 'header', 'tech',
-    'endpoint', 'dns', 'dependency', 'vuln',
+    'endpoint', 'dns', 'dependency', 'takeover', 'vuln',
 )
 
 # ASCII Unit Separator — a non-printing control char that never occurs in a

@@ -138,6 +138,22 @@ def test_security_findings_reachable_graphql_is_info():
     assert by_loc['https://x/g1']['severity'] == 'Info'
 
 
+def test_takeover_findings_are_high_and_host_located():
+    # Each takeover candidate becomes a High finding keyed by its host, with the
+    # canonical category so Findings Management / risk count it once.
+    report = {'phases': {'subdomains': {'data': {'summary': {
+        'takeover_candidates': ['bad.x.com', {'subdomain': 'evil.x.com'}, '']}}}}}
+    found = CollectionRunner._takeover_findings(report)
+    by_loc = {f['location']: f for f in found}
+    assert set(by_loc) == {'bad.x.com', 'evil.x.com'}     # blank dropped
+    assert all(f['severity'] == 'High' for f in found)
+    assert all(f['category'] == 'takeover' for f in found)
+
+
+def test_takeover_findings_empty_without_subdomain_phase():
+    assert CollectionRunner._takeover_findings({'phases': {}}) == []
+
+
 def test_render_html_security_card():
     r = CollectionRunner()
     report = {

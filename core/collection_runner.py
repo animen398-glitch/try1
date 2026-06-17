@@ -283,6 +283,16 @@ class CollectionRunner:
         # and the Scan Diff subdomain section.
         if self.subdomains and not self._cancelled(report):
             report['phases']['subdomains'] = self._phase_subdomains(url, scan_dir)
+            # Fold each takeover candidate into the vuln phase as a first-class
+            # finding (lifecycle / SLA / triage; counted once via its severity,
+            # not a second time as a dedicated risk factor — same pattern as the
+            # security-audit exposures). The verdict still forces Critical on any
+            # takeover via executive_summary._risk_level.
+            added = self._takeover_findings(report)
+            vulns = report['phases'].get('vulns')
+            if added and isinstance(vulns, dict):
+                vulns['findings'] = vulns.get('findings', []) + added
+                vulns['summary'] = VulnScanner.summarize(vulns['findings'])
         # 7c. TLS certificate (opt-in) → Scan Diff certificate section.
         if self.certificate and not self._cancelled(report):
             report['phases']['certificate'] = self._phase_certificate(url, scan_dir)
@@ -591,6 +601,31 @@ class CollectionRunner:
                     'detail': f'{loc} — reachable GraphQL API (introspection off).',
                     'source': 'security-audit', 'category': 'graphql',
                     'location': loc})
+        return findings
+
+    @staticmethod
+    def _takeover_findings(report: Dict) -> List[Dict]:
+        """Turn subdomain-takeover candidates into raw finding dicts (High).
+
+        A dangling subdomain that CNAMEs to an unclaimed third-party service is a
+        clear-cut, host-locatable issue. Canonical ``category='takeover'`` +
+        ``location`` = the host give each a stable Findings identity (one per
+        host); the explicit severity feeds the risk score once (the dedicated
+        takeover risk factor was removed to avoid double counting)."""
+        sub = (report.get('phases', {}).get('subdomains') or {}).get('data') or {}
+        summary = sub.get('summary', {}) if isinstance(sub, dict) else {}
+        candidates = summary.get('takeover_candidates') or []
+        findings: List[Dict] = []
+        for c in candidates:
+            host = (c.get('subdomain', '') if isinstance(c, dict) else str(c)).strip()
+            if not host:
+                continue
+            findings.append({
+                'severity': 'High',
+                'title': f'Subdomain takeover possible: {host}',
+                'detail': f'{host} — dangling DNS to an unclaimed third-party service.',
+                'source': 'subdomain-active', 'category': 'takeover',
+                'location': host})
         return findings
 
     def _phase_analyzers(self, report: Dict) -> Dict:

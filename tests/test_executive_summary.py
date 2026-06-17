@@ -96,15 +96,20 @@ def test_risk_100_in_metrics_and_cards():
 
 
 def test_takeover_signal_forces_critical_and_weights():
-    report = _report(high=0, risk_score=0)
+    # Collection folds each takeover candidate into the vuln phase as a High
+    # finding (here: 2 High → vuln_score 10); the subdomains metric still drives
+    # the Critical verdict. Counted once via the finding, not a dedicated factor.
+    report = _report(high=2, risk_score=10)
     report['phases']['subdomains'] = {
-        'data': {'summary': {'takeover_candidates': [
-            {'subdomain': 'x.ex.com'}, {'subdomain': 'y.ex.com'}]}}}
+        'data': {'summary': {'takeover_candidates': ['x.ex.com', 'y.ex.com']}}}
     s = es.build_summary(report)
     assert s['risk_level'] == 'Critical'              # takeover → Critical
     assert s['metrics']['takeovers'] == 2
-    assert s['risk_score'] == 16                       # 2 × 8
+    assert s['risk_score'] == 10                       # 2 × High(5), via findings
     assert any('takeover' in r.lower() for r in s['recommendations'])
+    # no dedicated takeover factor any more (counted via the High findings)
+    assert 'takeovers' not in es.RISK_WEIGHTS
+    assert all(f['factor'] != 'Subdomain takeover' for f in s['risk_factors'])
 
 
 def test_source_map_leak_surfaced_but_scored_via_findings():
