@@ -9,7 +9,8 @@ from core import executive_summary as es
 
 
 def _report(*, high=0, medium=0, info=0, risk_score=0, secrets=0,
-            weak_cookies=0, status_summary=None, findings=None, cms=None):
+            weak_cookies=0, status_summary=None, findings=None, cms=None,
+            secret_details=None):
     # A weak cookie is a first-class Medium vuln finding (VulnScanner._check_cookies),
     # so model it as such: it counts once, via the vuln phase's severity, not via a
     # dedicated risk factor. Bump the medium count / risk_score the way the real
@@ -21,10 +22,16 @@ def _report(*, high=0, medium=0, info=0, risk_score=0, secrets=0,
         findings.append({'severity': 'Medium', 'category': 'cookie',
                          'location': f'cookie:c{i}',
                          'title': f'Weakly protected cookie c{i}'})
+    # secret_details ({type: [values]}) exercises the offline structural validator
+    # path; without it the legacy flat keys_found is used (behaviour unchanged).
+    api_data = {'keys_found': secrets}
+    if secret_details is not None:
+        api_data = {'keys_found': sum(len(v) for v in secret_details.values()),
+                    'details': secret_details}
     return {
         'phases': {
             'recon': {'data': {'cms': cms or []}},
-            'api': {'data': {'keys_found': secrets}},
+            'api': {'data': api_data},
             'capture': {'data': {'pages_captured': 3,
                                  'status_summary': status_summary or {}}},
             'cookies': {'data': {'weak': weak_cookies}},
@@ -52,6 +59,45 @@ def test_secrets_force_critical():
     assert s['risk_level'] == 'Critical'
     # secret weighs 5 into the score.
     assert s['risk_score'] == 5
+
+
+def test_placeholder_secret_does_not_force_critical():
+    # A lone placeholder ("your_api_key_here") is a false positive: it must not
+    # count as a risk-bearing secret nor force a Critical verdict.
+    s = es.build_summary(_report(
+        secret_details={'Generic API Key': ['your_api_key_here']}))
+    assert s['metrics']['secrets'] == 0
+    assert s['metrics']['secrets_detected'] == 1
+    assert s['risk_level'] == 'Clean'
+    assert s['risk_score'] == 0
+
+
+def test_plausible_secret_still_forces_critical():
+    # A structurally valid key (or an unverifiable-but-plausible one) still counts.
+    s = es.build_summary(_report(
+        secret_details={'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE']}))
+    assert s['metrics']['secrets'] == 1
+    assert s['risk_level'] == 'Critical'
+    assert s['risk_score'] == 5
+
+
+def test_mixed_secrets_count_only_plausible():
+    s = es.build_summary(_report(secret_details={
+        'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE'],     # plausible (unverifiable type below is exact)
+        'Generic API Key': ['your_api_key_here', 'changeme']}))  # 2 placeholders
+    assert s['metrics']['secrets'] == 1            # only the AWS key counts
+    assert s['metrics']['secrets_detected'] == 3
+    assert s['risk_score'] == 5
+    # The key finding notes the suppressed placeholders for transparency.
+    assert any('из 3 обнаруженных' in k for k in s['key_findings'])
+
+
+def test_legacy_keys_found_unchanged_without_details():
+    # No per-key details (older report) → flat keys_found, behaviour byte-for-byte.
+    s = es.build_summary(_report(secrets=2))
+    assert s['metrics']['secrets'] == 2
+    assert s['metrics']['secrets_detected'] == 2
+    assert s['risk_level'] == 'Critical'
 
 
 def test_three_high_is_critical():

@@ -258,6 +258,31 @@ def _cert_expiry(report: Dict, now: Optional[datetime] = None
     return 0, '', False
 
 
+def _plausible_secrets(api: Dict) -> Tuple[int, int]:
+    """``(plausible, detected)`` secret counts for the risk engine.
+
+    A detected key whose *structure* is a clear placeholder / false positive
+    (``secret_validator`` → ``invalid_format`` — e.g. ``your_api_key_here``) does
+    not count toward risk: it must not force a Critical verdict on its own.
+    ``valid_format`` and ``unverifiable`` both count (a real, or unprovable,
+    secret is risk-bearing). Derive-on-read over ``api['details']`` — the matched
+    values are already there, so this is offline and re-fetch-free (invariant I3)
+    and reuses the single validation source of truth (``core.secret_validator``).
+    Falls back to ``keys_found`` when no per-key details exist (legacy reports /
+    tests), preserving the previous flat behaviour byte-for-byte."""
+    detected = _int(api.get('keys_found'))
+    details = api.get('details')
+    if not isinstance(details, dict) or not details:
+        return detected, detected
+    from core.secret_validator import INVALID, validate
+    plausible = 0
+    for key_type, values in details.items():
+        for v in (values if isinstance(values, list) else [values]):
+            if validate(str(key_type), str(v)).get('status') != INVALID:
+                plausible += 1
+    return plausible, detected
+
+
 def _count_takeovers(report: Dict) -> int:
     """Subdomain-takeover candidates, if a subdomain phase is present."""
     sub = _phase_data(report, 'subdomains')
@@ -382,7 +407,11 @@ def build_summary(report: Dict) -> Dict:
     medium = _int(vsum.get('medium'))
     info = _int(vsum.get('info'))
     vuln_score = _int(vsum.get('risk_score'))
-    secrets = _int(api.get('keys_found'))
+    # Secrets: the risk-bearing count drops obvious placeholders / false positives
+    # (offline structural validation), so a single ``your_api_key_here`` no longer
+    # forces a Critical verdict. ``secrets_detected`` keeps the raw match count for
+    # transparency.
+    secrets, secrets_detected = _plausible_secrets(api)
     weak_cookies = _int(cookies.get('weak'))
     # Unified risk engine: pull every available security signal (Security Audit
     # source maps + subdomain takeovers are zero unless those phases ran).
@@ -430,7 +459,8 @@ def build_summary(report: Dict) -> Dict:
 
     metrics = {
         'high': high, 'medium': medium, 'info': info,
-        'secrets': secrets, 'weak_cookies': weak_cookies,
+        'secrets': secrets, 'secrets_detected': secrets_detected,
+        'weak_cookies': weak_cookies,
         'source_map_leaks': source_map_leaks, 'takeovers': takeovers,
         'graphql': graphql, 'graphql_introspection': graphql_introspection,
         'infra_concentration': infra_concentration,
@@ -446,7 +476,10 @@ def build_summary(report: Dict) -> Dict:
 
     key_findings: List[str] = []
     if secrets:
-        key_findings.append(f'Утечки секретов/ключей: {secrets}')
+        suppressed = (f' (из {secrets_detected} обнаруженных; '
+                      f'остальные — плейсхолдеры)'
+                      if secrets_detected > secrets else '')
+        key_findings.append(f'Утечки секретов/ключей: {secrets}{suppressed}')
     if takeovers:
         key_findings.append(f'Кандидаты на subdomain takeover: {takeovers}')
     if source_map_leaks:

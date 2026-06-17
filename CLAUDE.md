@@ -952,11 +952,36 @@ vulns → дефолт корректен (не тронут). OSV-нюанс (`
 `test_findings_lifecycle` (takeover ran→FIXED / skipped→OPEN; source-map
 skipped→OPEN).
 
+**Secret confidence в risk-движке + Scan Diff/Alerts — `[ЗАКРЫТ]`.** Backend-фаза.
+Закрыт перекос точности: `api`-фаза отдавала плоский `keys_found`, и
+`executive_summary._risk_level` форсил **Critical** на `secrets>0` — но
+`api_key_extractor` НЕ прогонял структурный валидатор, поэтому плейсхолдер вроде
+`your_api_key_here` (который `secret_validator._generic` метит `invalid_format`)
+форсил Critical как реальный ключ. **#1 risk:** новый pure
+`executive_summary._plausible_secrets(api)` (derive-on-read над `api['details']` —
+значения уже там, без ре-фетча, I3; переиспользует SSOT `core.secret_validator`)
+отбрасывает явные плейсхолдеры (`invalid_format`) из risk-несущего счёта;
+`valid_format`+`unverifiable` считаются. `secrets` (метрика/гейт/фактор/headline/
+key_findings/recommendation) = plausible; добавлена метрика `secrets_detected`
+(сырой счёт) + пометка в key_finding, когда часть подавлена. Легаси-отчёты без
+`details` → fallback на `keys_found`, поведение байт-в-байт. **#2 diff/alerts:**
+`scan_diff._extract_secrets` валидирует каждый `(type,value)` и метит плейсхолдер-
+лейбл `⚠ placeholder` (виден в HTML-диффе, трюк как `⚠ takeover` у субдоменов);
+`diff_events` эмитит `new_secret` только для не-плейсхолдеров → ложно-позитивный
+«секрет» больше не алертит и не шумит в Timeline (в HTML-диффе всё ещё показан с
+пометкой). `alerts.py` не тронут (`new_secret` уже алертабелен; плейсхолдеры просто
+не эмитятся). Числа risk для целей с плейсхолдер-«секретами» снизились сознательно
+(как F-SEC2). attack-surface «Secrets» (breadth) оставлен как есть — отдельная ось.
+Покрыто `test_executive_summary` (плейсхолдер не форсит Critical / plausible форсит /
+mixed только plausible / легаси без details), `test_scan_diff` (пометка+не-алертабелен),
+`test_diff_events` (плейсхолдер не событие).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
 F-R6 cert-expiry + F-R7 regression) + Correlation углублён + Findings SLA углублён +
-Asset coverage + Scanner robustness. Отклонено (конфликт
+Asset coverage + Scanner robustness + Secret confidence (валидатор в risk/diff/alerts).
+Отклонено (конфликт
 инвариантов): ECharts/Cytoscape (QWebEngine), SQLAlchemy/Postgres,
 APScheduler/Apprise/WeasyPrint. Детали — память `project-benchmark-direction`.
 **Рекомендуется** живой запуск `.exe` для визуальной проверки сгруппированного nav.

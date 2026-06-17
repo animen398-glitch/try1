@@ -53,6 +53,16 @@ def test_classifies_each_section():
     assert by_type['risk_increase'][0]['severity'] == 'high'
 
 
+def test_placeholder_secret_is_not_an_event():
+    # A secret the diff tagged ⚠ placeholder (offline-validated false positive) is
+    # neither alertable nor a timeline event; a plain secret still is.
+    d = _diff(secrets=_added('aws: AKIA…(20)',
+                             'generic: your…(17) ⚠ placeholder'))
+    secret_events = [e for e in diff_events(d) if e['type'] == 'new_secret']
+    assert len(secret_events) == 1
+    assert 'placeholder' not in secret_events[0]['title']
+
+
 def test_graphql_new_endpoint_and_introspection_open():
     d = _diff(
         graphql={

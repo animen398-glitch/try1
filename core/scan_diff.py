@@ -121,11 +121,19 @@ def _extract_secrets(report: Dict) -> Optional[Dict]:
     details = _data(report, 'api').get('details')
     if not isinstance(details, dict):
         return None
+    from core.secret_validator import INVALID, validate
     out = {}
     for key_type, values in details.items():
         for v in (values if isinstance(values, list) else [values]):
-            # Compare on the real value; expose only the masked form.
-            out[(str(key_type), str(v))] = f'{key_type}: {_mask(v)}'
+            # Compare on the real value; expose only the masked form. Offline
+            # structural validation (the single source of truth in
+            # core.secret_validator) flags a clear placeholder / false positive so
+            # the diff visibly tags it (⚠ placeholder) and diff_events can skip it
+            # — same label-marker trick as ⚠ takeover on subdomains.
+            placeholder = validate(str(key_type), str(v)).get('status') == INVALID
+            label = f'{key_type}: {_mask(v)}'
+            out[(str(key_type), str(v))] = (label + ' ⚠ placeholder'
+                                            if placeholder else label)
     return out
 
 
@@ -502,8 +510,12 @@ def diff_events(d: Dict) -> List[Dict]:
         out.append({'type': type_, 'title': str(title),
                     'severity': EVENT_SEVERITY[type_], 'section': section})
 
+    # A newly-detected secret alerts — unless offline validation tagged it a clear
+    # placeholder / false positive (⚠ placeholder), which would otherwise force a
+    # bogus alert and timeline noise. The HTML diff still lists it (with the tag).
     for label in sections.get('secrets', {}).get('added', []):
-        add('new_secret', label, 'secrets')
+        if '⚠ placeholder' not in str(label):
+            add('new_secret', label, 'secrets')
 
     # Subdomains: a takeover candidate is the dangerous subset (its label carries
     # the marker core.scan_diff attaches).

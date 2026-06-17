@@ -79,6 +79,22 @@ def test_secrets_added_removed_and_masked():
     assert 'AKIAIOSFODNN7EXAMPLE' not in str(diff(a, b))
 
 
+def test_placeholder_secret_tagged_and_not_alertable():
+    # A real (plausible) secret newly appears alongside a placeholder one.
+    a = _report('A', secrets={})
+    b = _report('B', secrets={'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE'],
+                              'Generic API Key': ['your_api_key_here']})
+    d = diff(a, b)
+    added = d['sections']['secrets']['added']
+    # The placeholder is visibly tagged in the diff; the real one is not.
+    assert any(x.endswith(' ⚠ placeholder') for x in added)
+    assert any('AKIAIO' in x and '⚠ placeholder' not in x for x in added)
+    # Only the plausible secret produces an alertable new_secret event.
+    secret_events = [e for e in diff_events(d) if e['type'] == 'new_secret']
+    assert len(secret_events) == 1
+    assert 'AKIAIO' in secret_events[0]['title']
+
+
 def test_technology_version_change_and_cms_union():
     a = _report('A', techs=[{'name': 'nginx', 'category': 'Server',
                              'version': '1.18'}], cms=['WordPress'])
