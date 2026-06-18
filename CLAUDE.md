@@ -1189,6 +1189,14 @@ Timeline-вкладка получила кнопку «Export CSV» (точно
 заполнены; тест `test_alerts_gui` проверяет покрытие всех `ALERT_TYPES` (новый тип не
 сможет регрессировать в сырой ключ). Аддитивно.
 
+**Рендер alert-события в monitor-фиде — `[ЗАКРЫТ]`.** `monitor.format_event` (общий для
+web-консоли и in-app планировщика) не имел кейса для события `alerts` → падал в generic
+`[monitor] slug: alerts`, теряя count/sent/reason/alert_kind, которые эмитят диспетчеры.
+Наблюдатель не видел, сколько алертов сработало, сколько доставлено и какого вида (diff/
+sla/secret/finding). Добавлен кейс `alerts` (рендер `N alerts (kind), M sent · reason`).
+Pure, SSOT-формат, web+GUI одинаково. Покрыто `test_monitor` (diff без kind / finding-based
+с kind+reason).
+
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
 но они были orphaned: attack-surface «Endpoints» читала только `katana.endpoints`, а
