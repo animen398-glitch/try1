@@ -59,11 +59,14 @@ from core.scan_diff import diff_events
 # risk, like a newly-leaking source map. ``security_header_removed`` (a dropped
 # HSTS / CSP / X-Frame-Options … between scans) is alertable too — a protection
 # that regressed, like a degraded cookie.
+# ``new_finding`` is the generic high/critical-finding channel: a vuln finding
+# (nuclei template, scanner check like SQLi/XSS, a non-dependency CVE) that has no
+# dedicated diff alert — it is detected from the persisted findings, not the diff.
 ALERT_TYPES = ('new_secret', 'new_secret_generic', 'new_subdomain', 'takeover',
                'new_technology', 'cert_change', 'cert_expired', 'risk_increase',
                'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
                'new_vulnerable_dependency', 'dependency_vulnerable',
-               'security_header_removed', 'sla_breach')
+               'security_header_removed', 'sla_breach', 'new_finding')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────
@@ -297,6 +300,57 @@ def collect_secret_alerts(store, project: str) -> List[Dict]:
     return out
 
 
+_HIGH_SEVERITIES = frozenset({'critical', 'high'})
+
+
+def _is_generic_alertable_finding(finding: Dict) -> bool:
+    """A high/critical *generic* vuln finding with no dedicated alert path.
+
+    ``category='vuln'`` is the one finding category without a targeted diff alert
+    (secret / takeover / source-map / GraphQL / cookie / header / dependency all
+    have their own), so these — nuclei templates, scanner checks like SQLi/XSS,
+    non-dependency CVEs — otherwise surface only as an indirect ``risk_increase``.
+    Dependency-audit CVEs (also category vuln) are excluded: the
+    ``new_vulnerable_dependency`` diff alert already covers them."""
+    if str(finding.get('category', '')).strip().lower() != 'vuln':
+        return False
+    if str(finding.get('severity', '')).strip().lower() not in _HIGH_SEVERITIES:
+        return False
+    ev = finding.get('evidence') or {}
+    sources = ev.get('sources') or [ev.get('source', '')]
+    return 'dependency-audit' not in {str(s) for s in sources if s}
+
+
+def collect_finding_alerts(store, project: str) -> List[Dict]:
+    """New generic high/critical finding alert events for a project (one-shot, deduped
+    via ``store``).
+
+    A generic vuln finding has no dedicated diff alert (see
+    ``_is_generic_alertable_finding``), so this finding-based channel is its only
+    alert path. Detected from the persisted findings: the active high/critical vuln
+    findings, narrowed to those not yet alerted for their current open episode
+    (``FindingsStore.record_finding_alerts`` logs a one-shot marker and returns only
+    the new ones). Returns lean ``{type:'new_finding', title, severity}`` dicts —
+    empty when nothing new. Pure of network; ``store`` is injected so tests use a
+    temp DB."""
+    pending = [f for f in store.active_findings(project)
+               if _is_generic_alertable_finding(f)]
+    if not pending:
+        return []
+    by_id = {f['id']: f for f in pending}
+    new_ids = store.record_finding_alerts(project, list(by_id))
+    out: List[Dict] = []
+    for fid in new_ids:
+        f = by_id.get(fid)
+        if f is None:
+            continue
+        sev = str(f.get('severity', '')).strip()
+        out.append({'type': 'new_finding',
+                    'title': f"[{sev}] {f.get('title', '')}".strip(),
+                    'severity': 'high'})
+    return out
+
+
 def collect_sla_alerts(store, project: str, *, now=None) -> List[Dict]:
     """New SLA-breach alert events for a project (one-shot, deduped via ``store``).
 
@@ -355,6 +409,16 @@ def notify_secret(config: Optional[Dict], slug: str,
     appearances). These secrets have no Scan Diff representation, so this is their only
     alert path."""
     return _notify_collected(config, slug, secret_alerts, 'secret')
+
+
+def notify_findings(config: Optional[Dict], slug: str,
+                    finding_alerts: List[Dict]) -> Dict:
+    """Dispatch already-collected generic-finding alerts (finding-triggered channel).
+
+    ``finding_alerts`` come from :func:`collect_finding_alerts` (already deduped to NEW
+    high/critical vuln findings). These have no dedicated diff alert, so this is their
+    only targeted alert path."""
+    return _notify_collected(config, slug, finding_alerts, 'finding')
 
 
 def send_test(config: Optional[Dict]) -> Dict:

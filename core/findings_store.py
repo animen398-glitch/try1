@@ -47,7 +47,7 @@ INACTIVE_STATUSES = frozenset({'FIXED', 'IGNORED', 'FALSE_POSITIVE'})
 SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
-               'SLA_BREACH', 'SECRET_ALERTED')
+               'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -417,6 +417,25 @@ class FindingsStore(SQLiteStore):
         findings (from ``active_findings``). Returns the not-yet-alerted subset (now
         marked), in input order."""
         return self._record_oneshot(finding_ids, 'SECRET_ALERTED',
+                                     scan_id=scan_id, now=now)
+
+    def record_finding_alerts(self, project: str, finding_ids: List[str], *,
+                              scan_id: Optional[str] = None,
+                              now: Optional[str] = None) -> List[str]:
+        """Mark generic high/critical findings as alerted *once* and return the
+        newly-marked ids.
+
+        A generic vuln finding (nuclei template, scanner check like SQLi/XSS, a
+        non-dependency CVE) has no dedicated diff alert — unlike secret / takeover /
+        source-map / GraphQL / cookie / dependency — so without this it surfaces only
+        as an indirect ``risk_increase``. Finding-triggered, so it needs the same
+        one-shot, reopen-resetting guard as the SLA / secret channels (see
+        ``_record_oneshot``).
+
+        ``finding_ids`` are the project-scoped stored ids of the alertable findings
+        (from ``active_findings``). Returns the not-yet-alerted subset (now marked),
+        in input order."""
+        return self._record_oneshot(finding_ids, 'FINDING_ALERTED',
                                      scan_id=scan_id, now=now)
 
     def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:

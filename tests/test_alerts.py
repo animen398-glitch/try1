@@ -279,6 +279,58 @@ def test_notify_secret_disabled_is_noop():
     assert out == {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
 
 
+# ── generic high/critical-finding alert channel (finding-triggered, one-shot) ───
+
+def _vuln_finding_dict(title='SQL Injection', severity='High', source='nuclei',
+                       rule_id='sqli', location='https://x.com/q', evidence=None):
+    from core.finding_fingerprint import fingerprint
+    return {'id': fingerprint('vuln', rule_id, location),
+            'category': 'vuln', 'rule_id': rule_id, 'title': title,
+            'severity': severity,
+            'evidence': evidence if evidence is not None
+            else {'source': source, 'location': location}}
+
+
+def test_collect_finding_alerts_high_then_deduped(tmp_path):
+    s = _secret_store(tmp_path / 'f.db', _vuln_finding_dict())
+    first = alerts.collect_finding_alerts(s, 'proj')
+    assert len(first) == 1
+    assert first[0]['type'] == 'new_finding' and first[0]['severity'] == 'high'
+    assert 'SQL Injection' in first[0]['title'] and '[High]' in first[0]['title']
+    # Second run: already alerted → nothing new (one-shot via the store marker).
+    assert alerts.collect_finding_alerts(s, 'proj') == []
+
+
+def test_collect_finding_alerts_skips_low_and_dedicated_categories(tmp_path):
+    # Medium/low severity is below the bar; dependency-audit CVEs and the categories
+    # with a dedicated alert (secret here) are excluded to avoid a double alert.
+    s = _secret_store(
+        tmp_path / 'g.db',
+        _vuln_finding_dict(title='Verbose error', severity='Medium', rule_id='err'),
+        _vuln_finding_dict(title='Vuln lib', severity='High', rule_id='cve-1',
+                           source='dependency-audit'),
+        _secret_finding_dict(),   # category 'secret' → its own channel, not here
+    )
+    assert alerts.collect_finding_alerts(s, 'proj') == []
+
+
+def test_notify_findings_dispatches_and_honors_types_filter(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+    events = [{'type': 'new_finding', 'title': '[High] SQL Injection',
+               'severity': 'high'}]
+    cfg = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+    out = alerts.notify_findings(cfg, 'x.com', events)
+    assert out['alerts'] == 1 and out['sent'] == 1
+    cfg_filtered = {**cfg, 'types': ['sla_breach']}
+    assert alerts.notify_findings(cfg_filtered, 'x.com', events)['alerts'] == 0
+
+
+def test_notify_findings_disabled_is_noop():
+    out = alerts.notify_findings({'enabled': False}, 'x.com',
+                                 [{'type': 'new_finding', 'title': 't', 'severity': 'high'}])
+    assert out == {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
+
+
 # ── delivery journal (F4 — reuses OperationRegistry; ops DB isolated by conftest) ─
 
 def _alert_ops():

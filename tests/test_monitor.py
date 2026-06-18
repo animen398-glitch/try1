@@ -416,6 +416,34 @@ def test_run_project_fires_audit_secret_alert_once(tmp_path, monkeypatch):
     assert out2['secret_alerts'] is None        # already alerted → nothing new
 
 
+def test_run_project_fires_generic_finding_alert_once(tmp_path, monkeypatch):
+    # A new high/critical generic vuln finding (no dedicated diff alert) fires the
+    # finding-based channel on the run that first sees it — then never again.
+    from core import alerts
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+    FindingsStore().upsert(project.slug, {
+        'id': fingerprint('vuln', 'sqli', 'https://x.com/q'),
+        'category': 'vuln', 'rule_id': 'sqli', 'title': 'SQL Injection',
+        'severity': 'High', 'evidence': {'source': 'nuclei'}})
+    alert_config = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+
+    run1 = _fake_run_fn(project, [('20260613_010000', ['/a'])])
+    out1 = monitor.run_project(project, run1, now=datetime(2026, 6, 13, 10, 0),
+                               alert_config=alert_config)
+    assert out1['finding_alerts'] and out1['finding_alerts']['alerts'] == 1
+    assert out1['finding_alerts']['sent'] == 1
+
+    run2 = _fake_run_fn(project, [('20260614_010000', ['/a'])])
+    out2 = monitor.run_project(project, run2, now=datetime(2026, 6, 14, 10, 0),
+                               alert_config=alert_config)
+    assert out2['finding_alerts'] is None        # already alerted → nothing new
+
+
 def test_run_project_survives_failing_run_fn(tmp_path):
     project = ProjectStore(tmp_path).get_or_create('https://x.com')
     project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))

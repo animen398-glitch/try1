@@ -198,6 +198,19 @@ def test_record_secret_alerts_one_shot_and_reopen_reset(tmp_path):
     assert [e['type'] for e in s.events(sid)].count('SECRET_ALERTED') == 2
 
 
+def test_record_finding_alerts_one_shot(tmp_path):
+    # The generic-finding alert guard mirrors SLA/secret: marked + returned once,
+    # then suppressed until the situation changes.
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    assert s.record_finding_alerts('proj', [sid]) == [sid]
+    assert [e['type'] for e in s.events(sid)].count('FINDING_ALERTED') == 1
+    assert s.record_finding_alerts('proj', [sid]) == []
+    assert [e['type'] for e in s.events(sid)].count('FINDING_ALERTED') == 1
+
+
 # ── queries / summary ─────────────────────────────────────────────────────────
 
 def test_list_filters_and_project_scoping(tmp_path):

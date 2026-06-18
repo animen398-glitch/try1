@@ -246,7 +246,7 @@ def run_project(project, run_fn: Callable[[str], Dict],
     result: Dict = {'slug': slug, 'url': url, 'scan_id': None,
                     'prev_scan_id': prev_id, 'diff_line': None,
                     'diff_html': None, 'alerts': None, 'sla_alerts': None,
-                    'secret_alerts': None,
+                    'secret_alerts': None, 'finding_alerts': None,
                     'status': 'Success', 'error': None}
     emit('scan_start', url=url, prev_scan_id=prev_id)
     try:
@@ -280,16 +280,23 @@ def run_project(project, run_fn: Callable[[str], Dict],
             result['error'] = f'diff failed: {e}'
             emit('diff_error', error=str(e))
 
-    # SLA-breach alerts (Alert Center): time-triggered, so checked every run
-    # independent of the diff — a finding can slip past its deadline with nothing
-    # else changing. One-shot per breach via the findings store's marker.
+    # Finding-store-based alert channels (Alert Center): the triggers with no Scan
+    # Diff representation, so they are checked every successful run independent of the
+    # diff — an SLA deadline slips by time, and audit-only secrets / generic vuln
+    # findings have no diff section. One-shot per finding via the store's markers.
     if alert_config and result['status'] == 'Success':
-        result['sla_alerts'] = _dispatch_sla_alerts(project, slug, alert_config,
-                                                     emit)
-        # Audit-only secret findings have no Scan Diff representation either —
-        # same finding-based, one-shot channel as SLA.
-        result['secret_alerts'] = _dispatch_secret_alerts(project, slug,
-                                                          alert_config, emit)
+        from core import alerts
+        result['sla_alerts'] = _dispatch_finding_based_alerts(
+            project, slug, alert_config, emit,
+            collect=alerts.collect_sla_alerts, notify=alerts.notify_sla, kind='sla')
+        result['secret_alerts'] = _dispatch_finding_based_alerts(
+            project, slug, alert_config, emit,
+            collect=alerts.collect_secret_alerts, notify=alerts.notify_secret,
+            kind='secret')
+        result['finding_alerts'] = _dispatch_finding_based_alerts(
+            project, slug, alert_config, emit,
+            collect=alerts.collect_finding_alerts, notify=alerts.notify_findings,
+            kind='finding')
 
     last_status = 'ok' if result['status'] == 'Success' else 'failed'
     _advance_schedule(project, new_id, now, status=last_status)
@@ -308,42 +315,24 @@ def _dispatch_alerts(slug: str, diff: Dict, alert_config: Dict, emit) -> Dict:
     return summary
 
 
-def _dispatch_sla_alerts(project, slug: str, alert_config: Dict, emit) -> Optional[Dict]:
-    """Dispatch one-shot SLA-breach alerts for a project (time-triggered, diff-
-    independent). Best-effort: a failure here never affects the scan/diff result.
-    Returns the send summary, or ``None`` when nothing was newly breached."""
+def _dispatch_finding_based_alerts(project, slug: str, alert_config: Dict, emit, *,
+                                   collect, notify, kind: str) -> Optional[Dict]:
+    """Dispatch a one-shot, finding-store-based alert channel (SLA breach / audit-only
+    secret / generic finding — the triggers with no Scan Diff representation). ``collect``
+    pulls the new, deduped events from the store; ``notify`` sends them. Best-effort: a
+    failure here never affects the scan/diff result. Returns the send summary, or
+    ``None`` when nothing was newly found."""
     try:
-        from core import alerts
         from core.findings_store import FindingsStore
-        events = alerts.collect_sla_alerts(FindingsStore(), project.slug)
+        events = collect(FindingsStore(), project.slug)
         if not events:
             return None
-        summary = alerts.notify_sla(alert_config, slug, events)
+        summary = notify(alert_config, slug, events)
         if summary.get('alerts'):
             emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
-                 reason=summary.get('reason'), alert_kind='sla')
+                 reason=summary.get('reason'), alert_kind=kind)
         return summary
-    except Exception:   # noqa: BLE001 — SLA alerting must never sink a monitor run
-        return None
-
-
-def _dispatch_secret_alerts(project, slug: str, alert_config: Dict, emit) -> Optional[Dict]:
-    """Dispatch one-shot alerts for audit-only secret findings (finding-triggered,
-    diff-independent — the deep-JS audit's secrets never appear in a Scan Diff).
-    Best-effort: a failure here never affects the scan/diff result. Returns the send
-    summary, or ``None`` when nothing was newly found."""
-    try:
-        from core import alerts
-        from core.findings_store import FindingsStore
-        events = alerts.collect_secret_alerts(FindingsStore(), project.slug)
-        if not events:
-            return None
-        summary = alerts.notify_secret(alert_config, slug, events)
-        if summary.get('alerts'):
-            emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
-                 reason=summary.get('reason'), alert_kind='secret')
-        return summary
-    except Exception:   # noqa: BLE001 — secret alerting must never sink a monitor run
+    except Exception:   # noqa: BLE001 — alerting must never sink a monitor run
         return None
 
 
