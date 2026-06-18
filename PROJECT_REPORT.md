@@ -84,6 +84,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
+| intelligence | **Core Intelligence (EPIC 7)**: confidence + priority + explanation per finding (derive-on-read, без новых моделей). `confidence` (корроборация+валидация+специфичность детекта), `priority` (severity дисконтирован confidence + exposure/SLA), `explain` (finding_knowledge). `build_intelligence`/`load_intelligence` → ранжирование «что чинить первым». Переиспользует findings_store/correlation/asset_graph/findings_sla. Поверхности: report['intelligence'], web `/intelligence`, GUI-вкладка «Priorities» |
 | llm_summary | опц. LLM-резюме через **локальный Ollama** (stdlib urllib, graceful, ничего не уходит с машины) |
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
 | screenshot | опц. headless-скриншоты (Playwright, lazy, gated); **мульти-страничные** (home/login/admin/dashboard) через select_targets/capture_many |
@@ -105,7 +106,10 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 `main_window` — тонкий контейнер (~75 строк); каркас — mixin'ы `task_runner`
 (единый раннер QThread), `window_chrome`, `window_helpers`; `workers`,
 `plugin_manager` (реестр вкладок + авто-дискавери внешних), `ui_components`,
-`dialogs`; 14 модулей `tab_*.py` (по вкладке).
+`dialogs`; модули `tab_*.py` (по вкладке), включая ASM-вкладки Findings/Assets/
+**Priorities** (read-only Core Intelligence, EPIC 7 — `tab_intelligence`)/Timeline/
+Overview. Вкладки регистрируются из `BUILTIN_TABS` (секции nav-рельса), не
+хардкодятся; «Priorities» — в секции «Управление» после Findings.
 
 ---
 
