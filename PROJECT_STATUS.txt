@@ -2764,3 +2764,58 @@ EPIC 5 — ASSET CORRELATION ENGINE & EXPOSURE INTELLIGENCE
   Метка в gui/tab_timeline. +2 теста. Full suite PASS.
 
 ==============================================================================
+
+==============================================================================
+EPIC 6 — LAUNCHER & DEPENDENCY MANAGEMENT SYSTEM
+==============================================================================
+
+  ЦЕЛЬ: единый Launcher — Install / Repair / Update / Launch из одной точки,
+  offline-first, БЕЗ обязательного сервера обновлений.
+
+  АУДИТ (до кода): Launcher'а не было. Но слой проверки зависимостей УЖЕ есть —
+  core/features.py (OPTIONAL_FEATURES, summary(), missing(); делит pip-модули
+  find_spec vs PATH-бинарники which) + PathManager (core/paths.py, frozen-aware,
+  единственная власть по путям). System-вкладка уже сёрфит features.summary()
+  («View Components» прецедент). Не хватало: REQUIRED-проверки (краш на импорте
+  без диагностики), repair/update/install-оркестрации, единого entry. Решения
+  пользователя: engine+UI (pure core + тонкий UI); offline update (pip --upgrade,
+  опц git pull); внешние бинарники → инструкции (не качаем).
+
+  ENGINE — core/launcher.py (pure, offline-first, subprocess инъектируется):
+   - REQUIRED = {qtpy, PySide6, requests, beautifulsoup4} (lxml НЕ тут — он опц.,
+     bs4 падает на stdlib-парсер; features уже держит lxml в OPTIONAL).
+   - health_check(has_module, check_writable) → {python_version, required:[{name,
+     ok}], required_ok, optional: features.summary() (ПЕРЕИСПОЛЬЗОВАНО), data_root_
+     writable (через PathManager.get_temp_path — НЕ дублирует), ok}.
+   - installable_components() → {name:{method:pip|manual, packages|url, enables}}.
+   - install_optional(name, run) → pip install (модуль) | инструкция+URL (бинарник)
+     | unknown; playwright +note про chromium.
+   - repair(run) → pip install -r requirements.txt.
+   - update(run, git) → pip --upgrade -r requirements.txt (+ git pull --ff-only
+     если .git и git=True); offline-first, без update-сервера.
+   - launch_app(spawn) → subprocess main.py / frozen.
+   - subprocess через переиспользованный external_tools.run_command (never-raise).
+
+  UI/CLI — launcher.py (root, тонкий):
+   - run_cli(argv) → --health/--components/--install NAME/--repair/--update/--launch
+     (exit-коды; печать). Тестируемо (engine стабится).
+   - Qt-окно LauncherWindow (Module 5): 5 кнопок Launch / Check Health / Repair /
+     View Components / Install Optional Tools. Fast-действия синхронно, Repair
+     (slow pip) — в QThread. Переиспользует gui.ui_components (ResultsDisplay,
+     SectionGroupBox). main() → run_cli(sys.argv).
+
+  ПЕРЕИСПОЛЬЗОВАНО: core/features (summary/OPTIONAL_FEATURES/_has_module),
+  PathManager, external_tools.run_command, gui.ui_components. PathManager НЕ
+  дублирован. Архитектура не нарушена (новый изолированный модуль+entry).
+
+  ЖИВАЯ ПРОВЕРКА: python launcher.py --health корректно поймал реально
+  отсутствующий bs4 в этом окружении (валидирует точность health-check).
+
+  ТЕСТЫ (+22): test_launcher(15: health all/missing/unwritable + real-probe;
+  install pip ok/fail/playwright-note/binary-manual/unknown; components split;
+  repair; update pip+git-off+failed-step; launch ok/fail) + test_launcher_cli(7:
+  CLI health/components/install/repair/update/launch + headless window 5 кнопок).
+
+  ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
+
+==============================================================================

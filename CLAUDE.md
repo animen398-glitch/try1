@@ -47,6 +47,7 @@ cookie, GraphQL), захват и оффлайн-клонирование фро
 main.py                 # точка входа GUI
 main_orchestrator.py    # CLI-пайплайн из 6 фаз (Recon→[Paywall]→Capture→[Dynamic]→[Vulns]→[API])
 monitor_cli.py          # OS-level адаптер мониторинга (run = прогон готовых для cron; watch = блок-цикл)
+launcher.py             # EPIC 6: тонкий entry Launcher (CLI --health/--repair/--update/--launch/--install + Qt-окно Module 5)
 
 core/                   # ВСЯ бизнес-логика и движки (UI сюда не лезет)
   config.py             # ЕДИНЫЙ источник путей/дефолтов, load/save settings.json, targets.json
@@ -71,6 +72,8 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   trends.py             # EPIC 4: аналитика тренда поверх timeline.build_series (направление/baseline/дельта/пик)
   correlation.py        # F-K: Finding→Asset→Infra (exposure-by-asset, blast radius)
   asset_graph.py        # EPIC 5: Asset Correlation Engine — asset↔asset граф + кластеры общей инфры (Exposure Intelligence)
+  features.py           # централизованный детект опц. зависимостей (pip-модули vs PATH-бинарники); summary()/missing()
+  launcher.py           # EPIC 6: engine Install/Repair/Update/Launch + health_check (REQUIRED + features.summary); offline-first, subprocess инъектируется
   report_export.py      # CSV-экспорт findings/portfolio (PDF — печатью report.html)
   # — detection-движки (вливаются в risk/attack-surface/report) —
   infrastructure.py     # Domain→ASN→IP→Provider (offline, из recon-geo)
@@ -1293,6 +1296,25 @@ Relationships»; web `_correlation_view` +`asset_graph` (+ console-вывод к
 из `report['asset_graph'].shared_infra`, keyed by node) → `diff_events` эмитит
 `new_exposure_cluster` (medium, **timeline-only** — структурный discovery, не алертабелен,
 как `new_subdomain`). Метка в `gui/tab_timeline`. +2 теста.
+
+**EPIC 6 — Launcher & Dependency Management — `[ЗАКРЫТ]`.** Единый Launcher
+(Install/Repair/Update/Launch), offline-first, **без обязательного update-сервера**.
+Аудит: Launcher'а не было, но `core/features.py` (OPTIONAL_FEATURES/summary()/missing();
+pip-модуль `find_spec` vs PATH-бинарник `which`) и `PathManager` уже есть. Решения
+пользователя: **engine+UI** (pure core + тонкий UI), offline update (pip --upgrade,
+опц git pull), внешние бинарники → инструкции (не качаем). Новый `core/launcher.py`
+(pure, subprocess инъектируется): `REQUIRED={qtpy,PySide6,requests,beautifulsoup4}`
+(lxml опц.); `health_check` (REQUIRED + **переиспользует** `features.summary()` для
+OPTIONAL + `PathManager.get_temp_path` write-probe — **PathManager не дублирован**);
+`installable_components` (pip vs manual); `install_optional` (pip-модуль / инструкция+
+URL для бинарника); `repair` (pip install -r requirements.txt); `update` (pip --upgrade
++ git pull --ff-only если `.git`); `launch_app` (subprocess). Тонкий `launcher.py` (root):
+`run_cli(argv)` (`--health/--components/--install/--repair/--update/--launch`, exit-коды) +
+Qt-окно `LauncherWindow` (Module 5: 5 кнопок; fast синхронно, Repair в QThread;
+переиспользует `gui.ui_components`). **Переиспользовано:** features, PathManager,
+`external_tools.run_command` (never-raise subprocess), ui_components. Архитектура цела
+(изолированный модуль+entry). Живая проверка: `--health` поймал реально отсутствующий
+bs4. Покрыто `test_launcher`(15) + `test_launcher_cli`(7). EPIC 6 ЗАКРЫТ.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

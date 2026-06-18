@@ -67,6 +67,31 @@ python main_orchestrator.py https://example.com --profile firefox_windows --dela
 python main_orchestrator.py https://example.com --web
 ```
 
+### Launcher & Dependency Management (единая точка)
+
+`launcher.py` — отдельное приложение для Install / Repair / Update / Launch
+(offline-first, **без обязательного сервера обновлений**). Логика — в чистом
+`core/launcher.py` (переиспользует `core/features.py` для проверки зависимостей и
+`PathManager` для путей; не дублирует их).
+
+```bash
+python launcher.py                 # окно Launcher (Qt): Launch / Check Health /
+                                   #   Repair / View Components / Install Optional Tools
+python launcher.py --health        # отчёт о здоровье (обязательные + опц. зависимости)
+python launcher.py --components     # список опц. компонентов + как поставить
+python launcher.py --install NAME  # установить опц. компонент (pip) или показать
+                                   #   инструкцию+URL для внешнего бинарника
+python launcher.py --repair        # переустановить обязательные (pip install -r requirements.txt)
+python launcher.py --update        # offline-обновление (pip --upgrade + git pull --ff-only)
+python launcher.py --launch        # запустить основное приложение
+```
+
+- **Check Health** — Python-версия, обязательные деп (PySide6/qtpy/requests/bs4),
+  опц. компоненты (через `features.summary()`), запись в data-root.
+- **Install Optional Tools** — pip-модули ставятся через pip; внешние Go-бинарники
+  (nuclei/katana/amass/subfinder/httpx/ffmpeg) **нельзя** поставить через pip →
+  показывается инструкция + домашняя страница (положить на PATH).
+
 ## Структура проекта
 
 ```
