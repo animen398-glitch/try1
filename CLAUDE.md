@@ -1146,6 +1146,21 @@ dedicated-категорией/источником НЕ дублируются.
 `test_alerts` (high→alert+dedup / low+dependency-audit+secret-категория пропущены / notify
 dispatch+filter+disabled), `test_monitor` (шлёт раз, второй прогон молчит).
 
+**OSINT-discovery события в Timeline (email/employee/CT) — `[ЗАКРЫТ]`.** Backend-фаза,
+тот же «вычисляется, но теряется» пробел в discovery-оси. Секции `emails`/`employees`/`ct`
+в `scan_diff` диффятся и показываются в HTML-диффе, но `diff_events` не имел для них
+обработчика → ново-найденный email/сотрудник/залогированный сертификат не давал записи в
+ленте — хотя проект уже сёрфит discovery там (`new_endpoint`/`new_subdomain`/
+`new_historical_url`). Ни одна из секций не является находкой → **нулевой F1-оверлап** (в
+отличие от DNS email-auth, где dns_intel уже эмитит No-SPF/No-DMARC находки → оверлап с F1,
+поэтому DNS не трогаем). `diff_events` эмитит `new_email`/`new_employee`/`new_ct_cert` из
+`added`-списков (info, как `new_endpoint`); все **timeline-only** (НЕ в `ALERT_TYPES`) —
+чистый discovery, не регрессия, по образцу `new_historical_url` (без alert-шума). Метки в
+`gui/tab_timeline._EVENT_LABELS`. Ценность: новый email/сотрудник расширяет phishing-
+поверхность; ново-залогированный сертификат сигналит свежую инфраструктуру или (если
+неожиданный) возможную mis-issuance. Pure, web-паритет автоматом. Покрыто `test_diff_events`
+(классификация info + не-алертабельны) и `test_scan_diff` (end-to-end added→событие).
+
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
 но они были orphaned: attack-surface «Endpoints» читала только `katana.endpoints`, а
