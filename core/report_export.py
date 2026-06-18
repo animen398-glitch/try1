@@ -38,6 +38,12 @@ _ASSETS_COLUMNS: Sequence[Tuple[str, str]] = (
 )
 
 
+_TIMELINE_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('at', 'When'), ('scan_id', 'Scan'), ('severity', 'Severity'),
+    ('section', 'Section'), ('type', 'Event'), ('title', 'Detail'),
+)
+
+
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
     return '' if value is None else str(value)
@@ -70,6 +76,14 @@ def findings_csv(findings: Optional[List[Dict]]) -> str:
 def assets_csv(assets: Optional[List[Dict]]) -> str:
     """CSV of an assets list (``AssetStore.list_assets`` rows)."""
     return _rows_to_csv(assets, _ASSETS_COLUMNS)
+
+
+def timeline_csv(events: Optional[List[Dict]]) -> str:
+    """CSV of a project's change-feed events (``timeline.build_timeline`` 'events').
+
+    Each event is ``{at, scan_id, type, title, severity, section}`` — the same rows
+    the GUI Timeline tab and the web /timeline endpoint show."""
+    return _rows_to_csv(events, _TIMELINE_COLUMNS)
 
 
 def portfolio_csv(portfolio) -> str:

@@ -14,8 +14,8 @@ from pathlib import Path
 
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
-    QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
+    QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.project import ProjectStore
@@ -78,6 +78,9 @@ class TimelineTabMixin:
         ctrl.addStretch()
         self.timeline_status = QLabel("Событий: 0")
         ctrl.addWidget(self.timeline_status)
+        btn_export = StyledButton("Export CSV", style='secondary')
+        btn_export.clicked.connect(self._export_timeline_csv)
+        ctrl.addWidget(btn_export)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_timeline)
         ctrl.addWidget(btn_refresh)
@@ -210,10 +213,34 @@ class TimelineTabMixin:
             self.timeline_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         events = result.get('events', [])
+        self._timeline_events_data = events       # export source (CSV)
         self._populate_timeline_events(events)
         self._populate_timeline_series(result.get('series', []))
         self.timeline_status.setText(
             f"Событий: {len(events)} · сканов: {len(result.get('series', []))}")
+
+    def _export_timeline_csv(self):
+        """Save the currently loaded change feed to a CSV file (mirrors the
+        Findings/Assets export)."""
+        from datetime import datetime
+
+        from core.report_export import timeline_csv
+        events = getattr(self, '_timeline_events_data', None)
+        if not events:
+            self.timeline_status.setText("Нечего экспортировать")
+            return
+        default = f"timeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export CSV", default, "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write(timeline_csv(events))
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить CSV: {e}")
+            return
+        self.timeline_status.setText(f"Экспортировано событий: {len(events)}")
 
     def _populate_timeline_events(self, events: list):
         self.timeline_events.setRowCount(0)

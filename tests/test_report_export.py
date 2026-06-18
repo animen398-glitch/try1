@@ -80,6 +80,23 @@ def test_assets_csv_empty_is_header_only():
     assert _parse(rx.assets_csv(None))[0][0] == 'Project'
 
 
+# ── timeline_csv ──────────────────────────────────────────────────────────────
+
+def test_timeline_csv_header_and_row():
+    rows = [{'at': '2026-06-14T01:00:00', 'scan_id': '20260614_010000',
+             'severity': 'high', 'section': 'subdomains', 'type': 'takeover',
+             'title': 'api.x.com ⚠ takeover'}]
+    table = _parse(rx.timeline_csv(rows))
+    assert table[0] == ['When', 'Scan', 'Severity', 'Section', 'Event', 'Detail']
+    assert table[1] == ['2026-06-14T01:00:00', '20260614_010000', 'high',
+                        'subdomains', 'takeover', 'api.x.com ⚠ takeover']
+
+
+def test_timeline_csv_empty_is_header_only():
+    assert _parse(rx.timeline_csv([]))[0][0] == 'When'
+    assert _parse(rx.timeline_csv(None))[0][0] == 'When'
+
+
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
 def test_portfolio_csv_from_full_dict():
