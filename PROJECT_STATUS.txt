@@ -3036,3 +3036,27 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 9: ASSET CRITICALITY
   ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист; risk-числа байт-в-байт.
 
 ==============================================================================
+ADVANCED INTELLIGENCE FRAMEWORK — EPIC 10: PRIORITY DEEPENING
+==============================================================================
+
+  ЦЕЛЬ: вплести Asset Criticality (EPIC 9) в priority — та же находка на более
+  важном активе должна чиниться раньше. priority = display (не risk-score).
+
+  РЕАЛИЗАЦИЯ — core/intelligence.py:
+   - priority(..., criticality_band=None) → бонус high +10 / medium +5 поверх
+     severity×confidence + exposure + SLA; named-фактор «Критичный/Важный актив».
+   - build_intelligence(..., criticality=None): строит value→band карту из
+     build_asset_criticality items, матч по host/location находки → бонус в priority
+     + item-поле asset_criticality (band).
+   - load_intelligence: строит criticality из УЖЕ загруженных correlation+asset_graph
+     (AssetStore.list_assets + build_asset_criticality), без дублирующих чтений.
+
+  ОБРАТНАЯ СОВМЕСТИМОСТЬ: criticality/criticality_band опциональны (None →
+  поведение прежнее) — тесты EPIC 7 и priority-тесты целы.
+
+  ТЕСТЫ (+2): test_intelligence (priority high/medium/low-бонус; build_intelligence
+  с criticality → asset_criticality=high + priority +10 vs без criticality).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист.
+
+==============================================================================

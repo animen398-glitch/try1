@@ -70,6 +70,17 @@ def test_priority_exposure_and_sla_bonuses():
     assert p2['score'] == 35 + 5
 
 
+def test_priority_asset_criticality_bonus():
+    base = intel.priority(_f(severity='high'), 100)
+    hi = intel.priority(_f(severity='high'), 100, criticality_band='high')
+    med = intel.priority(_f(severity='high'), 100, criticality_band='medium')
+    assert hi['score'] == base['score'] + 10
+    assert med['score'] == base['score'] + 5
+    # an unknown / low band adds nothing
+    assert intel.priority(_f(severity='high'), 100,
+                          criticality_band='low')['score'] == base['score']
+
+
 def test_priority_caps_at_100():
     p = intel.priority(_f(severity='critical'), 100, clustered=True,
                        sla_bucket='breached')
@@ -106,6 +117,20 @@ def test_build_ranks_by_priority_with_exposure_and_clusters():
     top = out['items'][0]
     assert 'confidence_factors' in top and 'priority_factors' in top
     assert 'impact' in top['explanation']
+
+
+def test_build_intelligence_uses_asset_criticality():
+    findings = [_f(id='a', severity='medium', category='vuln',
+                   evidence={'source': 'x', 'location': 'a.acme.com/q'})]
+    criticality = {'items': [{'value': 'a.acme.com', 'band': 'high',
+                              'criticality': 80}]}
+    out = intel.build_intelligence(findings, None, None, criticality=criticality)
+    top = out['items'][0]
+    assert top['asset_criticality'] == 'high'
+    # priority gained the +10 high-criticality bonus over the no-criticality build
+    plain = intel.build_intelligence(findings)['items'][0]
+    assert plain['asset_criticality'] is None
+    assert top['priority'] == plain['priority'] + 10
 
 
 def test_build_empty_is_safe():

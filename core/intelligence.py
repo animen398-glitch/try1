@@ -390,11 +390,14 @@ def build_accuracy(entities_by_type: Dict[str, List[Dict]]) -> Dict:
 # ── priority ──────────────────────────────────────────────────────────────────
 
 def priority(finding: Dict, confidence_score: int, *, exposed: bool = False,
-             clustered: bool = False, sla_bucket: Optional[str] = None) -> Dict:
+             clustered: bool = False, sla_bucket: Optional[str] = None,
+             criticality_band: Optional[str] = None) -> Dict:
     """Priority score → ``{score, factors}`` (pure).
 
     ``severity_base × confidence/100`` (confidence discounts severity), plus an
-    exposure bonus (blast-radius / correlated asset) and an SLA-urgency bonus."""
+    exposure bonus (blast-radius / correlated asset), an SLA-urgency bonus, and an
+    asset-criticality bonus (EPIC 10 — the same finding on a more important asset is
+    fixed sooner; ``criticality_band`` is the band of the asset it sits on)."""
     sev = str(finding.get('severity') or 'info').lower()
     base = _SEV_BASE.get(sev, 2)
     sev_pts = round(base * confidence_score / 100)
@@ -413,7 +416,13 @@ def priority(finding: Dict, confidence_score: int, *, exposed: bool = False,
                                    else 'SLA скоро истекает'),
                         'points': sla_bonus})
 
-    score = min(100, sev_pts + exposure_bonus + sla_bonus)
+    crit_bonus = 10 if criticality_band == 'high' else (
+        5 if criticality_band == 'medium' else 0)
+    if crit_bonus:
+        factors.append({'factor': ('Критичный актив' if criticality_band == 'high'
+                                   else 'Важный актив'), 'points': crit_bonus})
+
+    score = min(100, sev_pts + exposure_bonus + sla_bonus + crit_bonus)
     return {'score': score, 'factors': factors}
 
 
@@ -440,30 +449,41 @@ def _sla_bucket_of(finding: Dict, now) -> Optional[str]:
 
 
 def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
-                       asset_graph: Optional[Dict] = None, *, now=None) -> Dict:
+                       asset_graph: Optional[Dict] = None, *,
+                       criticality: Optional[Dict] = None, now=None) -> Dict:
     """Rank findings by priority, each with confidence + explanation (pure).
 
     ``correlation`` / ``asset_graph`` are the already-derived views (from
     ``load_correlation`` / ``load_asset_graph``); they provide exposure (a finding on
     a correlated asset) and blast radius (its host is in a shared-infra cluster).
-    Returns ``{items (priority desc), top, summary}``."""
+    ``criticality`` is the asset-criticality rollup (``build_asset_criticality``);
+    when given, a finding on a high/medium-criticality asset gets a priority bonus
+    (EPIC 10) and carries the band. Returns ``{items (priority desc), top, summary}``."""
     findings = [f for f in (findings or []) if isinstance(f, dict)]
     chains = (correlation or {}).get('finding_chains') or {}
     cluster_hosts = set()
     for c in (asset_graph or {}).get('shared_infra') or []:
         for m in c.get('members') or []:
             cluster_hosts.add(str(m).strip().lower())
+    # asset value (lower-cased) → criticality band, for the priority bonus.
+    crit_by_value: Dict[str, str] = {}
+    for it in (criticality or {}).get('items') or []:
+        v = str(it.get('value') or '').strip().lower()
+        if v and it.get('band'):
+            crit_by_value[v] = it['band']
 
     items: List[Dict] = []
     for f in findings:
         acc = confidence_for('finding', f)
         chain = chains.get(f.get('id')) or {}
         exposed = bool(chain.get('host') or chain.get('endpoint'))
-        host = _host(str((f.get('evidence') or {}).get('location') or ''))
+        loc = str((f.get('evidence') or {}).get('location') or '').strip().lower()
+        host = _host(loc)
         clustered = bool(host) and host in cluster_hosts
+        crit_band = crit_by_value.get(host) or crit_by_value.get(loc)
         bucket = _sla_bucket_of(f, now)
         prio = priority(f, acc['score'], exposed=exposed, clustered=clustered,
-                        sla_bucket=bucket)
+                        sla_bucket=bucket, criticality_band=crit_band)
         items.append({
             'id': f.get('id'), 'title': f.get('title'),
             'severity': f.get('severity'), 'category': f.get('category'),
@@ -473,6 +493,7 @@ def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
             # finding was verified) ride along with the confidence number.
             'evidence': acc['evidence'], 'source': acc['source'],
             'verification': acc['verification'],
+            'asset_criticality': crit_band,   # EPIC 10: band of the finding's asset
             'priority': prio['score'], 'priority_factors': prio['factors'],
             'explanation': explain(f),
         })
@@ -492,11 +513,18 @@ def load_intelligence(project: str, *, now=None) -> Dict:
     correlation and the asset graph). Offline, read-only, guarded."""
     try:
         from core.asset_graph import load_asset_graph
+        from core.asset_store import AssetStore
         from core.correlation import load_correlation
         from core.findings_store import FindingsStore
         findings = FindingsStore().active_findings(project)
-        return build_intelligence(findings, load_correlation(project),
-                                  load_asset_graph(project), now=now)
+        correlation = load_correlation(project)
+        asset_graph = load_asset_graph(project)
+        # Reuse the just-loaded correlation + graph (no duplicate store reads) to
+        # rank assets, so a finding on a critical asset gets its priority bonus.
+        assets = AssetStore().list_assets(project=project)
+        criticality = build_asset_criticality(assets, correlation, asset_graph)
+        return build_intelligence(findings, correlation, asset_graph,
+                                  criticality=criticality, now=now)
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
 

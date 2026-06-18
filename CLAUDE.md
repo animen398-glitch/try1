@@ -1401,6 +1401,18 @@ assets». Покрыто `test_intelligence`(+6: тип-вес/band, blast+findi
 build-ранжирование, empty), `test_executive_summary`(+2: метрика+чип/zero, risk_score
 неизменен), `test_collection_runner`(+1: карточка). Risk-числа байт-в-байт.
 
+**Advanced Intelligence Framework — EPIC 10: Priority deepening — `[ЗАКРЫТ]`.**
+Вплёл Asset Criticality (EPIC 9) в ранжирование находок: `intelligence.priority`
+получил опц. `criticality_band` → бонус (high +10 / medium +5) поверх severity×
+confidence + exposure + SLA — та же находка на более важном активе чинится раньше.
+`build_intelligence` принял опц. `criticality` (rollup из `build_asset_criticality`),
+строит `value→band` карту и прокидывает band находки в `priority` + в item-поле
+`asset_criticality`; `load_intelligence` строит criticality из **уже загруженных**
+correlation+asset_graph (без дублирующих чтений стора). priority — display (не
+risk-score), вердикт не тронут. Обратная совместимость: `criticality`/
+`criticality_band` опциональны (None → поведение прежнее, тесты EPIC 7 целы).
+Покрыто `test_intelligence`(+2: priority-бонус high/medium/low, build с criticality).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
