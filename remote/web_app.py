@@ -465,6 +465,26 @@ def _correlation_view(project: Optional[str] = None) -> dict:
         return {'exposure': [], 'summary': {}, 'error': str(e)}
 
 
+# ── Timeline / Change feed (F2, web parity) ─────────────────────────────────────
+# Read-only over core.timeline — the same derive-on-read change feed (series +
+# events) the GUI Timeline tab shows. Inherently per-project: an empty project
+# yields an empty view.
+
+def _timeline_view(project: Optional[str] = None) -> dict:
+    """A project's change timeline (scan series + events) for the console."""
+    if not project:
+        return {'series': [], 'events': []}
+    try:
+        from core.timeline import build_timeline
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        if proj is None:
+            return {'series': [], 'events': [],
+                    'error': f'project not found: {project}'}
+        return build_timeline(proj)
+    except Exception as e:
+        return {'series': [], 'events': [], 'error': str(e)}
+
+
 # ── Continuous Monitoring (#8) ─────────────────────────────────────────────────
 # Thin wrappers over core.monitor (single source of truth, shared with the CLI
 # and GUI). All bound to the same project store the jobs use.
@@ -586,6 +606,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showOverview()">Overview</button>
       <button class="btn sec" onclick="showCompanies()">Companies</button>
       <button class="btn sec" onclick="showCorrelation()">Correlation</button>
+      <button class="btn sec" onclick="showTimeline()">Timeline</button>
     </div>
   </div>
 
@@ -921,6 +942,22 @@ async function showCorrelation(){
   }catch(ex){log('Correlation failed: '+ex.message,'er');}
 }
 
+async function showTimeline(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Timeline: no projects','data'); return;}
+    const r=await fetch('/timeline?project='+encodeURIComponent(proj));
+    const d=await r.json(); const ev=d.events||[];
+    log('Timeline ['+proj+']: '+ev.length+' event(s) · '
+        +((d.series||[]).length)+' scan(s)','data');
+    ev.slice(-20).forEach(e=>{
+      log('  '+(e.at||'')+' ['+(e.severity||'')+'] '+(e.type||'')+': '
+          +(e.title||''),'info');
+    });
+  }catch(ex){log('Timeline failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -1161,6 +1198,10 @@ if _FASTAPI_OK:
     @app.get('/correlation')
     async def correlation(project: Optional[str] = None):
         return JSONResponse(_correlation_view(project))
+
+    @app.get('/timeline')
+    async def timeline(project: Optional[str] = None):
+        return JSONResponse(_timeline_view(project))
 
     @app.get('/report')
     async def report(file: str):
