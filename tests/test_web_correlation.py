@@ -32,6 +32,21 @@ def test_correlation_view_for_project():
     assert api['worst'] == 'high'
 
 
+def test_correlation_view_includes_asset_graph():
+    # EPIC 5: the /correlation view carries the asset↔asset graph + shared-infra
+    # clusters (two subdomains co-hosted on one IP).
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    AssetStore().sync('g', 's1', [
+        Asset('subdomain', 'a.acme.com', attrs={'ip': '1.2.3.4'}),
+        Asset('subdomain', 'b.acme.com', attrs={'ip': '1.2.3.4'}),
+        Asset('ip', '1.2.3.4', attrs={'asn': 'AS1'})])
+    ag = wa._correlation_view('g')['asset_graph']
+    assert ag['summary']['nodes'] == 3 and ag['summary']['edges'] >= 2
+    cluster = next(c for c in ag['shared_infra'] if c['type'] == 'ip')
+    assert cluster['count'] == 2 and cluster['node'] == '1.2.3.4'
+
+
 def test_correlation_view_no_project_is_empty():
     d = wa._correlation_view(None)
     assert d['exposure'] == [] and d['summary'] == {}

@@ -243,6 +243,20 @@ def _cve_summary(report: Dict) -> Dict:
             'medium': _int(s.get('medium')), 'info': _int(s.get('info'))}
 
 
+def _exposure_clusters(report: Dict) -> Dict:
+    """Asset-level shared-infrastructure exposure for the display **metric** (EPIC 5).
+
+    Reads the asset-graph rollup (``report['asset_graph']``) the Asset Correlation
+    Engine already stamped: how many infrastructure nodes concentrate ≥2 assets
+    (single points of exposure) and the largest such cluster. Deliberately NOT a
+    score addend — finding-level infra concentration is already counted by
+    ``_infra_concentration`` (F-R4); this is the asset-topology view, a metric/chip
+    only. Zero when the asset graph didn't run (older reports)."""
+    s = (report.get('asset_graph') or {}).get('summary') or {}
+    return {'clusters': _int(s.get('clusters')),
+            'largest': _int(s.get('largest_cluster'))}
+
+
 def parse_cert_date(value) -> Optional[datetime]:
     """Best-effort parse of a certificate validity date into a naive datetime.
 
@@ -435,6 +449,11 @@ def headline(summary: Dict) -> Dict:
     if cve_total:
         # Known CVEs in detected components (severity by the worst tier present).
         add(f'{cve_total} CVE', 'high' if _int(m.get('cve_high')) else 'medium')
+    exposure_clusters = _int(m.get('exposure_clusters'))
+    if exposure_clusters:
+        # Asset-level shared-infra single points of exposure (blast radius, EPIC 5);
+        # labelled "co-hosted" to distinguish from F-R4's finding-concentration chip.
+        add(f'{exposure_clusters}× co-hosted', 'medium')
     regressions = _int(m.get('regressions'))
     if regressions:
         add(f'{regressions}× regression', 'high')
@@ -541,6 +560,9 @@ def build_summary(report: Dict) -> Dict:
     # CVE Intelligence rollup — a display metric only (CVEs already count once via
     # their finding severity in the vuln score; this is not a second score addend).
     cve = _cve_summary(report)
+    # Asset-level shared-infra exposure (EPIC 5) — display metric only (finding-level
+    # infra concentration is already scored by F-R4; this is the asset-topology view).
+    exposure = _exposure_clusters(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -570,6 +592,8 @@ def build_summary(report: Dict) -> Dict:
         'regressions': regressions,
         'cve_total': cve['total'], 'cve_high': cve['high'],
         'cve_medium': cve['medium'],
+        'exposure_clusters': exposure['clusters'],
+        'exposure_largest': exposure['largest'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

@@ -459,8 +459,13 @@ def _correlation_view(project: Optional[str] = None) -> dict:
         return {'exposure': [], 'asset_findings': {}, 'finding_chains': {},
                 'summary': {}}
     try:
+        from core.asset_graph import load_asset_graph
         from core.correlation import load_correlation
-        return load_correlation(project)
+        data = load_correlation(project)
+        # EPIC 5: asset↔asset relationships + shared-infra exposure clusters
+        # alongside the finding↔asset correlation (the same engine surface).
+        data['asset_graph'] = load_asset_graph(project)
+        return data
     except Exception as e:
         return {'exposure': [], 'summary': {}, 'error': str(e)}
 
@@ -943,6 +948,12 @@ async function showCorrelation(){
     (d.exposure||[]).slice(0,15).forEach(a=>{
       log('  '+(a.label||a.value)+' — '+(a.worst||'—')+' · '
           +(a.findings_count||0)+' finding(s)','info');
+    });
+    const ag=d.asset_graph||{}; const gs=ag.summary||{};
+    log('Asset graph: '+(gs.nodes||0)+' assets · '+(gs.edges||0)+' links · '
+        +(gs.clusters||0)+' shared-infra cluster(s)','data');
+    (ag.shared_infra||[]).slice(0,10).forEach(c=>{
+      log('  '+(c.type||'')+' '+(c.node||'')+' ← '+(c.count||0)+' assets','info');
     });
   }catch(ex){log('Correlation failed: '+ex.message,'er');}
 }

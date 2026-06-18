@@ -366,6 +366,9 @@ class CollectionRunner:
         # Cross-entity correlation (F-K2): derive findings↔assets↔infra exposure
         # from the two stores just synced (read-only, no new store).
         self._build_correlation(report, project)
+        # Asset Correlation Engine (EPIC 5): asset↔asset topology + shared-infra
+        # exposure clusters — relationships between assets, finding-independent.
+        self._build_asset_graph(report, project)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -1222,6 +1225,50 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — correlation must not fail a scan
             self._log(f'  Correlation failed: {e}')
 
+    def _build_asset_graph(self, report: Dict, project) -> None:
+        """Derive the asset relationship graph + exposure clusters (EPIC 5,
+        best-effort). Read-only over the asset store just synced; a failure must
+        never sink the scan. Stored compactly in ``report['asset_graph']`` (summary
+        + top shared-infra clusters) for the report card + the exposure metric."""
+        try:
+            from core.asset_graph import load_asset_graph
+            data = load_asset_graph(project.slug)
+            summary = data.get('summary') or {}
+            clusters = data.get('shared_infra') or []
+            if data.get('error') or not summary.get('nodes'):
+                return
+            report['asset_graph'] = {'summary': summary,
+                                     'shared_infra': clusters[:10]}
+            self._log(f"  Asset graph: {summary.get('nodes', 0)} активов, "
+                      f"{summary.get('edges', 0)} связей, "
+                      f"{summary.get('clusters', 0)} кластер(ов) общей инфры")
+        except Exception as e:  # noqa: BLE001 — asset graph must not fail a scan
+            self._log(f'  Asset graph failed: {e}')
+
+    @classmethod
+    def _render_asset_graph_card(cls, gdata: Dict) -> str:
+        """Offline HTML for the Asset Relationships card: graph size + the
+        shared-infrastructure exposure clusters (a node many assets depend on)."""
+        e = html.escape
+        summary = gdata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Связей между активами: '
+                f'<b>{e(str(summary.get("edges", 0)))}</b> на '
+                f'{e(str(summary.get("nodes", 0)))} активов · кластеров общей '
+                f'инфраструктуры: <b>{e(str(summary.get("clusters", 0)))}</b></p>')
+        clusters = gdata.get('shared_infra') or []
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(str(r.get("type", "")))}: '
+            f'<b>{e(str(r.get("node", "")))}</b></td>'
+            f'<td style="color:#e64a19;font-weight:bold;">{e(str(r.get("count", 0)))} '
+            f'актив.</td>'
+            f'<td style="color:#666;">{e(", ".join(map(str, r.get("members", [])[:6])))}'
+            f'{"…" if len(r.get("members", [])) > 6 else ""}</td></tr>'
+            for r in clusters)
+        table = (f'<p style="font-size:12px;color:#888;margin:8px 0 2px;">'
+                 f'Single points of exposure (общая инфраструктура):</p>'
+                 f'<table style="font-size:12px;">{rows}</table>' if rows else '')
+        return head + table
+
     # Severity → cell colour for the light-background report card.
     _CORR_SEV_COLOR = {'critical': '#c62828', 'high': '#e64a19',
                        'medium': '#f9a825', 'low': '#2e7d32', 'info': '#666'}
@@ -1788,6 +1835,14 @@ class CollectionRunner:
             body_parts.append(card(
                 'Exposure by Asset', self._render_correlation_card(cdata),
                 f"{csum.get('correlated', 0)}/{csum.get('findings', 0)} связано"))
+
+        # Asset Relationships (EPIC 5) — asset↔asset graph + shared-infra clusters.
+        gdata = report.get('asset_graph')
+        if isinstance(gdata, dict) and (gdata.get('summary') or {}).get('nodes'):
+            gsum = gdata['summary']
+            body_parts.append(card(
+                'Asset Relationships', self._render_asset_graph_card(gdata),
+                f"{gsum.get('edges', 0)} связей · {gsum.get('clusters', 0)} кластер."))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')

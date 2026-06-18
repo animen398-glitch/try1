@@ -469,6 +469,20 @@ def test_render_assets_card():
     assert "<script" not in html.lower()
 
 
+def test_render_asset_graph_card_shows_clusters():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "asset_graph": {
+                  "summary": {"nodes": 9, "edges": 12, "clusters": 1},
+                  "shared_infra": [{"type": "ip", "node": "1.2.3.4", "count": 3,
+                                    "members": ["a.x.com", "b.x.com", "x.com"]}]}}
+    html = r._render_html(report)
+    assert "Asset Relationships" in html
+    assert "1.2.3.4" in html and "3 актив" in html        # the cluster surfaced
+    assert "<script" not in html.lower()
+
+
 def test_render_trends_card_shows_sparklines_for_multi_scan():
     r = CollectionRunner()
     trends = [

@@ -660,3 +660,24 @@ def test_cve_metric_zero_without_phase():
     s = es.build_summary(_report())
     assert s['metrics']['cve_total'] == 0
     assert all(c['label'] != '0 CVE' for c in es.headline(s)['chips'])
+
+
+# ── Asset exposure clusters metric (EPIC 5) — display only, not a score addend ──
+
+def test_exposure_clusters_metric_and_chip():
+    r = _report(high=0)
+    r['asset_graph'] = {'summary': {'nodes': 9, 'edges': 12, 'clusters': 2,
+                                    'largest_cluster': 3}}
+    base = es.build_summary(_report(high=0))
+    s = es.build_summary(r)
+    assert s['metrics']['exposure_clusters'] == 2
+    assert s['metrics']['exposure_largest'] == 3
+    assert s['risk_score'] == base['risk_score']          # display only, no points
+    chips = [c['label'] for c in es.headline(s)['chips']]
+    assert '2× co-hosted' in chips
+
+
+def test_exposure_clusters_zero_without_graph():
+    s = es.build_summary(_report())
+    assert s['metrics']['exposure_clusters'] == 0
+    assert all('co-hosted' not in c['label'] for c in es.headline(s)['chips'])
