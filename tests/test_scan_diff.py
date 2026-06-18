@@ -111,6 +111,26 @@ def test_new_historical_url_event():
     assert 'admin/login' in events[0]['title']
 
 
+def test_osint_discovery_events_end_to_end():
+    # A newly-seen email / employee / CT certificate each produces a timeline event.
+    a, b = _report('A'), _report('B')
+    for r, extra in ((a, False), (b, True)):
+        r['phases']['emails'] = {'status': 'Success', 'data': {
+            'on_domain': ['ceo@x.com'] + (['new@x.com'] if extra else []),
+            'external': []}}
+        r['phases']['employees'] = {'status': 'Success', 'data': {'people':
+            [{'name': 'Jane Doe', 'title': 'CTO'}]
+            + ([{'name': 'New Hire', 'title': 'Eng'}] if extra else [])}}
+        r['phases']['ct'] = {'status': 'Success', 'data': {'certs':
+            [{'id': 1, 'not_before': '2026-01-01', 'issuer': 'LE', 'names': ['x.com']}]
+            + ([{'id': 2, 'not_before': '2026-06-01', 'issuer': 'LE',
+                 'names': ['new.x.com']}] if extra else [])}}
+    types = [e['type'] for e in diff_events(diff(a, b))]
+    assert 'new_email' in types
+    assert 'new_employee' in types
+    assert 'new_ct_cert' in types
+
+
 def test_technology_version_change_and_cms_union():
     a = _report('A', techs=[{'name': 'nginx', 'category': 'Server',
                              'version': '1.18'}], cms=['WordPress'])

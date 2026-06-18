@@ -227,6 +227,23 @@ def test_new_historical_url_is_timeline_only():
     assert 'new_historical_url' not in alerts.ALERT_TYPES
 
 
+def test_osint_discovery_events_are_timeline_only():
+    # New email / employee / CT certificate are info-level discovery notes for
+    # monitoring visibility — never alertable (pure OSINT discovery, no F1 overlap).
+    d = _diff(emails=_added('ceo@x.com'),
+              employees=_added('Jane Doe — CTO'),
+              ct=_added('2026-06-01 · Let\'s Encrypt: x.com'))
+    by_type = {e['type']: e for e in diff_events(d)}
+    assert set(by_type) == {'new_email', 'new_employee', 'new_ct_cert'}
+    assert all(e['severity'] == 'info' for e in by_type.values())
+    assert by_type['new_email']['section'] == 'emails'
+    assert by_type['new_employee']['section'] == 'employees'
+    assert by_type['new_ct_cert']['section'] == 'ct'
+    assert alerts.extract_alerts(d) == []
+    for t in ('new_email', 'new_employee', 'new_ct_cert'):
+        assert t not in alerts.ALERT_TYPES
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})

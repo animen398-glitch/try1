@@ -487,6 +487,9 @@ EVENT_SEVERITY = {
     'cert_expired':        'high',
     'new_endpoint':        'info',
     'new_historical_url':  'medium',
+    'new_email':           'info',
+    'new_employee':        'info',
+    'new_ct_cert':         'info',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
     'new_sourcemap':       'high',
@@ -582,6 +585,19 @@ def diff_events(d: Dict) -> List[Dict]:
     # long ago and merely newly observed by this scan.
     for label in sections.get('historical', {}).get('added', []):
         add('new_historical_url', label, 'historical')
+
+    # OSINT / attack-surface discovery, surfaced between scans for monitoring
+    # visibility (timeline-only, not alertable — like new_endpoint / new_technology:
+    # pure discovery, not a regression). None of these are findings, so there is no
+    # F1 overlap. A newly-seen email (email_intel) or employee (employee_intel)
+    # widens the phishing surface; a newly-logged certificate (CT) can flag fresh
+    # infrastructure or — when unexpected — possible mis-issuance.
+    for label in sections.get('emails', {}).get('added', []):
+        add('new_email', label, 'emails')
+    for label in sections.get('employees', {}).get('added', []):
+        add('new_employee', label, 'employees')
+    for label in sections.get('ct', {}).get('added', []):
+        add('new_ct_cert', label, 'ct')
 
     # GraphQL: a newly reachable endpoint is attack surface; one whose schema is
     # now open to introspection is the high-value signal (matches the risk engine,
