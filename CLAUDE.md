@@ -69,6 +69,8 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   executive_summary.py  attack_surface.py                        # risk-вердикт + граф/score атак-поверхности
   report_charts.py  dashboard_charts.py  portfolio.py            # offline-SVG (bars/sparkline/heatmap) + F5 портфолио
   trends.py             # EPIC 4: аналитика тренда поверх timeline.build_series (направление/baseline/дельта/пик)
+  correlation.py        # F-K: Finding→Asset→Infra (exposure-by-asset, blast radius)
+  asset_graph.py        # EPIC 5: Asset Correlation Engine — asset↔asset граф + кластеры общей инфры (Exposure Intelligence)
   report_export.py      # CSV-экспорт findings/portfolio (PDF — печатью report.html)
   # — detection-движки (вливаются в risk/attack-surface/report) —
   infrastructure.py     # Domain→ASN→IP→Provider (offline, из recon-geo)
@@ -1267,6 +1269,25 @@ summary`. 1214 collected, full suite PASS, ruff чист.
 (направление за всю историю, рядом с `risk_delta`=latest-vs-prev). Историю изменений
 НЕ дублировал (build_events уже полная). Покрыто `test_trends`(7) + history_csv/
 portfolio/web/collection_runner-verdict (+13 всего). EPIC 4 ЗАКРЫТ.
+
+**EPIC 5 — Asset Correlation Engine & Exposure Intelligence — `[ЗАКРЫТ]`.** «От хранения
+активов к пониманию отношений между ними». Аудит: `correlation.py` (F-K) — finding-
+центричный (Finding→Asset→Infra); чистых **asset↔asset** отношений не было. Решения
+пользователя: scope = **backend (GUI отложить)**, exposure-кластеры = **display-метрика**
+(не слагаемое score — F-R4 уже считает концентрацию находок). Новый `core/asset_graph.py`
+(pure derive-on-read, **без новой схемы**): `build_asset_graph(assets)` → `{nodes, edges}`
+с рёбрами apex(domain→subdomain)/resolves(host→ip)/announces(ip→asn)/contains(netblock∋ip
+через `ipaddress`)/serves(endpoint→host) **только между существующими активами** (CIDR-матч
+и `_host` переиспользуют `correlation` — одна реализация); `asset_neighbors`;
+`shared_infra(min_members=2)` → **Exposure Intelligence**: host-активы, делящие ip/asn/
+netblock (single point of exposure, blast radius на уровне активов; ASN хоста — через его
+ip-актив); `load_asset_graph(project)` тонкий ридер + summary. Проводка:
+`collection_runner._build_asset_graph` → `report['asset_graph']` + карточка «Asset
+Relationships»; web `_correlation_view` +`asset_graph` (+ console-вывод кластеров);
+`executive_summary` метрика `exposure_clusters/exposure_largest` + чип «N× co-hosted»
+(medium, display — ярлык отличает от F-R4 «shared infra»). Все рёбра из существующих attrs
+(новых данных нет). GUI не тронут. Покрыто `test_asset_graph`(6) + web/es/report-card
+(+10 всего). EPIC 5 ЗАКРЫТ.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

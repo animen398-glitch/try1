@@ -148,6 +148,27 @@ attack-surface score, число секретов/находок — основ�
 - Для каждой уязвимости: **CVE ID · severity · CVSS · дата публикации · summary**
   (в карточке Dependencies отчёта и в находках).
 
+### Asset Correlation Engine & Exposure Intelligence
+
+Платформа не просто хранит активы, а **понимает отношения между ними**
+(`core/asset_graph.py`, derive-on-read поверх Asset Inventory, без новой схемы):
+
+- **Граф активов** — типизированные рёбра между активами: `domain→subdomain`
+  (apex), `host→ip` (resolves), `ip→asn` (announces), `netblock∋ip` (contains,
+  через stdlib `ipaddress`), `endpoint→host` (serves). Соседи актива —
+  `asset_neighbors`.
+- **Exposure Intelligence** — кластеры общей инфраструктуры: host-активы,
+  делящие один IP / ASN / netblock («12 субдоменов резолвятся в один IP» =
+  single point of exposure, blast radius на уровне активов, независимо от
+  находок). `shared_infra`, worst-first по числу активов.
+- Поверхности: карточка **Asset Relationships** в HTML-отчёте, web
+  `/correlation` (поле `asset_graph`), метрика `exposure_clusters` + чип
+  «N× co-hosted» в Executive Headline (**display-метрика**, не слагаемое
+  risk-score — finding-концентрацию уже считает F-R4).
+
+Дополняет finding-центричную корреляцию (`core/correlation.py`: Finding→Asset→
+Infra, «Exposure by Asset»), не дублируя её — это asset-центричный слой.
+
 ### Тренды риска и история изменений (по проектам)
 
 Платформа ведёт историю каждого проекта между сканами:

@@ -2698,3 +2698,59 @@ EPIC 4 — HISTORICAL INTELLIGENCE (тренды риска + история и�
   ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
 
 ==============================================================================
+
+==============================================================================
+EPIC 5 — ASSET CORRELATION ENGINE & EXPOSURE INTELLIGENCE
+==============================================================================
+
+  ЦЕЛЬ: перевести проект от ХРАНЕНИЯ активов к ПОНИМАНИЮ отношений между ними.
+
+  АУДИТ (до кода): correlation.py (F-K1→K7) уже есть, но FINDING-центричный
+  (Finding→Asset→Infra: finding_chains/asset_findings/exposure/infra_exposure).
+  Чистых ASSET↔ASSET отношений (граф активов, соседи, кластеры общей инфры
+  независимо от находок) НЕ было — это δ EPIC 5. Все рёбра выводимы из уже
+  хранимых attrs (subdomain.ip→ip.asn→asn, domain.{ip,asn}, netblock=cidr) —
+  новых данных собирать не надо. Решения пользователя: scope = backend (GUI
+  отложить, internals-first); exposure-кластеры = DISPLAY-метрика (не слагаемое
+  score — F-R4 уже считает концентрацию находок).
+
+  ДВИЖОК — core/asset_graph.py (новый, pure derive-on-read, без новой схемы):
+   - build_asset_graph(assets) → {nodes:[{id,type,value,label}],
+     edges:[{src,dst,rel}]}. Рёбра (только между существующими активами):
+     apex(domain→subdomain), resolves(host→ip), announces(ip→asn),
+     contains(netblock∋ip), serves(endpoint→host). CIDR-матч переиспользует
+     correlation._netblock_for (одна реализация, не вторая); _host тоже оттуда.
+   - asset_neighbors(graph, id) → связанные активы (оба направления, дедуп).
+   - shared_infra(assets, min_members=2) → EXPOSURE INTELLIGENCE: host-активы,
+     делящие ip/asn/netblock {type,node,members,count}, largest-first. ASN хоста
+     резолвится через его ip-актив (субдомен несёт ip, не asn).
+   - load_asset_graph(project) → тонкий ридер (AssetStore.list_assets) + summary
+     {nodes,edges,clusters,largest_cluster}. Guarded (как load_correlation).
+
+  ПРОВОДКА:
+   - collection_runner._build_asset_graph → report['asset_graph'] (summary + top
+     shared_infra) + карточка «Asset Relationships» (рядом с «Exposure by Asset»);
+     best-effort (не валит скан).
+   - web _correlation_view: +'asset_graph' (это та же correlation-поверхность);
+     console showCorrelation печатает кластеры.
+   - executive_summary: МЕТРИКА exposure_clusters/exposure_largest (_exposure_
+     clusters derive из report['asset_graph']) + headline-чип «N× co-hosted»
+     (medium) — DISPLAY, НЕ слагаемое score; ярлык «co-hosted» отличает от
+     F-R4-чипа «shared infra».
+
+  ПЕРЕИСПОЛЬЗОВАНО: AssetStore.list_assets, correlation._netblock_for/_host,
+  load_correlation wiring-паттерн, report-card паттерн, headline-чип паттерн.
+  GUI НЕ тронут (internals-first). Новой таблицы/схемы НЕТ (derive-on-read).
+
+  НОВЫЕ МОДЕЛИ (derive, не хранятся): asset graph {nodes,edges}; shared_infra
+  кластер {type,node,members,count}.
+
+  ПОДДЕРЖИВАЕМЫЕ СВЯЗИ: apex, resolves, announces, contains, serves + co-hosting
+  кластеры (ip/asn/netblock).
+
+  ТЕСТЫ (+10): test_asset_graph(6: рёбра/no-edge/соседи/кластеры/min-members/
+  empty) + web asset_graph(1) + es exposure-метрика(2) + report-card(1).
+
+  ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
+
+==============================================================================
