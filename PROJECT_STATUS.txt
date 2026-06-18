@@ -2602,3 +2602,64 @@ G4. ПЛАН РЕАЛИЗАЦИИ (Phase 4) — лог
   ВЕРИФИКАЦИЯ: 951 passed/6 skipped (+15); ruff чист; self-check 19 вкладок.
 
 ==============================================================================
+
+==============================================================================
+EPIC 3 — CVE INTELLIGENCE (фаза 1: JS-библиотеки)
+==============================================================================
+
+  ЦЕЛЬ: связать обнаруженные технологии/версии с известными CVE; мульти-источник
+  (OSV + NVD), персистентный кеш, оффлайн после загрузки базы, без обязательных
+  облачных зависимостей и без бандла CVE-дампа в .exe (инвариант §2).
+
+  АУДИТ (до кода): пайплайн Tech→Version→CVE→Risk→Dashboard→Reports уже был на
+  ~60-70% (tech_fingerprint/dependency_audit детект+версии; osv_correlation live-
+  OSV opt-in; findings_adapter кросс-сканерный CVE-dedup; CVE-находки уже в
+  vuln_score). НЕ хватало: NVD, персистентного оффлайн-кеша (был in-memory TTL),
+  богатых полей (CVSS-число/дата), CVE-метрики. Решение: РАСШИРИТЬ OSV-пайплайн,
+  не дублировать.
+
+  ДВИЖОК (новые модули, все pure-given-injected-seams, stdlib, мягкая деградация):
+   - core/cve_store.py — SQLite-кеш data/cve_cache.db (SQLiteStore, user_version=1):
+     таблицы lib_cves (ecosystem|package|version → advisory-список) и cve_details
+     (cve_id → cvss/severity/published/summary), у каждой fetched_at. Оффлайн-
+     фундамент: оркестратор берёт свежий хит / рефрешит устаревший онлайн / при
+     недоступной сети переиспользует устаревший. clear()/stats().
+   - core/nvd_provider.py — NVD 2.0 обогащение по CVE id: _best_cvss (v3.1>v3.0>v2),
+     severity-бакет (переиспользует osv SSOT), published(дата)/summary(en).
+     Keyless по умолчанию; опц. nvd_api_key (только rate-limit). Инъектируемый
+     _get_text; пустой/битый ответ → None.
+   - core/cve_intel.py — ОРКЕСТРАТОР: correlate(libraries) → {lib: [enriched CVE]}.
+     Политика кеша: свежий хит минует сеть; провайдер недоступен (raw='') → stale-
+     кеш (оффлайн); чистая либа (провайдер ответил пусто) НЕ закрепляется за stale-
+     хитом. _enrich мёржит NVD (авторитетно для CVSS/даты/severity). to_findings
+     (CVSS+дата в detail, source='dependency-audit' + CVE-discriminator → F1/dedup/
+     risk без правок). summarize() — CVE по severity (для метрики).
+
+  ИНТЕГРАЦИЯ:
+   - osv_correlation._parse_osv: +published +cvss (аддитивно, не теряем).
+   - collection_runner._phase_osv: маршрут через cve_intel; пишет cve_summary;
+     supersede/fold bundled-находок как раньше (title-prefix), recon/osv.json.
+   - executive_summary: МЕТРИКА cve_total/cve_high/cve_medium (_cve_summary derive
+     из phases.osv.data.cve_summary) + headline-чип «N CVE» (severity по worst).
+     НЕ слагаемое risk-score — каждый CVE считается ОДИН раз через severity своей
+     находки (§12; решение пользователя: «CVE Risk Score = метрика»).
+   - dependency_audit.render_html: CVE id · CVSS · дата в карточке Dependencies
+     (back-compat: bundled-vulns без этих полей — как раньше).
+   - gui/dialogs «Очистить кеш» += персистентный CVE-кеш; config nvd_api_key/
+     CVE_CACHE_DB; conftest изолирует cve_cache.db.
+
+  DEDUP/OFFLINE/КЕШ: dedup — автоматом (findings_adapter мёржит nuclei+OSV+bundled
+  по CVE id). Offline — cve_store + stale-fallback. Кеш — персистентный SQLite.
+
+  РЕШЕНИЯ ПОЛЬЗОВАТЕЛЯ: (1) CVE Risk Score = метрика, не score-слагаемое;
+  (2) NVD = live+кеш (без дампа); (3) фаза 1 = только JS (server/backend-версии
+  через CPE — отложено на фазу 2).
+
+  ТЕСТЫ (+17): test_cve_store(5), test_nvd_provider(6), test_cve_intel(6) + правки
+  test_osv_correlation (NVD-seam инъекция, cve_summary) + test_executive_summary
+  (метрика-не-score / чип / без фазы). EPIC 4 (Historical Intelligence) — ТЗ
+  обрезано, не реализовано.
+
+  ВЕРИФИКАЦИЯ: 1214 collected, full suite PASS (exit 0, обычные skips); ruff чист.
+
+==============================================================================

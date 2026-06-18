@@ -74,6 +74,7 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   asn_intel.py          # АКТИВНО (opt-in): RDAP CIDR + RIPEstat префиксы + reverse-IP (keyless)
   tech_fingerprint.py  dependency_audit.py  graphql_discovery.py # tech/JS-фреймворки + уязв. JS-либы (хардкод-fallback) + GraphQL
   osv_correlation.py    # АКТИВНО (opt-in): live CVE-корреляция JS-либ через OSV.dev (вытесняет хардкод)
+  cve_intel.py  nvd_provider.py  cve_store.py   # EPIC 3 CVE Intelligence: OSV+NVD оркестратор + NVD-обогащение + персист-кеш (data/cve_cache.db, оффлайн)
   screenshot.py  external_tools.py  llm_summary.py               # Playwright скрины; nuclei/katana; опц. Ollama-резюме
 
 utils/                  # инфраструктура
@@ -255,7 +256,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 
 **Базовая зрелость:** платформа-анализатор + Full Collection + risk-движок +
 Scan Diff + проекты (`Projects/<домен>/`) + ASM 2.0 (F1–F6) + Asset Inventory.
-Тесты: 951 passed / 6 skipped (offline/headless).
+Тесты: 1214 collected (offline/headless; web-live skip без httpx).
 
 **Сделано до эпика (legacy #1–#13):** OSINT-бандл #13 (dns_intel, email_intel,
 employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **заменён**
@@ -1228,6 +1229,27 @@ overlap сохраняет katana-source; audit-only гейтит GONE на фа
 как с audit-секретами; asset-путь — корректная поверхность для diff). derive-on-read,
 без новых зависимостей. Покрыто `test_asset_adapter` (audit-endpoint→актив source=security
 / shared с katana сохраняет katana-source), `test_attack_surface` (katana+audit мёрж+дедуп).
+
+**EPIC 3 — CVE Intelligence (фаза 1: JS-либы) — `[ЗАКРЫТ]`.** Мульти-источниковый
+CVE-движок поверх существующего OSV-пайплайна (расширение, не дубль). Новые модули:
+`core/cve_store.py` (SQLite `data/cve_cache.db`, `SQLiteStore`, user_version=1 —
+таблицы lib_cves+cve_details с fetched_at; **оффлайн-фундамент**: свежий хит минует
+сеть / устаревший рефрешится онлайн / при недоступной сети переиспользуется),
+`core/nvd_provider.py` (NVD 2.0 обогащение по CVE id: CVSS v3.1>v3.0>v2, severity-
+бакет через osv-SSOT, published/summary; keyless+опц. `nvd_api_key`; инъектируемый
+`_get_text`), `core/cve_intel.py` (ОРКЕСТРАТОР `correlate`→`_enrich`→cache: чистая
+либа НЕ закрепляется за stale-хитом, провайдер-down → stale; `to_findings` с CVSS+
+датой; `summarize` для метрики). Проводка: `osv_correlation._parse_osv` +published/
++cvss (аддитивно); `collection_runner._phase_osv` → cve_intel, пишет `cve_summary`;
+`executive_summary` **МЕТРИКА** `cve_total/high/medium` + headline-чип «N CVE» —
+**НЕ слагаемое risk-score** (каждый CVE считается раз через severity находки, §12 —
+решение пользователя «CVE Score = метрика»); `dependency_audit.render_html` CVE·CVSS·
+дата; GUI clear-cache + `nvd_api_key`/`CVE_CACHE_DB`. **Dedup автоматом** (findings_
+adapter мёржит nuclei+OSV+bundled по CVE id). Решения пользователя: метрика / NVD
+live+кеш / фаза 1 только JS (server-версии через CPE — фаза 2). EPIC 4 (Historical
+Intelligence) — ТЗ обрезано, НЕ реализовано. Покрыто `test_cve_store`/`test_nvd_
+provider`/`test_cve_intel` (+17) + правки `test_osv_correlation`/`test_executive_
+summary`. 1214 collected, full suite PASS, ruff чист.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
