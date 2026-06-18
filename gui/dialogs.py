@@ -302,14 +302,15 @@ class SettingsDialog(QDialog):
             f"Отправлено каналов: {out['sent']}\n" + "\n".join(lines))
 
     def _clear_cache(self):
-        """Сбросить in-memory TTL-кеши сканирования (GeoIP + пассивные субдомены
-        + активная ASN-разведка + CVE-корреляция OSV)."""
+        """Сбросить кеши сканирования: in-memory TTL (GeoIP + пассивные субдомены
+        + ASN-разведка + OSV-корреляция) и персистентный CVE-кеш (OSV/NVD)."""
         from core.asn_intel import clear_cache as clear_asn_cache
+        from core.cve_intel import clear_cache as clear_cve_cache
         from core.osv_correlation import clear_cache as clear_osv_cache
         from core.recon_engine import clear_geo_cache
         from core.subdomain_scanner import clear_passive_cache
         n = (clear_geo_cache() + clear_passive_cache() + clear_asn_cache()
-             + clear_osv_cache())
+             + clear_osv_cache() + clear_cve_cache())
         QMessageBox.information(self, "Кеш", f"Очищено записей кеша: {n}")
 
     def _browse_output_dir(self):

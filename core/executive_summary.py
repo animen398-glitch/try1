@@ -226,6 +226,23 @@ def _reopened_regressions(report: Dict) -> int:
     return _int((report.get('findings') or {}).get('reopened'))
 
 
+def _cve_summary(report: Dict) -> Dict:
+    """CVE Intelligence rollup for the display **metric** (EPIC 3).
+
+    Reads the count-by-severity the CVE phase (``phases.osv``) already stamped on
+    the report. Deliberately NOT a risk-score addend: each correlated CVE is folded
+    into the vuln phase as a finding and counted once via its severity (the score
+    invariant, §12) — this is the explainable "CVE Risk Score" *view* (how many
+    known CVEs, how severe), not a second contribution. Zero when the opt-in CVE
+    phase didn't run (older reports / default pipeline)."""
+    data = (report.get('phases', {}).get('osv') or {}).get('data') or {}
+    s = data.get('cve_summary')
+    if not isinstance(s, dict):
+        return {'total': 0, 'high': 0, 'medium': 0, 'info': 0}
+    return {'total': _int(s.get('total')), 'high': _int(s.get('high')),
+            'medium': _int(s.get('medium')), 'info': _int(s.get('info'))}
+
+
 def parse_cert_date(value) -> Optional[datetime]:
     """Best-effort parse of a certificate validity date into a naive datetime.
 
@@ -414,6 +431,10 @@ def headline(summary: Dict) -> Dict:
         add('Cert expired', 'high')
     elif _int(m.get('cert_expiry')):
         add('Cert expiring', 'medium')
+    cve_total = _int(m.get('cve_total'))
+    if cve_total:
+        # Known CVEs in detected components (severity by the worst tier present).
+        add(f'{cve_total} CVE', 'high' if _int(m.get('cve_high')) else 'medium')
     regressions = _int(m.get('regressions'))
     if regressions:
         add(f'{regressions}× regression', 'high')
@@ -517,6 +538,9 @@ def build_summary(report: Dict) -> Dict:
     # F-R7: regressions — findings that were fixed and reappeared this scan
     # (0 unless the findings sync stamped a reopened count onto the report).
     regressions = _reopened_regressions(report)
+    # CVE Intelligence rollup — a display metric only (CVEs already count once via
+    # their finding severity in the vuln score; this is not a second score addend).
+    cve = _cve_summary(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -544,6 +568,8 @@ def build_summary(report: Dict) -> Dict:
         'sla_breaches': sla_breaches,
         'cert_expiry': cert_expiry, 'cert_expired': int(cert_expired),
         'regressions': regressions,
+        'cve_total': cve['total'], 'cve_high': cve['high'],
+        'cve_medium': cve['medium'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

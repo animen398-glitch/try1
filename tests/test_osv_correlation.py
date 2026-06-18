@@ -142,6 +142,9 @@ def test_phase_osv_supersedes_bundled_and_folds(tmp_path, monkeypatch):
         {'id': 'GHSA-2', 'aliases': ['CVE-2020-11023'],
          'database_specific': {'severity': 'MODERATE'}, 'summary': 'XSS2'},
     ]))
+    # Keep the NVD enrichment offline/deterministic (degrade → OSV-only records).
+    from core import nvd_provider
+    monkeypatch.setattr(nvd_provider, '_get_text', lambda url, **kw: '')
 
     runner = CollectionRunner(osv=True)
     report = _report_with_jquery()
@@ -159,10 +162,13 @@ def test_phase_osv_supersedes_bundled_and_folds(tmp_path, monkeypatch):
     assert 'Plain HTTP' in titles
     # Summary recomputed over the new set.
     assert report['phases']['vulns']['summary']['total'] == 3
-    # Library display vulns enriched from OSV.
+    # Library display vulns enriched from the CVE engine (CVE id + summary).
     lib = report['phases']['recon']['data']['dependencies']['libraries'][0]
     assert len(lib['vulnerabilities']) == 2
-    assert 'OSV/GHSA-1' in lib['vulnerabilities'][0]['detail']
+    assert 'GHSA-1' in lib['vulnerabilities'][0]['detail']
+    assert lib['vulnerabilities'][0]['cve'] == 'CVE-2020-11022'   # CVE surfaced
+    # CVE summary stamped for the risk metric (two unique CVEs).
+    assert out['data']['cve_summary']['total'] == 2
 
 
 def test_phase_osv_no_libraries_is_clean(tmp_path):

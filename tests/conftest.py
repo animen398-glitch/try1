@@ -48,6 +48,18 @@ def _isolate_assets_db(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_cve_cache_db(tmp_path_factory, monkeypatch):
+    """Redirect the global CVE-cache DB to a per-test temp file.
+
+    ``CVEStore()`` defaults to ``data/cve_cache.db`` (a real repo path); without
+    this, any test exercising CVE Intelligence would write into the working tree
+    (mirrors ``_isolate_findings_db``)."""
+    import core.cve_store as cstore
+    monkeypatch.setattr(cstore, "CVE_CACHE_DB",
+                        tmp_path_factory.mktemp("cve") / "cve_cache.db")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_companies_registry(tmp_path_factory, monkeypatch):
     """Redirect the global companies registry to a per-test temp file.
 

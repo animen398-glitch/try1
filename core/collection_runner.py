@@ -48,8 +48,7 @@ from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.asn_intel import build_asn_intel
 from core.asn_intel import render_html as render_asn_intel
-from core.osv_correlation import correlate as correlate_osv
-from core.osv_correlation import to_findings as osv_to_findings
+from core import cve_intel
 from core.infrastructure import render_html as render_infrastructure
 from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
 from core.openapi_discovery import discover as discover_openapi
@@ -984,10 +983,11 @@ class CollectionRunner:
                 self._log('  OSV — JS-библиотек с версиями нет')
                 return {'status': 'No libraries', 'data': {'correlated': {}}}
 
-            correlated = correlate_osv(libraries)
+            correlated = cve_intel.correlate(libraries)
             if not correlated:
-                self._log('  OSV — известных уязвимостей не найдено')
-                return {'status': 'Success', 'data': {'correlated': {}}}
+                self._log('  CVE — известных уязвимостей не найдено')
+                return {'status': 'Success',
+                        'data': {'correlated': {}, 'cve_summary': cve_intel.summarize({})}}
 
             # Enrich covered libraries' display vulns + build OSV findings, and
             # collect the (name, version) of every covered library so the bundled
@@ -1002,11 +1002,13 @@ class CollectionRunner:
                 covered.add((name, version))
                 lib['vulnerabilities'] = [
                     {'severity': v['severity'],
-                     'detail': f"OSV/{v.get('id', '')}: {v.get('summary', '')}".strip(),
+                     'cve': (v.get('cve') or [None])[0],
+                     'cvss': v.get('cvss'), 'published': v.get('published') or '',
+                     'detail': f"{v.get('id', '')}: {v.get('summary', '')}".strip(),
                      'fixed_in': None}
                     for v in vulns
                 ]
-                osv_findings.extend(osv_to_findings(name, version, vulns))
+                osv_findings.extend(cve_intel.to_findings(name, version, vulns))
 
             # Supersede in the vuln phase: drop the bundled dependency-audit
             # findings of covered libraries (their title is exactly the
@@ -1037,12 +1039,13 @@ class CollectionRunner:
                 json.dumps(correlated, indent=2, ensure_ascii=False, default=str),
                 encoding='utf-8',
             )
-            n_vulns = sum(len(v) for v in correlated.values())
-            self._log(f"  OSV: {len(correlated)} библиотек(и) с уязвимостями, "
-                      f"{n_vulns} advisory (находок +{len(osv_findings)})")
-            return {'status': 'Success', 'data': {'correlated': correlated}}
+            cve_summary = cve_intel.summarize(correlated)
+            self._log(f"  CVE: {len(correlated)} библиотек(и) с уязвимостями, "
+                      f"{cve_summary['total']} CVE (находок +{len(osv_findings)})")
+            return {'status': 'Success',
+                    'data': {'correlated': correlated, 'cve_summary': cve_summary}}
         except Exception as e:
-            self._log(f'  OSV correlation failed: {e}')
+            self._log(f'  CVE correlation failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     def _dedup_vuln_findings(self, report: Dict) -> None:

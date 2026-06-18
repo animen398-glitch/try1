@@ -205,7 +205,18 @@ def render_html(result: Optional[Dict]) -> str:
         if vulns:
             worst = min(vulns, key=lambda v: _SEV_RANK.get(v.get('severity'), 99))
             color = _SEV_COLOR.get(worst.get('severity'), '#555')
-            detail = (f'<br><span style="color:{color};font-size:11px;">'
+            # CVE Intelligence meta (CVE id · CVSS · published date) when the CVE
+            # engine enriched this entry; absent for bundled-table vulns (back-compat).
+            meta_bits = []
+            if worst.get('cve'):
+                meta_bits.append(e(str(worst['cve'])))
+            if worst.get('cvss') is not None:
+                meta_bits.append(f'CVSS {e(str(worst["cvss"]))}')
+            if worst.get('published'):
+                meta_bits.append(e(str(worst['published'])))
+            meta = (f'<span style="color:#888;font-size:11px;"> '
+                    f'[{" · ".join(meta_bits)}]</span>') if meta_bits else ''
+            detail = (f'{meta}<br><span style="color:{color};font-size:11px;">'
                       f'{e(worst["detail"])}</span>')
         else:
             color = '#2e7d32'

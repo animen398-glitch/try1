@@ -624,3 +624,39 @@ def test_render_html_includes_risk_breakdown():
 def test_render_html_no_breakdown_when_clean():
     html = es.render_html(es.build_summary(_report()))
     assert 'Из чего риск' not in html
+
+
+# ── CVE Intelligence metric (EPIC 3) — display only, not a score addend ──────
+
+def _report_with_cve(summary, *, high=0):
+    r = _report(high=high)
+    r['phases']['osv'] = {'data': {'cve_summary': summary}}
+    return r
+
+
+def test_cve_summary_is_metric_not_score_addend():
+    # CVEs fold into vulns as findings (counted once via severity); the cve_summary
+    # is a display metric and must add NO points to the risk score.
+    base = es.build_summary(_report(high=1))
+    s = es.build_summary(_report_with_cve(
+        {'total': 3, 'high': 2, 'medium': 1, 'info': 0}, high=1))
+    assert s['metrics']['cve_total'] == 3
+    assert s['metrics']['cve_high'] == 2 and s['metrics']['cve_medium'] == 1
+    assert s['risk_score'] == base['risk_score']          # no double count
+
+
+def test_cve_headline_chip_present_and_tiered():
+    s = es.build_summary(_report_with_cve({'total': 4, 'high': 1, 'medium': 3,
+                                           'info': 0}))
+    chip = next(c for c in es.headline(s)['chips'] if c['label'] == '4 CVE')
+    assert chip['severity'] == 'high'                     # a High CVE present
+    s2 = es.build_summary(_report_with_cve({'total': 2, 'high': 0, 'medium': 2,
+                                            'info': 0}))
+    chip2 = next(c for c in es.headline(s2)['chips'] if c['label'] == '2 CVE')
+    assert chip2['severity'] == 'medium'                  # no High → medium chip
+
+
+def test_cve_metric_zero_without_phase():
+    s = es.build_summary(_report())
+    assert s['metrics']['cve_total'] == 0
+    assert all(c['label'] != '0 CVE' for c in es.headline(s)['chips'])

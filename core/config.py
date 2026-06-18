@@ -37,6 +37,7 @@ OPERATIONS_DB = DATA_DIR / 'operations.db'
 REGISTRY_DB = DATA_DIR / 'registry.db'
 FINDINGS_DB = DATA_DIR / 'findings.db'
 ASSETS_DB = DATA_DIR / 'assets.db'        # Asset Inventory (cross-scan, lifecycle)
+CVE_CACHE_DB = DATA_DIR / 'cve_cache.db'  # CVE Intelligence — persistent OSV/NVD cache (offline)
 COMPANIES_REGISTRY = DATA_DIR / 'companies.json'  # Company tier — display names/attrs
 LIVE_TEST_OUTPUT = _PM.data_root / 'live_test_output'
 PLUGINS_DIR = _PM.resource_root / 'plugins'
@@ -60,6 +61,9 @@ DEFAULT_SETTINGS = {
     # leaves the current look untouched; only 'dark' overrides the palette.
     # Applied at startup (main.py) via gui.theme.apply_theme.
     'gui_theme': 'system',
+    # CVE Intelligence (EPIC 3) — optional NVD API key. Empty = keyless (works,
+    # just a lower rate limit); never required (no mandatory cloud dependency).
+    'nvd_api_key': '',
 }
 
 MAX_TARGETS = 100

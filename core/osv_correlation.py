@@ -127,11 +127,30 @@ def _severity_of(vuln: Dict) -> str:
 
 # ── pure parser ──────────────────────────────────────────────────────────────
 
+def _cvss_score(vuln: Dict) -> Optional[float]:
+    """The numeric CVSS base score if OSV carries one, else ``None``.
+
+    OSV's ``severity[].score`` is usually a CVSS *vector* string (not a number);
+    we don't re-score a vector (NVD provides the authoritative number), so only a
+    directly numeric score is taken here."""
+    sev = vuln.get('severity')
+    if isinstance(sev, list):
+        for entry in sev:
+            if isinstance(entry, dict):
+                try:
+                    return float(entry.get('score'))
+                except (TypeError, ValueError):
+                    continue
+    return None
+
+
 def _parse_osv(text: str) -> List[Dict]:
-    """OSV ``/v1/query`` response → ``[{id, cve, severity, summary}]``.
+    """OSV ``/v1/query`` response → ``[{id, cve, severity, cvss, published, summary}]``.
 
     ``cve`` is the list of CVE aliases (advisory ``id`` — e.g. a GHSA — is kept
-    separately). Malformed / empty input degrades to an empty list."""
+    separately); ``published`` (date) comes straight from OSV, ``cvss`` only when
+    OSV gives a numeric score (NVD enrichment fills it otherwise). Malformed /
+    empty input degrades to an empty list."""
     try:
         doc = json.loads(text)
     except (ValueError, TypeError):
@@ -151,6 +170,8 @@ def _parse_osv(text: str) -> List[Dict]:
             'id': vid,
             'cve': cves,
             'severity': _severity_of(v),
+            'cvss': _cvss_score(v),
+            'published': str(v.get('published') or '')[:10],
             'summary': str(summary).strip()[:300],
         })
     return out
