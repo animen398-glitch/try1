@@ -68,6 +68,7 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   monitor.py  alerts.py                                          # F3 мониторинг (движок) + F4 Alert Center
   executive_summary.py  attack_surface.py                        # risk-вердикт + граф/score атак-поверхности
   report_charts.py  dashboard_charts.py  portfolio.py            # offline-SVG (bars/sparkline/heatmap) + F5 портфолио
+  trends.py             # EPIC 4: аналитика тренда поверх timeline.build_series (направление/baseline/дельта/пик)
   report_export.py      # CSV-экспорт findings/portfolio (PDF — печатью report.html)
   # — detection-движки (вливаются в risk/attack-surface/report) —
   infrastructure.py     # Domain→ASN→IP→Provider (offline, из recon-geo)
@@ -1250,6 +1251,22 @@ live+кеш / фаза 1 только JS (server-версии через CPE —
 Intelligence) — ТЗ обрезано, НЕ реализовано. Покрыто `test_cve_store`/`test_nvd_
 provider`/`test_cve_intel` (+17) + правки `test_osv_correlation`/`test_executive_
 summary`. 1214 collected, full suite PASS, ruff чист.
+
+**EPIC 4 — Historical Intelligence (тренды риска + история изменений) — `[ЗАКРЫТ]`.**
+Аудит: ~85% уже было (история — `timeline.build_events`/Timeline/web `/timeline`/
+`timeline_csv`; тренды — `build_series` + sparklines в report.html и Overview +
+`portfolio.risk_delta`). Решение пользователя: scope = **backend-аналитика поверх
+существующего визуала, GUI не трогать** (`feedback-internals-first-no-gui`). Добавлено
+(всё pure derive-on-read, без новых данных/деп): `core/trends.py` —
+`trend_summary(series)` → per-metric `{n, current, baseline, delta_total (vs ПЕРВЫЙ
+скан), direction (up/down/flat), peak, low}` (+ `metric_trend`/`risk_direction`;
+пропуск None-точек, не фейковый 0). Проводка: `report['trends_summary']` рядом с
+`report['trends']`; `_render_trends_card` +строка-вердикт «Риск: ↑ рост (a→b, ±N с
+первого скана)»; `report_export.history_csv` (экспорт risk-истории, брат
+`timeline_csv`); web `_timeline_view` +`trend`-сводка; `portfolio` row +`risk_trend`
+(направление за всю историю, рядом с `risk_delta`=latest-vs-prev). Историю изменений
+НЕ дублировал (build_events уже полная). Покрыто `test_trends`(7) + history_csv/
+portfolio/web/collection_runner-verdict (+13 всего). EPIC 4 ЗАКРЫТ.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

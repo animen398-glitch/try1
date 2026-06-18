@@ -2663,3 +2663,38 @@ EPIC 3 — CVE INTELLIGENCE (фаза 1: JS-библиотеки)
   ВЕРИФИКАЦИЯ: 1214 collected, full suite PASS (exit 0, обычные skips); ruff чист.
 
 ==============================================================================
+
+==============================================================================
+EPIC 4 — HISTORICAL INTELLIGENCE (тренды риска + история изменений)
+==============================================================================
+
+  ТРЕБОВАНИЕ: показывать тренды риска и историю изменений по проектам.
+
+  АУДИТ (до кода): ~85% уже было. История изменений — timeline.build_events
+  (Scan Diff + F1 + assets + SLA), вкладка Timeline, web /timeline, timeline_csv.
+  Тренды — timeline.build_series (метрик-серия), sparklines в report.html
+  (_render_trends_card) и на вкладке Overview, portfolio.risk_delta. НЕ хватало
+  ПРОИЗВОДНОЙ аналитики тренда (направление/baseline/дельта-vs-первый/пик),
+  экспорта метрик-серии и web-сводки. Решение пользователя: scope = backend-
+  аналитика поверх существующего визуала, GUI НЕ трогать.
+
+  РЕАЛИЗАЦИЯ (всё pure derive-on-read, без новых данных/зависимостей, GUI цел):
+   - core/trends.py (новый) — trend_summary(series) → {metric: {n, current,
+     baseline, delta_total(vs первый скан), direction(up/down/flat), peak, low}}
+     для risk_score/attack_surface/secrets/high/medium; metric_trend, risk_direction;
+     _clean (целое float как int), _nums (пропуск None-точек, не фейковый 0).
+   - collection_runner.run: report['trends_summary'] рядом с report['trends'];
+     _render_trends_card +строка-вердикт «Риск: ↑ рост (a → b, ±N с первого скана)».
+   - report_export.history_csv(series) — экспорт risk-истории (брат timeline_csv).
+   - web _timeline_view: +'trend' сводка (derive из series).
+   - portfolio row: +'risk_trend' направление за всю историю (reuse loaded scans;
+     рядом с risk_delta = latest-vs-prev).
+
+  ИСТОРИЯ ИЗМЕНЕНИЙ — уже была полной (build_events/Timeline/web/CSV), не дублировал.
+
+  ТЕСТЫ (+13): test_trends(7), +history_csv(2)/portfolio risk_trend(1)/web trend(1)/
+  collection_runner trends-verdict(1) + правка web_timeline _seed (risk_score).
+
+  ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
+
+==============================================================================
