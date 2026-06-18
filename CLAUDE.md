@@ -1354,6 +1354,32 @@ risk-числа не тронуты (priority — display). Покрыто `test
 `intelligence_csv` в `test_report_export`(3). **Web-паритет был с EPIC 7
 (`/intelligence`); теперь поверхность есть и в GUI.**
 
+**Advanced Intelligence Framework — MODULE 1: Unified Scan Accuracy — `[В РАБОТЕ]`.**
+Backend-фаза, расширение EPIC 7 (решение пользователя: «расширять, не дублировать» +
+жить в `core/intelligence.py`, НЕ новый `accuracy.py` — память
+`project-advanced-intelligence`). EPIC 7 дал confidence/priority/explanation **только
+для findings**; MODULE 1 обобщает «насколько это достоверно?» на ВСЕ сущности.
+Добавлено в `core/intelligence.py` (pure / derive-on-read, без новых таблиц):
+`confidence_for(entity_type, entity)` → единый словарь `{score, band, factors,
+evidence, source, verification}` для 7 типов — `finding / technology / cve / asset /
+infrastructure / api / secret`. Один движок, ноль дублей: каждый тип переиспользует
+готовый сигнал достоверности — `secret_validator.validate` (секреты: VALID→+20,
+INVALID-плейсхолдер→−35), `executive_summary.is_high_value_secret`/
+`_is_high_value_secret_finding` (tier), evidence-метод из `tech_fingerprint`
+(`header:`/`cookie:`/`script:`>`html`), CVSS+мульти-БД из `cve_intel`,
+`Asset.attrs.source` (probed>tls-observed>derived), active-RDAP vs passive-derive у
+infrastructure, 2xx-ответ у API. `build_accuracy(entities_by_type)` — чистый
+агрегатор (rollup `{by_type, items confidence-desc, summary}`), развязан от формы
+report (extraction = EPIC 12). `confidence()` отрефакторён на общие `_clamp`/`_band`
+(вывод **байт-в-байт** прежний, контракт тестов цел). `build_intelligence` items
+получили аддитивные `evidence`/`source`/`verification` (через `confidence_for`).
+Risk-вердикт НЕ тронут (display-метрики — решение пользователя). Покрыто
+`test_intelligence.py` (+13: per-type confidence_for, build_accuracy rollup,
+unified-поля в build_intelligence). 1227 collected, full suite PASS, ruff чист.
+**Дальше (по полному ТЗ пользователя):** Asset Criticality, Priority deepening,
+Attack Paths (все display-метрики), затем Surfaces (report/GUI/web/CSV) +
+Monitoring/Docs.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

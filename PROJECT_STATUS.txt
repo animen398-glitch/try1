@@ -2935,3 +2935,59 @@ EPIC 7 — GUI-ХВОСТ: ВКЛАДКА «PRIORITIES»
   ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист. Коммит 7ed9cbb.
 
 ==============================================================================
+ADVANCED INTELLIGENCE FRAMEWORK — MODULE 1: UNIFIED SCAN ACCURACY
+==============================================================================
+
+  ЦЕЛЬ (запрос пользователя «EPIC 7-13 / Advanced Intelligence Framework»):
+  обобщить оценку достоверности «насколько это достоверно?» с findings (EPIC 7)
+  на ВСЕ сущности. Решения пользователя: scope сначала уточнить (текст ТЗ оборван
+  на MODULE 1); жить РАСШИРЕНИЕМ core/intelligence.py (НЕ новый accuracy.py);
+  будущие Asset Criticality / Attack Paths — display-метрики, risk-вердикт не
+  трогать (память project-advanced-intelligence). Этот блок — первый Task: движок.
+
+  АУДИТ (до кода): EPIC 7 уже даёт confidence/priority/explanation, но ТОЛЬКО для
+  findings (intelligence.confidence). evidence/source у Finding уже first-class.
+  Готовые сигналы верификации, которые надо переиспользовать: secret_validator
+  (VALID/INVALID/UNVERIFIABLE), executive_summary.is_high_value_secret (tier),
+  tech_fingerprint evidence-метод (header:/cookie:/script:/html), cve_intel
+  CVSS+source(osv/nvd), Asset.attrs.source (фаза), recon infrastructure.
+
+  РЕАЛИЗАЦИЯ — core/intelligence.py (pure / derive-on-read, без новых таблиц):
+   - _clamp/_band — общие хелперы; confidence() отрефакторён на них (вывод
+     БАЙТ-В-БАЙТ прежний → контракт тестов EPIC 7 цел).
+   - confidence_for(entity_type, entity) → единый словарь {score, band, factors,
+     evidence, source, verification} для 7 типов (ENTITY_TYPES): finding /
+     technology / cve / asset / infrastructure / api / secret. Per-type хелперы:
+       * finding  — делегирует confidence() + verification (cve-id / high-value /
+         generic / corroborated / heuristic);
+       * technology — base по методу детекта (_TECH_METHOD_CONF: header 80 …
+         html 60) + версия +15 + мульти-признак; version-confirmed/exact-match;
+       * cve — base 85 + CVSS +10 + мульти-БД +5 (split 'osv+nvd'); cvss-confirmed;
+       * asset — base по source (_ASSET_SOURCE_CONF: probed-фазы > certificate/ct)
+         + активная проба +10 + ip +5; probed/tls-observed/derived;
+       * infrastructure — asn_intel(RDAP) 78 vs passive recon 60; active-rdap;
+       * api — base 60 + 2xx +15 + метод +5; responded/listed;
+       * secret — secret_validator: VALID +20 / INVALID(плейсхолдер) −35 +
+         high-value tier +10; valid_format/invalid_format/unverifiable.
+     Unknown type / non-dict → нулевой результат; helper-исключение →
+     degrade-not-raise (verification='error', F-SR1 этос).
+   - build_accuracy(entities_by_type) — чистый агрегатор {by_type, items
+     (confidence-desc), summary}; развязан от формы report (extraction = EPIC 12).
+   - build_intelligence items получили аддитивные evidence/source/verification
+     (через confidence_for('finding', f)); существующие ключи целы.
+
+  ПЕРЕИСПОЛЬЗОВАНО (ноль дублей): secret_validator, executive_summary
+  (is_high_value_secret / _is_high_value_secret_finding), tech_fingerprint
+  evidence, cve_intel поля, Asset.attrs, Finding.sources. Новых модулей/таблиц нет.
+  Risk-вердикт (_risk_level/risk_100) НЕ тронут — решение пользователя (display).
+
+  ТЕСТЫ (+13, tests/test_intelligence.py): confidence_for по каждому из 7 типов
+  (метод/версия/CVSS/проба/active-vs-passive/2xx/валидация-tiers), unknown/non-dict
+  zeroed, build_accuracy rollup+sort+avg+empty, build_intelligence unified-поля.
+
+  ВЕРИФИКАЦИЯ: full suite PASS (1227 collected, exit 0), ruff чист.
+
+  ДАЛЬШЕ (по полному ТЗ): Asset Criticality, Priority deepening, Attack Paths
+  (display), затем Surfaces (report/GUI/web/CSV) + Monitoring/Docs.
+
+==============================================================================

@@ -113,3 +113,118 @@ def test_build_empty_is_safe():
     assert out == {'items': [], 'top': [],
                    'summary': {'findings': 0, 'high_confidence': 0,
                                'top_priority': 0}}
+
+
+def test_build_items_carry_unified_accuracy_fields():
+    out = intel.build_intelligence([_f(evidence={'sources': ['nuclei', 'osv'],
+                                                 'location': 'a.x.com/q',
+                                                 'detail': 'd'})])
+    top = out['items'][0]
+    assert set(top) >= {'evidence', 'source', 'verification'}
+    assert top['source'] == ['nuclei', 'osv']
+    assert top['verification'] == 'corroborated'
+
+
+# ── unified scan accuracy (MODULE 1) ────────────────────────────────────────────
+
+_ACCURACY_KEYS = {'score', 'band', 'factors', 'evidence', 'source', 'verification'}
+
+
+def test_confidence_for_finding_reuses_confidence():
+    f = _f(category='takeover')
+    acc = intel.confidence_for('finding', f)
+    assert set(acc) >= _ACCURACY_KEYS
+    assert acc['score'] == intel.confidence(f)['score'] == 85
+
+
+def test_confidence_for_technology_method_and_version():
+    header_ver = intel.confidence_for('technology', {
+        'name': 'Nginx', 'category': 'Server', 'version': '1.25',
+        'evidence': 'header:server'})
+    assert header_ver['score'] == 95 and header_ver['band'] == 'high'
+    assert header_ver['verification'] == 'version-confirmed'
+    script_only = intel.confidence_for('technology', {
+        'name': 'React', 'category': 'JS Framework', 'version': None,
+        'evidence': 'script:react'})
+    assert script_only['score'] == 72 and script_only['verification'] == 'exact-match'
+    html_only = intel.confidence_for('technology', {
+        'name': 'X', 'category': 'Backend', 'evidence': 'html'})
+    assert html_only['score'] == 60 and html_only['verification'] == 'heuristic'
+
+
+def test_confidence_for_cve_cvss_and_multidb():
+    enriched = intel.confidence_for('cve', {
+        'id': 'CVE-2020-1', 'cvss': 7.5, 'source': 'osv+nvd',
+        'published': '2020-01-01'})
+    assert enriched['score'] == 100               # 85 + 10 (cvss) + 5 (two dbs)
+    assert enriched['verification'] == 'cvss-confirmed'
+    assert enriched['source'] == ['nvd', 'osv']
+    bare = intel.confidence_for('cve', {'id': 'CVE-1', 'source': 'osv'})
+    assert bare['score'] == 85 and bare['verification'] == 'advisory-listed'
+
+
+def test_confidence_for_asset_probe_vs_tls_only():
+    probed = intel.confidence_for('asset', {
+        'type': 'subdomain', 'value': 'a.x.com',
+        'attrs': {'source': 'subdomains', 'http_status': 200, 'ip': '1.2.3.4'}})
+    assert probed['score'] == 93 and probed['verification'] == 'probed'
+    tls_only = intel.confidence_for('asset', {
+        'type': 'subdomain', 'value': 'b.x.com', 'attrs': {'source': 'ct'}})
+    assert tls_only['score'] == 58 and tls_only['verification'] == 'tls-observed'
+
+
+def test_confidence_for_infrastructure_active_vs_passive():
+    active = intel.confidence_for('infrastructure', {
+        'ip': '1.2.3.4', 'asn': 'AS13335', 'provider': 'Cloudflare',
+        'source': 'asn_intel'})
+    assert active['score'] == 88 and active['verification'] == 'active-rdap'
+    passive = intel.confidence_for('infrastructure', {'ip': '1.2.3.4', 'asn': 'AS1'})
+    assert passive['score'] == 65 and passive['verification'] == 'passive-derive'
+
+
+def test_confidence_for_api_responded_vs_listed():
+    live = intel.confidence_for('api', {'path': '/v1/users', 'method': 'GET',
+                                        'status': 200})
+    assert live['score'] == 80 and live['verification'] == 'responded'
+    listed = intel.confidence_for('api', {'path': '/v1/x'})
+    assert listed['score'] == 60 and listed['verification'] == 'listed'
+
+
+def test_confidence_for_secret_validation_tiers():
+    valid_hv = intel.confidence_for('secret', {
+        'type': 'AWS Access Key', 'value': 'AKIA' + 'A' * 16})
+    assert valid_hv['score'] == 100          # 70 + 20 (valid) + 10 (high-value)
+    assert valid_hv['verification'] == 'valid_format'
+    placeholder = intel.confidence_for('secret', {
+        'type': 'Generic API Key', 'value': 'your_api_key_here'})
+    assert placeholder['verification'] == 'invalid_format'
+    assert placeholder['score'] < 70         # collapsed by the placeholder penalty
+    prevalidated = intel.confidence_for('secret', {
+        'type': 'Generic Secret', 'status': 'unverifiable'})
+    assert prevalidated['score'] == 70 and prevalidated['verification'] == 'unverifiable'
+
+
+def test_confidence_for_unknown_type_or_non_dict_is_zeroed():
+    assert intel.confidence_for('nope', {})['verification'] == 'unknown'
+    assert intel.confidence_for('asset', None)['score'] == 0
+
+
+def test_build_accuracy_rolls_up_mixed_entities():
+    out = intel.build_accuracy({
+        'technology': [{'name': 'Nginx', 'version': '1.25',
+                        'evidence': 'header:server'}],   # 95
+        'cve': [{'id': 'CVE-1', 'source': 'osv'}],       # 85
+        'api': [{'path': '/x'}],                          # 60
+    })
+    assert out['summary']['entities'] == 3
+    assert out['summary']['high_confidence'] == 2        # 95 + 85 ≥ 80
+    assert out['summary']['by_type'] == {'technology': 1, 'cve': 1, 'api': 1}
+    # items are confidence-descending
+    assert [i['score'] for i in out['items']] == [95, 85, 60]
+    assert out['by_type']['technology']['avg_confidence'] == 95
+
+
+def test_build_accuracy_empty_is_safe():
+    out = intel.build_accuracy({})
+    assert out['items'] == [] and out['summary']['entities'] == 0
+    assert out['summary']['avg_confidence'] == 0

@@ -192,6 +192,16 @@ attack-surface score, число секретов/находок — основ�
 Переиспользует (не дублирует): Findings, Correlation/Asset Graph (exposure/blast
 radius), Knowledge-каталог, SLA, severity — новых таблиц/моделей нет.
 
+**Unified Scan Accuracy (MODULE 1)** — та же оценка достоверности обобщена с findings
+на **все** сущности: `confidence_for(entity_type, entity)` отдаёт единый словарь
+`{score, band, factors, evidence, source, verification}` для `finding / technology /
+cve / asset / infrastructure / api / secret`. Каждый тип переиспользует свой готовый
+сигнал верификации — структурная валидация секрета (`secret_validator`), способ
+детекта технологии (header/cookie/script сильнее html-эвристики), CVSS+мульти-БД у
+CVE, фаза-источник и активная проба у актива, RDAP vs passive у инфраструктуры,
+2xx-ответ у API. `build_accuracy(...)` сворачивает разнотипные сущности в общий
+rollup. Всё derive-on-read, без новых таблиц.
+
 ### Asset Correlation Engine & Exposure Intelligence
 
 Платформа не просто хранит активы, а **понимает отношения между ними**
