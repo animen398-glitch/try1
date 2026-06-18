@@ -1173,6 +1173,15 @@ companies) его имеет. F2 закрыл GUI, но не web. `remote/web_ap
 автоматом. Покрыто `test_web_timeline` (helper для проекта/пустой/неизвестный + наличие
 кнопки + live TestClient).
 
+**`timeline_csv` + Export CSV Timeline-вкладки (export-паритет) — `[ЗАКРЫТ]`.** Findings/
+Assets/Overview экспортируют CSV, а лента изменений (Timeline) — нет; единственный
+data-вью без экспорта. `core/report_export.timeline_csv(events)` — pure-stdlib CSV F2-ленты
+(When/Scan/Severity/Section/Event/Detail), брат `findings_csv`/`assets_csv`. GUI
+Timeline-вкладка получила кнопку «Export CSV» (точное зеркало хендлера Findings/Assets) над
+текущими загруженными событиями (стэшатся при загрузке как источник). Покрыто
+`test_report_export` (header+row / пустой = только header). Кнопка аддитивна (не
+реструктуризация GUI).
+
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
 но они были orphaned: attack-surface «Endpoints» читала только `katana.endpoints`, а
