@@ -681,3 +681,20 @@ def test_exposure_clusters_zero_without_graph():
     s = es.build_summary(_report())
     assert s['metrics']['exposure_clusters'] == 0
     assert all('co-hosted' not in c['label'] for c in es.headline(s)['chips'])
+
+
+# ── Core Intelligence metric (EPIC 7) — display only ──────────────────────────
+
+def test_intelligence_metric_from_report():
+    r = _report()
+    r['intelligence'] = {'summary': {'findings': 5, 'top_priority': 72,
+                                     'high_confidence': 3}}
+    s = es.build_summary(r)
+    assert s['metrics']['top_priority'] == 72
+    assert s['metrics']['high_confidence_findings'] == 3
+
+
+def test_intelligence_metric_zero_without_layer():
+    s = es.build_summary(_report())
+    assert s['metrics']['top_priority'] == 0
+    assert s['metrics']['high_confidence_findings'] == 0

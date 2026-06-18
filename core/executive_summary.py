@@ -257,6 +257,19 @@ def _exposure_clusters(report: Dict) -> Dict:
             'largest': _int(s.get('largest_cluster'))}
 
 
+def _intelligence(report: Dict) -> Dict:
+    """Core Intelligence rollup for the display **metric** (EPIC 7).
+
+    Reads the priority/confidence summary the intelligence layer already stamped
+    (``report['intelligence']``). Not a score addend — priority is itself derived
+    from severity (already in the score) amplified by exposure/SLA; this surfaces
+    the top priority and how many findings are high-confidence. Zero when the
+    intelligence layer didn't run (older reports)."""
+    s = (report.get('intelligence') or {}).get('summary') or {}
+    return {'top_priority': _int(s.get('top_priority')),
+            'high_confidence': _int(s.get('high_confidence'))}
+
+
 def parse_cert_date(value) -> Optional[datetime]:
     """Best-effort parse of a certificate validity date into a naive datetime.
 
@@ -563,6 +576,8 @@ def build_summary(report: Dict) -> Dict:
     # Asset-level shared-infra exposure (EPIC 5) — display metric only (finding-level
     # infra concentration is already scored by F-R4; this is the asset-topology view).
     exposure = _exposure_clusters(report)
+    # Core Intelligence (EPIC 7) — top priority + high-confidence count (display).
+    intel = _intelligence(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -594,6 +609,8 @@ def build_summary(report: Dict) -> Dict:
         'cve_medium': cve['medium'],
         'exposure_clusters': exposure['clusters'],
         'exposure_largest': exposure['largest'],
+        'top_priority': intel['top_priority'],
+        'high_confidence_findings': intel['high_confidence'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

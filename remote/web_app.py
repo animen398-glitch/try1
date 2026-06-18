@@ -470,6 +470,21 @@ def _correlation_view(project: Optional[str] = None) -> dict:
         return {'exposure': [], 'summary': {}, 'error': str(e)}
 
 
+# ── Core Intelligence (EPIC 7, web parity) ──────────────────────────────────────
+# Read-only over core.intelligence — findings ranked by priority with a confidence
+# score + explanation. Inherently per-project: an empty project yields an empty view.
+
+def _intelligence_view(project: Optional[str] = None) -> dict:
+    """Priority-ranked findings (confidence + explanation) for one project."""
+    if not project:
+        return {'items': [], 'top': [], 'summary': {}}
+    try:
+        from core.intelligence import load_intelligence
+        return load_intelligence(project)
+    except Exception as e:
+        return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
 # ── Timeline / Change feed (F2, web parity) ─────────────────────────────────────
 # Read-only over core.timeline — the same derive-on-read change feed (series +
 # events) the GUI Timeline tab shows. Inherently per-project: an empty project
@@ -617,6 +632,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showCompanies()">Companies</button>
       <button class="btn sec" onclick="showCorrelation()">Correlation</button>
       <button class="btn sec" onclick="showTimeline()">Timeline</button>
+      <button class="btn sec" onclick="showIntelligence()">Intelligence</button>
     </div>
   </div>
 
@@ -974,6 +990,22 @@ async function showTimeline(){
   }catch(ex){log('Timeline failed: '+ex.message,'er');}
 }
 
+async function showIntelligence(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Intelligence: no projects','data'); return;}
+    const r=await fetch('/intelligence?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Intelligence ['+proj+']: '+(s.findings||0)+' findings · top priority '
+        +(s.top_priority||0)+' · '+(s.high_confidence||0)+' high-confidence','data');
+    (d.top||[]).slice(0,10).forEach(i=>{
+      log('  P'+(i.priority||0)+' ['+(i.severity||'')+'] '+(i.title||'')
+          +' — conf '+(i.confidence||0)+'%','info');
+    });
+  }catch(ex){log('Intelligence failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -1218,6 +1250,10 @@ if _FASTAPI_OK:
     @app.get('/timeline')
     async def timeline(project: Optional[str] = None):
         return JSONResponse(_timeline_view(project))
+
+    @app.get('/intelligence')
+    async def intelligence(project: Optional[str] = None):
+        return JSONResponse(_intelligence_view(project))
 
     @app.get('/report')
     async def report(file: str):

@@ -369,6 +369,10 @@ class CollectionRunner:
         # Asset Correlation Engine (EPIC 5): asset↔asset topology + shared-infra
         # exposure clusters — relationships between assets, finding-independent.
         self._build_asset_graph(report, project)
+        # Core Intelligence Framework (EPIC 7): rank findings by priority with a
+        # confidence score + explanation — derived from the findings/correlation/
+        # asset-graph just produced (no new data).
+        self._build_intelligence(report, project)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -1245,6 +1249,50 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — asset graph must not fail a scan
             self._log(f'  Asset graph failed: {e}')
 
+    def _build_intelligence(self, report: Dict, project) -> None:
+        """Derive the Core Intelligence view (EPIC 7, best-effort): findings ranked
+        by priority with a confidence score + explanation. Read-only over the stores
+        just synced; a failure must never sink the scan. Stored compactly in
+        ``report['intelligence']`` (summary + top items) for the report card."""
+        try:
+            from core.intelligence import load_intelligence
+            data = load_intelligence(project.slug)
+            summary = data.get('summary') or {}
+            if data.get('error') or not summary.get('findings'):
+                return
+            report['intelligence'] = {'summary': summary,
+                                      'top': (data.get('top') or [])[:10]}
+            self._log(f"  Intelligence: {summary.get('findings', 0)} находок, "
+                      f"top priority {summary.get('top_priority', 0)}, "
+                      f"{summary.get('high_confidence', 0)} высокой уверенности")
+        except Exception as e:  # noqa: BLE001 — intelligence must not fail a scan
+            self._log(f'  Intelligence failed: {e}')
+
+    @classmethod
+    def _render_intelligence_card(cls, idata: Dict) -> str:
+        """Offline HTML for the Priorities card: the highest-priority findings with
+        their priority + confidence (what to fix first, and how sure)."""
+        e = html.escape
+        summary = idata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Находок: '
+                f'<b>{e(str(summary.get("findings", 0)))}</b> · высокой уверенности: '
+                f'<b>{e(str(summary.get("high_confidence", 0)))}</b> · макс. '
+                f'приоритет: <b>{e(str(summary.get("top_priority", 0)))}</b></p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;color:#888;">'
+            f'{e(str(i.get("priority", 0)))}</td>'
+            f'<td style="color:{cls._CORR_SEV_COLOR.get(str(i.get("severity","")).lower(), "#666")};'
+            f'font-weight:bold;">{e(str(i.get("severity") or "—"))}</td>'
+            f'<td style="padding:1px 12px;">{e(str(i.get("title") or ""))}</td>'
+            f'<td style="color:#666;">conf {e(str(i.get("confidence", 0)))}% '
+            f'({e(str(i.get("confidence_band", "")))})</td></tr>'
+            for i in idata.get('top', []))
+        table = (f'<table style="font-size:12px;"><tr>'
+                 f'<td style="padding-right:12px;"><b>Prio</b></td>'
+                 f'<td><b>Sev</b></td><td style="padding:0 12px;"><b>Находка</b></td>'
+                 f'<td><b>Confidence</b></td></tr>{rows}</table>' if rows else '')
+        return head + table
+
     @classmethod
     def _render_asset_graph_card(cls, gdata: Dict) -> str:
         """Offline HTML for the Asset Relationships card: graph size + the
@@ -1843,6 +1891,16 @@ class CollectionRunner:
             body_parts.append(card(
                 'Asset Relationships', self._render_asset_graph_card(gdata),
                 f"{gsum.get('edges', 0)} связей · {gsum.get('clusters', 0)} кластер."))
+
+        # Priorities (EPIC 7) — Core Intelligence: findings ranked by priority +
+        # confidence (what to fix first).
+        idata = report.get('intelligence')
+        if isinstance(idata, dict) and (idata.get('summary') or {}).get('findings'):
+            isum = idata['summary']
+            body_parts.append(card(
+                'Priorities', self._render_intelligence_card(idata),
+                f"top {isum.get('top_priority', 0)} · "
+                f"{isum.get('high_confidence', 0)} high-conf"))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')

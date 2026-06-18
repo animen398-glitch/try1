@@ -469,6 +469,22 @@ def test_render_assets_card():
     assert "<script" not in html.lower()
 
 
+def test_render_intelligence_card_shows_priorities():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "intelligence": {
+                  "summary": {"findings": 2, "top_priority": 45,
+                              "high_confidence": 1},
+                  "top": [{"title": "CVE-2021-1 in lib", "severity": "high",
+                           "priority": 45, "confidence": 95,
+                           "confidence_band": "high"}]}}
+    html = r._render_html(report)
+    assert "Priorities" in html
+    assert "CVE-2021-1 in lib" in html and "conf 95%" in html
+    assert "<script" not in html.lower()
+
+
 def test_render_asset_graph_card_shows_clusters():
     r = CollectionRunner()
     report = {"url": "https://x", "domain": "x", "started_at": "",
