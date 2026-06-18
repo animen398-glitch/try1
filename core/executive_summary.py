@@ -271,6 +271,20 @@ def _asset_criticality(report: Dict) -> Dict:
             'top_asset_criticality': _int(s.get('top_criticality'))}
 
 
+def _attack_paths(report: Dict) -> Dict:
+    """Attack Paths rollup for the display **metric** (EPIC 11).
+
+    Reads the lateral-path ranking the Attack Paths engine already stamped
+    (``report['attack_paths']``): how many paths reach a critical target and the top
+    score. Deliberately NOT a score addend — a path is derived from findings + shared
+    infra + criticality already accounted for; this is the "how is it connected" view,
+    a metric/chip only. Zero when the engine didn't run (older reports)."""
+    s = (report.get('attack_paths') or {}).get('summary') or {}
+    return {'attack_paths': _int(s.get('paths')),
+            'critical_attack_paths': _int(s.get('critical_paths')),
+            'top_attack_path': _int(s.get('top_score'))}
+
+
 def _intelligence(report: Dict) -> Dict:
     """Core Intelligence rollup for the display **metric** (EPIC 7).
 
@@ -485,6 +499,12 @@ def headline(summary: Dict) -> Dict:
     if critical_assets:
         # High-criticality assets (EPIC 9) — which assets matter most (display).
         add(_plural(critical_assets, 'critical asset'), 'medium')
+    attack_paths = _int(m.get('attack_paths'))
+    if attack_paths:
+        # Lateral attack paths over shared infra (EPIC 11) — high when one reaches a
+        # critical target, else medium (display).
+        add(_plural(attack_paths, 'attack path'),
+            'high' if _int(m.get('critical_attack_paths')) else 'medium')
     regressions = _int(m.get('regressions'))
     if regressions:
         add(f'{regressions}× regression', 'high')
@@ -599,6 +619,8 @@ def build_summary(report: Dict) -> Dict:
     # Asset Criticality (EPIC 9) — how many assets are high-criticality + top score
     # (display metric only; criticality is not a risk-score addend).
     asset_crit = _asset_criticality(report)
+    # Attack Paths (EPIC 11) — lateral routes over shared infra (display metric only).
+    paths = _attack_paths(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -634,6 +656,9 @@ def build_summary(report: Dict) -> Dict:
         'high_confidence_findings': intel['high_confidence'],
         'critical_assets': asset_crit['critical_assets'],
         'top_asset_criticality': asset_crit['top_asset_criticality'],
+        'attack_paths': paths['attack_paths'],
+        'critical_attack_paths': paths['critical_attack_paths'],
+        'top_attack_path': paths['top_attack_path'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

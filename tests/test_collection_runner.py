@@ -514,6 +514,23 @@ def test_render_asset_criticality_card_shows_top_assets():
     assert "<script" not in html.lower()
 
 
+def test_render_attack_paths_card_shows_lateral_route():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "attack_paths": {
+                  "summary": {"paths": 1, "critical_paths": 0, "top_score": 41},
+                  "top": [{"pivot_type": "ip", "pivot_node": "1.2.3.4",
+                           "entry": "a.x.com", "entry_severity": "critical",
+                           "targets": ["b.x.com", "c.x.com"],
+                           "critical_targets": 1, "score": 41, "band": "medium"}]}}
+    html = r._render_html(report)
+    assert "Attack Paths" in html
+    assert "a.x.com" in html and "1.2.3.4" in html and "2 targets" in html
+    assert "1 crit" in html
+    assert "<script" not in html.lower()
+
+
 def test_render_trends_card_shows_sparklines_for_multi_scan():
     r = CollectionRunner()
     trends = [

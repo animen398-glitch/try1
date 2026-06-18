@@ -3060,3 +3060,38 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 10: PRIORITY DEEPENING
   ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист.
 
 ==============================================================================
+ADVANCED INTELLIGENCE FRAMEWORK — EPIC 11: ATTACK PATHS
+==============================================================================
+
+  ЦЕЛЬ: «как это связано» — латеральные пути по общей инфраструктуре. Compromise
+  слабого exposed-хоста → pivot к co-located активам (часть критичны). Display-
+  метрика, вердикт не трогать.
+
+  РЕАЛИЗАЦИЯ — core/intelligence.py (pure / derive-on-read, без новых данных):
+   - build_attack_paths(correlation, asset_graph, criticality): на каждый shared_infra
+     кластер с ≥1 находко-несущим членом (correlation.exposure) и ≥1 другим членом —
+     worst-severity член = entry, узел = pivot, остальные = targets; critical_targets
+     = targets с band high. score = _PATH_SEV_PTS[entry_sev] + min(20,size*2) +
+     critical_targets*5 (cap 100), band high≥60/medium≥35/low. Sorted score desc.
+   - load_attack_paths(project): correlation+asset_graph+criticality (reuse) → delegate.
+   - Переиспользует correlation._sev/_SEVERITY_RANK (импорт, не дубль).
+
+  ПРОВОДКА:
+   - collection_runner._build_attack_paths → report['attack_paths'] (после
+     _build_intelligence) + карточка «Attack Paths» (_render_attack_paths_card:
+     entry → pivot → N targets (M crit)).
+   - executive_summary._attack_paths → метрики attack_paths / critical_attack_paths
+     / top_attack_path (НЕ score-фактор) + headline-чип «N attack paths» (high если
+     critical_attack_paths>0).
+
+  ТЕСТЫ (+6): test_intelligence(3: латеральный путь score=41 + targets + crit / нет
+  finding-entry → 0 путей / empty), test_executive_summary(2: метрика+чип / zero),
+  test_collection_runner(1: карточка с entry/pivot/targets).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист; risk-числа байт-в-байт.
+
+  ИТОГ: ядро Advanced Intelligence (EPIC 8 MODULE 1 / 9 criticality / 10 priority /
+  11 attack paths) закрыто. Остаётся EPIC 12 Surfaces (GUI/web/CSV) + EPIC 13
+  Monitoring/Docs.
+
+==============================================================================

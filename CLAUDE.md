@@ -1413,6 +1413,28 @@ risk-score), вердикт не тронут. Обратная совмести
 `criticality_band` опциональны (None → поведение прежнее, тесты EPIC 7 целы).
 Покрыто `test_intelligence`(+2: priority-бонус high/medium/low, build с criticality).
 
+**Advanced Intelligence Framework — EPIC 11: Attack Paths — `[ЗАКРЫТ]`.**
+Последний вопрос фреймворка — «как это связано». Латеральный путь = находко-несущий
+exposed-хост делит инфра-узел (ip/asn/netblock) с другими хостами → компрометация
+слабого entry даёт pivot ко всем co-located активам, часть из которых критичны. Это
+превращает Exposure-кластеры (EPIC 5) + находки на них (correlation) + criticality
+(EPIC 9) в явный рассказ «entry → pivot → targets». Добавлено в `core/intelligence.py`
+(pure / derive-on-read, без новых данных): `build_attack_paths(correlation,
+asset_graph, criticality)` — на каждый shared-infra кластер с ≥1 находко-несущим
+членом и ≥1 другим: worst-severity член = entry, узел = pivot, остальные = targets
+(критичные считаются отдельно); `score` = severity entry (`_PATH_SEV_PTS`) + размер
+кластера + critical_targets×5, band high≥60/medium≥35; `load_attack_paths(project)`
+тонкий ридер. **Переиспользует** `correlation._sev`/`_SEVERITY_RANK`, shared_infra,
+exposure, criticality (уже построены). Проводка: `collection_runner._build_attack_paths`
+→ `report['attack_paths']` + карточка «Attack Paths» (`_render_attack_paths_card`);
+`executive_summary._attack_paths` → метрики `attack_paths`/`critical_attack_paths`/
+`top_attack_path` (НЕ score-фактор) + headline-чип «N attack paths» (high если есть
+критичный target). Display-only, вердикт не тронут. Покрыто `test_intelligence`(+3:
+латеральный путь score=41/targets/crit, нет entry→нет пути, empty),
+`test_executive_summary`(+2), `test_collection_runner`(+1). **EPIC 8-11
+(ядро Advanced Intelligence) закрыты; остаётся EPIC 12 Surfaces (GUI/web/CSV) +
+EPIC 13 Monitoring/Docs.**
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

@@ -24,7 +24,7 @@ and the canonical severity scale. Pure / stdlib / offline (I1/I5).
 
 from typing import Dict, List, Optional
 
-from core.correlation import _host
+from core.correlation import _host, _sev, _SEVERITY_RANK
 
 # Per-category confidence base (0–100): how trustworthy a bare detection in this
 # category is before corroboration/validation. Exact-match, actively-probed signals
@@ -683,3 +683,100 @@ def load_asset_criticality(project: str) -> Dict:
                                        load_asset_graph(project))
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
+# ── attack paths (EPIC 11) ──────────────────────────────────────────────────────
+#
+# "How is it connected?" — the last of the framework's questions. An attack path is
+# a *lateral* route: a finding-bearing, exposed host shares one infrastructure node
+# (IP / ASN / netblock) with other hosts, so compromising the weak entry pivots to
+# every co-located asset — and some of those targets are high-criticality. This turns
+# the Exposure-Intelligence clusters (EPIC 5) + the findings on them (correlation) +
+# asset criticality (EPIC 9) into an explicit "entry → pivot → targets" story.
+#
+# A display metric, NOT a risk-score addend (user decision): derived purely from the
+# shared-infra clusters, correlation exposure and the criticality ranking already
+# produced — no new data, no new table.
+
+_PATH_SEV_PTS = {'critical': 30, 'high': 20, 'medium': 10, 'low': 4, 'info': 1}
+_PATH_HIGH, _PATH_MED = 60, 35
+
+
+def _path_band(score: int) -> str:
+    return ('high' if score >= _PATH_HIGH
+            else 'medium' if score >= _PATH_MED else 'low')
+
+
+def build_attack_paths(correlation: Optional[Dict] = None,
+                       asset_graph: Optional[Dict] = None,
+                       criticality: Optional[Dict] = None) -> Dict:
+    """Derive lateral attack paths over shared infrastructure (pure, EPIC 11).
+
+    For each shared-infra cluster (``asset_graph['shared_infra']``) that contains at
+    least one finding-bearing host (``correlation['exposure']``) and at least one
+    other member, emit a path: the worst-severity finding-bearing member is the
+    *entry*, the shared node is the *pivot*, the remaining members are *targets*
+    (those that are high-criticality counted separately). ``score`` =
+    entry-severity points + cluster-size points + per-critical-target points,
+    bounded 0–100; ``band`` high ≥60 / medium ≥35 / low. Returns
+    ``{paths (score desc), top, summary}``."""
+    clusters = (asset_graph or {}).get('shared_infra') or []
+    exposure_by_host: Dict[str, Dict] = {}
+    for row in (correlation or {}).get('exposure') or []:
+        v = str(row.get('value') or '').strip().lower()
+        if v:
+            exposure_by_host[v] = row
+    crit_by_value: Dict[str, str] = {}
+    for it in (criticality or {}).get('items') or []:
+        v = str(it.get('value') or '').strip().lower()
+        if v and it.get('band'):
+            crit_by_value[v] = it['band']
+
+    paths: List[Dict] = []
+    for c in clusters:
+        members = [str(m).strip().lower() for m in (c.get('members') or []) if m]
+        entries = [(m, exposure_by_host[m]) for m in members
+                   if m in exposure_by_host]
+        if not entries:
+            continue
+        entries.sort(key=lambda e: _SEVERITY_RANK.get(_sev(e[1].get('worst')), 99))
+        entry_host, entry_row = entries[0]
+        targets = [m for m in members if m != entry_host]
+        if not targets:
+            continue
+        entry_sev = _sev(entry_row.get('worst'))
+        critical_targets = sum(1 for m in targets if crit_by_value.get(m) == 'high')
+        size = int(c.get('count') or len(members))
+        score = min(100, _PATH_SEV_PTS.get(entry_sev, 1) + min(20, size * 2)
+                    + critical_targets * 5)
+        paths.append({
+            'pivot_type': c.get('type'), 'pivot_node': c.get('node'),
+            'entry': entry_host, 'entry_severity': entry_sev,
+            'members': members, 'size': size,
+            'targets': targets, 'critical_targets': critical_targets,
+            'score': score, 'band': _path_band(score),
+        })
+
+    paths.sort(key=lambda p: (-p['score'], str(p.get('pivot_node') or '')))
+    summary = {
+        'paths': len(paths),
+        'critical_paths': sum(1 for p in paths if p['band'] == 'high'),
+        'top_score': paths[0]['score'] if paths else 0,
+    }
+    return {'paths': paths, 'top': paths[:10], 'summary': summary}
+
+
+def load_attack_paths(project: str) -> Dict:
+    """Build a project's attack paths (thin reader; reuses correlation, the asset
+    graph and the criticality ranking). Offline, read-only, guarded."""
+    try:
+        from core.asset_graph import load_asset_graph
+        from core.asset_store import AssetStore
+        from core.correlation import load_correlation
+        correlation = load_correlation(project)
+        asset_graph = load_asset_graph(project)
+        assets = AssetStore().list_assets(project=project)
+        criticality = build_asset_criticality(assets, correlation, asset_graph)
+        return build_attack_paths(correlation, asset_graph, criticality)
+    except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
+        return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}

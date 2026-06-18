@@ -311,3 +311,38 @@ def test_build_asset_criticality_empty_is_safe():
     assert out == {'items': [], 'top': [],
                    'summary': {'assets': 0, 'high_criticality': 0,
                                'top_criticality': 0}}
+
+
+# ── attack paths (EPIC 11) ──────────────────────────────────────────────────────
+
+def test_build_attack_paths_lateral_over_shared_infra():
+    correlation = {'exposure': [{'value': 'a.x.com', 'worst': 'critical',
+                                 'findings_count': 2}]}
+    asset_graph = {'shared_infra': [{'type': 'ip', 'node': '1.2.3.4',
+                                     'members': ['a.x.com', 'b.x.com', 'c.x.com'],
+                                     'count': 3}]}
+    criticality = {'items': [{'value': 'b.x.com', 'band': 'high'},
+                             {'value': 'c.x.com', 'band': 'medium'}]}
+    out = intel.build_attack_paths(correlation, asset_graph, criticality)
+    assert out['summary']['paths'] == 1
+    p = out['paths'][0]
+    assert p['entry'] == 'a.x.com' and p['entry_severity'] == 'critical'
+    assert p['pivot_type'] == 'ip' and p['pivot_node'] == '1.2.3.4'
+    assert sorted(p['targets']) == ['b.x.com', 'c.x.com']
+    assert p['critical_targets'] == 1
+    assert p['score'] == 41 and p['band'] == 'medium'   # 30 + min(20,6) + 5
+
+
+def test_build_attack_paths_needs_a_finding_bearing_entry():
+    # cluster exists but no member carries a finding → no path
+    asset_graph = {'shared_infra': [{'type': 'ip', 'node': '1.2.3.4',
+                                     'members': ['a.x.com', 'b.x.com'],
+                                     'count': 2}]}
+    out = intel.build_attack_paths({'exposure': []}, asset_graph, {})
+    assert out['summary']['paths'] == 0
+
+
+def test_build_attack_paths_empty_is_safe():
+    out = intel.build_attack_paths()
+    assert out == {'paths': [], 'top': [],
+                   'summary': {'paths': 0, 'critical_paths': 0, 'top_score': 0}}

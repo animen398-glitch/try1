@@ -719,3 +719,25 @@ def test_asset_criticality_metric_zero_without_engine():
     s = es.build_summary(_report())
     assert s['metrics']['critical_assets'] == 0
     assert all('critical asset' not in c['label'] for c in es.headline(s)['chips'])
+
+
+# ── Attack Paths metric (EPIC 11) — display only ──────────────────────────────
+
+def test_attack_paths_metric_and_chip():
+    r = _report(high=0)
+    r['attack_paths'] = {'summary': {'paths': 2, 'critical_paths': 1,
+                                     'top_score': 55}}
+    base = es.build_summary(_report(high=0))
+    s = es.build_summary(r)
+    assert s['metrics']['attack_paths'] == 2
+    assert s['metrics']['critical_attack_paths'] == 1
+    assert s['metrics']['top_attack_path'] == 55
+    assert s['risk_score'] == base['risk_score']          # display only, no points
+    chips = [c['label'] for c in es.headline(s)['chips']]
+    assert '2 attack paths' in chips
+
+
+def test_attack_paths_metric_zero_without_engine():
+    s = es.build_summary(_report())
+    assert s['metrics']['attack_paths'] == 0
+    assert all('attack path' not in c['label'] for c in es.headline(s)['chips'])

@@ -377,6 +377,9 @@ class CollectionRunner:
         # confidence score + explanation — derived from the findings/correlation/
         # asset-graph just produced (no new data).
         self._build_intelligence(report, project)
+        # Attack Paths (EPIC 11): lateral routes over shared infrastructure (entry →
+        # pivot → co-located targets) — a display metric over the same views.
+        self._build_attack_paths(report, project)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -1315,6 +1318,58 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — intelligence must not fail a scan
             self._log(f'  Intelligence failed: {e}')
 
+    def _build_attack_paths(self, report: Dict, project) -> None:
+        """Derive lateral Attack Paths (EPIC 11, best-effort): entry → pivot →
+        co-located targets over shared infrastructure. Read-only over the views just
+        produced; a failure must never sink the scan. Stored compactly in
+        ``report['attack_paths']`` (summary + top paths) for the card + the metric."""
+        try:
+            from core.intelligence import load_attack_paths
+            data = load_attack_paths(project.slug)
+            summary = data.get('summary') or {}
+            if data.get('error') or not summary.get('paths'):
+                return
+            report['attack_paths'] = {'summary': summary,
+                                      'top': (data.get('top') or [])[:10]}
+            self._log(f"  Attack paths: {summary.get('paths', 0)} путей, "
+                      f"top {summary.get('top_score', 0)}, "
+                      f"{summary.get('critical_paths', 0)} критичных")
+        except Exception as e:  # noqa: BLE001 — attack paths must not fail a scan
+            self._log(f'  Attack paths failed: {e}')
+
+    @classmethod
+    def _render_attack_paths_card(cls, pdata: Dict) -> str:
+        """Offline HTML for the Attack Paths card: lateral routes (entry host →
+        shared pivot → co-located targets) with the worst at the top."""
+        e = html.escape
+        summary = pdata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Путей: '
+                f'<b>{e(str(summary.get("paths", 0)))}</b> · критичных: '
+                f'<b>{e(str(summary.get("critical_paths", 0)))}</b> · макс. '
+                f'score: <b>{e(str(summary.get("top_score", 0)))}</b></p>')
+        rows = []
+        for p in pdata.get('top', []):
+            n_targets = len(p.get('targets') or [])
+            crit = p.get('critical_targets') or 0
+            targets_txt = f'{n_targets} targets' + (f' ({crit} crit)' if crit else '')
+            sev_color = cls._CORR_SEV_COLOR.get(
+                str(p.get('entry_severity', '')).lower(), '#666')
+            rows.append(
+                f'<tr><td style="padding:1px 12px 1px 0;color:#888;">'
+                f'{e(str(p.get("score", 0)))}</td>'
+                f'<td style="color:{sev_color};font-weight:bold;">'
+                f'{e(str(p.get("entry") or ""))}</td>'
+                f'<td style="padding:1px 12px;color:#666;">→ '
+                f'{e(str(p.get("pivot_type") or ""))}: '
+                f'{e(str(p.get("pivot_node") or ""))} →</td>'
+                f'<td>{e(targets_txt)}</td></tr>')
+        table = (f'<table style="font-size:12px;"><tr>'
+                 f'<td style="padding-right:12px;"><b>Score</b></td>'
+                 f'<td><b>Entry</b></td><td style="padding:0 12px;"><b>Pivot</b></td>'
+                 f'<td><b>Targets</b></td></tr>{"".join(rows)}</table>'
+                 if rows else '')
+        return head + table
+
     @classmethod
     def _render_intelligence_card(cls, idata: Dict) -> str:
         """Offline HTML for the Priorities card: the highest-priority findings with
@@ -1957,6 +2012,15 @@ class CollectionRunner:
                 'Priorities', self._render_intelligence_card(idata),
                 f"top {isum.get('top_priority', 0)} · "
                 f"{isum.get('high_confidence', 0)} high-conf"))
+
+        # Attack Paths (EPIC 11) — lateral routes over shared infrastructure.
+        pdata = report.get('attack_paths')
+        if isinstance(pdata, dict) and (pdata.get('summary') or {}).get('paths'):
+            psum = pdata['summary']
+            body_parts.append(card(
+                'Attack Paths', self._render_attack_paths_card(pdata),
+                f"top {psum.get('top_score', 0)} · "
+                f"{psum.get('critical_paths', 0)} критичных"))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')

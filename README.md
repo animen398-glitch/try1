@@ -209,7 +209,16 @@ radius (сколько активов зависит — входящие рёб
 + worst-severity привязанных находок + exposure (takeover / публично доступен).
 `build_asset_criticality(...)` ранжирует, переиспользуя Correlation + Asset Graph.
 Display-метрика (`critical_assets`/`top_asset_criticality` в Executive Summary,
-карточка «Asset Criticality» в отчёте) — risk-вердикт не меняет.
+карточка «Asset Criticality» в отчёте) — risk-вердикт не меняет. Criticality также
+**усиливает Priority** (находка на критичном активе чинится раньше).
+
+**Attack Paths (EPIC 11)** — «как это связано»: латеральные пути по общей
+инфраструктуре. `build_attack_paths(...)` находит кластеры, где находко-несущий
+exposed-хост (entry) делит ip/asn/netblock (pivot) с другими активами (targets), и
+строит маршрут «entry → pivot → targets» со score по severity entry + размеру
+кластера + числу критичных targets. Показывает blast radius как явный путь атаки.
+Display-метрика (`attack_paths`/`critical_attack_paths` + карточка «Attack Paths»),
+переиспользует Exposure-кластеры + Correlation + Criticality; вердикт не меняет.
 
 ### Asset Correlation Engine & Exposure Intelligence
 
