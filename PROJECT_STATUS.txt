@@ -2874,3 +2874,64 @@ EPIC 7 — CORE INTELLIGENCE FRAMEWORK
   ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
 
 ==============================================================================
+
+==============================================================================
+EPIC 7 — GUI-ХВОСТ: ВКЛАДКА «PRIORITIES»
+==============================================================================
+
+  ЦЕЛЬ: снять отложенный по решению пользователя GUI EPIC 7. Core Intelligence
+  (confidence + priority + explanation) был доступен только через web
+  /intelligence — не хватало GUI-поверхности. Пользователь развернул отложенный
+  GUI этим запросом (память feedback-internals-first-no-gui соблюдена: вкладка
+  только ДОБАВЛЕНА, GUI не реструктурирован).
+
+  АУДИТ (до кода): backend (intelligence.load_intelligence → {items, top,
+  summary}) и web /intelligence уже есть. Образцы read-only вкладок —
+  tab_assets/tab_findings (селектор проекта, off-thread двухстадийная загрузка,
+  таблица + детали, Export CSV). Регистрация — BUILTIN_TABS + lazy-load в
+  tab_history._on_tab_changed. Per-project natura (как Timeline/Correlation).
+
+  ВКЛАДКА — gui/tab_intelligence.py (новый, IntelligenceTabMixin, read-only):
+   - Селектор проекта (per-project: БЕЗ «Все проекты», дефолт первый проект —
+     intelligence по природе per-project, пустой проект = пустой вид).
+   - 3 rollup-карты (Находок / Высокая увер. / Макс. priority из summary;
+     переиспользует _make_stat_card дашборда).
+   - Таблица [Priority, Confidence, Severity, Категория, Заголовок] —
+     ранжирование backend'а (priority desc), severity-ячейка через
+     theme.severity_color.
+   - Панель деталей: explanation (описание/воздействие/remediation) + факторы
+     priority и confidence (число аудируемо — «из чего сложилось»).
+   - Двухстадийная off-thread загрузка (_run_async): stage 1
+     FindingsStore.projects() → селектор; stage 2 load_intelligence(project) →
+     карты+таблица. Паттерн tab_assets (флаги _intel_loading/_loaded/
+     _table_loading/_filter_pending в MainWindow.__init__).
+   - Export CSV → report_export.intelligence_csv.
+
+  ПРОВОДКА:
+   - core/report_export.py: intelligence_csv(items) — flatten вложенного
+     explanation в колонки (брат findings_csv, pure stdlib).
+   - gui/main_window.py: импорт миксина + база класса + 4 state-флага.
+   - gui/plugin_manager.py: BUILTIN_TABS += ("intelligence","Priorities",
+     "_build_intelligence_tab","Управление","top") — после Findings.
+   - gui/tab_history.py: lazy-load хук _intel_widget в _on_tab_changed.
+
+  ПЕРЕИСПОЛЬЗОВАНО: core/intelligence (load_intelligence), findings_store
+  (projects), gui.theme (severity_color), gui.ui_components (FlowLayout/
+  ResultsDisplay/SectionGroupBox/StyledButton), _make_stat_card, _run_async.
+  UI тонкий — вся логика в core/intelligence.py, не дублируется. Без новых
+  зависимостей, .exe не пухнет, risk-числа не тронуты (priority — display).
+
+  ЖИВАЯ ПРОВЕРКА: python main.py из исходников — окно «Advanced Site Analyzer»
+  стартовало без падений, вкладка «Priorities» в nav-рельсе, пользователь
+  подтвердил визуально. (Frozen .exe не пересобирали — текущий dist устарел
+  до изменения; standalone offscreen-рендер недоступен из-за quirk Py3.14,
+  pytest-путь через qapp-фикстуру корректен.)
+
+  ТЕСТЫ (+12): test_intelligence_tab(9: build+columns / registered-in-tab-bar /
+  query projects+table-rank / combo без «all» / empty-projects message /
+  populate rows+rollup / selection→explanation+factors) + intelligence_csv в
+  test_report_export(3: header+row / flatten missing-explanation / empty).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист. Коммит 7ed9cbb.
+
+==============================================================================
