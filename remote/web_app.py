@@ -476,11 +476,16 @@ def _timeline_view(project: Optional[str] = None) -> dict:
         return {'series': [], 'events': []}
     try:
         from core.timeline import build_timeline
+        from core.trends import trend_summary
         proj = ProjectStore(str(_REPORT_BASE)).get(project)
         if proj is None:
             return {'series': [], 'events': [],
                     'error': f'project not found: {project}'}
-        return build_timeline(proj)
+        tl = build_timeline(proj)
+        # EPIC 4: per-metric trend analytics alongside the series (risk direction,
+        # delta since the first scan, peak) — derived from the same series.
+        tl['trend'] = trend_summary(tl.get('series') or [])
+        return tl
     except Exception as e:
         return {'series': [], 'events': [], 'error': str(e)}
 

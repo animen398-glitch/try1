@@ -25,8 +25,9 @@ def _seed(base):
             'scan_id': sid, 'finished_at': sid, 'started_at': sid,
             'phases': {'subdomains': {'status': 'Success',
                                       'data': {'results': subs}}},
-            'executive_summary': {'risk_level': 'Low', 'risk_100': 1,
-                                  'metrics': {'risk_100': 1}},
+            'executive_summary': {'risk_level': 'Low', 'risk_100': (i + 1) * 4,
+                                  'risk_score': i + 1,
+                                  'metrics': {'risk_100': (i + 1) * 4}},
         }
         (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
         project.record_scan(scan_dir, report)
@@ -42,6 +43,8 @@ def test_timeline_view_for_project(tmp_path, monkeypatch):
     assert 'error' not in d
     assert len(d['series']) == 2
     assert 'new_subdomain' in [e['type'] for e in d['events']]
+    # EPIC 4: per-metric trend summary derived from the series.
+    assert 'risk_score' in d['trend'] and d['trend']['risk_score']['n'] == 2
 
 
 def test_timeline_view_no_project_is_empty():

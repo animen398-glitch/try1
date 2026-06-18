@@ -380,12 +380,17 @@ class CollectionRunner:
         # time). Derive-on-read, reuses timeline.build_series (I3) and the single
         # scan-entry flatten; best-effort so a failure never sinks the scan.
         try:
+            from core import trends as _trends
             from core.timeline import build_series
             entries = list(project.scans()) + [project._scan_entry(scan_dir, report)]
             report['trends'] = build_series(entries)
+            # EPIC 4: per-metric trend analytics over that series (direction /
+            # baseline / delta-since-first / peak) — derive-on-read, no new data.
+            report['trends_summary'] = _trends.trend_summary(report['trends'])
         except Exception as ex:  # noqa: BLE001 — trends are best-effort
             self._log(f'  ! trend series failed: {ex}')
             report['trends'] = []
+            report['trends_summary'] = {}
 
         # Reports
         json_path = scan_dir / 'report.json'
@@ -1352,8 +1357,22 @@ class CollectionRunner:
                 f'{e(latest_txt)}</b></figcaption>{svg}</figure>')
         if not tiles:
             return ''
+        # EPIC 4: a one-line risk-trend verdict over the same series (direction +
+        # change since the first scan) — the analytics next to the sparklines.
+        from core import trends as _trends
+        rt = _trends.metric_trend(pts, 'risk_score')
+        caption = ''
+        if rt:
+            arrow = {'up': '↑', 'down': '↓', 'flat': '→'}[rt['direction']]
+            word = {'up': 'рост', 'down': 'спад', 'flat': 'без изменений'}[rt['direction']]
+            color = {'up': '#c62828', 'down': '#2e7d32', 'flat': '#666'}[rt['direction']]
+            delta = rt['delta_total']
+            sign = '+' if isinstance(delta, (int, float)) and delta > 0 else ''
+            caption = (f' Риск: <b style="color:{color};">{arrow} {e(word)}</b> '
+                       f'({e(str(rt["baseline"]))} → {e(str(rt["current"]))}, '
+                       f'{sign}{e(str(delta))} с первого скана).')
         return (f'<p style="font-size:13px;">История за '
-                f'<b>{e(str(len(pts)))}</b> скан(ов) — самые свежие справа.</p>'
+                f'<b>{e(str(len(pts)))}</b> скан(ов) — самые свежие справа.{caption}</p>'
                 f'<div style="display:flex;flex-wrap:wrap;gap:16px;">'
                 f'{"".join(tiles)}</div>')
 

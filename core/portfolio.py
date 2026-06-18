@@ -19,6 +19,7 @@ loader from a worker thread (I4).
 from typing import Dict, List, Optional
 
 from core.executive_summary import RISK_COLORS, RISK_ORDER
+from core.trends import risk_direction
 
 # Severity ramp (none → critical) for the exposure heatmap cells. Mid/dark tones
 # so white cell text stays legible (see dashboard_charts.heatmap).
@@ -92,6 +93,10 @@ def build_portfolio(projects_meta: List[Dict],
             'scan_count': _int0(meta.get('scan_count')),
             'updated_at': meta.get('updated_at') or '',
             'risk_delta': risk_delta,
+            # Overall risk-trend direction across the whole history (up/down/flat) —
+            # the companion to risk_delta (latest vs prev). Reuses the loaded scans
+            # (EPIC 4); 'flat' until there are two numeric risk points.
+            'risk_trend': risk_direction(scans),
         })
 
     # Worst risk first (executive triage), then most recently updated.

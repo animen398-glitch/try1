@@ -484,6 +484,8 @@ def test_render_trends_card_shows_sparklines_for_multi_scan():
     assert "История за <b>2</b>" in html
     assert "<polyline" in html                      # an actual sparkline drawn
     assert "<script" not in html.lower()
+    # EPIC 4: the risk-trend verdict line (rising 4 → 12, +8 since first scan).
+    assert "рост" in html and "4 → 12" in html and "+8" in html
 
 
 def test_render_trends_card_hidden_for_single_scan():

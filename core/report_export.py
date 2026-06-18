@@ -43,6 +43,12 @@ _TIMELINE_COLUMNS: Sequence[Tuple[str, str]] = (
     ('section', 'Section'), ('type', 'Event'), ('title', 'Detail'),
 )
 
+_HISTORY_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('at', 'When'), ('scan_id', 'Scan'), ('risk_level', 'Risk'),
+    ('risk_score', 'Risk Score'), ('attack_surface', 'Attack Surface'),
+    ('secrets', 'Secrets'), ('high', 'High'), ('medium', 'Medium'),
+)
+
 
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
@@ -84,6 +90,15 @@ def timeline_csv(events: Optional[List[Dict]]) -> str:
     Each event is ``{at, scan_id, type, title, severity, section}`` — the same rows
     the GUI Timeline tab and the web /timeline endpoint show."""
     return _rows_to_csv(events, _TIMELINE_COLUMNS)
+
+
+def history_csv(series: Optional[List[Dict]]) -> str:
+    """CSV of a project's per-scan risk history (``timeline.build_series`` points).
+
+    The metric-series counterpart of ``timeline_csv`` (which exports change events):
+    one row per scan with the risk/attack-surface/secrets/high/medium numbers, for
+    trend analysis outside the app (EPIC 4)."""
+    return _rows_to_csv(series, _HISTORY_COLUMNS)
 
 
 def portfolio_csv(portfolio) -> str:

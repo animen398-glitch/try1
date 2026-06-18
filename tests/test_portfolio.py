@@ -59,6 +59,17 @@ def test_risk_delta_needs_two_scans():
     assert portfolio.build_portfolio([down])['rows'][0]['risk_delta'] == -5
 
 
+def test_risk_trend_direction_over_history():
+    # risk_trend is the whole-history direction (vs risk_delta = latest-vs-prev).
+    up = _meta('u', scans=[_scan('s1', score=2), _scan('s2', score=5),
+                           _scan('s3', score=20)])
+    assert portfolio.build_portfolio([up])['rows'][0]['risk_trend'] == 'up'
+    down = _meta('d', scans=[_scan('s1', score=30), _scan('s2', score=4)])
+    assert portfolio.build_portfolio([down])['rows'][0]['risk_trend'] == 'down'
+    one = _meta('o', scans=[_scan('s1', score=5)])
+    assert portfolio.build_portfolio([one])['rows'][0]['risk_trend'] == 'flat'
+
+
 def test_active_findings_merged_by_slug():
     meta = _meta('a.com', scans=[_scan('s1')])
     p = portfolio.build_portfolio([meta], {'a.com': 7, 'other': 99})

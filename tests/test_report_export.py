@@ -97,6 +97,23 @@ def test_timeline_csv_empty_is_header_only():
     assert _parse(rx.timeline_csv(None))[0][0] == 'When'
 
 
+# ── history_csv (EPIC 4 — per-scan risk history) ────────────────────────────────
+
+def test_history_csv_header_and_row():
+    series = [{'at': '2026-06-13', 'scan_id': 's1', 'risk_level': 'Low',
+               'risk_score': 4, 'attack_surface': 2, 'secrets': 0,
+               'high': 0, 'medium': 1}]
+    table = _parse(rx.history_csv(series))
+    assert table[0] == ['When', 'Scan', 'Risk', 'Risk Score', 'Attack Surface',
+                        'Secrets', 'High', 'Medium']
+    assert table[1] == ['2026-06-13', 's1', 'Low', '4', '2', '0', '0', '1']
+
+
+def test_history_csv_empty_is_header_only():
+    assert _parse(rx.history_csv([]))[0][0] == 'When'
+    assert _parse(rx.history_csv(None))[0][0] == 'When'
+
+
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
 def test_portfolio_csv_from_full_dict():
