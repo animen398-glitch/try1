@@ -99,6 +99,9 @@ class HistoryTabMixin:
         elif widget is getattr(self, '_assets_widget', None):
             if not self._assets_loaded and not self._assets_loading:
                 self._refresh_assets()
+        elif widget is getattr(self, '_intel_widget', None):
+            if not self._intel_loaded and not self._intel_loading:
+                self._refresh_intelligence()
         elif widget is getattr(self, '_timeline_widget', None):
             if not self._timeline_loaded and not self._timeline_loading:
                 self._refresh_timeline()

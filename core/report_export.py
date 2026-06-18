@@ -49,6 +49,14 @@ _HISTORY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('secrets', 'Secrets'), ('high', 'High'), ('medium', 'Medium'),
 )
 
+_INTELLIGENCE_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('priority', 'Priority'), ('confidence', 'Confidence'),
+    ('confidence_band', 'Confidence Band'), ('severity', 'Severity'),
+    ('category', 'Category'), ('title', 'Title'),
+    ('description', 'Description'), ('impact', 'Impact'),
+    ('remediation', 'Remediation'), ('id', 'ID'),
+)
+
 
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
@@ -99,6 +107,24 @@ def history_csv(series: Optional[List[Dict]]) -> str:
     one row per scan with the risk/attack-surface/secrets/high/medium numbers, for
     trend analysis outside the app (EPIC 4)."""
     return _rows_to_csv(series, _HISTORY_COLUMNS)
+
+
+def intelligence_csv(items: Optional[List[Dict]]) -> str:
+    """CSV of priority-ranked findings (``intelligence.build_intelligence`` items).
+
+    Each item carries a nested ``explanation`` (description/impact/remediation from
+    the finding_knowledge catalog); it is flattened into top-level columns so the
+    export is a single flat table, in the same priority order as the GUI tab."""
+    flat: List[Dict] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        info = it.get('explanation') or {}
+        flat.append({**it,
+                     'description': info.get('description'),
+                     'impact': info.get('impact'),
+                     'remediation': info.get('remediation')})
+    return _rows_to_csv(flat, _INTELLIGENCE_COLUMNS)
 
 
 def portfolio_csv(portfolio) -> str:

@@ -17,6 +17,7 @@ from gui.tab_cookie import CookieAuditTabMixin
 from gui.tab_security import SecurityAuditTabMixin
 from gui.tab_findings import FindingsTabMixin
 from gui.tab_assets import AssetsTabMixin
+from gui.tab_intelligence import IntelligenceTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_overview import OverviewTabMixin
 from gui.tab_dashboard import DashboardTabMixin
@@ -31,7 +32,7 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
                  CloneTabMixin, CookieAuditTabMixin, SecurityAuditTabMixin,
                  FinalReportTabMixin, FindingsTabMixin, AssetsTabMixin,
-                 TimelineTabMixin,
+                 IntelligenceTabMixin, TimelineTabMixin,
                  OverviewTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.
 
@@ -78,6 +79,10 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._assets_loaded = False
         self._assets_table_loading = False
         self._assets_filter_pending = False
+        self._intel_loading = False
+        self._intel_loaded = False
+        self._intel_table_loading = False
+        self._intel_filter_pending = False
         self._timeline_loading = False
         self._timeline_loaded = False
         self._timeline_data_loading = False

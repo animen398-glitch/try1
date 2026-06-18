@@ -1338,6 +1338,22 @@ finding_knowledge, findings_sla, `_is_high_value_secret_finding`, severity. Но
 таблиц/моделей — ноль. Покрыто `test_intelligence`(11 unit) + `test_web_intelligence`
 (4 integration: стор→корреляция→граф→ранжирование+live) + es-метрика/card (+19). EPIC 7 ЗАКРЫТ.
 
+**EPIC 7 GUI-хвост — `[ЗАКРЫТ]`.** Снят отложенный по решению пользователя GUI:
+вкладка «Priorities» (`gui/tab_intelligence.py`, `IntelligenceTabMixin`) — read-only
+поверхность над `intelligence.load_intelligence`. Per-project (как Timeline/
+Correlation → селектор без «Все проекты», дефолт — первый проект), 3 rollup-карты
+(Находок/Высокая увер./Макс. priority из `summary`), таблица `[Priority, Confidence,
+Severity, Категория, Заголовок]` (ранжирование backend'а priority desc), панель
+деталей (explanation описание/воздействие/remediation + факторы priority+confidence,
+объяснимость числа). Двухстадийная off-thread загрузка (`FindingsStore.projects()` →
+`load_intelligence`) по образцу Assets; lazy-load в `tab_history._on_tab_changed`;
+регистрация в `BUILTIN_TABS` (секция «Управление», после Findings). Export CSV —
+`report_export.intelligence_csv` (flatten `explanation`, паритет со всеми data-
+вкладками). UI тонкий (вся логика в `core/intelligence.py`), без новых зависимостей,
+risk-числа не тронуты (priority — display). Покрыто `test_intelligence_tab`(9) +
+`intelligence_csv` в `test_report_export`(3). **Web-паритет был с EPIC 7
+(`/intelligence`); теперь поверхность есть и в GUI.**
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

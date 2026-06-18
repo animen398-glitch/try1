@@ -114,6 +114,34 @@ def test_history_csv_empty_is_header_only():
     assert _parse(rx.history_csv(None))[0][0] == 'When'
 
 
+# ── intelligence_csv (EPIC 7 — priority-ranked findings) ────────────────────────
+
+def test_intelligence_csv_header_and_row():
+    items = [{'priority': 73, 'confidence': 85, 'confidence_band': 'high',
+              'severity': 'high', 'category': 'graphql',
+              'title': 'GraphQL introspection', 'id': 'f-1',
+              'explanation': {'description': 'desc', 'impact': 'imp',
+                              'remediation': 'rem'}}]
+    table = _parse(rx.intelligence_csv(items))
+    assert table[0] == ['Priority', 'Confidence', 'Confidence Band', 'Severity',
+                        'Category', 'Title', 'Description', 'Impact',
+                        'Remediation', 'ID']
+    assert table[1] == ['73', '85', 'high', 'high', 'graphql',
+                        'GraphQL introspection', 'desc', 'imp', 'rem', 'f-1']
+
+
+def test_intelligence_csv_flattens_missing_explanation():
+    # No 'explanation' key → the three derived columns are blank, not an error.
+    table = _parse(rx.intelligence_csv([{'priority': 5, 'title': 't'}]))
+    row = dict(zip(table[0], table[1]))
+    assert row['Title'] == 't' and row['Description'] == ''
+
+
+def test_intelligence_csv_empty_is_header_only():
+    assert _parse(rx.intelligence_csv([]))[0][0] == 'Priority'
+    assert _parse(rx.intelligence_csv(None))[0][0] == 'Priority'
+
+
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
 def test_portfolio_csv_from_full_dict():
