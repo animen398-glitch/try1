@@ -202,6 +202,15 @@ CVE, фаза-источник и активная проба у актива, R
 2xx-ответ у API. `build_accuracy(...)` сворачивает разнотипные сущности в общий
 rollup. Всё derive-on-read, без новых таблиц.
 
+**Asset Criticality (EPIC 9)** — «какой актив важнее» (в пару к Priority «какую
+находку чинить первой»): `asset_criticality(asset, …)` → `{score, band, factors}` из
+тип-веса (apex-домен/ASN/netblock весомее одного эндпоинта или технологии) + blast
+radius (сколько активов зависит — входящие рёбра графа + размер кластера общей инфры)
++ worst-severity привязанных находок + exposure (takeover / публично доступен).
+`build_asset_criticality(...)` ранжирует, переиспользуя Correlation + Asset Graph.
+Display-метрика (`critical_assets`/`top_asset_criticality` в Executive Summary,
+карточка «Asset Criticality» в отчёте) — risk-вердикт не меняет.
+
 ### Asset Correlation Engine & Exposure Intelligence
 
 Платформа не просто хранит активы, а **понимает отношения между ними**

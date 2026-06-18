@@ -1380,6 +1380,27 @@ unified-поля в build_intelligence). 1227 collected, full suite PASS, ruff �
 Attack Paths (все display-метрики), затем Surfaces (report/GUI/web/CSV) +
 Monitoring/Docs.
 
+**Advanced Intelligence Framework — EPIC 9: Asset Criticality — `[ЗАКРЫТ]`.**
+Backend+report-фаза (паттерн EPIC 5/7). «Какой актив важнее» (priority = «какую
+находку чинить первой»; criticality = «какой актив важнее») — **display-метрика, НЕ
+слагаемое risk-score** (решение пользователя; `_risk_level`/`risk_100` не тронуты).
+Добавлено в `core/intelligence.py` (pure / derive-on-read, без новых данных):
+`asset_criticality(asset, *, dependents, findings)` → `{score 0-100, band, factors}`
+из тип-веса (`_ASSET_TYPE_WEIGHT`: domain 40 … technology 8) + blast radius
+(зависимые активы) + worst-severity находок + exposure (takeover +20 / reachable +5);
+`build_asset_criticality(assets, correlation, asset_graph)` ранжирует — blast radius
+из `asset_graph` (входящие рёбра + размер shared-infra кластера, матч по (type,value)),
+находки из `correlation` (`asset_findings` + host-роллап `exposure` + инфра-концентрация
+`infra_exposure`); `load_asset_criticality(project)` тонкий ридер. **Переиспользует**
+correlation + asset_graph (уже построены до этого в `run`), ноль новых таблиц.
+Проводка: `collection_runner._build_asset_criticality` → `report['asset_criticality']`
+(после `_build_asset_graph`) + карточка «Asset Criticality» (`_render_asset_criticality_card`);
+`executive_summary` display-метрики `critical_assets`/`top_asset_criticality`
+(`_asset_criticality`, читает summary; НЕ score-фактор) + headline-чип «N critical
+assets». Покрыто `test_intelligence`(+6: тип-вес/band, blast+findings, takeover/reachable,
+build-ранжирование, empty), `test_executive_summary`(+2: метрика+чип/zero, risk_score
+неизменен), `test_collection_runner`(+1: карточка). Risk-числа байт-в-байт.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

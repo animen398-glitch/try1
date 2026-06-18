@@ -499,3 +499,159 @@ def load_intelligence(project: str, *, now=None) -> Dict:
                                   load_asset_graph(project), now=now)
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
+# ── asset criticality (EPIC 9) ──────────────────────────────────────────────────
+#
+# Priority answers "which FINDING to fix first"; criticality answers "which ASSET
+# matters most" — independent of (but amplified by) findings. A display metric, NOT
+# a risk-score addend (user decision): the verdict (_risk_level) is untouched.
+#
+# Derived purely from data the inventory already holds (derive-on-read):
+#   * asset class — an apex domain / ASN / netblock is structurally weightier than
+#     a single endpoint or a technology label;
+#   * blast radius — how many other assets depend on it (incoming graph edges +
+#     shared-infra cluster size: an IP that 12 subdomains resolve to is a choke point);
+#   * attached risk — the worst severity + count of findings on it (correlation);
+#   * exposure — a takeover candidate / a publicly-reachable host.
+# Reuses correlation + asset_graph (already built before this runs); no new data.
+
+_ASSET_TYPE_WEIGHT = {
+    'domain': 40, 'asn': 35, 'netblock': 30, 'ip': 30,
+    'subdomain': 22, 'endpoint': 15, 'technology': 8,
+}
+_CRIT_HIGH, _CRIT_MED = 70, 40
+_CRIT_SEV_PTS = {'critical': 25, 'high': 15, 'medium': 8, 'low': 3, 'info': 0}
+
+
+def _crit_band(score: int) -> str:
+    return ('high' if score >= _CRIT_HIGH
+            else 'medium' if score >= _CRIT_MED else 'low')
+
+
+def _reachable(attrs: Dict) -> bool:
+    return str((attrs or {}).get('http_status') or '').strip().startswith('2')
+
+
+def asset_criticality(asset: Dict, *, dependents: int = 0,
+                      findings: Optional[Dict] = None) -> Dict:
+    """How important an asset is → ``{score, band, factors}`` (pure).
+
+    ``dependents`` is the blast radius (assets depending on this one, from the
+    graph / shared-infra); ``findings`` is ``{count, worst}`` for the risk attached
+    to it (from correlation). ``score`` 0–100; ``band`` high ≥70 / medium ≥40 / low.
+    Each contribution is a named factor so the number is auditable."""
+    atype = str(asset.get('type') or '').lower()
+    attrs = asset.get('attrs') or {}
+    factors = [{'factor': f'Тип актива: {atype or "—"}',
+                'points': _ASSET_TYPE_WEIGHT.get(atype, 10)}]
+    if dependents > 0:
+        factors.append({'factor': f'Зависимых активов: {dependents} (blast radius)',
+                        'points': min(30, dependents * 5)})
+    if findings and findings.get('count'):
+        worst = str(findings.get('worst') or 'info').lower()
+        cnt = int(findings.get('count') or 0)
+        pts = _CRIT_SEV_PTS.get(worst, 0) + min(10, max(0, cnt - 1) * 2)
+        if pts:
+            factors.append({'factor': f'Находки: {cnt} (worst {worst})',
+                            'points': pts})
+    if attrs.get('takeover'):
+        factors.append({'factor': 'Кандидат на takeover', 'points': 20})
+    elif _reachable(attrs):
+        factors.append({'factor': 'Публично доступен (2xx)', 'points': 5})
+    score = max(0, min(100, sum(int(f['points']) for f in factors)))
+    return {'score': score, 'band': _crit_band(score), 'factors': factors}
+
+
+def _dependents_map(asset_graph: Optional[Dict], assets: List[Dict]) -> Dict[str, int]:
+    """asset id → number of assets depending on it (blast radius).
+
+    Incoming graph edges (a host→ip ``resolves`` edge makes the IP a dependent
+    target) overlaid with the shared-infra cluster size (the stronger choke-point
+    signal), matched back to the asset id by (type, value)."""
+    g = asset_graph or {}
+    graph = g.get('graph') if isinstance(g.get('graph'), dict) else g
+    dep: Dict[str, int] = {}
+    for e in (graph or {}).get('edges') or []:
+        d = e.get('dst')
+        if d:
+            dep[d] = dep.get(d, 0) + 1
+    id_by_tv = {(a.get('type'), a.get('value')): a.get('id') for a in assets}
+    for c in g.get('shared_infra') or []:
+        tid = id_by_tv.get((c.get('type'), str(c.get('node'))))
+        if tid:
+            dep[tid] = max(dep.get(tid, 0), int(c.get('count') or 0))
+    return dep
+
+
+def _asset_findings_map(correlation: Optional[Dict],
+                        assets: List[Dict]) -> Dict[str, Dict]:
+    """asset id → ``{count, worst}`` of the findings attached to it.
+
+    Direct findings (``asset_findings``), then host roll-ups (``exposure`` — folds
+    in endpoint findings, wins for hosts), then infra concentration
+    (``infra_exposure`` — wins for ip/asn/netblock, matched by (type, node))."""
+    out: Dict[str, Dict] = {}
+    corr = correlation or {}
+
+    def _n(v) -> int:
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    for aid, b in (corr.get('asset_findings') or {}).items():
+        out[aid] = {'count': len(b.get('findings') or []), 'worst': b.get('worst')}
+    for row in corr.get('exposure') or []:
+        if row.get('asset_id'):
+            out[row['asset_id']] = {'count': _n(row.get('findings_count')),
+                                    'worst': row.get('worst')}
+    id_by_tv = {(a.get('type'), a.get('value')): a.get('id') for a in assets}
+    for row in corr.get('infra_exposure') or []:
+        tid = id_by_tv.get((row.get('type'), row.get('node')))
+        if tid:
+            out[tid] = {'count': _n(row.get('findings_count')),
+                        'worst': row.get('worst')}
+    return out
+
+
+def build_asset_criticality(assets: List[Dict], correlation: Optional[Dict] = None,
+                            asset_graph: Optional[Dict] = None) -> Dict:
+    """Rank a project's assets by criticality (pure, EPIC 9).
+
+    ``assets`` are ``AssetStore`` rows; ``correlation`` / ``asset_graph`` are the
+    already-derived views (``load_correlation`` / ``load_asset_graph``). Returns
+    ``{items (criticality desc), top, summary}``."""
+    assets = [a for a in (assets or []) if isinstance(a, dict)]
+    dep = _dependents_map(asset_graph, assets)
+    fmap = _asset_findings_map(correlation, assets)
+    items: List[Dict] = []
+    for a in assets:
+        aid = a.get('id')
+        crit = asset_criticality(a, dependents=dep.get(aid, 0),
+                                 findings=fmap.get(aid))
+        items.append({'id': aid, 'type': a.get('type'),
+                      'value': a.get('label') or a.get('value'),
+                      'criticality': crit['score'], 'band': crit['band'],
+                      'factors': crit['factors']})
+    items.sort(key=lambda i: (-i['criticality'], str(i.get('value') or '')))
+    summary = {
+        'assets': len(items),
+        'high_criticality': sum(1 for i in items if i['band'] == 'high'),
+        'top_criticality': items[0]['criticality'] if items else 0,
+    }
+    return {'items': items, 'top': items[:10], 'summary': summary}
+
+
+def load_asset_criticality(project: str) -> Dict:
+    """Build a project's asset-criticality ranking (thin reader; reuses the asset
+    store, correlation and the asset graph). Offline, read-only, guarded."""
+    try:
+        from core.asset_graph import load_asset_graph
+        from core.asset_store import AssetStore
+        from core.correlation import load_correlation
+        assets = AssetStore().list_assets(project=project)
+        return build_asset_criticality(assets, load_correlation(project),
+                                       load_asset_graph(project))
+    except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
+        return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}

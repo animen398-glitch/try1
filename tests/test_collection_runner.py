@@ -499,6 +499,21 @@ def test_render_asset_graph_card_shows_clusters():
     assert "<script" not in html.lower()
 
 
+def test_render_asset_criticality_card_shows_top_assets():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "asset_criticality": {
+                  "summary": {"assets": 9, "high_criticality": 1,
+                              "top_criticality": 78},
+                  "top": [{"type": "ip", "value": "1.2.3.4", "criticality": 78,
+                           "band": "high"}]}}
+    html = r._render_html(report)
+    assert "Asset Criticality" in html
+    assert "1.2.3.4" in html and "78" in html and "high" in html
+    assert "<script" not in html.lower()
+
+
 def test_render_trends_card_shows_sparklines_for_multi_scan():
     r = CollectionRunner()
     trends = [

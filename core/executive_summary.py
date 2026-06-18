@@ -257,6 +257,20 @@ def _exposure_clusters(report: Dict) -> Dict:
             'largest': _int(s.get('largest_cluster'))}
 
 
+def _asset_criticality(report: Dict) -> Dict:
+    """Asset Criticality rollup for the display **metric** (EPIC 9).
+
+    Reads the ranking the Asset Criticality engine already stamped
+    (``report['asset_criticality']``): how many assets are high-criticality and the
+    top score. Deliberately NOT a score addend — criticality is itself derived from
+    blast radius + attached findings (already in the verdict via those findings);
+    this is the "which asset matters most" view, a metric/chip only. Zero when the
+    engine didn't run (older reports)."""
+    s = (report.get('asset_criticality') or {}).get('summary') or {}
+    return {'critical_assets': _int(s.get('high_criticality')),
+            'top_asset_criticality': _int(s.get('top_criticality'))}
+
+
 def _intelligence(report: Dict) -> Dict:
     """Core Intelligence rollup for the display **metric** (EPIC 7).
 
@@ -467,6 +481,10 @@ def headline(summary: Dict) -> Dict:
         # Asset-level shared-infra single points of exposure (blast radius, EPIC 5);
         # labelled "co-hosted" to distinguish from F-R4's finding-concentration chip.
         add(f'{exposure_clusters}× co-hosted', 'medium')
+    critical_assets = _int(m.get('critical_assets'))
+    if critical_assets:
+        # High-criticality assets (EPIC 9) — which assets matter most (display).
+        add(_plural(critical_assets, 'critical asset'), 'medium')
     regressions = _int(m.get('regressions'))
     if regressions:
         add(f'{regressions}× regression', 'high')
@@ -578,6 +596,9 @@ def build_summary(report: Dict) -> Dict:
     exposure = _exposure_clusters(report)
     # Core Intelligence (EPIC 7) — top priority + high-confidence count (display).
     intel = _intelligence(report)
+    # Asset Criticality (EPIC 9) — how many assets are high-criticality + top score
+    # (display metric only; criticality is not a risk-score addend).
+    asset_crit = _asset_criticality(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -611,6 +632,8 @@ def build_summary(report: Dict) -> Dict:
         'exposure_largest': exposure['largest'],
         'top_priority': intel['top_priority'],
         'high_confidence_findings': intel['high_confidence'],
+        'critical_assets': asset_crit['critical_assets'],
+        'top_asset_criticality': asset_crit['top_asset_criticality'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

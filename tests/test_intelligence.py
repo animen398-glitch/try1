@@ -228,3 +228,61 @@ def test_build_accuracy_empty_is_safe():
     out = intel.build_accuracy({})
     assert out['items'] == [] and out['summary']['entities'] == 0
     assert out['summary']['avg_confidence'] == 0
+
+
+# ── asset criticality (EPIC 9) ──────────────────────────────────────────────────
+
+def test_asset_criticality_type_weight_and_band():
+    dom = intel.asset_criticality({'type': 'domain', 'value': 'x.com', 'attrs': {}})
+    assert dom['score'] == 40 and dom['band'] == 'medium'
+    tech = intel.asset_criticality({'type': 'technology', 'value': 'React',
+                                    'attrs': {}})
+    assert tech['band'] == 'low'
+
+
+def test_asset_criticality_blast_radius_and_findings():
+    c = intel.asset_criticality({'type': 'ip', 'value': '1.2.3.4', 'attrs': {}},
+                                dependents=12, findings={'count': 3, 'worst': 'high'})
+    assert c['score'] == 79 and c['band'] == 'high'   # 30 + 30 + (15 + 4)
+
+
+def test_asset_criticality_takeover_and_reachable():
+    takeover = intel.asset_criticality({'type': 'subdomain', 'value': 'a.x.com',
+                                        'attrs': {'takeover': True}})
+    assert takeover['score'] == 42                     # 22 + 20
+    reachable = intel.asset_criticality({'type': 'subdomain', 'value': 'b.x.com',
+                                         'attrs': {'http_status': 200}})
+    assert reachable['score'] == 27                    # 22 + 5
+
+
+def test_build_asset_criticality_ranks_with_blast_radius():
+    assets = [
+        {'id': 'd', 'type': 'domain', 'value': 'x.com', 'attrs': {}},
+        {'id': 'ip1', 'type': 'ip', 'value': '1.2.3.4', 'attrs': {}},
+        {'id': 's1', 'type': 'subdomain', 'value': 'a.x.com',
+         'attrs': {'ip': '1.2.3.4'}},
+        {'id': 's2', 'type': 'subdomain', 'value': 'b.x.com',
+         'attrs': {'ip': '1.2.3.4'}},
+    ]
+    asset_graph = {'graph': {'edges': [
+        {'src': 's1', 'dst': 'ip1', 'rel': 'resolves'},
+        {'src': 's2', 'dst': 'ip1', 'rel': 'resolves'}]},
+        'shared_infra': [{'type': 'ip', 'node': '1.2.3.4',
+                          'members': ['a.x.com', 'b.x.com'], 'count': 2}]}
+    correlation = {
+        'asset_findings': {'s1': {'findings': [{'severity': 'high'}],
+                                  'worst': 'high'}},
+        'infra_exposure': [{'type': 'ip', 'node': '1.2.3.4',
+                            'findings_count': 1, 'worst': 'high'}]}
+    out = intel.build_asset_criticality(assets, correlation, asset_graph)
+    assert out['summary']['assets'] == 4
+    top = out['items'][0]
+    assert top['id'] == 'ip1' and top['criticality'] == 55   # 30 + 10 + 15
+    assert out['summary']['top_criticality'] == 55
+
+
+def test_build_asset_criticality_empty_is_safe():
+    out = intel.build_asset_criticality([])
+    assert out == {'items': [], 'top': [],
+                   'summary': {'assets': 0, 'high_criticality': 0,
+                               'top_criticality': 0}}

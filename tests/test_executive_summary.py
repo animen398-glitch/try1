@@ -698,3 +698,24 @@ def test_intelligence_metric_zero_without_layer():
     s = es.build_summary(_report())
     assert s['metrics']['top_priority'] == 0
     assert s['metrics']['high_confidence_findings'] == 0
+
+
+# ── Asset Criticality metric (EPIC 9) — display only ──────────────────────────
+
+def test_asset_criticality_metric_and_chip():
+    r = _report(high=0)
+    r['asset_criticality'] = {'summary': {'assets': 12, 'high_criticality': 3,
+                                          'top_criticality': 82}}
+    base = es.build_summary(_report(high=0))
+    s = es.build_summary(r)
+    assert s['metrics']['critical_assets'] == 3
+    assert s['metrics']['top_asset_criticality'] == 82
+    assert s['risk_score'] == base['risk_score']          # display only, no points
+    chips = [c['label'] for c in es.headline(s)['chips']]
+    assert '3 critical assets' in chips
+
+
+def test_asset_criticality_metric_zero_without_engine():
+    s = es.build_summary(_report())
+    assert s['metrics']['critical_assets'] == 0
+    assert all('critical asset' not in c['label'] for c in es.headline(s)['chips'])

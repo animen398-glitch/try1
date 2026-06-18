@@ -2991,3 +2991,48 @@ ADVANCED INTELLIGENCE FRAMEWORK — MODULE 1: UNIFIED SCAN ACCURACY
   (display), затем Surfaces (report/GUI/web/CSV) + Monitoring/Docs.
 
 ==============================================================================
+ADVANCED INTELLIGENCE FRAMEWORK — EPIC 9: ASSET CRITICALITY
+==============================================================================
+
+  ЦЕЛЬ: «какой актив важнее» (priority = какую находку чинить первой; criticality
+  = какой актив важнее). Display-метрика, risk-вердикт НЕ трогать (решение
+  пользователя). Backend+report-срез (паттерн EPIC 5/7).
+
+  АУДИТ (до кода): входы уже есть — asset_graph (рёбра + shared_infra blast radius),
+  correlation (asset_findings / exposure host-роллап / infra_exposure концентрация),
+  Asset.attrs (takeover/http_status/ip). Своего «веса важности актива» не было.
+  Форматы сверены: graph.edges по node-id, shared_infra.node по value, correlation
+  ключи по asset_id (scoped) / (type,node) для инфры.
+
+  РЕАЛИЗАЦИЯ — core/intelligence.py (pure / derive-on-read, без новых данных):
+   - asset_criticality(asset, *, dependents, findings) → {score 0-100, band, factors}:
+     тип-вес (_ASSET_TYPE_WEIGHT: domain 40 / asn 35 / ip,netblock 30 / subdomain 22
+     / endpoint 15 / technology 8) + blast radius (min(30, dependents*5)) + worst-
+     severity находок (_CRIT_SEV_PTS + бонус за количество) + exposure (takeover +20
+     ИЛИ reachable-2xx +5). Band high≥70 / medium≥40 / low. Named-факторы (аудит).
+   - _dependents_map: входящие рёбра графа (host→ip resolves → ip dependent) +
+     overlay размером shared-infra кластера (матч (type,value)→id).
+   - _asset_findings_map: asset_findings → exposure (host-роллап выигрывает) →
+     infra_exposure (инфра выигрывает, матч (type,node)→id).
+   - build_asset_criticality(assets, correlation, asset_graph) → {items desc, top,
+     summary{assets, high_criticality, top_criticality}}; load_asset_criticality —
+     тонкий ридер (AssetStore + load_correlation + load_asset_graph).
+
+  ПРОВОДКА:
+   - collection_runner._build_asset_criticality → report['asset_criticality']
+     (после _build_asset_graph, перед _build_intelligence) + карточка «Asset
+     Criticality» (_render_asset_criticality_card).
+   - executive_summary._asset_criticality → метрики critical_assets /
+     top_asset_criticality (НЕ score-фактор) + headline-чип «N critical assets».
+
+  ПЕРЕИСПОЛЬЗОВАНО: asset_graph + correlation (уже построены до этого в run),
+  Asset.attrs, общий _clamp/band-паттерн. Новых таблиц/моделей — ноль.
+
+  ТЕСТЫ (+9): test_intelligence(6: тип-вес/band, blast+findings=79/high,
+  takeover=42/reachable=27, build-ранжирование ip1=55, empty), test_executive_summary
+  (2: метрика+чип / zero без движка, risk_score неизменен), test_collection_runner
+  (1: карточка Asset Criticality в HTML).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS, ruff чист; risk-числа байт-в-байт.
+
+==============================================================================
