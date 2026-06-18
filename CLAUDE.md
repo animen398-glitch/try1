@@ -1182,6 +1182,13 @@ Timeline-вкладка получила кнопку «Export CSV» (точно
 `test_report_export` (header+row / пустой = только header). Кнопка аддитивна (не
 реструктуризация GUI).
 
+**Alert-type метки в Settings (полнота) — `[ЗАКРЫТ]`.** Вкладка «Уведомления» строила
+чекбоксы alert-типов из method-local словаря меток, отстававшего от `ALERT_TYPES`:
+`graphql_introspection`, `sla_breach` (F-S6) и `new_finding` показывались сырыми ключами.
+Метки вынесены в module-level `_ALERT_TYPE_LABELS` (рядом с `_THEME_LABELS`), три пробела
+заполнены; тест `test_alerts_gui` проверяет покрытие всех `ALERT_TYPES` (новый тип не
+сможет регрессировать в сырой ключ). Аддитивно.
+
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
 но они были orphaned: attack-surface «Endpoints» читала только `katana.endpoints`, а
