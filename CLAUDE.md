@@ -1158,8 +1158,20 @@ dispatch+filter+disabled), `test_monitor` (шлёт раз, второй про�
 чистый discovery, не регрессия, по образцу `new_historical_url` (без alert-шума). Метки в
 `gui/tab_timeline._EVENT_LABELS`. Ценность: новый email/сотрудник расширяет phishing-
 поверхность; ново-залогированный сертификат сигналит свежую инфраструктуру или (если
-неожиданный) возможную mis-issuance. Pure, web-паритет автоматом. Покрыто `test_diff_events`
-(классификация info + не-алертабельны) и `test_scan_diff` (end-to-end added→событие).
+неожиданный) возможную mis-issuance. Pure; на web видны через `/timeline` (см. ниже).
+Покрыто `test_diff_events` (классификация info + не-алертабельны) и `test_scan_diff`
+(end-to-end added→событие).
+
+**`/timeline` web-эндпоинт (F2 web-паритет) — `[ЗАКРЫТ]`.** Закрыл пробел паритета: у GUI
+есть вкладка Timeline над `core.timeline.build_timeline`, но web-консоль НЕ имела роута
+`/timeline` — при том что каждый другой read-вью (findings/assets/overview/correlation/
+companies) его имеет. F2 закрыл GUI, но не web. `remote/web_app._timeline_view(project)` —
+тонкий ридер: резолвит проект из `_REPORT_BASE` через `ProjectStore.get` и делегирует
+`build_timeline` (series+events), зеркало `_correlation_view`. Роут `GET /timeline?project=…`
++ кнопка «Timeline» в консоли (`showTimeline()` авто-берёт первый проект и печатает свежую
+ленту). Pure derive-on-read; только что добавленные OSINT-discovery события идут через него
+автоматом. Покрыто `test_web_timeline` (helper для проекта/пустой/неизвестный + наличие
+кнопки + live TestClient).
 
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
