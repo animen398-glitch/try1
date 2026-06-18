@@ -1152,8 +1152,8 @@ dispatch+filter+disabled), `test_monitor` (шлёт раз, второй про�
 обработчика → ново-найденный email/сотрудник/залогированный сертификат не давал записи в
 ленте — хотя проект уже сёрфит discovery там (`new_endpoint`/`new_subdomain`/
 `new_historical_url`). Ни одна из секций не является находкой → **нулевой F1-оверлап** (в
-отличие от DNS email-auth, где dns_intel уже эмитит No-SPF/No-DMARC находки → оверлап с F1,
-поэтому DNS не трогаем). `diff_events` эмитит `new_email`/`new_employee`/`new_ct_cert` из
+отличие от DNS email-auth — тогда отложен из-за мнимого F1-оверлапа, позже закрыт отдельно,
+см. «DNS email-auth регрессия» ниже). `diff_events` эмитит `new_email`/`new_employee`/`new_ct_cert` из
 `added`-списков (info, как `new_endpoint`); все **timeline-only** (НЕ в `ALERT_TYPES`) —
 чистый discovery, не регрессия, по образцу `new_historical_url` (без alert-шума). Метки в
 `gui/tab_timeline._EVENT_LABELS`. Ценность: новый email/сотрудник расширяет phishing-
@@ -1196,6 +1196,23 @@ web-консоли и in-app планировщика) не имел кейса 
 sla/secret/finding). Добавлен кейс `alerts` (рендер `N alerts (kind), M sent · reason`).
 Pure, SSOT-формат, web+GUI одинаково. Покрыто `test_monitor` (diff без kind / finding-based
 с kind+reason).
+
+**DNS email-auth регрессия → Diff/Timeline/Alerts — `[ЗАКРЫТ]`.** Закрыт ранее отложенный
+DNS-сигнал. Posture email-auth (SPF/DMARC/DKIM/CAA) диффился и был в HTML-диффе, но
+`diff_events` не имел dns-обработчика → убранный SPF/DMARC или **даунгрейд DMARC-политики**
+не давали ни события, ни алерта (а dns_intel-находки «No SPF/No DMARC» — Medium/Info, ниже
+High-порога `new_finding` → просадка анти-спуфинга вообще не алертилась). **Пересмотр
+прежнего F1-оверлап-опасения:** оверлапа нет — «SPF removed» (дельта-регрессия) и «No SPF
+record» (F1-находка состояния) суть **разные** события, как `risk_increase` сосуществует с
+`new_finding` (таймлайн штатно мешает дельты и находки; dedup по `(scan_id,type,title)` их
+не схлопывает). `diff_events` эмитит `dns_email_auth_weakened` (high) на removed SPF/DMARC
+или даунгрейд DMARC (reject>quarantine>none через `_dmarc_rank`); только регрессии (добавление/
+усиление — скип, контентную смену SPF не судим, как `security_header_removed`). Тип в
+`alerts.ALERT_TYPES` (явная регрессия), метки в `gui/tab_timeline`+`gui/dialogs` (покрыты
+alert-label тестом). Pure, web-паритет автоматом (`/timeline`+diff_events). Покрыто
+`test_diff_events` (классификация high+alertable / улучшение=не событие) и `test_scan_diff`
+(end-to-end SPF removed + DMARC downgrade = 2 события). **Последний обозримый
+«вычисляется-но-теряется» backend-пробел закрыт.**
 
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
