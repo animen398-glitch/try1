@@ -178,6 +178,26 @@ def test_record_sla_breaches_empty_and_dedups(tmp_path):
     assert s.record_sla_breaches('proj', [sid, sid]) == [sid]
 
 
+def test_record_secret_alerts_one_shot_and_reopen_reset(tmp_path):
+    # Audit-only secrets have no Scan Diff representation, so the finding-based
+    # alert needs the same one-shot, reopen-resetting guard as SLA breaches.
+    s = _store(tmp_path)
+    f = _finding(title='Leaked secret: AWS Access Key', category='secret')
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    # First appearance → marked + returned; second run → suppressed.
+    assert s.record_secret_alerts('proj', [sid], now='2026-01-01T00:00:00') == [sid]
+    assert [e['type'] for e in s.events(sid)].count('SECRET_ALERTED') == 1
+    assert s.record_secret_alerts('proj', [sid]) == []
+    assert [e['type'] for e in s.events(sid)].count('SECRET_ALERTED') == 1
+    # Fixed, then reappears (REOPENED) → re-eligible to alert on the new episode.
+    s.set_status(sid, 'FIXED', source='auto', event_type='RESOLVED_AUTO')
+    s.set_status(sid, 'OPEN', source='auto', event_type='REOPENED',
+                 now='2026-03-01T00:00:00')
+    assert s.record_secret_alerts('proj', [sid], now='2026-04-01T00:00:00') == [sid]
+    assert [e['type'] for e in s.events(sid)].count('SECRET_ALERTED') == 2
+
+
 # ── queries / summary ─────────────────────────────────────────────────────────
 
 def test_list_filters_and_project_scoping(tmp_path):

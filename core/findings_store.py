@@ -47,7 +47,7 @@ INACTIVE_STATUSES = frozenset({'FIXED', 'IGNORED', 'FALSE_POSITIVE'})
 SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
-               'SLA_BREACH')
+               'SLA_BREACH', 'SECRET_ALERTED')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -345,6 +345,43 @@ class FindingsStore(SQLiteStore):
         return [{'project': r['project'], 'total': r['total'],
                  'active': r['active'] or 0} for r in rows]
 
+    def _record_oneshot(self, finding_ids: List[str], event_type: str, *,
+                        scan_id: Optional[str] = None,
+                        now: Optional[str] = None) -> List[str]:
+        """Stamp each finding with a one-shot ``event_type`` marker and return the
+        newly-marked ids (in input order). Shared guard for alert channels whose
+        trigger has no Scan Diff representation (SLA breach, audit-only secret) and
+        so need a persisted "already fired this episode" flag without a second
+        table. A marker is treated as *already fired* only when it is newer than the
+        finding's latest ``REOPENED`` event, so a fixed finding that reappears
+        (which restarts the SLA clock / re-exposes a secret) is eligible to fire
+        again on its next occurrence."""
+        ids = list(dict.fromkeys(str(i) for i in (finding_ids or []) if i))
+        if not ids:
+            return []
+        now = now or _now()
+        placeholders = ','.join('?' * len(ids))
+        new: List[str] = []
+        with self._connect() as conn:
+            def latest(et: str) -> Dict[str, str]:
+                rows = conn.execute(
+                    f'SELECT finding_id fid, MAX(at) at FROM finding_events'
+                    f' WHERE type = ? AND finding_id IN ({placeholders})'
+                    f' GROUP BY finding_id', (et, *ids)).fetchall()
+                return {r['fid']: r['at'] for r in rows}
+
+            marker_at, reopen_at = latest(event_type), latest('REOPENED')
+            for fid in ids:
+                marked = marker_at.get(fid)
+                reopened = reopen_at.get(fid)
+                already = marked is not None and (reopened is None
+                                                  or marked > reopened)
+                if already:
+                    continue
+                self._log_event(conn, fid, event_type, scan_id=scan_id, at=now)
+                new.append(fid)
+        return new
+
     def record_sla_breaches(self, project: str, breached_ids: List[str], *,
                             scan_id: Optional[str] = None,
                             now: Optional[str] = None) -> List[str]:
@@ -352,42 +389,35 @@ class FindingsStore(SQLiteStore):
 
         SLA breach is time-, not scan-triggered (a finding slips past its deadline
         by the passage of time), so the alert path needs a one-shot guard to fire
-        per breach exactly once across monitor runs — without a second table. We
-        log a ``SLA_BREACH`` event the first time a finding is observed breached
-        and treat a finding as *already alerted* only when its latest
-        ``SLA_BREACH`` event is newer than its latest ``REOPENED`` event: a fixed
-        finding that reappears (REOPENED restarts the SLA clock — see
-        ``findings_sla._reference``) is eligible to alert again on its next breach.
+        per breach exactly once across monitor runs — without a second table (see
+        ``_record_oneshot`` for the episode-aware guard semantics).
 
         ``breached_ids`` are the project-scoped stored ids of currently-breached
         findings (from ``active_findings``). Returns the subset that was not yet
         alerted for its current open episode (and is now marked), in input order.
         """
-        ids = list(dict.fromkeys(str(i) for i in (breached_ids or []) if i))
-        if not ids:
-            return []
-        now = now or _now()
-        placeholders = ','.join('?' * len(ids))
-        new: List[str] = []
-        with self._connect() as conn:
-            def latest(event_type: str) -> Dict[str, str]:
-                rows = conn.execute(
-                    f'SELECT finding_id fid, MAX(at) at FROM finding_events'
-                    f' WHERE type = ? AND finding_id IN ({placeholders})'
-                    f' GROUP BY finding_id', (event_type, *ids)).fetchall()
-                return {r['fid']: r['at'] for r in rows}
+        return self._record_oneshot(breached_ids, 'SLA_BREACH',
+                                     scan_id=scan_id, now=now)
 
-            breach_at, reopen_at = latest('SLA_BREACH'), latest('REOPENED')
-            for fid in ids:
-                marked = breach_at.get(fid)
-                reopened = reopen_at.get(fid)
-                already = marked is not None and (reopened is None
-                                                  or marked > reopened)
-                if already:
-                    continue
-                self._log_event(conn, fid, 'SLA_BREACH', scan_id=scan_id, at=now)
-                new.append(fid)
-        return new
+    def record_secret_alerts(self, project: str, finding_ids: List[str], *,
+                             scan_id: Optional[str] = None,
+                             now: Optional[str] = None) -> List[str]:
+        """Mark audit-only secret findings as alerted *once* and return the
+        newly-marked ids.
+
+        A secret found only by the deep-JS SecurityAuditor (``source='secret-audit'``)
+        becomes a first-class secret finding but has no Scan Diff representation — the
+        diff's secret section reads only the api phase — so the diff-based ``new_secret``
+        alert never fires for it. This finding-based channel needs the same one-shot
+        guard as SLA: fire per appearance exactly once across monitor runs, re-eligible
+        after a ``REOPENED`` (a fixed secret that reappears alerts again). See
+        ``_record_oneshot``.
+
+        ``finding_ids`` are the project-scoped stored ids of the audit-only secret
+        findings (from ``active_findings``). Returns the not-yet-alerted subset (now
+        marked), in input order."""
+        return self._record_oneshot(finding_ids, 'SECRET_ALERTED',
+                                     scan_id=scan_id, now=now)
 
     def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:
         """``finding_id → timestamp of its most recent REOPENED event``.

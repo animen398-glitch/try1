@@ -387,6 +387,35 @@ def test_run_project_fires_sla_breach_alert_once(tmp_path, monkeypatch):
     assert out2['sla_alerts'] is None        # already alerted → nothing new
 
 
+def test_run_project_fires_audit_secret_alert_once(tmp_path, monkeypatch):
+    # An audit-only secret finding (no Scan Diff representation) fires a finding-based
+    # alert on the run that first sees it (diff-independent) — then never again.
+    from core import alerts
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+    FindingsStore().upsert(project.slug, {
+        'id': fingerprint('secret', 'AWS Access Key', 'https://x.com/app.js'),
+        'category': 'secret', 'rule_id': '',
+        'title': 'Leaked secret: AWS Access Key', 'severity': 'high',
+        'evidence': {'source': 'secret-audit', 'location': 'https://x.com/app.js'}})
+    alert_config = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+
+    run1 = _fake_run_fn(project, [('20260613_010000', ['/a'])])
+    out1 = monitor.run_project(project, run1, now=datetime(2026, 6, 13, 10, 0),
+                               alert_config=alert_config)
+    assert out1['secret_alerts'] and out1['secret_alerts']['alerts'] == 1
+    assert out1['secret_alerts']['sent'] == 1
+
+    run2 = _fake_run_fn(project, [('20260614_010000', ['/a'])])
+    out2 = monitor.run_project(project, run2, now=datetime(2026, 6, 14, 10, 0),
+                               alert_config=alert_config)
+    assert out2['secret_alerts'] is None        # already alerted → nothing new
+
+
 def test_run_project_survives_failing_run_fn(tmp_path):
     project = ProjectStore(tmp_path).get_or_create('https://x.com')
     project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))

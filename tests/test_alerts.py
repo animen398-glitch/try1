@@ -212,6 +212,73 @@ def test_notify_sla_disabled_is_noop():
     assert out == {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
 
 
+# ── audit-only-secret alert channel (finding-triggered, one-shot via the store) ──
+
+def _secret_finding_dict(stype='AWS Access Key', source='secret-audit',
+                         location='https://x.com/app.js', evidence=None):
+    from core.finding_fingerprint import fingerprint
+    return {'id': fingerprint('secret', stype, location),
+            'category': 'secret', 'rule_id': '',
+            'title': f'Leaked secret: {stype}', 'severity': 'high',
+            'evidence': evidence if evidence is not None
+            else {'source': source, 'location': location}}
+
+
+def _secret_store(db_path, *findings):
+    from core.findings_store import FindingsStore
+    s = FindingsStore(db_path)
+    for f in findings:
+        s.upsert('proj', f)
+    return s
+
+
+def test_collect_secret_alerts_audit_only_then_deduped(tmp_path):
+    s = _secret_store(tmp_path / 'findings.db', _secret_finding_dict())
+    first = alerts.collect_secret_alerts(s, 'proj')
+    assert len(first) == 1
+    assert first[0]['type'] == 'new_secret' and first[0]['severity'] == 'high'
+    assert 'AWS Access Key' in first[0]['title']
+    # Second run: already alerted → nothing new (one-shot via the store marker).
+    assert alerts.collect_secret_alerts(s, 'proj') == []
+
+
+def test_collect_secret_alerts_skips_diff_covered_api_secret(tmp_path):
+    # An api-phase secret (source 'secret') is covered by the Scan Diff's new_secret,
+    # so the finding-based channel must NOT double-alert it — even when merged with an
+    # audit source.
+    s = _secret_store(tmp_path / 'a.db', _secret_finding_dict(source='secret'))
+    assert alerts.collect_secret_alerts(s, 'proj') == []
+    both = _secret_finding_dict(evidence={'sources': ['secret', 'secret-audit']})
+    s2 = _secret_store(tmp_path / 'b.db', both)
+    assert alerts.collect_secret_alerts(s2, 'proj') == []
+
+
+def test_collect_secret_alerts_tiers_generic(tmp_path):
+    # A generic/opaque key tiers down to new_secret_generic (medium), like the diff.
+    s = _secret_store(tmp_path / 'g.db', _secret_finding_dict(stype='Generic API Key'))
+    out = alerts.collect_secret_alerts(s, 'proj')
+    assert len(out) == 1
+    assert out[0]['type'] == 'new_secret_generic' and out[0]['severity'] == 'medium'
+
+
+def test_notify_secret_dispatches_and_honors_types_filter(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+    events = [{'type': 'new_secret', 'title': 'Leaked secret: AWS Access Key',
+               'severity': 'high'}]
+    cfg = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+    out = alerts.notify_secret(cfg, 'x.com', events)
+    assert out['alerts'] == 1 and out['sent'] == 1
+    # A types filter that omits new_secret suppresses it.
+    cfg_filtered = {**cfg, 'types': ['sla_breach']}
+    assert alerts.notify_secret(cfg_filtered, 'x.com', events)['alerts'] == 0
+
+
+def test_notify_secret_disabled_is_noop():
+    out = alerts.notify_secret({'enabled': False}, 'x.com',
+                               [{'type': 'new_secret', 'title': 't', 'severity': 'high'}])
+    assert out == {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
+
+
 # ── delivery journal (F4 — reuses OperationRegistry; ops DB isolated by conftest) ─
 
 def _alert_ops():

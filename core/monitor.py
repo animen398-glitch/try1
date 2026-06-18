@@ -246,6 +246,7 @@ def run_project(project, run_fn: Callable[[str], Dict],
     result: Dict = {'slug': slug, 'url': url, 'scan_id': None,
                     'prev_scan_id': prev_id, 'diff_line': None,
                     'diff_html': None, 'alerts': None, 'sla_alerts': None,
+                    'secret_alerts': None,
                     'status': 'Success', 'error': None}
     emit('scan_start', url=url, prev_scan_id=prev_id)
     try:
@@ -285,6 +286,10 @@ def run_project(project, run_fn: Callable[[str], Dict],
     if alert_config and result['status'] == 'Success':
         result['sla_alerts'] = _dispatch_sla_alerts(project, slug, alert_config,
                                                      emit)
+        # Audit-only secret findings have no Scan Diff representation either —
+        # same finding-based, one-shot channel as SLA.
+        result['secret_alerts'] = _dispatch_secret_alerts(project, slug,
+                                                          alert_config, emit)
 
     last_status = 'ok' if result['status'] == 'Success' else 'failed'
     _advance_schedule(project, new_id, now, status=last_status)
@@ -319,6 +324,26 @@ def _dispatch_sla_alerts(project, slug: str, alert_config: Dict, emit) -> Option
                  reason=summary.get('reason'), alert_kind='sla')
         return summary
     except Exception:   # noqa: BLE001 — SLA alerting must never sink a monitor run
+        return None
+
+
+def _dispatch_secret_alerts(project, slug: str, alert_config: Dict, emit) -> Optional[Dict]:
+    """Dispatch one-shot alerts for audit-only secret findings (finding-triggered,
+    diff-independent — the deep-JS audit's secrets never appear in a Scan Diff).
+    Best-effort: a failure here never affects the scan/diff result. Returns the send
+    summary, or ``None`` when nothing was newly found."""
+    try:
+        from core import alerts
+        from core.findings_store import FindingsStore
+        events = alerts.collect_secret_alerts(FindingsStore(), project.slug)
+        if not events:
+            return None
+        summary = alerts.notify_secret(alert_config, slug, events)
+        if summary.get('alerts'):
+            emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
+                 reason=summary.get('reason'), alert_kind='secret')
+        return summary
+    except Exception:   # noqa: BLE001 — secret alerting must never sink a monitor run
         return None
 
 

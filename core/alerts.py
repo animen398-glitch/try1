@@ -236,6 +236,67 @@ def notify(config: Optional[Dict], slug: str, diff: Dict) -> Dict:
     return _send(config, slug, alerts, 'notify')
 
 
+def _secret_sources(finding: Dict) -> set:
+    """Every producing source of a (secret) finding — a pre-merged ``sources``
+    list wins, else the single ``source`` (lives in masked evidence)."""
+    ev = finding.get('evidence') or {}
+    sources = ev.get('sources') or [ev.get('source', '')]
+    return {str(s) for s in sources if s}
+
+
+def _is_audit_only_secret(finding: Dict) -> bool:
+    """True when a secret finding was produced only by the deep-JS audit and so has
+    no Scan Diff representation: it carries ``secret-audit`` but not the api-phase
+    ``secret`` source (whose secrets the diff's ``new_secret`` already covers)."""
+    if finding.get('category') != 'secret':
+        return False
+    sources = _secret_sources(finding)
+    return 'secret-audit' in sources and 'secret' not in sources
+
+
+def _secret_type(finding: Dict) -> str:
+    """The secret type from a finding's ``'Leaked secret: <type>'`` title (the
+    producer's stable format); '' when the title doesn't match (treated as
+    high-value downstream — conservative)."""
+    title = str(finding.get('title') or '')
+    prefix = 'Leaked secret: '
+    return title[len(prefix):].strip() if title.startswith(prefix) else ''
+
+
+def collect_secret_alerts(store, project: str) -> List[Dict]:
+    """New audit-only-secret alert events for a project (one-shot, deduped via ``store``).
+
+    A secret found only by the deep-JS SecurityAuditor never appears in a Scan Diff
+    (the diff's secret section reads only the api phase), so the diff-based
+    ``new_secret`` channel misses it. Detected here from the persisted findings: the
+    active secret findings with no api-phase source (see ``_is_audit_only_secret``),
+    narrowed to those not yet alerted for their current open episode
+    (``FindingsStore.record_secret_alerts`` logs a one-shot marker and returns only the
+    new ones). Tiered like the diff via ``executive_summary.is_high_value_secret``:
+    high-value → ``new_secret`` (high), generic/opaque → ``new_secret_generic`` (medium).
+    Returns lean ``{type, title, severity}`` dicts — empty when nothing new. Pure of
+    network; ``store`` is injected so tests use a temp DB."""
+    from core.executive_summary import is_high_value_secret
+    audit_only = [f for f in store.active_findings(project)
+                  if _is_audit_only_secret(f)]
+    if not audit_only:
+        return []
+    by_id = {f['id']: f for f in audit_only}
+    new_ids = store.record_secret_alerts(project, list(by_id))
+    out: List[Dict] = []
+    for fid in new_ids:
+        f = by_id.get(fid)
+        if f is None:
+            continue
+        stype = _secret_type(f)
+        high = is_high_value_secret(stype)
+        out.append({
+            'type': 'new_secret' if high else 'new_secret_generic',
+            'title': f.get('title') or f'Leaked secret: {stype}',
+            'severity': 'high' if high else 'medium'})
+    return out
+
+
 def collect_sla_alerts(store, project: str, *, now=None) -> List[Dict]:
     """New SLA-breach alert events for a project (one-shot, deduped via ``store``).
 
@@ -263,19 +324,37 @@ def collect_sla_alerts(store, project: str, *, now=None) -> List[Dict]:
             for e in sla_events(new_breached, now=now, reopened=reopened)]
 
 
+def _notify_collected(config: Optional[Dict], slug: str,
+                      events: List[Dict], kind: str) -> Dict:
+    """Dispatch already-collected alert events over the configured channels (shared
+    tail of the non-diff channels ``notify_sla`` / ``notify_secret``). Honors the same
+    ``types`` filter as diff alerts and shares the send tail / delivery journal.
+    No-ops cleanly when disabled or filtered out."""
+    if not config or not config.get('enabled'):
+        return {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
+    want = set(config.get('types') or ALERT_TYPES)
+    alerts = [a for a in events
+              if a.get('type') in want and a.get('type') in ALERT_TYPES]
+    return _send(config, slug, alerts, kind)
+
+
 def notify_sla(config: Optional[Dict], slug: str,
                breach_alerts: List[Dict]) -> Dict:
     """Dispatch already-collected SLA-breach alerts (the time-triggered channel).
 
     ``breach_alerts`` come from :func:`collect_sla_alerts` (already deduped to NEW
-    breaches). Honors the same ``types`` filter as diff alerts and shares the send
-    tail / delivery journal. No-ops cleanly when disabled or filtered out."""
-    if not config or not config.get('enabled'):
-        return {'alerts': 0, 'sent': 0, 'reason': 'disabled'}
-    want = set(config.get('types') or ALERT_TYPES)
-    alerts = [a for a in breach_alerts
-              if a.get('type') in want and a.get('type') in ALERT_TYPES]
-    return _send(config, slug, alerts, 'sla')
+    breaches)."""
+    return _notify_collected(config, slug, breach_alerts, 'sla')
+
+
+def notify_secret(config: Optional[Dict], slug: str,
+                  secret_alerts: List[Dict]) -> Dict:
+    """Dispatch already-collected audit-only-secret alerts (finding-triggered channel).
+
+    ``secret_alerts`` come from :func:`collect_secret_alerts` (already deduped to NEW
+    appearances). These secrets have no Scan Diff representation, so this is their only
+    alert path."""
+    return _notify_collected(config, slug, secret_alerts, 'secret')
 
 
 def send_test(config: Optional[Dict]) -> Dict:
