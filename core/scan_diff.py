@@ -475,6 +475,15 @@ def summarize_line(d: Dict) -> str:
 # One classifier turns a diff into typed events so the two consumers never
 # diverge: Alert Center keeps the alertable subset (alerts.ALERT_TYPES), the
 # Timeline takes them all. Each event is {type, title, severity, section}.
+# DMARC enforcement levels, weakest → strongest; a drop in rank is a regression.
+_DMARC_RANK = {'none': 0, 'quarantine': 1, 'reject': 2}
+
+
+def _dmarc_rank(policy: str) -> int:
+    """Rank of a DMARC policy word, or -1 for absent/unknown ('—')."""
+    return _DMARC_RANK.get(str(policy).strip().lower(), -1)
+
+
 EVENT_SEVERITY = {
     'new_secret':          'high',
     'new_secret_generic':  'medium',
@@ -490,6 +499,7 @@ EVENT_SEVERITY = {
     'new_email':           'info',
     'new_employee':        'info',
     'new_ct_cert':         'info',
+    'dns_email_auth_weakened': 'high',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
     'new_sourcemap':       'high',
@@ -653,6 +663,26 @@ def diff_events(d: Dict) -> List[Dict]:
         name = str(label).split(':', 1)[0].strip().lower()
         if name in SECURITY_HEADER_NAMES:
             add('security_header_removed', label, 'headers')
+
+    # DNS email-auth (SPF/DMARC) regression — anti-spoofing protection that weakened
+    # between scans: a removed SPF/DMARC record, or a DMARC policy downgraded
+    # (reject > quarantine > none). Alertable, like a dropped security header. The
+    # dns section is field-keyed (SPF/DMARC/DKIM/CAA); DMARC holds the policy word,
+    # so a downgrade is rankable (unlike a generic value change, which we skip — a
+    # changed SPF string isn't provably weaker). This is the regression *delta*,
+    # distinct from dns_intel's steady-state "No SPF / No DMARC" findings.
+    for ch in sections.get('dns', {}).get('changed', []):
+        if not isinstance(ch, dict):
+            continue
+        key, a, b = ch.get('key'), str(ch.get('a', '')), str(ch.get('b', ''))
+        if key == 'SPF' and a != '—' and b == '—':
+            add('dns_email_auth_weakened', 'SPF record removed', 'dns')
+        elif key == 'DMARC':
+            if a != '—' and b == '—':
+                add('dns_email_auth_weakened', 'DMARC record removed', 'dns')
+            elif _dmarc_rank(b) < _dmarc_rank(a):
+                add('dns_email_auth_weakened',
+                    f'DMARC policy downgraded ({a} → {b})', 'dns')
 
     risk = (d or {}).get('risk', {})
     if (risk.get('risk_100_b') or 0) > (risk.get('risk_100_a') or 0):

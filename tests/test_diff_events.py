@@ -244,6 +244,29 @@ def test_osint_discovery_events_are_timeline_only():
         assert t not in alerts.ALERT_TYPES
 
 
+def test_dns_email_auth_weakened_classified_and_alertable():
+    # SPF removed + DMARC policy downgraded (reject → none) → anti-spoofing
+    # regression (high), alertable like a dropped security header.
+    d = _diff(dns={'added': [], 'removed': [], 'changed': [
+        {'key': 'SPF', 'a': 'v=spf1 -all', 'b': '—'},
+        {'key': 'DMARC', 'a': 'reject', 'b': 'none'},
+    ]})
+    events = [e for e in diff_events(d) if e['type'] == 'dns_email_auth_weakened']
+    assert len(events) == 2
+    assert all(e['severity'] == 'high' and e['section'] == 'dns' for e in events)
+    assert 'dns_email_auth_weakened' in [a['type'] for a in alerts.extract_alerts(d)]
+
+
+def test_dns_email_auth_improvement_is_not_an_event():
+    # Adding SPF (— → record) or strengthening DMARC (none → reject) is no regression.
+    d = _diff(dns={'added': [], 'removed': [], 'changed': [
+        {'key': 'SPF', 'a': '—', 'b': 'v=spf1 -all'},
+        {'key': 'DMARC', 'a': 'none', 'b': 'reject'},
+    ]})
+    assert [e for e in diff_events(d)
+            if e['type'] == 'dns_email_auth_weakened'] == []
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})

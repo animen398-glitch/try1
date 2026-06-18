@@ -62,11 +62,15 @@ from core.scan_diff import diff_events
 # ``new_finding`` is the generic high/critical-finding channel: a vuln finding
 # (nuclei template, scanner check like SQLi/XSS, a non-dependency CVE) that has no
 # dedicated diff alert — it is detected from the persisted findings, not the diff.
+# ``dns_email_auth_weakened`` (a removed SPF/DMARC record or a downgraded DMARC
+# policy between scans) is alertable too — an anti-spoofing regression, distinct
+# from dns_intel's steady-state No-SPF/No-DMARC findings.
 ALERT_TYPES = ('new_secret', 'new_secret_generic', 'new_subdomain', 'takeover',
                'new_technology', 'cert_change', 'cert_expired', 'risk_increase',
                'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
                'new_vulnerable_dependency', 'dependency_vulnerable',
-               'security_header_removed', 'sla_breach', 'new_finding')
+               'security_header_removed', 'sla_breach', 'new_finding',
+               'dns_email_auth_weakened')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────

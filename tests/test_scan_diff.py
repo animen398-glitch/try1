@@ -131,6 +131,17 @@ def test_osint_discovery_events_end_to_end():
     assert 'new_ct_cert' in types
 
 
+def test_dns_email_auth_weakened_end_to_end():
+    # SPF removed and DMARC downgraded between scans → two regression events.
+    a, b = _report('A'), _report('B')
+    a['phases']['dns'] = {'status': 'Success', 'data': {'email_auth': {
+        'spf': 'v=spf1 -all', 'dmarc': 'reject', 'dkim_selectors': [], 'caa': True}}}
+    b['phases']['dns'] = {'status': 'Success', 'data': {'email_auth': {
+        'spf': None, 'dmarc': 'none', 'dkim_selectors': [], 'caa': True}}}
+    types = [e['type'] for e in diff_events(diff(a, b))]
+    assert types.count('dns_email_auth_weakened') == 2
+
+
 def test_technology_version_change_and_cms_union():
     a = _report('A', techs=[{'name': 'nginx', 'category': 'Server',
                              'version': '1.18'}], cms=['WordPress'])

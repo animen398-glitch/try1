@@ -37,6 +37,7 @@ _ALERT_TYPE_LABELS = {
     'security_header_removed': 'Security-заголовок убран',
     'sla_breach': 'Просрочка SLA',
     'new_finding': 'Новая находка',
+    'dns_email_auth_weakened': 'Email-auth ослаблен (SPF/DMARC)',
 }
 
 
