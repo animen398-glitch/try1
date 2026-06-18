@@ -1099,10 +1099,32 @@ Scope-guard: `'secret-audit'→phase_ok('security')` (пропущенный opt
 first-seen), tier-aware secret-АЛЕРТЫ не тронуты (читают diff_events напрямую). Обратная
 совместимость: старый проект без secret-находок сохраняет scan-diff `new_secret` в ленте.
 Attack-surface: типы audit-секретов влиты в breadth «Secrets» (plausibility-filtered).
-**Остаток (документирован):** алерты для audit-ONLY секретов (нет diff-представления —
+**Остаток (закрыт ниже):** алерты для audit-ONLY секретов (нет diff-представления —
 нужен finding-based alert-канал). Покрыто `test_collection_runner` (audit-фолд: High/
 secret-audit/location/плейсхолдер-skip/без plaintext), `test_timeline` (F1 владеет при
 наличии secret-находок; legacy сохраняет scan-diff), `test_attack_surface` (типы влиты).
+
+**Audit-only-secret alert-канал — `[ЗАКРЫТ]`.** Backend-фаза, закрыт остаток выше.
+Секрет, найденный ТОЛЬКО глубоким JS-аудитом (`source='secret-audit'`), становится
+первоклассной F1-находкой, но НЕ имеет представления в Scan Diff (секция `secrets`
+читает только api-фазу) → diff-алерт `new_secret` для него не стрелял. Решение —
+finding-based one-shot канал по образцу SLA-просрочки (F-S6): обе механики
+«триггер без diff-представления» теперь делят `FindingsStore._record_oneshot`
+(episode-aware, маркер старше последнего `REOPENED` не считается → переоткрытый
+секрет алертится заново; `record_sla_breaches` отрефакторён через него,
+`record_secret_alerts` + тип события `SECRET_ALERTED`). `alerts.collect_secret_alerts`
+(активные secret-находки БЕЗ api-источника `secret` — `_is_audit_only_secret` через
+`sources`/`source` в evidence, дедуп через стор, tiered `new_secret`/`new_secret_generic`
+по `executive_summary.is_high_value_secret` — тот же SSOT, что diff) + `notify_secret`;
+общий хвост `_notify_collected` выделен (notify_sla делегирует, поведение байт-в-байт).
+`monitor.run_project` зовёт `_dispatch_secret_alerts` каждый успешный прогон,
+diff-независимо, best-effort (рядом с SLA; `result['secret_alerts']` аддитивен).
+api-секреты (`source='secret'`) НЕ дублируются — они diff-covered. Новых типов алертов
+нет (`new_secret`/`new_secret_generic` переиспользованы). Pure-детект отделён от
+транспорта (стор инжектится). Покрыто `test_findings_store` (one-shot+reopen-reset+dedup),
+`test_alerts` (audit-only→alert+dedup / api-источник и merged-sources пропущены /
+generic-tiering / notify dispatch+filter+disabled), `test_monitor` (run_project шлёт раз,
+второй прогон молчит).
 
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
