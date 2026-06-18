@@ -114,6 +114,14 @@ def test_format_event_kinds():
     assert 'd' in done and 'first scan' not in done
     assert 'error' in monitor.format_event(
         {'type': 'error', 'slug': 'x', 'error': 'boom'})
+    # Alert events render the count / sent / channel kind (not a bare "alerts").
+    diff_al = monitor.format_event(
+        {'type': 'alerts', 'slug': 'x', 'alerts': 3, 'sent': 2})
+    assert '3 alerts' in diff_al and '2 sent' in diff_al
+    secret_al = monitor.format_event(
+        {'type': 'alerts', 'slug': 'x', 'alerts': 1, 'sent': 0,
+         'alert_kind': 'secret', 'reason': 'no channels'})
+    assert 'alerts (secret)' in secret_al and 'no channels' in secret_al
 
 
 # ── Project schedule persistence ──────────────────────────────────────────────

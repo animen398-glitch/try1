@@ -173,6 +173,16 @@ def format_event(ev: Dict) -> str:
                 + (f' · {line}' if line else ' (first scan)'))
     if kind in ('error', 'diff_error'):
         return f'[monitor] {slug}: {kind}: {ev.get("error", "")}'
+    if kind == 'alerts':
+        # Carries alerts/sent/reason/alert_kind from the dispatchers; the generic
+        # fallthrough would drop the count and channel kind (diff / sla / secret /
+        # finding), so render them.
+        akind = ev.get('alert_kind')
+        label = f'alerts ({akind})' if akind else 'alerts'
+        reason = ev.get('reason')
+        suffix = f' · {reason}' if reason else ''
+        return (f'[monitor] {slug}: {ev.get("alerts", 0)} {label}, '
+                f'{ev.get("sent", 0)} sent{suffix}')
     return f'[monitor] {slug}: {kind}'
 
 
