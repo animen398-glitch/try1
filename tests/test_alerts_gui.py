@@ -5,6 +5,15 @@ fields back into the config shape core.alerts expects.
 """
 
 
+def test_every_alert_type_has_a_label():
+    # Each alertable type needs a RU label, else the Notifications tab shows its
+    # raw key. Guards against adding an ALERT_TYPE without labelling it.
+    from core import alerts as alert_center
+    from gui.dialogs import _ALERT_TYPE_LABELS
+    missing = set(alert_center.ALERT_TYPES) - set(_ALERT_TYPE_LABELS)
+    assert not missing, f'unlabelled alert types: {sorted(missing)}'
+
+
 def test_alerts_tab_populates_from_settings(qapp, monkeypatch):
     from core import config
     monkeypatch.setattr(config, 'load_settings', lambda: {

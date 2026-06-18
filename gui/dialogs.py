@@ -19,6 +19,26 @@ _ARCHIVE_FORMATS = ['zip', 'rar']
 # (gui_theme value -> RU label) for the appearance selector.
 _THEME_LABELS = {'system': 'Системная', 'light': 'Светлая', 'dark': 'Тёмная'}
 
+# (alert type -> RU label) for the Notifications tab. Module-level so a test can
+# assert it covers every alert_center.ALERT_TYPES (an unlabelled type would show
+# as its raw key). Labels mirror gui.tab_timeline._EVENT_LABELS where they overlap.
+_ALERT_TYPE_LABELS = {
+    'new_secret': 'Новый секрет',
+    'new_secret_generic': 'Новый секрет (generic)',
+    'new_subdomain': 'Новый субдомен',
+    'takeover': 'Takeover', 'new_technology': 'Новая технология',
+    'cert_change': 'Смена сертификата', 'risk_increase': 'Рост риска',
+    'cert_expired': 'Сертификат истёк',
+    'graphql_introspection': 'GraphQL introspection',
+    'new_sourcemap': 'Утёкший source map',
+    'cookie_weakened': 'Cookie ослаблена',
+    'new_vulnerable_dependency': 'Уязвимая зависимость',
+    'dependency_vulnerable': 'Зависимость стала уязвимой',
+    'security_header_removed': 'Security-заголовок убран',
+    'sla_breach': 'Просрочка SLA',
+    'new_finding': 'Новая находка',
+}
+
 
 class SettingsDialog(QDialog):
     """Диалог настроек приложения"""
@@ -178,22 +198,9 @@ class SettingsDialog(QDialog):
         types_grp = SectionGroupBox("Типы событий (ничего не отмечено = все)")
         tg_layout = QVBoxLayout()
         self._alert_type_cbs = {}
-        _TYPE_LABELS = {
-            'new_secret': 'Новый секрет',
-            'new_secret_generic': 'Новый секрет (generic)',
-            'new_subdomain': 'Новый субдомен',
-            'takeover': 'Takeover', 'new_technology': 'Новая технология',
-            'cert_change': 'Смена сертификата', 'risk_increase': 'Рост риска',
-            'cert_expired': 'Сертификат истёк',
-            'new_sourcemap': 'Утёкший source map',
-            'cookie_weakened': 'Cookie ослаблена',
-            'new_vulnerable_dependency': 'Уязвимая зависимость',
-            'dependency_vulnerable': 'Зависимость стала уязвимой',
-            'security_header_removed': 'Security-заголовок убран',
-        }
         enabled_types = set(cfg.get('types') or [])
         for key in alert_center.ALERT_TYPES:
-            cb = QCheckBox(_TYPE_LABELS.get(key, key))
+            cb = QCheckBox(_ALERT_TYPE_LABELS.get(key, key))
             cb.setChecked(key in enabled_types)
             self._alert_type_cbs[key] = cb
             tg_layout.addWidget(cb)
