@@ -112,3 +112,18 @@ def test_empty_project_selection_clears(qapp):
     w._apply_timeline()        # no project selected → safe, clears
     assert w.timeline_events.rowCount() == 0
     assert 'Нет проектов' in w.timeline_status.text()
+
+
+def test_event_labels_cover_all_event_types():
+    # Every event type the timeline can render needs a RU label, else the feed
+    # shows its raw key. Guards against adding a diff/lifecycle/asset event type
+    # without labelling it (parallel to test_every_alert_type_has_a_label).
+    from core import timeline
+    from core.scan_diff import EVENT_SEVERITY
+    from gui.tab_timeline import _EVENT_LABELS
+    types = set(EVENT_SEVERITY)                                  # diff events
+    types |= set(timeline._FINDING_EVENT_TYPE.values())         # F1 lifecycle
+    types |= set(timeline._ASSET_EVENT_TYPE.values())           # asset lifecycle
+    types.add('sla_breach')                                     # time-based SLA
+    missing = types - set(_EVENT_LABELS)
+    assert not missing, f'timeline event types without a label: {sorted(missing)}'
