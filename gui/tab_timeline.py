@@ -47,6 +47,7 @@ _EVENT_LABELS = {
     'dependency_vulnerable':     'Зависимость стала уязвимой',
     'security_header_removed':   'Security-заголовок убран',
     'dns_email_auth_weakened':   'Email-auth ослаблен (SPF/DMARC)',
+    'new_exposure_cluster':      'Новый кластер экспозиции',
     'risk_increase':       'Риск ↑',
     'risk_decrease':       'Риск ↓',
     'new_finding':         'Новая находка',

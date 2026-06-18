@@ -44,6 +44,10 @@ SECTION_PHASES = {
     'graphql':      'security',
     'sourcemap':    'security',
     'findings':     'vulns',
+    # Asset Correlation Engine clusters (EPIC 5) live in report['asset_graph'];
+    # gate on the subdomain phase since a shared-infra cluster (≥2 hosts on one
+    # node) needs the subdomain inventory to exist.
+    'exposure':     'subdomains',
 }
 SECTION_TITLES = {
     'pages':        'Страницы (Site Map)',
@@ -64,6 +68,7 @@ SECTION_TITLES = {
     'graphql':      'GraphQL',
     'sourcemap':    'Source maps (исходники)',
     'findings':     'Findings',
+    'exposure':     'Exposure (общая инфра)',
 }
 
 
@@ -313,6 +318,20 @@ def _extract_cookies(report: Dict) -> Optional[Dict]:
             if isinstance(c, dict) and c.get('name')}
 
 
+def _extract_exposure(report: Dict) -> Optional[Dict]:
+    # Asset Correlation Engine (EPIC 5): shared-infra clusters (host assets on one
+    # ip/asn/netblock). Keyed by the node, value = how many assets it concentrates,
+    # so a newly-formed cluster is *added* and a growing one is *changed*.
+    clusters = (report.get('asset_graph') or {}).get('shared_infra')
+    if not isinstance(clusters, list):
+        return None
+    out: Dict = {}
+    for c in clusters:
+        if isinstance(c, dict) and c.get('node'):
+            out[f"{c.get('type', '')} {c['node']}".strip()] = c.get('count', 0)
+    return out
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -342,6 +361,7 @@ _EXTRACTORS = {
     'sourcemap':    _extract_sourcemap,
     'cookies':      _extract_cookies,
     'findings':     _extract_findings,
+    'exposure':     _extract_exposure,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
@@ -366,6 +386,8 @@ def _label(section: str, key, value) -> str:
         return f'{key}' + (f' {ver}' if ver else '') + flag
     if section in ('headers', 'certificates', 'dns', 'graphql', 'cookies'):
         return f'{key}: {value}'
+    if section == 'exposure':
+        return f'{key} — {value} активов'
     return str(key)
 
 
@@ -500,6 +522,7 @@ EVENT_SEVERITY = {
     'new_employee':        'info',
     'new_ct_cert':         'info',
     'dns_email_auth_weakened': 'high',
+    'new_exposure_cluster': 'medium',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
     'new_sourcemap':       'high',
@@ -602,6 +625,14 @@ def diff_events(d: Dict) -> List[Dict]:
     # F1 overlap. A newly-seen email (email_intel) or employee (employee_intel)
     # widens the phishing surface; a newly-logged certificate (CT) can flag fresh
     # infrastructure or — when unexpected — possible mis-issuance.
+    # A newly-formed shared-infrastructure cluster (Asset Correlation Engine,
+    # EPIC 5): one node (ip/asn/netblock) now concentrates ≥2 assets — a fresh
+    # single point of exposure / blast radius. Structural attack-surface discovery,
+    # so timeline-only (not alertable, like new_subdomain); a growing cluster
+    # (changed count) is shown in the HTML diff but not re-fired as an event.
+    for label in sections.get('exposure', {}).get('added', []):
+        add('new_exposure_cluster', label, 'exposure')
+
     for label in sections.get('emails', {}).get('added', []):
         add('new_email', label, 'emails')
     for label in sections.get('employees', {}).get('added', []):

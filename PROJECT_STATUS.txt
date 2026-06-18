@@ -2754,3 +2754,13 @@ EPIC 5 — ASSET CORRELATION ENGINE & EXPOSURE INTELLIGENCE
   ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
 
 ==============================================================================
+
+  EPIC 5 ХВОСТ — Exposure-кластер в Scan Diff/Timeline: asset_graph.shared_infra
+  вычислялся и сёрфился (отчёт/web/метрика), но не диффился → ново-сформированный
+  single-point-of-exposure между сканами невидим в ленте. Секция scan_diff
+  'exposure' (фаза-гейт 'subdomains'; _extract_exposure из report['asset_graph'].
+  shared_infra, keyed by node, value=count). diff_events эмитит new_exposure_cluster
+  (medium, TIMELINE-ONLY — структурный discovery, не алертабелен, как new_subdomain).
+  Метка в gui/tab_timeline. +2 теста. Full suite PASS.
+
+==============================================================================

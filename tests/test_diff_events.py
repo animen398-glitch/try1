@@ -267,6 +267,17 @@ def test_dns_email_auth_improvement_is_not_an_event():
             if e['type'] == 'dns_email_auth_weakened'] == []
 
 
+def test_new_exposure_cluster_is_timeline_only():
+    # A newly-formed shared-infra cluster (Asset Correlation Engine) is a medium
+    # structural-discovery note, not alertable (like a new subdomain).
+    d = _diff(exposure=_added('ip 1.2.3.4 — 5 активов'))
+    events = diff_events(d)
+    assert [e['type'] for e in events] == ['new_exposure_cluster']
+    assert events[0]['severity'] == 'medium' and events[0]['section'] == 'exposure'
+    assert alerts.extract_alerts(d) == []
+    assert 'new_exposure_cluster' not in alerts.ALERT_TYPES
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})

@@ -142,6 +142,19 @@ def test_dns_email_auth_weakened_end_to_end():
     assert types.count('dns_email_auth_weakened') == 2
 
 
+def test_exposure_cluster_event_end_to_end():
+    # A shared-infra cluster forming between scans → a new_exposure_cluster event.
+    a = _report('A', subdomains=[{'subdomain': 'a.x.com'}])
+    b = _report('B', subdomains=[{'subdomain': 'a.x.com'}])
+    a['asset_graph'] = {'shared_infra': []}
+    b['asset_graph'] = {'shared_infra': [{'type': 'ip', 'node': '1.2.3.4',
+                                          'count': 3}]}
+    sec = diff(a, b)['sections']['exposure']
+    assert sec['added'] == ['ip 1.2.3.4 — 3 активов']
+    types = [e['type'] for e in diff_events(diff(a, b))]
+    assert 'new_exposure_cluster' in types
+
+
 def test_technology_version_change_and_cms_union():
     a = _report('A', techs=[{'name': 'nginx', 'category': 'Server',
                              'version': '1.18'}], cms=['WordPress'])
@@ -414,7 +427,7 @@ def test_tolerates_empty_reports():
                                  'certificates', 'endpoints', 'apis',
                                  'historical', 'dns', 'emails', 'employees',
                                  'ct', 'graphql', 'sourcemap', 'cookies',
-                                 'findings'}
+                                 'findings', 'exposure'}
     assert d['is_empty'] is True
 
 

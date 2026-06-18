@@ -1287,7 +1287,12 @@ Relationships»; web `_correlation_view` +`asset_graph` (+ console-вывод к
 `executive_summary` метрика `exposure_clusters/exposure_largest` + чип «N× co-hosted»
 (medium, display — ярлык отличает от F-R4 «shared infra»). Все рёбра из существующих attrs
 (новых данных нет). GUI не тронут. Покрыто `test_asset_graph`(6) + web/es/report-card
-(+10 всего). EPIC 5 ЗАКРЫТ.
+(+10 всего). EPIC 5 ЗАКРЫТ. **Хвост — Exposure-кластер в Scan Diff/Timeline:**
+`shared_infra` вычислялся, но не диффился → ново-сформированный single-point-of-exposure
+был невидим в ленте. Секция scan_diff `exposure` (фаза-гейт `subdomains`; `_extract_exposure`
+из `report['asset_graph'].shared_infra`, keyed by node) → `diff_events` эмитит
+`new_exposure_cluster` (medium, **timeline-only** — структурный discovery, не алертабелен,
+как `new_subdomain`). Метка в `gui/tab_timeline`. +2 теста.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
