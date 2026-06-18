@@ -1126,6 +1126,26 @@ api-секреты (`source='secret'`) НЕ дублируются — они di
 generic-tiering / notify dispatch+filter+disabled), `test_monitor` (run_project шлёт раз,
 второй прогон молчит).
 
+**Generic high/critical-finding alert-канал — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел в последней непокрытой оси. Секция `findings` в `scan_diff`
+(`_extract_findings`) вычисляется и показывается в HTML-диффе, но `diff_events` НЕ имеет
+для неё обработчика → ново-появившаяся generic vuln-находка (nuclei-шаблон, чек сканера
+SQLi/XSS, не-dependency CVE) не порождала алерта, только косвенный `risk_increase`. Каждый
+*специфичный* опасный сигнал (secret/takeover/source-map/GraphQL/cookie/dependency) уже
+имеет таргетный алерт — `category='vuln'` была единственной категорией без него. Решение —
+finding-based one-shot канал (как secret/SLA): `alerts.collect_finding_alerts` (активные
+high/critical находки `category='vuln'`, исключая dependency-audit CVE — их покрывает
+`new_vulnerable_dependency`; дедуп через стор) + `notify_findings`; `new_finding` в
+`ALERT_TYPES`; `FindingsStore.record_finding_alerts` + событие `FINDING_ALERTED`
+(переиспользует общий `_record_oneshot`). **Рефактор:** три почти-идентичных
+finding-based диспетчера монитора (SLA/secret/finding) слиты в один
+`_dispatch_finding_based_alerts(collect, notify, kind)`; finding-канал зовётся каждый
+успешный прогон (`result['finding_alerts']` аддитивен). **Timeline не тронут** — F1 уже
+владеет finding-событиями там; добавлен только недостающий alert-путь. Находки с
+dedicated-категорией/источником НЕ дублируются. Покрыто `test_findings_store` (one-shot),
+`test_alerts` (high→alert+dedup / low+dependency-audit+secret-категория пропущены / notify
+dispatch+filter+disabled), `test_monitor` (шлёт раз, второй прогон молчит).
+
 **Security-audit endpoints → surface + assets — `[ЗАКРЫТ]`.** Backend-фаза. Audit
 извлекал endpoints из inline+внешнего JS (`security.data.endpoints` = `{url, found_in}`),
 но они были orphaned: attack-surface «Endpoints» читала только `katana.endpoints`, а
