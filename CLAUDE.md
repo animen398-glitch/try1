@@ -72,6 +72,7 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   trends.py             # EPIC 4: аналитика тренда поверх timeline.build_series (направление/baseline/дельта/пик)
   correlation.py        # F-K: Finding→Asset→Infra (exposure-by-asset, blast radius)
   asset_graph.py        # EPIC 5: Asset Correlation Engine — asset↔asset граф + кластеры общей инфры (Exposure Intelligence)
+  intelligence.py       # EPIC 7: Core Intelligence — confidence + priority + explanation per finding (derive-on-read, ранжирование «что чинить первым»)
   features.py           # централизованный детект опц. зависимостей (pip-модули vs PATH-бинарники); summary()/missing()
   launcher.py           # EPIC 6: engine Install/Repair/Update/Launch + health_check (REQUIRED + features.summary); offline-first, subprocess инъектируется
   report_export.py      # CSV-экспорт findings/portfolio (PDF — печатью report.html)
@@ -1315,6 +1316,27 @@ Qt-окно `LauncherWindow` (Module 5: 5 кнопок; fast синхронно,
 `external_tools.run_command` (never-raise subprocess), ui_components. Архитектура цела
 (изолированный модуль+entry). Живая проверка: `--health` поймал реально отсутствующий
 bs4. Покрыто `test_launcher`(15) + `test_launcher_cli`(7). EPIC 6 ЗАКРЫТ.
+
+**EPIC 7 — Core Intelligence Framework — `[ЗАКРЫТ]`.** «От обнаружения к объяснению»:
+Confidence + Priority + Explanation per finding. Аудит: confidence/priority не было,
+но все входы есть (`Finding.sources` корроборация, `secret_validator`/`is_high_value_
+secret` валидация, `finding_knowledge` объяснение, `correlation.exposure`+`asset_graph.
+shared_infra` exposure/blast-radius, `findings_sla` срочность, severity). Решения
+пользователя: **backend** (GUI отложить), формулы как предложено (confidence
+**дисконтирует** severity в priority), **отдельный `/intelligence`**. Новый
+`core/intelligence.py` (pure derive-on-read, **без новых моделей**): `confidence` =
+base(категория; cve-rule→85) + корроборация(+10/источник, cap 20) + валидация
+(высокоценный секрет +15) → 0–100 + band; `priority` = round(severity_base ×
+conf/100) + exposure(+10 blast / +5 correlated) + SLA(+10/+5), cap 100; `explain` →
+`finding_knowledge.describe`; `build_intelligence` ранжирует (priority desc) с
+factors; `load_intelligence(project)` тонкий ридер. Проводка:
+`collection_runner._build_intelligence` → `report['intelligence']` + карточка
+«Priorities»; web `/intelligence` (+ кнопка/JS в консоли); `executive_summary`
+метрики `top_priority`/`high_confidence_findings` (display, НЕ слагаемое — priority
+выведен из severity). **Переиспользовано:** findings_store, correlation, asset_graph,
+finding_knowledge, findings_sla, `_is_high_value_secret_finding`, severity. Новых
+таблиц/моделей — ноль. Покрыто `test_intelligence`(11 unit) + `test_web_intelligence`
+(4 integration: стор→корреляция→граф→ранжирование+live) + es-метрика/card (+19). EPIC 7 ЗАКРЫТ.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

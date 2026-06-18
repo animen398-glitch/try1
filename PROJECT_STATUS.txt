@@ -2819,3 +2819,58 @@ EPIC 6 — LAUNCHER & DEPENDENCY MANAGEMENT SYSTEM
   ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
 
 ==============================================================================
+
+==============================================================================
+EPIC 7 — CORE INTELLIGENCE FRAMEWORK
+==============================================================================
+
+  ЦЕЛЬ: от простого обнаружения к ОБЪЯСНЕНИЮ. Confidence + Priority + Explanation
+  per finding. Не дублировать модели; максимально переиспользовать Asset Inventory/
+  Correlation/Risk/Monitoring/Timeline.
+
+  АУДИТ (до кода): confidence/priority НЕ было, но ВСЕ входные сигналы уже есть —
+  Finding.sources (корроборация), secret_validator/is_high_value_secret (валидация),
+  finding_knowledge (объяснение), correlation.exposure + asset_graph.shared_infra
+  (exposure/blast radius), findings_sla (срочность), severity. Решения пользователя:
+  backend (GUI отложить), формулы как предложено (confidence дисконтирует severity),
+  отдельный /intelligence.
+
+  ДВИЖОК — core/intelligence.py (новый, pure derive-on-read, БЕЗ новых моделей):
+   - confidence(finding) → {score 0–100, band high/med/low, factors}.
+     = base(категория: cve/takeover/sourcemap/graphql 85 · dependency 80 · cookie/
+       header 75 · secret/dns 70 · vuln/tech 60; rule cve-* → 85) + корроборация
+       (+10 за доп. источник, cap +20) + валидация (высокоценный секрет +15).
+   - priority(finding, conf, exposed, clustered, sla_bucket) → {score 0–100, factors}.
+     = round(severity_base[crit50/high35/med18/low6/info2] × conf/100) + exposure
+       (+10 blast-radius / +5 скоррелирован) + SLA (+10 breached / +5 due_soon), cap 100.
+     Низкая confidence ДИСКОНТИРУЕТ severity (high-but-shaky < high-confirmed).
+   - explain(finding) → finding_knowledge.describe (impact/remediation, F-O).
+   - build_intelligence(findings, correlation, asset_graph, now) → {items (priority
+     desc), top, summary{findings, high_confidence(≥80), top_priority}}.
+   - load_intelligence(project) → тонкий ридер (active findings + load_correlation +
+     load_asset_graph). Guarded.
+
+  ПРОВОДКА:
+   - collection_runner._build_intelligence → report['intelligence'] + карточка
+     «Priorities» (prio/sev/находка/confidence), best-effort.
+   - web /intelligence (+ _intelligence_view, кнопка+showIntelligence в консоли).
+   - executive_summary: метрики top_priority/high_confidence_findings (display,
+     НЕ слагаемое — priority выведен из severity, уже в score).
+
+  ПЕРЕИСПОЛЬЗОВАНО: findings_store, correlation (_host/finding_chains/exposure),
+  asset_graph.shared_infra, finding_knowledge.describe, findings_sla.sla_status/
+  bucket, executive_summary._is_high_value_secret_finding, severity-шкала. Новых
+  таблиц/моделей — ноль.
+
+  МОДЕЛИ РАСШИРЕНЫ: report += 'intelligence'; executive metrics += top_priority/
+  high_confidence_findings. НОВЫЕ СУЩНОСТИ: intelligence item (derive, не хранится).
+
+  ТЕСТЫ (+19): Unit test_intelligence(11: confidence base/cve/corroboration-cap/
+  secret-bonus/bands; priority discount/bonuses/cap; explain; build rank/empty).
+  Integration test_web_intelligence(4: stores→correlation→graph→ранжирование +
+  no-project + dashboard-button + live endpoint) + es-метрика(2) + card(1) +
+  collection_runner.
+
+  ВЕРИФИКАЦИЯ: full suite PASS (exit 0), ruff чист.
+
+==============================================================================

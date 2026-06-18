@@ -173,6 +173,25 @@ attack-surface score, число секретов/находок — основ�
 - Для каждой уязвимости: **CVE ID · severity · CVSS · дата публикации · summary**
   (в карточке Dependencies отчёта и в находках).
 
+### Core Intelligence Framework (от обнаружения к объяснению)
+
+`core/intelligence.py` (derive-on-read, без новых моделей) ранжирует находки по
+**Priority** с оценкой **Confidence** и объяснением — «что чинить первым и почему».
+
+- **Confidence (0–100)** — насколько находка реальна: `base(категория)` +
+  корроборация (сколько независимых сканеров её подтвердили, `Finding.sources`) +
+  валидация (высокоценный секрет точного формата). Band: high ≥80 / medium / low.
+- **Priority (0–100)** — `severity_base × confidence/100` (низкая уверенность
+  **дисконтирует** severity) + бонус exposure (находка на co-hosted/скоррелированном
+  активе — blast radius) + бонус SLA (просрочен / скоро). Каждый score —
+  с named-факторами (аудируемо, как «Из чего риск»).
+- **Explanation** — impact/remediation из каталога `finding_knowledge` (F-O).
+- Поверхности: карточка **Priorities** в HTML-отчёте, web `/intelligence`, метрики
+  `top_priority`/`high_confidence_findings` в Executive Summary.
+
+Переиспользует (не дублирует): Findings, Correlation/Asset Graph (exposure/blast
+radius), Knowledge-каталог, SLA, severity — новых таблиц/моделей нет.
+
 ### Asset Correlation Engine & Exposure Intelligence
 
 Платформа не просто хранит активы, а **понимает отношения между ними**
