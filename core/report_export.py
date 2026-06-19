@@ -57,6 +57,18 @@ _INTELLIGENCE_COLUMNS: Sequence[Tuple[str, str]] = (
     ('remediation', 'Remediation'), ('id', 'ID'),
 )
 
+_CRITICALITY_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('criticality', 'Criticality'), ('band', 'Band'), ('type', 'Type'),
+    ('value', 'Value'), ('factors', 'Factors'), ('id', 'ID'),
+)
+
+_ATTACK_PATHS_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('score', 'Score'), ('band', 'Band'), ('entry', 'Entry'),
+    ('entry_severity', 'Entry Severity'), ('pivot_type', 'Pivot Type'),
+    ('pivot_node', 'Pivot Node'), ('size', 'Cluster Size'),
+    ('targets', 'Targets'), ('critical_targets', 'Critical Targets'),
+)
+
 
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
@@ -125,6 +137,34 @@ def intelligence_csv(items: Optional[List[Dict]]) -> str:
                      'impact': info.get('impact'),
                      'remediation': info.get('remediation')})
     return _rows_to_csv(flat, _INTELLIGENCE_COLUMNS)
+
+
+def criticality_csv(items: Optional[List[Dict]]) -> str:
+    """CSV of assets ranked by criticality (``intelligence.build_asset_criticality``
+    items). The nested ``factors`` list (each ``{factor, points}``) is flattened to
+    a single readable cell so the export stays a flat table, in criticality order."""
+    flat: List[Dict] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        factors = '; '.join(
+            f"{f.get('factor', '')} (+{f.get('points', 0)})"
+            for f in (it.get('factors') or []) if isinstance(f, dict))
+        flat.append({**it, 'factors': factors})
+    return _rows_to_csv(flat, _CRITICALITY_COLUMNS)
+
+
+def attack_paths_csv(paths: Optional[List[Dict]]) -> str:
+    """CSV of lateral attack paths (``intelligence.build_attack_paths`` paths).
+
+    The ``targets`` host list is flattened to a single cell so the export stays a
+    flat table, in score order (same as the GUI tab and the web /attack-paths view)."""
+    flat: List[Dict] = []
+    for p in paths or []:
+        if not isinstance(p, dict):
+            continue
+        flat.append({**p, 'targets': '; '.join(str(t) for t in (p.get('targets') or []))})
+    return _rows_to_csv(flat, _ATTACK_PATHS_COLUMNS)
 
 
 def portfolio_csv(portfolio) -> str:

@@ -1469,6 +1469,30 @@ band = улучшение, не событие, как DMARC-апгрейд). `a
 web + мониторинг; GUI-вкладки Criticality/Attack Paths опциональны (память
 `feedback-internals-first-no-gui`).
 
+**Advanced Intelligence — GUI tail (Criticality + Attack Paths) — `[ЗАКРЫТ]`.**
+Снят отложенный по решению пользователя GUI: две read-only вкладки, точное зеркало
+паттерна Priorities-вкладки (EPIC 7 GUI tail) — аддитивные, GUI НЕ перестраивается
+(память `feedback-internals-first-no-gui`; прецедент Priorities принят). **(1)**
+«Asset Criticality» (`gui/tab_criticality.py`, `CriticalityTabMixin`,
+`_build_criticality_tab`) поверх `intelligence.load_asset_criticality`: per-project
+селектор (источник проектов — `AssetStore.projects()`, т.к. криткритичность —
+про активы), 3 rollup-карты (Активов/Высокая крит./Макс. крит.), таблица
+`[Criticality, Band, Тип, Актив]` (ранжирование backend'а crit-desc), панель факторов
+(объяснимость числа). **(2)** «Attack Paths» (`gui/tab_attack_paths.py`,
+`AttackPathsTabMixin`, `_build_attack_paths_tab`) поверх `load_attack_paths`:
+тот же per-project паттерн, таблица `[Score, Band, Entry, Pivot, Targets, Critical]`,
+панель «entry → pivot → targets». Обе: двухстадийная off-thread загрузка
+(`AssetStore.projects()` → `load_*`) по образцу Assets/Priorities, lazy-load в
+`tab_history._on_tab_changed`, регистрация в `BUILTIN_TABS` (секция «Управление»,
+между Priorities и Assets), init-флаги в `main_window`. Export CSV —
+`report_export.criticality_csv`/`attack_paths_csv` (flatten factors/targets, паритет
+со всеми data-вкладками). UI тонкий (вся логика в `core/intelligence.py`), без новых
+зависимостей, risk-числа не тронуты (criticality/paths — display). Покрыто
+`test_criticality_tab`(7)/`test_attack_paths_tab`(7) + `criticality_csv`/
+`attack_paths_csv` в `test_report_export`(4). **Web-паритет был с EPIC 12
+(`/criticality`,`/attack-paths`); теперь поверхность есть и в GUI — Advanced
+Intelligence имеет полную GUI+web+report+monitoring проводку.**
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

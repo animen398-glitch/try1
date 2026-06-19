@@ -142,6 +142,47 @@ def test_intelligence_csv_empty_is_header_only():
     assert _parse(rx.intelligence_csv(None))[0][0] == 'Priority'
 
 
+# ── criticality_csv (EPIC 9 — assets ranked by criticality) ─────────────────────
+
+def test_criticality_csv_header_and_flattened_factors():
+    items = [{'criticality': 65, 'band': 'medium', 'type': 'domain',
+              'value': 'x.com', 'id': 'a-1',
+              'factors': [{'factor': 'Тип актива: domain', 'points': 40},
+                          {'factor': 'Публично доступен (2xx)', 'points': 5}]}]
+    table = _parse(rx.criticality_csv(items))
+    assert table[0] == ['Criticality', 'Band', 'Type', 'Value', 'Factors', 'ID']
+    row = dict(zip(table[0], table[1]))
+    assert row['Criticality'] == '65' and row['Value'] == 'x.com'
+    assert 'Тип актива: domain (+40)' in row['Factors']
+    assert 'Публично доступен (2xx) (+5)' in row['Factors']
+
+
+def test_criticality_csv_empty_is_header_only():
+    assert _parse(rx.criticality_csv([]))[0][0] == 'Criticality'
+    assert _parse(rx.criticality_csv(None))[0][0] == 'Criticality'
+
+
+# ── attack_paths_csv (EPIC 11 — lateral attack paths) ───────────────────────────
+
+def test_attack_paths_csv_header_and_flattened_targets():
+    paths = [{'score': 55, 'band': 'medium', 'entry': 'api.x.com',
+              'entry_severity': 'high', 'pivot_type': 'ip',
+              'pivot_node': '1.2.3.4', 'size': 3,
+              'targets': ['a.x.com', 'b.x.com'], 'critical_targets': 1}]
+    table = _parse(rx.attack_paths_csv(paths))
+    assert table[0] == ['Score', 'Band', 'Entry', 'Entry Severity', 'Pivot Type',
+                        'Pivot Node', 'Cluster Size', 'Targets', 'Critical Targets']
+    row = dict(zip(table[0], table[1]))
+    assert row['Score'] == '55' and row['Entry'] == 'api.x.com'
+    assert row['Targets'] == 'a.x.com; b.x.com'
+    assert row['Critical Targets'] == '1'
+
+
+def test_attack_paths_csv_empty_is_header_only():
+    assert _parse(rx.attack_paths_csv([]))[0][0] == 'Score'
+    assert _parse(rx.attack_paths_csv(None))[0][0] == 'Score'
+
+
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
 def test_portfolio_csv_from_full_dict():

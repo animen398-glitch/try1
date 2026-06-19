@@ -102,6 +102,12 @@ class HistoryTabMixin:
         elif widget is getattr(self, '_intel_widget', None):
             if not self._intel_loaded and not self._intel_loading:
                 self._refresh_intelligence()
+        elif widget is getattr(self, '_crit_widget', None):
+            if not self._crit_loaded and not self._crit_loading:
+                self._refresh_criticality()
+        elif widget is getattr(self, '_attack_paths_widget', None):
+            if not self._attack_paths_loaded and not self._path_loading:
+                self._refresh_attack_paths()
         elif widget is getattr(self, '_timeline_widget', None):
             if not self._timeline_loaded and not self._timeline_loading:
                 self._refresh_timeline()
