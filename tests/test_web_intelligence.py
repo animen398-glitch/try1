@@ -69,3 +69,44 @@ def test_intelligence_endpoint_with_testclient():
     body = r.json()
     assert body['summary']['findings'] == 2
     assert any('CVE-2021-1' in i['title'] for i in body['items'])
+
+
+# ── Asset Criticality + Attack Paths web parity (EPIC 9/11) ───────────────────
+
+def test_criticality_view_ranks_assets():
+    _seed('p')
+    d = wa._criticality_view('p')
+    assert 'error' not in d and d['summary']['assets'] >= 1
+    # the shared IP (two subdomains resolve to it) tops the ranking
+    assert d['items'][0]['type'] == 'ip'
+
+
+def test_attack_paths_view_derives_lateral_route():
+    _seed('p')
+    d = wa._attack_paths_view('p')
+    assert 'error' not in d
+    # a.acme.com (has findings) shares 1.2.3.4 with b.acme.com → one path
+    assert d['summary']['paths'] >= 1
+
+
+def test_criticality_and_paths_no_project_is_empty():
+    assert wa._criticality_view(None)['items'] == []
+    assert wa._attack_paths_view(None)['paths'] == []
+
+
+def test_dashboard_exposes_criticality_and_paths():
+    html = wa._DASHBOARD
+    assert 'showCriticality()' in html and '/criticality' in html
+    assert 'showAttackPaths()' in html and '/attack-paths' in html
+
+
+def test_criticality_paths_endpoints_with_testclient():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    _seed('p')
+    client = TestClient(wa.app)
+    assert client.get('/criticality', params={'project': 'p'}).status_code == 200
+    assert client.get('/attack-paths', params={'project': 'p'}).status_code == 200

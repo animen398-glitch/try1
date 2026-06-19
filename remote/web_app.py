@@ -485,6 +485,32 @@ def _intelligence_view(project: Optional[str] = None) -> dict:
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
 
 
+# ── Asset Criticality + Attack Paths (EPIC 9/11, web parity) ─────────────────────
+# Read-only over core.intelligence — the same display-only rankings the report cards
+# show. Inherently per-project: an empty project yields an empty view.
+
+def _criticality_view(project: Optional[str] = None) -> dict:
+    """Assets ranked by criticality (importance) for one project."""
+    if not project:
+        return {'items': [], 'top': [], 'summary': {}}
+    try:
+        from core.intelligence import load_asset_criticality
+        return load_asset_criticality(project)
+    except Exception as e:
+        return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
+def _attack_paths_view(project: Optional[str] = None) -> dict:
+    """Lateral attack paths (entry → pivot → targets) for one project."""
+    if not project:
+        return {'paths': [], 'top': [], 'summary': {}}
+    try:
+        from core.intelligence import load_attack_paths
+        return load_attack_paths(project)
+    except Exception as e:
+        return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
 # ── Timeline / Change feed (F2, web parity) ─────────────────────────────────────
 # Read-only over core.timeline — the same derive-on-read change feed (series +
 # events) the GUI Timeline tab shows. Inherently per-project: an empty project
@@ -633,6 +659,8 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showCorrelation()">Correlation</button>
       <button class="btn sec" onclick="showTimeline()">Timeline</button>
       <button class="btn sec" onclick="showIntelligence()">Intelligence</button>
+      <button class="btn sec" onclick="showCriticality()">Criticality</button>
+      <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
     </div>
   </div>
 
@@ -1006,6 +1034,38 @@ async function showIntelligence(){
   }catch(ex){log('Intelligence failed: '+ex.message,'er');}
 }
 
+async function showCriticality(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Criticality: no projects','data'); return;}
+    const r=await fetch('/criticality?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Asset criticality ['+proj+']: '+(s.assets||0)+' assets · top '
+        +(s.top_criticality||0)+' · '+(s.high_criticality||0)+' critical','data');
+    (d.top||[]).slice(0,10).forEach(i=>{
+      log('  C'+(i.criticality||0)+' ['+(i.band||'')+'] '+(i.type||'')+' '
+          +(i.value||''),'info');
+    });
+  }catch(ex){log('Criticality failed: '+ex.message,'er');}
+}
+
+async function showAttackPaths(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Attack paths: no projects','data'); return;}
+    const r=await fetch('/attack-paths?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Attack paths ['+proj+']: '+(s.paths||0)+' path(s) · top '
+        +(s.top_score||0)+' · '+(s.critical_paths||0)+' critical','data');
+    (d.top||[]).slice(0,10).forEach(p=>{
+      log('  S'+(p.score||0)+' '+(p.entry||'')+' → '+(p.pivot_type||'')+' '
+          +(p.pivot_node||'')+' → '+((p.targets||[]).length)+' targets','info');
+    });
+  }catch(ex){log('Attack paths failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -1254,6 +1314,14 @@ if _FASTAPI_OK:
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):
         return JSONResponse(_intelligence_view(project))
+
+    @app.get('/criticality')
+    async def criticality(project: Optional[str] = None):
+        return JSONResponse(_criticality_view(project))
+
+    @app.get('/attack-paths')
+    async def attack_paths(project: Optional[str] = None):
+        return JSONResponse(_attack_paths_view(project))
 
     @app.get('/report')
     async def report(file: str):
