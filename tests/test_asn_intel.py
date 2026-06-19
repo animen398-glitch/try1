@@ -119,6 +119,50 @@ def test_build_asn_intel_caps_large_lists():
     assert out['neighbor_count'] == len(hosts)
 
 
+# ── related assets (co-hosted view) ───────────────────────────────────────────
+
+def test_related_assets_filters_own_hosts():
+    intel = {'ip': '1.2.3.4', 'neighbors': ['other.com', 'api.example.com',
+                                            'example.com', 'foo.net'],
+             'neighbor_count': 4}
+    out = ai.related_assets(intel, own_hosts=['example.com', 'api.example.com'])
+    hosts = [r['host'] for r in out['related']]
+    assert hosts == ['foo.net', 'other.com']            # own excluded, sorted
+    assert out['shared_ip'] == '1.2.3.4'
+    assert out['count'] == 2 and out['total'] == 4
+    assert all(r['shared_ip'] == '1.2.3.4' for r in out['related'])
+
+
+def test_related_assets_dedups_and_normalizes():
+    intel = {'ip': '9.9.9.9', 'neighbors': ['A.com', 'a.com.', 'b.com']}
+    out = ai.related_assets(intel)
+    assert [r['host'] for r in out['related']] == ['a.com', 'b.com']
+
+
+def test_related_assets_empty_and_bad_input():
+    assert ai.related_assets({})['related'] == []
+    assert ai.related_assets(None)['count'] == 0
+
+
+def test_related_assets_from_report_uses_subdomains_as_own():
+    report = {'domain': 'example.com',
+              'phases': {
+                  'subdomains': {'status': 'Success', 'data': {'results': [
+                      {'subdomain': 'api.example.com'}]}},
+                  'asn_intel': {'status': 'Success', 'data': {
+                      'ip': '1.2.3.4', 'neighbor_count': 3,
+                      'neighbors': ['api.example.com', 'example.com',
+                                    'stranger.org']}}}}
+    out = ai.related_assets_from_report(report)
+    assert [r['host'] for r in out['related']] == ['stranger.org']
+    assert out['shared_ip'] == '1.2.3.4'
+
+
+def test_related_assets_from_report_skips_when_phase_absent():
+    assert ai.related_assets_from_report({'domain': 'x.com',
+                                          'phases': {}})['count'] == 0
+
+
 def test_build_asn_intel_skips_without_ip_or_asn():
     out = ai.build_asn_intel({'domain': 'x.com'})
     assert out['status'] == 'Skipped'

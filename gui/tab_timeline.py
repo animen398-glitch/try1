@@ -33,6 +33,7 @@ _EVENT_LABELS = {
     'cert_change':         'Смена сертификата',
     'cert_expiring':       'Сертификат истекает',
     'cert_expired':        'Сертификат истёк',
+    'cloud_changed':       'Смена облака (хостинг)',
     'new_endpoint':        'Новый эндпоинт',
     'new_historical_url':  'Новый историч. URL',
     'new_email':           'Новый email',

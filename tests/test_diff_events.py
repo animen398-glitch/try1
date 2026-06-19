@@ -53,6 +53,32 @@ def test_classifies_each_section():
     assert by_type['risk_increase'][0]['severity'] == 'high'
 
 
+def test_cloud_change_event_and_not_alertable():
+    # A hosting-cloud migration between scans → cloud_changed (medium), timeline-only.
+    d = _diff(infrastructure=_changed({'key': 'cloud', 'a': 'Cloudflare',
+                                       'b': 'AWS'}))
+    events = {e['type']: e for e in diff_events(d)}
+    assert events['cloud_changed']['severity'] == 'medium'
+    assert 'Cloudflare' in events['cloud_changed']['title']
+    # informational provider move — not an alert
+    assert 'cloud_changed' not in alerts.ALERT_TYPES
+    assert all(a['type'] != 'cloud_changed' for a in alerts.extract_alerts(d))
+
+
+def test_cloud_first_detection_is_not_a_change():
+    # A newly-detected cloud (added, not changed) is discovery, not a migration.
+    d = _diff(infrastructure=_added('cloud: AWS'))
+    assert all(e['type'] != 'cloud_changed' for e in diff_events(d))
+
+
+def test_provider_change_does_not_emit_cloud_event():
+    # Only the normalised cloud key drives the event; a raw provider-string change
+    # (noisy) does not.
+    d = _diff(infrastructure=_changed({'key': 'provider', 'a': 'Amazon',
+                                       'b': 'Amazon Technologies'}))
+    assert all(e['type'] != 'cloud_changed' for e in diff_events(d))
+
+
 def test_secret_events_are_tier_aware():
     # A high-value credential → new_secret (high); a generic/opaque key →
     # new_secret_generic (medium). Both alertable, severity reflects the tier.

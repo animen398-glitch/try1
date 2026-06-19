@@ -185,3 +185,57 @@ def test_accuracy_endpoint_with_testclient(tmp_path, monkeypatch):
     r = client.get('/accuracy', params={'project': slug})
     assert r.status_code == 200
     assert r.json()['summary']['entities'] >= 1
+
+
+# ── Related Assets web parity (infra-chain tail) ──────────────────────────────
+
+def _seed_related_project(base):
+    """A project whose latest report carries an asn_intel phase with reverse-IP
+    neighbours (one of which is our own subdomain, to verify filtering)."""
+    import json
+
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://acme.com')
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    report = {'scan_id': sid, 'domain': 'acme.com', 'phases': {
+        'subdomains': {'status': 'Success', 'data': {'results': [
+            {'subdomain': 'api.acme.com'}]}},
+        'asn_intel': {'status': 'Success', 'data': {
+            'ip': '1.2.3.4', 'neighbor_count': 3,
+            'neighbors': ['api.acme.com', 'acme.com', 'stranger.org']}}}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    return 'acme.com'
+
+
+def test_related_assets_view_filters_own_hosts(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_related_project(str(tmp_path))
+    d = wa._related_assets_view(slug)
+    assert 'error' not in d and d['shared_ip'] == '1.2.3.4'
+    assert [r['host'] for r in d['related']] == ['stranger.org']   # own filtered
+    assert d['count'] == 1 and d['total'] == 3
+
+
+def test_related_assets_view_no_project_is_empty():
+    assert wa._related_assets_view(None)['related'] == []
+
+
+def test_dashboard_exposes_related_assets():
+    html = wa._DASHBOARD
+    assert 'showRelatedAssets()' in html and '/related-assets' in html
+
+
+def test_related_assets_endpoint_with_testclient(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_related_project(str(tmp_path))
+    client = TestClient(wa.app)
+    r = client.get('/related-assets', params={'project': slug})
+    assert r.status_code == 200
+    assert r.json()['count'] == 1

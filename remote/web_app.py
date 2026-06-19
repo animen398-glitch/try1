@@ -542,6 +542,25 @@ def _accuracy_view(project: Optional[str] = None) -> dict:
         return {'by_type': {}, 'items': [], 'summary': {}, 'error': str(e)}
 
 
+def _related_assets_view(project: Optional[str] = None) -> dict:
+    """Co-hosted external domains sharing the project's IP (infra-chain tail).
+
+    Report-based (like accuracy) — resolves the project and delegates to
+    ``asn_intel.load_related_assets``. A display view: a co-hosted neighbour is not
+    an owned asset. Empty/unknown project yields an empty view."""
+    empty = {'shared_ip': '', 'related': [], 'count': 0, 'total': 0}
+    if not project:
+        return dict(empty)
+    try:
+        from core.asn_intel import load_related_assets
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        if proj is None:
+            return {**empty, 'error': f'project not found: {project}'}
+        return load_related_assets(proj)
+    except Exception as e:
+        return {**empty, 'error': str(e)}
+
+
 # ── Timeline / Change feed (F2, web parity) ─────────────────────────────────────
 # Read-only over core.timeline — the same derive-on-read change feed (series +
 # events) the GUI Timeline tab shows. Inherently per-project: an empty project
@@ -692,6 +711,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showIntelligence()">Intelligence</button>
       <button class="btn sec" onclick="showCriticality()">Criticality</button>
       <button class="btn sec" onclick="showExposure()">Exposure</button>
+      <button class="btn sec" onclick="showRelatedAssets()">Related Assets</button>
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
       <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
     </div>
@@ -1099,6 +1119,21 @@ async function showExposure(){
   }catch(ex){log('Exposure failed: '+ex.message,'er');}
 }
 
+async function showRelatedAssets(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Related assets: no projects','data'); return;}
+    const r=await fetch('/related-assets?project='+encodeURIComponent(proj));
+    const d=await r.json();
+    log('Related assets ['+proj+']: '+(d.count||0)+' co-hosted on '
+        +(d.shared_ip||'—')+' (of '+(d.total||0)+' neighbours)','data');
+    (d.related||[]).slice(0,20).forEach(x=>{
+      log('  '+(x.host||'')+'  ↔ '+(x.shared_ip||''),'info');
+    });
+  }catch(ex){log('Related assets failed: '+ex.message,'er');}
+}
+
 async function showAttackPaths(){
   try{
     const o=await fetch('/overview'); const od=await o.json();
@@ -1391,6 +1426,10 @@ if _FASTAPI_OK:
     @app.get('/exposure')
     async def exposure(project: Optional[str] = None):
         return JSONResponse(_exposure_view(project))
+
+    @app.get('/related-assets')
+    async def related_assets(project: Optional[str] = None):
+        return JSONResponse(_related_assets_view(project))
 
     @app.get('/accuracy')
     async def accuracy(project: Optional[str] = None):

@@ -305,6 +305,36 @@ def test_certificate_renewal_flips_expiry_status_back():
     assert changed['expiry'] == ('expiring', 'valid')
 
 
+def _with_infra(report, cloud=None, provider=None):
+    infra = {}
+    if cloud is not None:
+        infra['cloud'] = cloud
+    if provider is not None:
+        infra['provider'] = provider
+    report['phases']['recon']['data']['infrastructure'] = infra
+    return report
+
+
+def test_infrastructure_cloud_migration_is_changed():
+    a = _with_infra(_report('A'), cloud='Cloudflare', provider='Cloudflare')
+    b = _with_infra(_report('B'), cloud='AWS', provider='Amazon')
+    sec = diff(a, b)['sections']['infrastructure']
+    changed = {c['key']: (c['a'], c['b']) for c in sec['changed']}
+    assert changed['cloud'] == ('Cloudflare', 'AWS')
+    assert _label_present(sec, 'cloud: Cloudflare') is False   # not added/removed
+
+
+def test_infrastructure_skipped_when_absent_in_one():
+    a = _report('A')                                  # no infrastructure dict
+    b = _with_infra(_report('B'), cloud='AWS')
+    d = diff(a, b)
+    assert 'infrastructure' in d['skipped']           # legacy scan → no false diff
+
+
+def _label_present(section, label):
+    return label in section.get('added', []) or label in section.get('removed', [])
+
+
 def test_graphql_endpoint_added_and_introspection_opens():
     a = _report('A', graphql=[{'url': 'https://x.com/graphql', 'graphql': True,
                                'introspection': False}])
@@ -453,8 +483,8 @@ def test_tolerates_empty_reports():
     assert d['sections'] == {}
     assert set(d['skipped']) == {'pages', 'subdomains', 'secrets',
                                  'technologies', 'dependencies', 'headers',
-                                 'certificates', 'endpoints', 'apis',
-                                 'historical', 'dns', 'emails', 'employees',
+                                 'infrastructure', 'certificates', 'endpoints',
+                                 'apis', 'historical', 'dns', 'emails', 'employees',
                                  'ct', 'graphql', 'sourcemap', 'cookies',
                                  'findings', 'exposure', 'attack_path'}
     assert d['is_empty'] is True

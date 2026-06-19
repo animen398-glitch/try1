@@ -47,6 +47,7 @@ from core.ct_history import render_html as render_ct
 from core.historical_intel import discover as discover_historical
 from core.historical_intel import render_html as render_historical
 from core.asn_intel import build_asn_intel
+from core.asn_intel import related_assets_from_report
 from core.asn_intel import render_html as render_asn_intel
 from core import cve_intel
 from core.infrastructure import render_html as render_infrastructure
@@ -369,6 +370,10 @@ class CollectionRunner:
         # Asset Correlation Engine (EPIC 5): asset↔asset topology + shared-infra
         # exposure clusters — relationships between assets, finding-independent.
         self._build_asset_graph(report, project)
+        # Related Assets (infra-chain tail): co-hosted external domains sharing our
+        # IP (reverse-IP from the opt-in asn_intel phase) — a derive-on-read view,
+        # never promoted to owned assets.
+        self._build_related_assets(report)
         # Asset Criticality (EPIC 9): rank assets by importance (type + blast radius
         # + attached findings + exposure) — a display metric over the correlation /
         # asset-graph just produced; the risk verdict is untouched.
@@ -1264,6 +1269,40 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — asset graph must not fail a scan
             self._log(f'  Asset graph failed: {e}')
 
+    def _build_related_assets(self, report: Dict) -> None:
+        """Derive the co-hosted Related Assets view (infra-chain tail, best-effort):
+        external domains sharing our IP, from the opt-in asn_intel reverse-IP lookup,
+        minus our own hosts. Read-only over the report; a failure must never sink the
+        scan. Stored in ``report['related_assets']`` for the card + web view."""
+        try:
+            view = related_assets_from_report(report)
+            if not view.get('count'):
+                return
+            report['related_assets'] = view
+            self._log(f"  Related assets: {view['count']} co-hosted домен(ов) "
+                      f"на {view.get('shared_ip') or '—'}")
+        except Exception as e:  # noqa: BLE001 — related assets must not fail a scan
+            self._log(f'  Related assets failed: {e}')
+
+    @classmethod
+    def _render_related_assets_card(cls, rdata: Dict) -> str:
+        """Offline HTML for the Related Assets card: external domains co-hosted on
+        our shared IP (a co-hosted neighbour is not our asset — informational)."""
+        e = html.escape
+        shared_ip = rdata.get('shared_ip') or '—'
+        count, total = rdata.get('count', 0), rdata.get('total', 0)
+        extra = max(0, int(total) - int(count))
+        head = (f'<p style="font-size:13px;">Co-hosted доменов: <b>{e(str(count))}</b>'
+                f' на IP <b>{e(str(shared_ip))}</b>'
+                + (f' <span style="color:#888;">(+{extra} наших отфильтровано)</span>'
+                   if extra else '') + '</p>')
+        chips = ''.join(
+            f'<span style="display:inline-block;border:1px solid #1565c0;'
+            f'border-radius:10px;padding:1px 8px;margin:2px;font-size:11px;'
+            f'color:#1565c0;">{e(str(r.get("host") or ""))}</span>'
+            for r in rdata.get('related', []))
+        return head + (f'<div>{chips}</div>' if chips else '')
+
     def _build_asset_criticality(self, report: Dict, project) -> None:
         """Derive the Asset Criticality ranking (EPIC 9, best-effort): assets ranked
         by importance. Read-only over the stores / views just produced; a failure
@@ -1827,6 +1866,14 @@ class CollectionRunner:
             body_parts.append(card(
                 'ASN Intelligence', render_asn_intel(asn_phase.get('data')),
                 asn_phase.get('status', '—'),
+            ))
+
+        # Related Assets (infra-chain tail) — co-hosted external domains on our IP.
+        rel = report.get('related_assets')
+        if isinstance(rel, dict) and rel.get('count'):
+            body_parts.append(card(
+                'Related Assets', self._render_related_assets_card(rel),
+                f"{rel.get('count', 0)} co-hosted",
             ))
 
         # Technology fingerprint — CDN / server / backend / analytics + versions.

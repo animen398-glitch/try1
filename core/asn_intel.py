@@ -204,6 +204,86 @@ def build_asn_intel(infra: Dict, *, cidr_fetch: Optional[Callable] = None,
     }
 
 
+# ── related assets (co-hosted, derive-on-read view) ───────────────────────────
+#
+# The last hop of the infra chain (Domain → … → Related Assets): the reverse-IP
+# neighbours are *other* domains sharing our IP. They are a DISPLAY view, never
+# promoted to owned AssetStore rows — a co-hosted domain is not our asset (promoting
+# it would bloat the inventory and invite false ownership/takeover signals). So this
+# is pure derive-on-read over the data ``build_asn_intel`` already collected, with our
+# own hosts filtered out so "related" means genuinely external.
+
+def related_assets(intel: Optional[Dict], *, own_hosts=()) -> Dict:
+    """Structured co-hosted related-assets view from an ``asn_intel`` result (pure).
+
+    ``intel`` is :func:`build_asn_intel`'s dict; ``own_hosts`` is our domain +
+    subdomains, filtered out so the result is only *external* domains sharing our IP.
+    Returns ``{shared_ip, related:[{host, shared_ip}], count, total}`` (``total`` is
+    the raw neighbour count before our-host filtering)."""
+    if not isinstance(intel, dict):
+        return {'shared_ip': '', 'related': [], 'count': 0, 'total': 0}
+    own = {str(h).strip().lower().rstrip('.') for h in (own_hosts or []) if h}
+    shared_ip = intel.get('ip') or ''
+    neighbors = intel.get('neighbors') or []
+    seen, hosts = set(), []
+    for n in neighbors:
+        host = str(n or '').strip().lower().rstrip('.')
+        if host and host not in own and host not in seen:
+            seen.add(host)
+            hosts.append(host)
+    hosts.sort()
+    return {'shared_ip': shared_ip,
+            'related': [{'host': h, 'shared_ip': shared_ip} for h in hosts],
+            'count': len(hosts),
+            'total': intel.get('neighbor_count', len(neighbors))}
+
+
+def _own_hosts_from_report(report: Optional[Dict]) -> set:
+    """Our own hosts in a scan report — the apex domain + every probed subdomain —
+    so :func:`related_assets` can exclude them from the co-hosted view."""
+    out = set()
+    dom = (report or {}).get('domain')
+    if dom:
+        out.add(str(dom).strip().lower().rstrip('.'))
+    sub = (report or {}).get('phases', {}).get('subdomains', {})
+    data = sub.get('data', {}) if isinstance(sub, dict) else {}
+    for e in (data.get('results') or []):
+        if isinstance(e, dict) and e.get('subdomain'):
+            out.add(str(e['subdomain']).strip().lower().rstrip('.'))
+    return out
+
+
+def related_assets_from_report(report: Optional[Dict]) -> Dict:
+    """Derive the co-hosted related-assets view from a scan report (pure).
+
+    Reads the (opt-in) ``asn_intel`` phase's neighbours and filters out our own
+    hosts. Empty view when the phase didn't run."""
+    asn = (report or {}).get('phases', {}).get('asn_intel', {})
+    data = (asn.get('data', {}) if isinstance(asn, dict)
+            and asn.get('status') == 'Success' else {})
+    return related_assets(data or {}, own_hosts=_own_hosts_from_report(report))
+
+
+def load_related_assets(project) -> Dict:
+    """A project's latest-scan co-hosted related assets (thin report reader).
+
+    ``project`` is a :class:`core.project.Project` (report-based, like
+    ``intelligence.load_accuracy``). Offline, read-only, guarded — a missing
+    report degrades to an empty view."""
+    empty = {'shared_ip': '', 'related': [], 'count': 0, 'total': 0}
+    try:
+        if project is None:
+            return dict(empty)
+        latest = project.latest_scan()
+        scan_id = latest.get('id') if isinstance(latest, dict) else None
+        report = project.load_scan_report(scan_id) if scan_id else None
+        if not isinstance(report, dict):
+            return dict(empty)
+        return related_assets_from_report(report)
+    except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
+        return {**empty, 'error': str(e)}
+
+
 # ── offline render ────────────────────────────────────────────────────────────
 
 def render_html(intel: Optional[Dict]) -> str:

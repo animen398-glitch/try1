@@ -32,6 +32,7 @@ SECTION_PHASES = {
     'technologies': 'recon',
     'dependencies': 'recon',
     'headers':      'recon',
+    'infrastructure': 'recon',
     'cookies':      'cookies',
     'certificates': 'certificate',
     'endpoints':    'katana',
@@ -60,6 +61,7 @@ SECTION_TITLES = {
     'technologies': 'Технологии',
     'dependencies': 'Зависимости (JS)',
     'headers':      'HTTP-заголовки',
+    'infrastructure': 'Инфраструктура (Cloud)',
     'cookies':      'Cookies',
     'certificates': 'TLS-сертификат',
     'endpoints':    'Эндпоинты (Katana)',
@@ -186,6 +188,18 @@ def _extract_headers(report: Dict) -> Optional[Dict]:
             merged.update({str(k): str(v) for k, v in src.items()
                            if v not in (None, '')})
     return merged
+
+
+def _extract_infrastructure(report: Dict) -> Optional[Dict]:
+    # Compare the normalised hosting infra field-by-field (like headers): the
+    # cloud provider (AWS/Cloudflare/…) and the provider string. A cloud migration
+    # between scans (e.g. moved from Cloudflare to AWS) is the signal worth surfacing.
+    infra = _data(report, 'recon').get('infrastructure')
+    if not isinstance(infra, dict):
+        return None
+    fields = {k: str(infra[k]) for k in ('cloud', 'provider')
+              if infra.get(k) not in (None, '')}
+    return fields or None
 
 
 def _extract_certificate(report: Dict) -> Optional[Dict]:
@@ -376,6 +390,7 @@ _EXTRACTORS = {
     'technologies': _extract_technologies,
     'dependencies': _extract_dependencies,
     'headers':      _extract_headers,
+    'infrastructure': _extract_infrastructure,
     'certificates': _extract_certificate,
     'endpoints':    _extract_endpoints,
     'apis':         _extract_openapi,
@@ -412,7 +427,8 @@ def _label(section: str, key, value) -> str:
         ver = value.get('version')
         flag = ' ⚠ vulnerable' if value.get('vulnerable') else ''
         return f'{key}' + (f' {ver}' if ver else '') + flag
-    if section in ('headers', 'certificates', 'dns', 'graphql', 'cookies'):
+    if section in ('headers', 'infrastructure', 'certificates', 'dns', 'graphql',
+                   'cookies'):
         return f'{key}: {value}'
     if section == 'exposure':
         return f'{key} — {value} активов'
@@ -566,6 +582,7 @@ EVENT_SEVERITY = {
     'cert_change':         'medium',
     'cert_expiring':       'medium',
     'cert_expired':        'high',
+    'cloud_changed':       'medium',
     'new_endpoint':        'info',
     'new_historical_url':  'medium',
     'new_email':           'info',
@@ -656,6 +673,16 @@ def diff_events(d: Dict) -> List[Dict]:
         else:
             add('cert_change',
                 f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'certificates')
+
+    # Infrastructure: a hosting-cloud migration between scans (e.g. Cloudflare →
+    # AWS) is a notable infra event. Only a *change* of a known cloud is surfaced —
+    # first detection (added) is discovery, not a migration; timeline-only (not an
+    # alert: a provider move is informational, not a regression).
+    for ch in sections.get('infrastructure', {}).get('changed', []):
+        if isinstance(ch, dict) and ch.get('key') == 'cloud' and ch.get('a') \
+                and ch.get('b'):
+            add('cloud_changed',
+                f"облако: {ch.get('a')} → {ch.get('b')}", 'infrastructure')
 
     # A newly discovered endpoint (Katana crawl or OpenAPI spec).
     for section in ('endpoints', 'apis'):

@@ -3185,11 +3185,24 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     - asset_adapter: cloud/region в attrs domain/ip/asn (из infra) + per-subdomain
       cloud из CNAME. Аддитивно, identity байт-в-байт → ноль churn.
     - True cloud-region (us-east-1) НЕ выдумывается (offline из GeoIP невыводимо).
-    - Phase 2 отложено: promote asn_intel.neighbors (reverse-IP) → related-assets.
+    - Phase 2 закрыто: asn_intel.neighbors (reverse-IP) → related-assets как
+      derive-on-read display-view (co-hosted внешние домены на общем IP), без
+      промоута в AssetStore и без новых таблиц.
+    - Related Assets: core/asn_intel.py (related_assets/load_related_assets),
+      CollectionRunner report-card, web /related-assets + dashboard button.
+      Собственные host'ы (apex + subdomains) фильтруются; view empty-safe.
+    - Monitoring parity: scan_diff получил секцию infrastructure и событие
+      cloud_changed при смене нормализованного cloud между сканами. Событие
+      timeline-only, не alertable (provider-string churn не шумит).
 
   ТЕСТЫ: test_cloud_classifier (новый, 11) + test_infrastructure(+3) +
-  test_asset_adapter(+4) + exposure (test_intelligence/_tab/_web/_export/_es/_cr).
+  test_asset_adapter(+4) + exposure (test_intelligence/_tab/_web/_export/_es/_cr)
+  + related-assets/cloud-change (test_asn_intel, test_scan_diff, test_diff_events,
+  test_web_intelligence, test_collection_runner).
 
-  ВЕРИФИКАЦИЯ: затронутые наборы PASS, полный прогон зелёный, ruff чист.
+  ВЕРИФИКАЦИЯ: ruff чист; затронутые наборы PASS. Полный pytest доходит до 100%,
+  но на Python 3.14/Windows процесс падает после teardown с -1073740791 на старых
+  GUI tab-тестах (test_accuracy_tab/test_assets_tab/test_dashboard_detail/
+  test_findings_tab). Suite без этих четырёх legacy GUI-teardown файлов зелёный.
 
 ==============================================================================
