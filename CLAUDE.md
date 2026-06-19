@@ -1431,9 +1431,43 @@ exposure, criticality (уже построены). Проводка: `collection
 `top_attack_path` (НЕ score-фактор) + headline-чип «N attack paths» (high если есть
 критичный target). Display-only, вердикт не тронут. Покрыто `test_intelligence`(+3:
 латеральный путь score=41/targets/crit, нет entry→нет пути, empty),
-`test_executive_summary`(+2), `test_collection_runner`(+1). **EPIC 8-11
-(ядро Advanced Intelligence) закрыты; остаётся EPIC 12 Surfaces (GUI/web/CSV) +
-EPIC 13 Monitoring/Docs.**
+`test_executive_summary`(+2), `test_collection_runner`(+1).
+
+**Advanced Intelligence Framework — EPIC 12: Surfaces (report/web) — `[ЗАКРЫТ]`.**
+Вывод intelligence-сигналов на поверхности. **MODULE 1 Scan Accuracy:**
+`intelligence.accuracy_from_report(report, findings, assets)` собирает все
+просканированные сущности (technologies/infrastructure/API/secrets из фаз отчёта +
+findings/assets из сторов; CVE = findings) и скорит через `build_accuracy`;
+`collection_runner._build_accuracy` → `report['accuracy']` (summary + by_type +
+low_confidence top-10) + карточка «Scan Accuracy» (`_render_accuracy_card`);
+`executive_summary._scan_accuracy` → display-метрики `scan_accuracy_avg`/
+`low_confidence_entities` (НЕ risk-сигнал, без чипа — мера доверия к детекции, не
+экспозиции). **Web-паритет EPIC 9/11:** `remote/web_app._criticality_view`/
+`_attack_paths_view` поверх `load_asset_criticality`/`load_attack_paths`; роуты
+`GET /criticality` + `GET /attack-paths` + кнопки в консоли (per-project, пустой →
+пустой вью). Покрыто `test_intelligence`/`test_executive_summary`/
+`test_collection_runner`/`test_web_intelligence`. Коммиты 432a265 + ddb7f95.
+
+**Advanced Intelligence Framework — EPIC 13: Monitoring — `[ЗАКРЫТ]`.** Сделал
+intelligence-сигналы наблюдаемыми между сканами. Закрыт последний «вычисляется-но-
+теряется» пробел: attack paths (EPIC 11) считались в `report['attack_paths']`, но не
+диффились → ново-сформированный латеральный путь не давал ни события, ни алерта.
+**Scope:** мониторим Attack Paths (эксплуатируемая эскалация); Asset Criticality
+осознанно НЕ мониторим (непрерывный display-ранкинг из сигналов, которые уже
+алертятся → избыточный шум). `scan_diff`: секция `attack_path` (фаза-гейт
+`subdomains`, как exposure), `_extract_attack_path` читает `report['attack_paths'].
+paths` keyed by стабильной pivot-identity «{type} {node}» (один путь на кластер),
+value несёт band → эскалация (band растёт) видна как *changed*, churn entry/targets
+под стабильным band — нет (`_changed_entry` attack_path-ветка). `diff_events`:
+`new_attack_path` (high, alertable — как `new_sourcemap`; фаерится рядом с
+`new_exposure_cluster` на разных осях, как takeover ⊂ subdomain) и
+`attack_path_escalated` (high, alertable — band поднялся через `_band_rank`; падение
+band = улучшение, не событие, как DMARC-апгрейд). `alerts.ALERT_TYPES` += обе;
+метки в `gui/tab_timeline`+`gui/dialogs`. Web-паритет автоматом (общий `diff_events`).
+Покрыто `test_diff_events`(+2)/`test_scan_diff`(+1, section-coverage += attack_path).
+**Advanced Intelligence Framework (EPIC 8–13) полностью закрыт** — backend + report +
+web + мониторинг; GUI-вкладки Criticality/Attack Paths опциональны (память
+`feedback-internals-first-no-gui`).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

@@ -3095,3 +3095,72 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 11: ATTACK PATHS
   Monitoring/Docs.
 
 ==============================================================================
+ADVANCED INTELLIGENCE FRAMEWORK — EPIC 12: SURFACES (report / web)
+==============================================================================
+
+  ЦЕЛЬ: вывести intelligence-сигналы на поверхности (report-карточка + web-паритет).
+
+  РЕАЛИЗАЦИЯ:
+   - MODULE 1 Scan Accuracy: intelligence.accuracy_from_report(report,
+     findings, assets) собирает все просканированные сущности (technologies /
+     infrastructure / API / secrets из фаз отчёта + findings/assets из сторов;
+     CVE = findings) и скорит через build_accuracy. collection_runner._build_accuracy
+     → report['accuracy'] (summary + by_type + low_confidence top-10) + карточка
+     «Scan Accuracy» (_render_accuracy_card). executive_summary._scan_accuracy →
+     display-метрики scan_accuracy_avg / low_confidence_entities (НЕ risk-сигнал,
+     без headline-чипа — измеряет доверие к детекции, не экспозицию).
+   - Web-паритет EPIC 9/11: remote/web_app._criticality_view / _attack_paths_view
+     поверх intelligence.load_asset_criticality / load_attack_paths; роуты
+     GET /criticality + GET /attack-paths + кнопки «Criticality»/«Attack Paths»
+     в консоли. Per-project, пустой проект → пустой вью.
+
+  ТЕСТЫ: test_intelligence (+2: accuracy_from_report collect/empty),
+  test_executive_summary (+метрика), test_collection_runner (+карточка),
+  test_web_intelligence (+5: criticality/paths view + ranks + endpoints + dashboard).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS (157), полный прогон 1326/1326, ruff чист.
+  Коммиты 432a265 (scan accuracy surface) + ddb7f95 (criticality/attack-paths web).
+
+==============================================================================
+ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
+==============================================================================
+
+  ЦЕЛЬ: сделать intelligence-сигналы наблюдаемыми между сканами (diff → events →
+  alerts/timeline). Закрыт последний «вычисляется-но-теряется» пробел: attack paths
+  (EPIC 11) считались в report['attack_paths'], но не диффились → ново-сформированный
+  латеральный путь не давал ни события в ленте, ни алерта.
+
+  РЕШЕНИЕ ПО SCOPE: мониторим Attack Paths (генуинно эксплуатируемая эскалация:
+  находко-несущий entry + co-located targets на одном pivot). Asset Criticality
+  НЕ мониторим осознанно — это непрерывный display-ранкинг, выведенный из сигналов
+  (findings/takeover/clusters), которые УЖЕ алертятся; «criticality changed» был бы
+  избыточным шумом.
+
+  РЕАЛИЗАЦИЯ — core/scan_diff.py (pure, без новых зависимостей, паттерн
+  new_exposure_cluster / cookie_weakened):
+   - секция attack_path (фаза-гейт subdomains, как exposure — путь = находко-несущий
+     exposure-кластер). _extract_attack_path читает report['attack_paths'].paths,
+     keyed by стабильной pivot-identity «{type} {node}» (один путь на кластер), value
+     несёт band → эскалация (band растёт при входе critical target / худшего entry)
+     видна как *changed*, churn entry/targets под стабильным band — нет (только band
+     differences через _changed_entry attack_path-ветку).
+   - diff_events: new_attack_path (high, alertable — эксплуатируемая эскалация, как
+     new_sourcemap; фаерится рядом с new_exposure_cluster на разных осях, как
+     takeover ⊂ new_subdomain); attack_path_escalated (high, alertable — band
+     поднялся через _band_rank; падение band = улучшение, не событие, как DMARC-апгрейд).
+   - alerts.ALERT_TYPES += new_attack_path / attack_path_escalated.
+   - gui/tab_timeline._EVENT_LABELS + gui/dialogs._ALERT_TYPE_LABELS += обе метки.
+   Web-паритет автоматом (общий diff_events → extract_alerts / build_timeline).
+
+  ТЕСТЫ (+4): test_diff_events (new_attack_path high+alertable; эскалация только на
+  росте band, падение = не событие), test_scan_diff (end-to-end: путь появился →
+  событие; стабильная identity → эскалация medium→high; band-drop = не событие;
+  section-coverage set += attack_path).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS, полный прогон зелёный, ruff чист.
+
+  ИТОГ: Advanced Intelligence Framework (EPIC 8–13) полностью закрыт. Backend +
+  report + web-поверхности + мониторинг готовы; GUI-вкладки для Criticality/Attack
+  Paths остаются опциональными (память feedback-internals-first-no-gui).
+
+==============================================================================
