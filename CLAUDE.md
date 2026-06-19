@@ -1469,6 +1469,34 @@ band = улучшение, не событие, как DMARC-апгрейд). `a
 web + мониторинг; GUI-вкладки Criticality/Attack Paths опциональны (память
 `feedback-internals-first-no-gui`).
 
+**Scan Accuracy — GUI + web (MODULE 1 surface parity) — `[ЗАКРЫТ]`.** Закрыт
+последний пробел поверхностей MODULE 1: «насколько достоверен детект» имел
+report-карточку + es-метрики, но (в отличие от Criticality/Attack Paths) НЕ имел
+ни GUI-вкладки, ни web-эндпоинта. Добавлено (всё derive-on-read, без новых
+данных/таблиц): **core** `intelligence.load_accuracy(project)` — тонкий
+**report-based** ридер (как `timeline.build_timeline` — accuracy нужны фазы скана,
+не только сторы): берёт `report.json` последнего скана (`project.latest_scan()['id']`
+→ `load_scan_report`) + active-находки/активы из сторов → `accuracy_from_report`
+(полный `{by_type, items, summary}`); guarded, пустой вид при отсутствии
+скана/ошибке. **web** `remote/web_app._accuracy_view` (резолвит проект из
+`_REPORT_BASE` через `ProjectStore`, как `_timeline_view`) + роут `GET /accuracy` +
+кнопка «Scan Accuracy»/`showAccuracy()` в консоли. **GUI** вкладка «Scan Accuracy»
+(`gui/tab_accuracy.py`, `AccuracyTabMixin`) — read-only, **зеркало Timeline-таба**
+по резолву проектов (`ProjectStore(output_dir).list_projects()`, двухстадийная
+off-thread загрузка base+slug), плюс паттерн Criticality (3 rollup-карты
+Сущностей/Высокая увер./Средняя увер.; таблица `[Confidence, Band, Тип, Сущность,
+Проверка]` confidence-desc; панель деталей с evidence+source+verification+факторами).
+band-цвет инвертирован (`_BAND_SEVERITY`: low-band красится attention-цветом — это
+детекты на двойную проверку). Регистрация в `BUILTIN_TABS` (секция «Управление»,
+после Attack Paths), lazy-load в `tab_history`, init-флаги в `main_window`. **Export
+CSV** — `report_export.accuracy_csv` (flatten source/evidence). UI тонкий (логика в
+`core/intelligence`), risk-числа не тронуты (accuracy — мера доверия к детекции, не
+экспозиции; без чипа/score-фактора). Покрыто `test_accuracy_tab`(10) +
+`accuracy_csv` в `test_report_export`(2) + web в `test_web_intelligence`(5: scores/
+empty/unknown/dashboard/live endpoint). **Advanced Intelligence: полный
+GUI+web+report паритет по всем поверхностям (Priorities/Criticality/Attack Paths/
+Scan Accuracy).**
+
 **Advanced Intelligence — GUI tail (Criticality + Attack Paths) — `[ЗАКРЫТ]`.**
 Снят отложенный по решению пользователя GUI: две read-only вкладки, точное зеркало
 паттерна Priorities-вкладки (EPIC 7 GUI tail) — аддитивные, GUI НЕ перестраивается

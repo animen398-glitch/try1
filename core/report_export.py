@@ -69,6 +69,12 @@ _ATTACK_PATHS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('targets', 'Targets'), ('critical_targets', 'Critical Targets'),
 )
 
+_ACCURACY_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('score', 'Confidence'), ('band', 'Band'), ('entity_type', 'Type'),
+    ('label', 'Entity'), ('verification', 'Verification'),
+    ('source', 'Source'), ('evidence', 'Evidence'),
+)
+
 
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
@@ -165,6 +171,22 @@ def attack_paths_csv(paths: Optional[List[Dict]]) -> str:
             continue
         flat.append({**p, 'targets': '; '.join(str(t) for t in (p.get('targets') or []))})
     return _rows_to_csv(flat, _ATTACK_PATHS_COLUMNS)
+
+
+def accuracy_csv(items: Optional[List[Dict]]) -> str:
+    """CSV of scan-accuracy entities (``intelligence.build_accuracy`` items).
+
+    The ``source`` and ``evidence`` lists are flattened to single cells so the
+    export stays a flat table, in confidence order (same as the GUI tab and the
+    web /accuracy view)."""
+    flat: List[Dict] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        flat.append({**it,
+                     'source': '; '.join(str(s) for s in (it.get('source') or [])),
+                     'evidence': '; '.join(str(e) for e in (it.get('evidence') or []))})
+    return _rows_to_csv(flat, _ACCURACY_COLUMNS)
 
 
 def portfolio_csv(portfolio) -> str:

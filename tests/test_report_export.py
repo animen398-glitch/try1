@@ -183,6 +183,26 @@ def test_attack_paths_csv_empty_is_header_only():
     assert _parse(rx.attack_paths_csv(None))[0][0] == 'Score'
 
 
+# ── accuracy_csv (MODULE 1 — scan-accuracy entities) ────────────────────────────
+
+def test_accuracy_csv_header_and_flattened_lists():
+    items = [{'entity_type': 'technology', 'label': 'nginx 1.18', 'score': 90,
+              'band': 'high', 'verification': 'header',
+              'source': ['header'], 'evidence': ['header:Server', 'html']}]
+    table = _parse(rx.accuracy_csv(items))
+    assert table[0] == ['Confidence', 'Band', 'Type', 'Entity', 'Verification',
+                        'Source', 'Evidence']
+    row = dict(zip(table[0], table[1]))
+    assert row['Confidence'] == '90' and row['Entity'] == 'nginx 1.18'
+    assert row['Source'] == 'header'
+    assert row['Evidence'] == 'header:Server; html'
+
+
+def test_accuracy_csv_empty_is_header_only():
+    assert _parse(rx.accuracy_csv([]))[0][0] == 'Confidence'
+    assert _parse(rx.accuracy_csv(None))[0][0] == 'Confidence'
+
+
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
 def test_portfolio_csv_from_full_dict():

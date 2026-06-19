@@ -172,6 +172,7 @@ BUILTIN_TABS = [
     ("intelligence", "Priorities",              "_build_intelligence_tab", "Управление", "top"),
     ("criticality", "Asset Criticality",        "_build_criticality_tab", "Управление", "top"),
     ("attackpaths", "Attack Paths",             "_build_attack_paths_tab", "Управление", "top"),
+    ("accuracy",   "Scan Accuracy",             "_build_accuracy_tab",  "Управление", "top"),
     ("assets",     "Assets",                    "_build_assets_tab",    "Управление", "top"),
     ("timeline",   "Timeline",                  "_build_timeline_tab",  "Управление", "top"),
     ("collection", "Final Report & Collection", "_build_collection_tab", "Отчёты", "top"),

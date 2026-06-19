@@ -511,6 +511,25 @@ def _attack_paths_view(project: Optional[str] = None) -> dict:
         return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}
 
 
+def _accuracy_view(project: Optional[str] = None) -> dict:
+    """Scan detection accuracy (confidence per scanned entity) for one project.
+
+    Report-based (like the timeline) — resolves the project from the report base
+    and delegates to ``load_accuracy``; an empty/unknown project yields an empty
+    view. MODULE 1 web parity."""
+    if not project:
+        return {'by_type': {}, 'items': [], 'summary': {}}
+    try:
+        from core.intelligence import load_accuracy
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        if proj is None:
+            return {'by_type': {}, 'items': [], 'summary': {},
+                    'error': f'project not found: {project}'}
+        return load_accuracy(proj)
+    except Exception as e:
+        return {'by_type': {}, 'items': [], 'summary': {}, 'error': str(e)}
+
+
 # ── Timeline / Change feed (F2, web parity) ─────────────────────────────────────
 # Read-only over core.timeline — the same derive-on-read change feed (series +
 # events) the GUI Timeline tab shows. Inherently per-project: an empty project
@@ -661,6 +680,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showIntelligence()">Intelligence</button>
       <button class="btn sec" onclick="showCriticality()">Criticality</button>
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
+      <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
     </div>
   </div>
 
@@ -1066,6 +1086,22 @@ async function showAttackPaths(){
   }catch(ex){log('Attack paths failed: '+ex.message,'er');}
 }
 
+async function showAccuracy(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Accuracy: no projects','data'); return;}
+    const r=await fetch('/accuracy?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Scan accuracy ['+proj+']: '+(s.entities||0)+' entities · avg conf '
+        +(s.avg_confidence||0)+'% · '+(s.high_confidence||0)+' high','data');
+    (d.items||[]).slice(0,10).forEach(i=>{
+      log('  '+(i.score||0)+'% ['+(i.band||'')+'] '+(i.entity_type||'')+' '
+          +(i.label||''),'info');
+    });
+  }catch(ex){log('Accuracy failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -1322,6 +1358,10 @@ if _FASTAPI_OK:
     @app.get('/attack-paths')
     async def attack_paths(project: Optional[str] = None):
         return JSONResponse(_attack_paths_view(project))
+
+    @app.get('/accuracy')
+    async def accuracy(project: Optional[str] = None):
+        return JSONResponse(_accuracy_view(project))
 
     @app.get('/report')
     async def report(file: str):

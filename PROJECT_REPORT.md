@@ -41,7 +41,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 безопасности (cookie, секреты, source-map, уязвимости).
 
 **Точки входа:**
-- `main.py` — GUI (PyQt5), 21 встроенная вкладка + внешний плагин Deep Crawl (итого 22).
+- `main.py` — GUI (PyQt5), 22 встроенные вкладки + внешний плагин Deep Crawl (итого 23).
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
 - `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8, + Alert Center #9).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
@@ -89,7 +89,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
-| intelligence | **Core + Advanced Intelligence (EPIC 7–11)**: confidence + priority + explanation per finding и обобщение на ВСЕ сущности (derive-on-read, без новых моделей/таблиц). `confidence`/`confidence_for` (корроборация+валидация+специфичность детекта для finding/technology/cve/asset/infrastructure/api/secret — **MODULE 1 Scan Accuracy**), `priority` (severity дисконтирован confidence + exposure/SLA + **asset-criticality бонус, EPIC 10**), `explain` (finding_knowledge). **EPIC 9** `asset_criticality`/`build_asset_criticality` (тип-вес + blast radius + находки + exposure → ранжирование активов). **EPIC 11** `build_attack_paths` (латеральные маршруты entry→pivot→targets по shared-infra). `build_accuracy`/`accuracy_from_report` — единый rollup достоверности скана. Всё **display-метрики** (риск-вердикт не тронут). Переиспользует findings_store/correlation/asset_graph/findings_sla. Поверхности: report['intelligence'/'accuracy'/'asset_criticality'/'attack_paths'], web `/intelligence`+`/criticality`+`/attack-paths`, GUI-вкладки «Priorities»/«Asset Criticality»/«Attack Paths» |
+| intelligence | **Core + Advanced Intelligence (EPIC 7–11)**: confidence + priority + explanation per finding и обобщение на ВСЕ сущности (derive-on-read, без новых моделей/таблиц). `confidence`/`confidence_for` (корроборация+валидация+специфичность детекта для finding/technology/cve/asset/infrastructure/api/secret — **MODULE 1 Scan Accuracy**), `priority` (severity дисконтирован confidence + exposure/SLA + **asset-criticality бонус, EPIC 10**), `explain` (finding_knowledge). **EPIC 9** `asset_criticality`/`build_asset_criticality` (тип-вес + blast radius + находки + exposure → ранжирование активов). **EPIC 11** `build_attack_paths` (латеральные маршруты entry→pivot→targets по shared-infra). `build_accuracy`/`accuracy_from_report` — единый rollup достоверности скана. Всё **display-метрики** (риск-вердикт не тронут). Переиспользует findings_store/correlation/asset_graph/findings_sla. Поверхности: report['intelligence'/'accuracy'/'asset_criticality'/'attack_paths'], web `/intelligence`+`/criticality`+`/attack-paths`+`/accuracy`, GUI-вкладки «Priorities»/«Asset Criticality»/«Attack Paths»/«Scan Accuracy» |
 | llm_summary | опц. LLM-резюме через **локальный Ollama** (stdlib urllib, graceful, ничего не уходит с машины) |
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
 | screenshot | опц. headless-скриншоты (Playwright, lazy, gated); **мульти-страничные** (home/login/admin/dashboard) через select_targets/capture_many |
@@ -114,9 +114,10 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 `dialogs`; модули `tab_*.py` (по вкладке), включая ASM-вкладки Findings/Assets/
 **Priorities** (read-only Core Intelligence, EPIC 7 — `tab_intelligence`)/
 **Asset Criticality** (EPIC 9 — `tab_criticality`)/**Attack Paths** (EPIC 11 —
-`tab_attack_paths`)/Timeline/Overview. Вкладки регистрируются из `BUILTIN_TABS`
-(секции nav-рельса), не хардкодятся; кластер Intelligence (Priorities → Asset
-Criticality → Attack Paths) — в секции «Управление» после Findings.
+`tab_attack_paths`)/**Scan Accuracy** (MODULE 1 — `tab_accuracy`)/Timeline/Overview.
+Вкладки регистрируются из `BUILTIN_TABS` (секции nav-рельса), не хардкодятся;
+кластер Intelligence (Priorities → Asset Criticality → Attack Paths → Scan Accuracy)
+— в секции «Управление» после Findings.
 
 ---
 

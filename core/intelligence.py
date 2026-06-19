@@ -440,6 +440,34 @@ def accuracy_from_report(report: Dict, *, findings: Optional[List[Dict]] = None,
     return build_accuracy(entities)
 
 
+def load_accuracy(project) -> Dict:
+    """Score a project's latest-scan detection accuracy (thin reader, MODULE 1).
+
+    ``project`` is a :class:`core.project.Project` (report-based, like
+    ``timeline.build_timeline`` — accuracy needs the scan's phases, not just the
+    stores). Loads the latest scan's ``report.json`` plus the project's active
+    findings + assets and delegates to :func:`accuracy_from_report`. Offline,
+    read-only, guarded — a missing report or store failure degrades to an empty
+    view rather than crashing the caller."""
+    empty = {'by_type': {}, 'items': [], 'summary': {}}
+    try:
+        if project is None:
+            return dict(empty)
+        latest = project.latest_scan()
+        scan_id = latest.get('id') if isinstance(latest, dict) else None
+        report = project.load_scan_report(scan_id) if scan_id else None
+        if not isinstance(report, dict):
+            return dict(empty)
+        from core.asset_store import AssetStore
+        from core.findings_store import FindingsStore
+        slug = project.slug
+        findings = FindingsStore().active_findings(slug)
+        assets = AssetStore().list_assets(project=slug)
+        return accuracy_from_report(report, findings=findings, assets=assets)
+    except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
+        return {**empty, 'error': str(e)}
+
+
 # ── priority ──────────────────────────────────────────────────────────────────
 
 def priority(finding: Dict, confidence_score: int, *, exposed: bool = False,

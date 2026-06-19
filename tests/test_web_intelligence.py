@@ -110,3 +110,67 @@ def test_criticality_paths_endpoints_with_testclient():
     client = TestClient(wa.app)
     assert client.get('/criticality', params={'project': 'p'}).status_code == 200
     assert client.get('/attack-paths', params={'project': 'p'}).status_code == 200
+
+
+# ── Scan Accuracy web parity (MODULE 1) ───────────────────────────────────────
+
+def _seed_accuracy_project(base):
+    """A project with a scan report (technology + infra) under ``base`` plus a
+    finding + asset in the stores, so accuracy_from_report scores entities."""
+    import json
+
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    from core.findings_store import FindingsStore
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://acme.com')
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    report = {'scan_id': sid, 'phases': {'recon': {'status': 'Success', 'data': {
+        'technologies': [{'name': 'nginx', 'version': '1.18',
+                          'evidence_method': 'header', 'source': 'header'}],
+        'infrastructure': {'asn': 'AS1', 'ip': '1.2.3.4', 'source': 'rdap'}}}}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    FindingsStore().sync('acme.com', 's1', [
+        {'category': 'vuln', 'severity': 'high', 'title': 'X',
+         'location': 'a.acme.com/x'}])
+    AssetStore().sync('acme.com', sid, [Asset('domain', 'acme.com')])
+    return 'acme.com'
+
+
+def test_accuracy_view_scores_entities(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_accuracy_project(str(tmp_path))
+    d = wa._accuracy_view(slug)
+    assert 'error' not in d
+    assert d['summary']['entities'] >= 1
+    types = {i['entity_type'] for i in d['items']}
+    assert 'technology' in types          # report phase entity surfaced
+
+
+def test_accuracy_view_no_project_is_empty():
+    assert wa._accuracy_view(None)['items'] == []
+
+
+def test_accuracy_view_unknown_project_errors():
+    assert 'error' in wa._accuracy_view('definitely-not-a-project-xyz')
+
+
+def test_dashboard_exposes_accuracy():
+    html = wa._DASHBOARD
+    assert 'showAccuracy()' in html and '/accuracy' in html
+
+
+def test_accuracy_endpoint_with_testclient(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_accuracy_project(str(tmp_path))
+    client = TestClient(wa.app)
+    r = client.get('/accuracy', params={'project': slug})
+    assert r.status_code == 200
+    assert r.json()['summary']['entities'] >= 1
