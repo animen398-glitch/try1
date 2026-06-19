@@ -34,8 +34,26 @@ def test_build_infrastructure_full_chain():
     assert out['asn_name'] == 'Cloudflare, Inc.'
     assert out['provider'] == 'Cloudflare'
     assert out['location'] == 'SF, CA, US'
+    # structured region/country + normalised cloud (derived from the provider/ASN)
+    assert out['region'] == 'CA' and out['country'] == 'US'
+    assert out['cloud'] == 'Cloudflare'
     roles = [hop['role'] for hop in out['chain']]
-    assert roles == ['Domain', 'ASN', 'IP', 'Provider']
+    assert roles == ['Domain', 'ASN', 'IP', 'Provider', 'Cloud', 'Region']
+    region_hop = next(h for h in out['chain'] if h['role'] == 'Region')
+    assert region_hop['value'] == 'CA, US'
+
+
+def test_build_infrastructure_cloud_from_asn_number():
+    out = infra.build_infrastructure(_recon(
+        **{'as': 'AS16509 Amazon Data Services'}))
+    assert out['cloud'] == 'AWS'                       # ASN number → AWS
+    assert 'Cloud' in [h['role'] for h in out['chain']]
+
+
+def test_build_infrastructure_no_cloud_when_unknown():
+    out = infra.build_infrastructure(_recon(**{'as': 'AS99999 Tiny ISP'}))
+    assert out['cloud'] == ''                          # unknown stays unknown
+    assert 'Cloud' not in [h['role'] for h in out['chain']]
 
 
 def test_build_infrastructure_provider_fallback_to_asn_name():

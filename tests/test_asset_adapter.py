@@ -225,6 +225,48 @@ def test_ip_and_asn_carry_provider_location():
     assert asn['org'] == 'Cloudflare, Inc.' and asn['location'] == 'US'
 
 
+def test_domain_ip_asn_carry_cloud_and_region_attrs():
+    # build_infrastructure now derives cloud/region; the adapter folds them into
+    # the host/infra asset attrs (additive, non-identity).
+    r = _report()
+    r['phases']['recon']['data']['infrastructure'].update(
+        {'cloud': 'AWS', 'region': 'Virginia'})
+    assets = aa.derive_assets(r)
+    dom = _attrs_for(assets, 'domain', 'example.com')
+    assert dom['cloud'] == 'AWS' and dom['region'] == 'Virginia'
+    assert _attrs_for(assets, 'ip', '1.2.3.4')['cloud'] == 'AWS'
+    assert _attrs_for(assets, 'asn', 'as13335')['cloud'] == 'AWS'
+
+
+def test_subdomain_cloud_from_cname():
+    # A subdomain's hosting cloud is classified from its CNAME (per-host signal).
+    r = _report()
+    r['phases']['subdomains']['data']['results'] = [
+        {'subdomain': 'app.example.com', 'cname': 'app.azurewebsites.net'}]
+    attrs = _attrs_for(aa.derive_assets(r), 'subdomain', 'app.example.com')
+    assert attrs['cloud'] == 'Microsoft Azure'
+
+
+def test_subdomain_no_cloud_without_cname_signal():
+    r = _report()
+    r['phases']['subdomains']['data']['results'] = [
+        {'subdomain': 'plain.example.com', 'ip': '1.2.3.5'}]
+    attrs = _attrs_for(aa.derive_assets(r), 'subdomain', 'plain.example.com')
+    assert 'cloud' not in attrs                       # no CNAME signal → no guess
+
+
+def test_cloud_region_attrs_do_not_change_identity():
+    # cloud/region are attrs, not identity — enriching them yields the SAME ids.
+    plain = {a.type: a.id for a in aa.derive_assets(_report())}
+    r = _report()
+    r['phases']['recon']['data']['infrastructure'].update(
+        {'cloud': 'AWS', 'region': 'Virginia'})
+    r['phases']['subdomains']['data']['results'][0]['cname'] = 'x.azurewebsites.net'
+    rich = {a.type: a.id for a in aa.derive_assets(r)}
+    for t, i in plain.items():
+        assert rich.get(t) == i
+
+
 def test_enrichment_does_not_change_identity():
     # Attrs are non-identity: a richer report yields the SAME asset ids.
     plain = {a.type: a.id for a in aa.derive_assets(_report())}

@@ -18,7 +18,7 @@ GUI содержит 14 встроенных вкладок (+ внешний п
 
 | Вкладка | Назначение |
 |---|---|
-| Recon & Intel | GeoIP, фингерпринт CMS/стека + расширенный tech-fingerprint (CDN/сервер/бэкенд/аналитика + версии), ASN/инфра-интеллидженс (Domain → ASN → IP → Provider), фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, **CVE Intelligence** (OSV + NVD, оффлайн-кеш), дамп API-ответов |
+| Recon & Intel | GeoIP, фингерпринт CMS/стека + расширенный tech-fingerprint (CDN/сервер/бэкенд/аналитика + версии), ASN/инфра-интеллидженс (Domain → ASN → IP → Provider → Cloud → Region), фавиконы, PWA-манифест; опц. paywall-bypass, перехват API (Playwright), vuln-scan, **CVE Intelligence** (OSV + NVD, оффлайн-кеш), дамп API-ответов |
 | Subdomain Scanner | Пассивное (crt.sh, HackerTarget, AlienVault OTX, Anubis; опц. внешний amass) + brute-force перечисление с живой таблицей; опц. active-проверки (liveness + takeover) |
 | API Key Scanner | Поиск утечек API-ключей/секретов на странице |
 | Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) + визуальная карта сайта (дерево путей с HTTP-статусами 2xx/3xx/4xx/5xx) в `site_map.json` и HTML-отчёте |
@@ -219,6 +219,22 @@ exposed-хост (entry) делит ip/asn/netblock (pivot) с другими а
 кластера + числу критичных targets. Показывает blast radius как явный путь атаки.
 Display-метрика (`attack_paths`/`critical_attack_paths` + карточка «Attack Paths»),
 переиспользует Exposure-кластеры + Correlation + Criticality; вердикт не меняет.
+
+**Asset Exposure (likelihood-ось)** — «насколько актив достижим/атакуем прямо
+сейчас» (в пару к Criticality «насколько актив ценен»): `exposure_score(asset, …)` →
+`{score, band, factors}` из reachability (takeover / публично-2xx / resolved) +
+открытых находок + blast radius, **без тип-веса** (likelihood, не impact — reachable
+низкоценный субдомен со свежей уязвимостью «горячее» дорогого, но закрытого apex).
+`build_exposure(...)` ранжирует, переиспользуя те же входы, что Criticality.
+Display-метрика (`exposed_assets`/`top_exposure` + карточка «Asset Exposure», web
+`/exposure`, GUI-вкладка, CSV) — risk-вердикт не меняет.
+
+**Cloud / Region (инфра-цепочка)** — `core/cloud_classifier.py` нормализует
+хостинг-облако (AWS / Cloudflare / Azure / …) из уже собранных сигналов (provider/
+ASN-строка, CDN-технологии, takeover-CNAME) — pure, offline, без догадок (unknown
+остаётся unknown). Достраивает цепочку до **Domain → ASN → IP → Provider → Cloud →
+Region**; `cloud`/`region` попадают в attrs активов (domain/ip/asn + per-subdomain
+из CNAME) и в карточку инфраструктуры. Display-слой — в risk-score не входит.
 
 ### Asset Correlation Engine & Exposure Intelligence
 

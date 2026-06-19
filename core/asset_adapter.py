@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 from urllib.parse import urlsplit
 
+from core.cloud_classifier import classify_cloud
 from core.finding_fingerprint import normalize_location
 from core.finding_fingerprint import scoped_id  # noqa: F401 (re-exported for store)
 
@@ -159,6 +160,7 @@ def derive_assets(report: Dict) -> List[Asset]:
                  'asn': infra.get('asn')}
         attrs.update(_present(
             provider=infra.get('provider'), location=infra.get('location'),
+            cloud=infra.get('cloud'), region=infra.get('region'),
             tls_issuer=cert.get('issuer'), tls_subject=cert.get('subject'),
             tls_not_after=cert.get('not_after'),
             tls_sans=_split_sans(cert.get('sans'))))
@@ -177,6 +179,10 @@ def derive_assets(report: Dict) -> List[Asset]:
                 takeover=e.get('takeover') or None, server=e.get('server'),
                 http_status=e.get('http_status'), title=e.get('title'),
                 status=e.get('status')))
+            # Per-subdomain hosting cloud from its CNAME (e.g. a CNAME to
+            # azurewebsites.net → Azure) — offline, derive-on-read, no identity change.
+            sub_cloud = classify_cloud(cname=e.get('cname') or '').get('cloud')
+            attrs.update(_present(cloud=sub_cloud))
             out.append(Asset('subdomain', e['subdomain'], attrs=attrs))
 
     # Subdomains observed in TLS material but not actively probed: the served
@@ -202,7 +208,9 @@ def derive_assets(report: Dict) -> List[Asset]:
         if ip:
             attrs = {'source': 'recon', 'asn': infra.get('asn')}
             attrs.update(_present(provider=infra.get('provider'),
-                                  location=infra.get('location')))
+                                  location=infra.get('location'),
+                                  cloud=infra.get('cloud'),
+                                  region=infra.get('region')))
             out.append(Asset('ip', str(ip), attrs=attrs))
 
     # asn
@@ -213,7 +221,9 @@ def derive_assets(report: Dict) -> List[Asset]:
                                 'name': infra.get('asn_name'),
                                 'provider': infra.get('provider'),
                                 **_present(org=infra.get('org'),
-                                           location=infra.get('location'))}))
+                                           location=infra.get('location'),
+                                           cloud=infra.get('cloud'),
+                                           region=infra.get('region'))}))
 
     # netblocks (active ASN intel, opt-in): the IP's CIDR + all ASN prefixes
     asn_intel = _phase(report, 'asn_intel')

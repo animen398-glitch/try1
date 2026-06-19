@@ -40,7 +40,7 @@ def test_recon_report_excludes_large_pwa_manifest(tmp_path):
 
 def test_recon_populates_technologies_and_infrastructure():
     """run_recon fingerprints tech from headers/scripts and derives the
-    Domain → ASN → IP → Provider chain from the GeoIP fields."""
+    Domain → ASN → IP → Provider → Cloud chain from the GeoIP fields."""
     eng = ReconEngine(data_registry=_FakeRegistry())
     eng._resolve_ip = lambda domain: "1.2.3.4"
     eng._geoip = lambda ip: {"as": "AS13335 Cloudflare, Inc.", "org": "Cloudflare"}
@@ -61,8 +61,10 @@ def test_recon_populates_technologies_and_infrastructure():
     infra = result["infrastructure"]
     assert infra["asn"] == "AS13335"
     assert infra["provider"] == "Cloudflare"
+    # The Cloudflare provider/ASN normalises to a Cloud hop (no GeoIP region here).
+    assert infra["cloud"] == "Cloudflare"
     assert [hop["role"] for hop in infra["chain"]] == [
-        "Domain", "ASN", "IP", "Provider"]
+        "Domain", "ASN", "IP", "Provider", "Cloud"]
 
 
 def test_enrich_cms_from_script_url_corpus():

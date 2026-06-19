@@ -33,8 +33,16 @@ def build_infrastructure(recon: Dict) -> Dict:
     """Derive the infrastructure chain from a recon result dict.
 
     Reads ``domain``, ``ip`` and the GeoIP ``geo`` (as/org/isp/country/city) and
-    returns ``{domain, ip, asn, asn_name, org, isp, provider, location, chain}``
-    where ``chain`` is the ordered, non-empty Domain → ASN → IP → Provider hops.
+    returns ``{domain, ip, asn, asn_name, org, isp, provider, cloud, region,
+    country, location, chain}`` where ``chain`` is the ordered, non-empty
+    Domain → ASN → IP → Provider → Cloud → Region hops.
+
+    ``cloud`` is the normalised hosting provider (AWS / Cloudflare / …) derived
+    purely from the provider/ASN string by :mod:`core.cloud_classifier` — no new
+    network call. ``region``/``country`` are the GeoIP region surfaced as structured
+    fields (previously only joined into the ``location`` string). True cloud regions
+    (``us-east-1``) are not offline-derivable from GeoIP and are deliberately not
+    invented here.
     """
     geo = recon.get('geo') or {}
     domain = recon.get('domain') or ''
@@ -44,10 +52,18 @@ def build_infrastructure(recon: Dict) -> Dict:
     isp = (geo.get('isp') or '').strip()
     provider = org or asn_name or isp
 
+    region = (geo.get('regionName') or '').strip()
+    country = (geo.get('country') or '').strip()
     location = ', '.join(
-        p for p in (geo.get('city'), geo.get('regionName'), geo.get('country'))
-        if p
+        p for p in (geo.get('city'), region, country) if p
     )
+
+    # Normalise the hosting cloud from the vendor/ASN string (offline, no guess).
+    # Tech / CNAME signals are added at the asset level (asset_adapter), where the
+    # full technology list and per-subdomain CNAMEs are available.
+    from core.cloud_classifier import classify_cloud
+    cinfo = classify_cloud(provider=provider, asn_name=asn_name, asn=asn or '')
+    cloud = cinfo.get('cloud', '')
 
     chain: List[Dict] = []
     if domain:
@@ -58,6 +74,11 @@ def build_infrastructure(recon: Dict) -> Dict:
         chain.append({'role': 'IP', 'value': ip})
     if provider:
         chain.append({'role': 'Provider', 'value': provider})
+    if cloud:
+        chain.append({'role': 'Cloud', 'value': cloud})
+    region_value = ', '.join(p for p in (region, country) if p)
+    if region_value:
+        chain.append({'role': 'Region', 'value': region_value})
 
     return {
         'domain': domain,
@@ -67,6 +88,9 @@ def build_infrastructure(recon: Dict) -> Dict:
         'org': org,
         'isp': isp,
         'provider': provider,
+        'cloud': cloud,
+        'region': region,
+        'country': country,
         'location': location,
         'chain': chain,
     }
@@ -83,6 +107,7 @@ def render_html(infra: Optional[Dict]) -> str:
 
     role_color = {
         'Domain': '#222', 'ASN': '#6a1b9a', 'IP': '#1565c0', 'Provider': '#2e7d32',
+        'Cloud': '#e65100', 'Region': '#00838f',
     }
     hops = []
     for i, hop in enumerate(chain):
@@ -101,7 +126,8 @@ def render_html(infra: Optional[Dict]) -> str:
 
     rows = []
     for label, key in (('ASN', 'asn'), ('Provider', 'provider'),
-                       ('ISP', 'isp'), ('Location', 'location')):
+                       ('Cloud', 'cloud'), ('ISP', 'isp'),
+                       ('Region', 'region'), ('Location', 'location')):
         val = infra.get(key)
         if val:
             rows.append(

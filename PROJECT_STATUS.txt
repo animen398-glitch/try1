@@ -3163,4 +3163,33 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
   report + web-поверхности + мониторинг готовы; GUI-вкладки для Criticality/Attack
   Paths остаются опциональными (память feedback-internals-first-no-gui).
 
+------------------------------------------------------------------------------
+  2026-06-19 — Asset Exposure (likelihood-ось) + Infrastructure chain Cloud/Region
+------------------------------------------------------------------------------
+
+  ASSET EXPOSURE (intelligence.py): нормализованный per-asset Exposure Score 0–100
+  (likelihood: reachability + open findings + blast radius, БЕЗ type-веса) —
+  дополняет criticality (impact). exposure_score / build_exposure / load_exposure,
+  переиспользуют _dependents_map/_asset_findings_map. Display-only (risk-вердикт
+  не тронут). Паритет: report-карточка, es-метрики exposed_assets/top_exposure +
+  чип, web /exposure, GUI вкладка «Asset Exposure», exposure_csv. Коммит 924717b.
+
+  INFRASTRUCTURE CHAIN — CLOUD + REGION (phase 1):
+    - core/cloud_classifier.py (НОВЫЙ, pure): classify_cloud(provider, asn_name,
+      asn, technologies, cname) → {cloud, confidence, evidence} | {}. Табличный
+      матч по уже собранным сигналам; сильнейший: ASN-номер(90) > provider(80) >
+      CDN-tech(75) > CNAME(70). Offline, без deps, НЕ в risk-score, unknown→{}.
+    - infrastructure.build_infrastructure: структурные cloud/region/country +
+      hops Cloud/Region в chain + render_html. Cloud классифицируется по always-
+      available provider/ASN (recon строит infra ДО technologies).
+    - asset_adapter: cloud/region в attrs domain/ip/asn (из infra) + per-subdomain
+      cloud из CNAME. Аддитивно, identity байт-в-байт → ноль churn.
+    - True cloud-region (us-east-1) НЕ выдумывается (offline из GeoIP невыводимо).
+    - Phase 2 отложено: promote asn_intel.neighbors (reverse-IP) → related-assets.
+
+  ТЕСТЫ: test_cloud_classifier (новый, 11) + test_infrastructure(+3) +
+  test_asset_adapter(+4) + exposure (test_intelligence/_tab/_web/_export/_es/_cr).
+
+  ВЕРИФИКАЦИЯ: затронутые наборы PASS, полный прогон зелёный, ruff чист.
+
 ==============================================================================

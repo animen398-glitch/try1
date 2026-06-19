@@ -1559,6 +1559,33 @@ Risk-числа байт-в-байт (фактор 0, экспозиция ни�
 likelihood-оси — все 4 формулы Intelligence Foundation теперь именованные величины с
 поверхностями.**
 
+**Infrastructure chain — Cloud + Region классификация (EPIC infra-chain, phase 1) —
+`[ЗАКРЫТ]`.** Backend-фаза. Достроена инфра-цепочка Domain→Subdomain→IP→ASN→Provider→
+**Cloud→Region**→Certificate→Related Assets: первые 5 и Certificate/Related уже были
+(`asset_graph` рёбра, `infrastructure.py`, `correlation` chain, `asn_intel`), не
+хватало **нормализованного Cloud** и **структурного Region**. Решение: единый pure
+`core/cloud_classifier.py` (`classify_cloud(provider, asn_name, asn, technologies,
+cname)` → `{cloud, confidence, evidence}` или `{}`) — табличный матч по уже собранным
+сигналам (provider/ASN-строка, CDN-tech из `tech_fingerprint`, takeover-CNAME из
+`subdomain_active`), **сильнейший сигнал**: exact ASN-номер (90) > provider-keyword
+(80) > CDN-tech (75) > CNAME (70); unknown остаётся unknown (нет догадок). Offline,
+без сети/зависимостей, **не входит в risk-score** (display/derive, как exposure/
+criticality). Проводка: `infrastructure.build_infrastructure` — структурные
+`cloud`/`region`/`country` + hops Cloud/Region в `chain` + `render_html` (cloud
+`#e65100`, region `#00838f`; cloud классифицируется по always-available provider/ASN,
+т.к. recon строит infra ДО technologies — порядок учтён); `asset_adapter` кладёт
+`cloud`/`region` в attrs domain/ip/asn (из infra) и **per-subdomain cloud из CNAME**
+(аддитивно, identity байт-в-байт → ноль churn в сторе). **True cloud-region**
+(`us-east-1`) **намеренно НЕ выдумывается** — не выводим offline из GeoIP. Покрыто
+`test_cloud_classifier`(11: keyword/ASN/CDN/CNAME/unknown/strongest-wins/bad-types),
+`test_infrastructure`(+3: cloud+region в chain/ASN-номер→AWS/unknown без hop),
+`test_asset_adapter`(+4: cloud/region attrs domain/ip/asn, subdomain-cloud-from-CNAME,
+no-cname→no-cloud, identity-инвариант). **Phase 2 (отложено, по подтверждению):**
+promote `asn_intel.neighbors` (reverse-IP co-hosted) в derive-on-read related-assets +
+surface в asset_graph/correlation. **Не делалось** (осознанно): cloud/region в
+risk-score, новые SQLite-таблицы, сетевые cloud-лукапы, промоут co-hosted в активы
+(churn/FP-риск), GUI.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
