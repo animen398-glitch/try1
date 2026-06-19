@@ -1,6 +1,7 @@
 # Advanced Site Analyzer — Отчёт о состоянии проекта
 
-> Снимок на 2026-06-13, обновлён 2026-06-14 (эпик ASM 2.0 F1–F6 + пост-эпик).
+> Снимок на 2026-06-13, обновлён 2026-06-19 (эпик ASM 2.0 F1–F6 + пост-эпик +
+> Advanced Intelligence Framework EPIC 8–13).
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -11,20 +12,24 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **882 passed, 5 skipped** (887 собрано; сетенезависимые, Qt headless) |
+| Тесты | **1329 собрано, зелёные** (0 FAILED/ERROR; сетенезависимые, Qt headless) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
 | Своих модулей / тест-файлов | 102 (core 57 / utils 17 / gui 27 / remote 1) / 96 |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build **+ smoke-run собранного .exe (`--self-check`)** |
-| Git | ветка `master`, синхронна с `origin/master`; платформенные фичи P1–P12 закоммичены и запушены |
+| Git | ветка `master`, синхронна с `origin/master`; P1–P12 + ASM 2.0 + Advanced Intelligence (EPIC 8–13) закоммичены и запушены |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
 Весь реализуемый роадмап закрыт (P1–P12 + TIER S/A/B + C1/C2 в безопасных
 оффлайн/localhost-вариантах); см. §6. Сверх того закрыт **эпик ASM 2.0**
-(F1 Findings → F6 GUI-рестайл) и пост-эпик (asn_intel, report_export,
-Asset Inventory, углубление detection) — пофичный статус в CLAUDE.md §12.
+(F1 Findings → F6 GUI-рестайл), пост-эпик (asn_intel, report_export,
+Asset Inventory, CVE Intelligence, углубление detection) и **Advanced
+Intelligence Framework (EPIC 8–13)**: единый confidence по всем сущностям
+(MODULE 1 Scan Accuracy), Asset Criticality, Priority deepening, Attack Paths,
+report/web-поверхности и мониторинг attack-path событий — всё derive-on-read,
+display-метрики (риск-вердикт не тронут). Пофичный статус в CLAUDE.md §12.
 
 ---
 
@@ -69,7 +74,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | vuln_scanner / vuln_report | правила уязвимостей + экспорт HTML/JSON/PDF |
 | api_key_extractor / api_dumper | поиск ключей / дамп API-ответов |
 | project | Project workspace: Projects/<slug>/ (scans/reports/history/metadata.json); `load_scan_report` для diff |
-| scan_diff | **оффлайн-diff двух сканов проекта** (страницы/субдомены/секреты/тех/зависимости/заголовки/TLS-сертификат/эндпоинты/findings + дельта риска), HTML-отчёт |
+| scan_diff | **оффлайн-diff двух сканов проекта** (страницы/субдомены/секреты/тех/зависимости/заголовки/TLS-сертификат/эндпоинты/findings + дельта риска + GraphQL/source-maps/cookies/DNS/exposure-кластеры/**attack paths**), HTML-отчёт. Единый классификатор `diff_events` → Alert Center (`alerts.ALERT_TYPES`) + Timeline; **EPIC 13**: `new_attack_path`/`attack_path_escalated` (high, alertable) |
 | monitor | **Continuous Monitoring (P-роадмап #8)**: расписание (daily/weekly/monthly) в metadata.json; `run_due` гоняет Full Collection + авто-Scan Diff против прошлого скана; чистая логика (`compute_next_run`/`is_due`) и тонкий `MonitorScheduler`-тред отделены от инъектируемого раннера (тесты без сети); опц. триггерит alerts |
 | alerts | **Alert Center (#9)**: из авто-diff'а извлекает события (new secret/subdomain/takeover/technology/cert change/risk↑) и шлёт в Telegram/Discord (urllib)/Email (smtplib); строго opt-in, stdlib-only, транспорт инъектируем (тесты без сети); секреты уже замаскированы в diff'е |
 | cert_info | TLS-сертификат хоста (stdlib ssl): fetch + summarize (issuer/срок/SAN/SHA-256) для Scan Diff |
@@ -84,7 +89,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
-| intelligence | **Core Intelligence (EPIC 7)**: confidence + priority + explanation per finding (derive-on-read, без новых моделей). `confidence` (корроборация+валидация+специфичность детекта), `priority` (severity дисконтирован confidence + exposure/SLA), `explain` (finding_knowledge). `build_intelligence`/`load_intelligence` → ранжирование «что чинить первым». Переиспользует findings_store/correlation/asset_graph/findings_sla. Поверхности: report['intelligence'], web `/intelligence`, GUI-вкладка «Priorities» |
+| intelligence | **Core + Advanced Intelligence (EPIC 7–11)**: confidence + priority + explanation per finding и обобщение на ВСЕ сущности (derive-on-read, без новых моделей/таблиц). `confidence`/`confidence_for` (корроборация+валидация+специфичность детекта для finding/technology/cve/asset/infrastructure/api/secret — **MODULE 1 Scan Accuracy**), `priority` (severity дисконтирован confidence + exposure/SLA + **asset-criticality бонус, EPIC 10**), `explain` (finding_knowledge). **EPIC 9** `asset_criticality`/`build_asset_criticality` (тип-вес + blast radius + находки + exposure → ранжирование активов). **EPIC 11** `build_attack_paths` (латеральные маршруты entry→pivot→targets по shared-infra). `build_accuracy`/`accuracy_from_report` — единый rollup достоверности скана. Всё **display-метрики** (риск-вердикт не тронут). Переиспользует findings_store/correlation/asset_graph/findings_sla. Поверхности: report['intelligence'/'accuracy'/'asset_criticality'/'attack_paths'], web `/intelligence`+`/criticality`+`/attack-paths`, GUI-вкладка «Priorities» |
 | llm_summary | опц. LLM-резюме через **локальный Ollama** (stdlib urllib, graceful, ничего не уходит с машины) |
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
 | screenshot | опц. headless-скриншоты (Playwright, lazy, gated); **мульти-страничные** (home/login/admin/dashboard) через select_targets/capture_many |
