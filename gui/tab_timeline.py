@@ -48,6 +48,8 @@ _EVENT_LABELS = {
     'security_header_removed':   'Security-заголовок убран',
     'dns_email_auth_weakened':   'Email-auth ослаблен (SPF/DMARC)',
     'new_exposure_cluster':      'Новый кластер экспозиции',
+    'new_attack_path':           'Новый attack path',
+    'attack_path_escalated':     'Attack path усилился',
     'risk_increase':       'Риск ↑',
     'risk_decrease':       'Риск ↓',
     'new_finding':         'Новая находка',

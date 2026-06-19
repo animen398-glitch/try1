@@ -38,6 +38,8 @@ _ALERT_TYPE_LABELS = {
     'sla_breach': 'Просрочка SLA',
     'new_finding': 'Новая находка',
     'dns_email_auth_weakened': 'Email-auth ослаблен (SPF/DMARC)',
+    'new_attack_path': 'Новый attack path',
+    'attack_path_escalated': 'Attack path усилился',
 }
 
 

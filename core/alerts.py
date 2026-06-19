@@ -70,7 +70,8 @@ ALERT_TYPES = ('new_secret', 'new_secret_generic', 'new_subdomain', 'takeover',
                'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
                'new_vulnerable_dependency', 'dependency_vulnerable',
                'security_header_removed', 'sla_breach', 'new_finding',
-               'dns_email_auth_weakened')
+               'dns_email_auth_weakened', 'new_attack_path',
+               'attack_path_escalated')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────

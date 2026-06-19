@@ -48,6 +48,10 @@ SECTION_PHASES = {
     # gate on the subdomain phase since a shared-infra cluster (≥2 hosts on one
     # node) needs the subdomain inventory to exist.
     'exposure':     'subdomains',
+    # Lateral attack paths (EPIC 11) live in report['attack_paths']; same gate as
+    # exposure — a path is a finding-bearing exposure cluster, so it needs the
+    # subdomain inventory that the clusters are built from.
+    'attack_path':  'subdomains',
 }
 SECTION_TITLES = {
     'pages':        'Страницы (Site Map)',
@@ -69,6 +73,7 @@ SECTION_TITLES = {
     'sourcemap':    'Source maps (исходники)',
     'findings':     'Findings',
     'exposure':     'Exposure (общая инфра)',
+    'attack_path':  'Attack Paths (латеральные)',
 }
 
 
@@ -332,6 +337,28 @@ def _extract_exposure(report: Dict) -> Optional[Dict]:
     return out
 
 
+def _extract_attack_path(report: Dict) -> Optional[Dict]:
+    # Lateral attack paths (EPIC 11): a finding-bearing host shares one infra node
+    # (the pivot) with co-located targets. Keyed by the stable pivot identity
+    # (one path per cluster), value carries the band so an escalation (band rising
+    # as a critical target / worse entry joins) surfaces as a *changed* row, while
+    # the entry/targets churning underneath does not (only band differences count).
+    ap = report.get('attack_paths')
+    if not isinstance(ap, dict):
+        return None
+    paths = ap.get('paths')
+    if not isinstance(paths, list):
+        return None
+    out: Dict[str, Dict] = {}
+    for p in paths:
+        if isinstance(p, dict) and p.get('pivot_node'):
+            key = f"{p.get('pivot_type', '')} {p['pivot_node']}".strip()
+            out[key] = {'band': p.get('band'),
+                        'entry': p.get('entry'),
+                        'critical_targets': int(p.get('critical_targets') or 0)}
+    return out
+
+
 def _extract_findings(report: Dict) -> Optional[Dict]:
     phase = _phase(report, 'vulns') or {}
     findings = phase.get('findings')
@@ -362,6 +389,7 @@ _EXTRACTORS = {
     'cookies':      _extract_cookies,
     'findings':     _extract_findings,
     'exposure':     _extract_exposure,
+    'attack_path':  _extract_attack_path,
 }
 
 # Sections whose values are display-only labels: a key either exists or not,
@@ -388,6 +416,12 @@ def _label(section: str, key, value) -> str:
         return f'{key}: {value}'
     if section == 'exposure':
         return f'{key} — {value} активов'
+    if section == 'attack_path':
+        band = value.get('band') or '?'
+        entry = value.get('entry') or '?'
+        ct = value.get('critical_targets') or 0
+        crit = f', {ct}×crit' if ct else ''
+        return f'{entry} → {key} [{band}{crit}]'
     return str(key)
 
 
@@ -395,6 +429,13 @@ def _changed_entry(section: str, key, a, b) -> Optional[Dict]:
     """A 'changed' record for a key present in both scans, or None if equal."""
     if section in _SET_LIKE or a == b:
         return None
+    if section == 'attack_path':
+        # Only a band shift is a meaningful change; entry/target churn under a
+        # steady band is not re-surfaced (mirrors exposure ignoring count growth).
+        if a.get('band') == b.get('band'):
+            return None
+        return {'key': str(key), 'a': str(a.get('band')),
+                'b': str(b.get('band'))}
     if section == 'pages':
         fields = [(f'{x.get("status")} ({x.get("type")})'
                    if x.get('type') else str(x.get('status'))) for x in (a, b)]
@@ -506,6 +547,15 @@ def _dmarc_rank(policy: str) -> int:
     return _DMARC_RANK.get(str(policy).strip().lower(), -1)
 
 
+# Attack-path band severity, weakest → strongest; a rise is an escalation.
+_BAND_RANK = {'low': 0, 'medium': 1, 'high': 2}
+
+
+def _band_rank(band: str) -> int:
+    """Rank of an attack-path band word, or -1 for unknown."""
+    return _BAND_RANK.get(str(band).strip().lower(), -1)
+
+
 EVENT_SEVERITY = {
     'new_secret':          'high',
     'new_secret_generic':  'medium',
@@ -523,6 +573,8 @@ EVENT_SEVERITY = {
     'new_ct_cert':         'info',
     'dns_email_auth_weakened': 'high',
     'new_exposure_cluster': 'medium',
+    'new_attack_path':     'high',
+    'attack_path_escalated': 'high',
     'new_graphql':         'medium',
     'graphql_introspection': 'high',
     'new_sourcemap':       'high',
@@ -632,6 +684,22 @@ def diff_events(d: Dict) -> List[Dict]:
     # (changed count) is shown in the HTML diff but not re-fired as an event.
     for label in sections.get('exposure', {}).get('added', []):
         add('new_exposure_cluster', label, 'exposure')
+
+    # Lateral attack paths (EPIC 11/13): a finding-bearing host now shares an infra
+    # node (pivot) with co-located targets — compromising the weak entry pivots to
+    # all of them. A newly-formed path is an exploitable escalation worth alerting
+    # (high — like a new source-map leak; it is the dangerous, finding-bearing
+    # subset of a shared-infra cluster, so it fires alongside new_exposure_cluster
+    # on different axes, like takeover ⊂ new_subdomain). An existing path whose band
+    # *rose* (a critical target or worse entry joined) escalated; a band drop
+    # (improvement) is not an event, like a DMARC upgrade.
+    ap = sections.get('attack_path', {})
+    for label in ap.get('added', []):
+        add('new_attack_path', label, 'attack_path')
+    for ch in ap.get('changed', []):
+        if isinstance(ch, dict) and _band_rank(ch.get('b')) > _band_rank(ch.get('a')):
+            add('attack_path_escalated',
+                f"{ch.get('key')}: {ch.get('a')} → {ch.get('b')}", 'attack_path')
 
     for label in sections.get('emails', {}).get('added', []):
         add('new_email', label, 'emails')

@@ -155,6 +155,35 @@ def test_exposure_cluster_event_end_to_end():
     assert 'new_exposure_cluster' in types
 
 
+def test_attack_path_new_and_escalation_end_to_end():
+    # A lateral path forming, then escalating (band medium → high), between scans.
+    a = _report('A', subdomains=[{'subdomain': 'a.x.com'}])
+    b = _report('B', subdomains=[{'subdomain': 'a.x.com'}])
+    c = _report('C', subdomains=[{'subdomain': 'a.x.com'}])
+    a['attack_paths'] = {'paths': []}
+    b['attack_paths'] = {'paths': [{'pivot_type': 'ip', 'pivot_node': '1.2.3.4',
+                                    'entry': 'a.x.com', 'band': 'medium',
+                                    'critical_targets': 0}]}
+    c['attack_paths'] = {'paths': [{'pivot_type': 'ip', 'pivot_node': '1.2.3.4',
+                                    'entry': 'a.x.com', 'band': 'high',
+                                    'critical_targets': 1}]}
+    # A → B: a path appears.
+    ab = diff(a, b)
+    assert ab['sections']['attack_path']['added'] == [
+        'a.x.com → ip 1.2.3.4 [medium]']
+    assert 'new_attack_path' in [e['type'] for e in diff_events(ab)]
+    # B → C: the same path (stable pivot identity) escalates medium → high.
+    bc = diff(b, c)
+    assert bc['sections']['attack_path']['added'] == []
+    assert bc['sections']['attack_path']['changed'] == [
+        {'key': 'ip 1.2.3.4', 'a': 'medium', 'b': 'high'}]
+    assert 'attack_path_escalated' in [e['type'] for e in diff_events(bc)]
+    # C → B: a band drop (improvement) is not an event.
+    cb = diff(c, b)
+    assert [e['type'] for e in diff_events(cb)
+            if e['section'] == 'attack_path'] == []
+
+
 def test_technology_version_change_and_cms_union():
     a = _report('A', techs=[{'name': 'nginx', 'category': 'Server',
                              'version': '1.18'}], cms=['WordPress'])
@@ -427,7 +456,7 @@ def test_tolerates_empty_reports():
                                  'certificates', 'endpoints', 'apis',
                                  'historical', 'dns', 'emails', 'employees',
                                  'ct', 'graphql', 'sourcemap', 'cookies',
-                                 'findings', 'exposure'}
+                                 'findings', 'exposure', 'attack_path'}
     assert d['is_empty'] is True
 
 

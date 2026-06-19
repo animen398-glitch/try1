@@ -278,6 +278,31 @@ def test_new_exposure_cluster_is_timeline_only():
     assert 'new_exposure_cluster' not in alerts.ALERT_TYPES
 
 
+def test_new_attack_path_is_high_and_alertable():
+    # A newly-formed lateral route (finding-bearing entry + co-located targets) is
+    # an exploitable escalation — high and alertable, like a new source-map leak.
+    d = _diff(attack_path=_added('a.x.com → ip 1.2.3.4 [high, 1×crit]'))
+    events = diff_events(d)
+    assert [e['type'] for e in events] == ['new_attack_path']
+    assert events[0]['severity'] == 'high'
+    assert events[0]['section'] == 'attack_path'
+    assert [a['type'] for a in alerts.extract_alerts(d)] == ['new_attack_path']
+    assert 'new_attack_path' in alerts.ALERT_TYPES
+
+
+def test_attack_path_escalation_only_on_band_rise():
+    # A band rise (medium → high) escalates and alerts; a drop (high → medium,
+    # an improvement) is not an event.
+    up = _diff(attack_path=_changed({'key': 'ip 1.2.3.4', 'a': 'medium',
+                                     'b': 'high'}))
+    assert [e['type'] for e in diff_events(up)] == ['attack_path_escalated']
+    assert [a['type'] for a in alerts.extract_alerts(up)] == [
+        'attack_path_escalated']
+    down = _diff(attack_path=_changed({'key': 'ip 1.2.3.4', 'a': 'high',
+                                       'b': 'medium'}))
+    assert [e['type'] for e in diff_events(down)] == []
+
+
 def test_risk_decrease_is_emitted():
     d = _diff(risk={'level_a': 'High', 'level_b': 'Low',
                     'risk_100_a': 60, 'risk_100_b': 10})
