@@ -3200,9 +3200,11 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
   + related-assets/cloud-change (test_asn_intel, test_scan_diff, test_diff_events,
   test_web_intelligence, test_collection_runner).
 
-  ВЕРИФИКАЦИЯ: ruff чист; затронутые наборы PASS. Полный pytest доходит до 100%,
-  но на Python 3.14/Windows процесс падает после teardown с -1073740791 на старых
-  GUI tab-тестах (test_accuracy_tab/test_assets_tab/test_dashboard_detail/
-  test_findings_tab). Suite без этих четырёх legacy GUI-teardown файлов зелёный.
+  ВЕРИФИКАЦИЯ: ruff чист; затронутые наборы PASS. Последующий stability-fix
+  перевёл legacy tab unit-тесты (test_accuracy_tab/test_assets_tab/
+  test_dashboard_detail/test_findings_tab) с полной FluentWindow shell на
+  lightweight QWidget hosts (tests/gui_test_helpers.py), потому что сами тесты
+  проверяют mixin/UI-логику, а не app chrome. После этого полный pytest на
+  Python 3.14/Windows выходит с PYTEST_EXIT=0.
 
 ==============================================================================

@@ -9,12 +9,13 @@ Assets are read-only — there is no status-change control to test.
 
 from core.asset_adapter import Asset
 from core.asset_store import AssetStore
+from gui.plugin_manager import default_manager
 from gui.tab_assets import AssetsTabMixin
+from tests.gui_test_helpers import AssetsHost
 
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return AssetsHost()
 
 
 def _seed():
@@ -35,8 +36,7 @@ def test_tab_builds_with_columns(qapp):
 
 
 def test_assets_registered_in_tab_bar(qapp):
-    w = _window(qapp)
-    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    titles = [p.title for p in default_manager()]
     assert 'Assets' in titles
 
 

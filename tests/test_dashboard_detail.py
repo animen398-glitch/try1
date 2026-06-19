@@ -1,9 +1,10 @@
 """Dashboard row-detail panel: selecting a row shows full, copyable content."""
 
+from tests.gui_test_helpers import DashboardHost
+
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return DashboardHost()
 
 
 def test_activity_row_detail_shows_full_content(qapp):

@@ -9,12 +9,13 @@ inside the tab and inside the test point at the same store.
 
 from core.finding_fingerprint import scoped_id
 from core.findings_store import FindingsStore
+from gui.plugin_manager import default_manager
 from gui.tab_findings import FindingsTabMixin
+from tests.gui_test_helpers import FindingsHost
 
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return FindingsHost()
 
 
 def _seed():
@@ -40,8 +41,7 @@ def test_tab_builds_with_columns(qapp):
 
 
 def test_findings_registered_in_tab_bar(qapp):
-    w = _window(qapp)
-    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    titles = [p.title for p in default_manager()]
     assert 'Findings' in titles
 
 

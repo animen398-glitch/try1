@@ -8,11 +8,12 @@ seeds. Accuracy is per-project, display-only and read-only.
 """
 
 from gui.tab_accuracy import AccuracyTabMixin
+from gui.plugin_manager import default_manager
+from tests.gui_test_helpers import AccuracyHost
 
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return AccuracyHost()
 
 
 def _seed_project(base):
@@ -60,8 +61,7 @@ def test_tab_builds_with_columns(qapp):
 
 
 def test_accuracy_registered_in_tab_bar(qapp):
-    w = _window(qapp)
-    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    titles = [p.title for p in default_manager()]
     assert 'Scan Accuracy' in titles
 
 
