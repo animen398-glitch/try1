@@ -826,6 +826,68 @@ def test_scope_guard_skips_nuclei_before_external_runner():
     assert report['scope_guard']['skipped_active_phases'][0]['phase'] == 'nuclei'
 
 
+def test_run_writes_evidence_manifest_and_finding_refs(tmp_path, monkeypatch):
+    r = CollectionRunner()
+
+    def write_json(base, rel, data):
+        path = base / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding='utf-8')
+
+    def recon(url, scan_dir):
+        write_json(scan_dir, Path('recon/recon.json'), {'ip': '1.2.3.4'})
+        return {'status': 'Success', 'data': {'ip': '1.2.3.4', 'cms': []}}
+
+    def api(url, scan_dir):
+        data = {'keys_found': 1, 'details': {'AWS Access Key': [
+            'AKIAIOSFODNN7EXAMPLE']}}
+        write_json(scan_dir, Path('api/api_keys.json'), data)
+        return {'status': 'Success', 'data': data}
+
+    def capture(url, capture_dir):
+        capture_dir.mkdir(parents=True, exist_ok=True)
+        write_json(capture_dir, Path('site_map.json'), {'pages': []})
+        return {'status': 'Success', 'data': {'pages_captured': 0, 'errors': []}}
+
+    def cookies(url, scan_dir):
+        data = {'total': 0, 'weak': 0}
+        write_json(scan_dir, Path('security/cookies.json'), data)
+        return {'status': 'Success', 'data': data}
+
+    def vulns(report, scan_dir):
+        data = {'summary': {'high': 0, 'medium': 0, 'info': 0},
+                'findings': []}
+        write_json(scan_dir, Path('security/vulns.json'), data)
+        return {'status': 'Success', **data}
+
+    monkeypatch.setattr(r, '_phase_recon', recon)
+    monkeypatch.setattr(r, '_phase_api', api)
+    monkeypatch.setattr(r, '_phase_capture', capture)
+    monkeypatch.setattr(r, '_phase_images', lambda url, d: {'status': 'Skipped'})
+    monkeypatch.setattr(r, '_phase_cookies', cookies)
+    monkeypatch.setattr(r, '_phase_vulns', vulns)
+
+    result = r.run('https://example.com', str(tmp_path))
+
+    scan_dir = Path(result['project_dir'])
+    manifest_path = scan_dir / 'evidence_manifest.json'
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    paths = {a['path'] for a in manifest['artifacts']}
+    assert {'recon/recon.json', 'api/api_keys.json',
+            'capture/site_map.json', 'security/cookies.json',
+            'security/vulns.json'} <= paths
+    assert result['evidence']['artifact_count'] == len(manifest['artifacts'])
+    finding = result['phases']['vulns']['findings'][0]
+    assert finding['source'] == 'secret'
+    assert finding['evidence_refs'][0]['path'] == 'api/api_keys.json'
+
+    saved = json.loads((scan_dir / 'report.json').read_text(encoding='utf-8'))
+    assert saved['evidence']['manifest'] == 'evidence_manifest.json'
+    assert saved['phases']['vulns']['findings'][0]['evidence_refs'][0][
+        'path'] == 'api/api_keys.json'
+
+
 def test_render_html_escapes_values():
     r = CollectionRunner()
     report = {

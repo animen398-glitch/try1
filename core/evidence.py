@@ -1,0 +1,185 @@
+"""Scan evidence manifest helpers.
+
+Evidence Manifest v1 is a scan-local inventory of files produced by collection
+phases. It is pure/stdlib-only and intentionally derives from the scan directory
+instead of asking phases to register artifacts one by one.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional
+
+
+MANIFEST_NAME = "evidence_manifest.json"
+_REPORT_FILES = {"report.json", "report.html", MANIFEST_NAME}
+_SOURCE_ARTIFACTS = {
+    "secret": ("api/api_keys.json",),
+    "secret-audit": ("security/audit.json",),
+    "security-audit": ("security/audit.json",),
+    "dns": ("dns/dns.json",),
+    "subdomain-active": ("subdomains/subdomains.json",),
+    "dependency-audit": ("recon/recon.json",),
+    "nuclei": ("security/vulns.json", "recon/osv.json"),
+    "osv": ("recon/osv.json", "security/vulns.json"),
+}
+
+
+def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _rel(path: Path, root: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def _phase_for(rel_path: str) -> str:
+    first = rel_path.split("/", 1)[0]
+    if first in _REPORT_FILES:
+        return "report"
+    return first or "unknown"
+
+
+def _kind_for(path: Path) -> str:
+    suffix = path.suffix.lower().lstrip(".")
+    return suffix or "file"
+
+
+def iter_artifact_files(scan_dir: Path) -> Iterable[Path]:
+    """Yield scan artifact files, excluding generated reports/manifest."""
+    root = Path(scan_dir)
+    if not root.is_dir():
+        return
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = _rel(path, root)
+        if rel in _REPORT_FILES:
+            continue
+        yield path
+
+
+def build_manifest(scan_dir: Path, report: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Build an evidence manifest without writing it."""
+    root = Path(scan_dir)
+    artifacts = []
+    for path in iter_artifact_files(root):
+        rel = _rel(path, root)
+        stat = path.stat()
+        artifact_id = f"sha256:{sha256_file(path)}"
+        artifacts.append({
+            "id": artifact_id,
+            "phase": _phase_for(rel),
+            "path": rel,
+            "kind": _kind_for(path),
+            "size": stat.st_size,
+            "sha256": artifact_id.split(":", 1)[1],
+            "mtime": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+        })
+    return {
+        "version": 1,
+        "scan_id": (report or {}).get("scan_id") or root.name,
+        "url": (report or {}).get("url"),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "artifact_count": len(artifacts),
+        "artifacts": artifacts,
+    }
+
+
+def artifact_index(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {
+        str(a.get("path")): a for a in manifest.get("artifacts", [])
+        if isinstance(a, dict) and a.get("path")
+    }
+
+
+def write_manifest(scan_dir: Path, report: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Build and persist ``evidence_manifest.json``; return summary + manifest."""
+    root = Path(scan_dir)
+    manifest = build_manifest(root, report)
+    path = root / MANIFEST_NAME
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+    return {
+        "manifest": manifest,
+        "path": MANIFEST_NAME,
+        "sha256": sha256_file(path),
+        "artifact_count": manifest["artifact_count"],
+    }
+
+
+def verify_manifest(scan_dir: Path,
+                    manifest: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Verify that manifest artifacts still exist and match their hashes."""
+    root = Path(scan_dir)
+    if manifest is None:
+        try:
+            manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "checked": 0, "missing": [], "changed": [],
+                    "error": str(exc)}
+    missing: list[str] = []
+    changed: list[str] = []
+    checked = 0
+    for artifact in manifest.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        rel = str(artifact.get("path") or "")
+        if not rel:
+            continue
+        path = root / rel
+        if not path.is_file():
+            missing.append(rel)
+            continue
+        checked += 1
+        if sha256_file(path) != artifact.get("sha256"):
+            changed.append(rel)
+    return {
+        "ok": not missing and not changed,
+        "checked": checked,
+        "missing": missing,
+        "changed": changed,
+    }
+
+
+def evidence_refs_for_finding(finding: Dict[str, Any],
+                              manifest: Dict[str, Any]) -> list[Dict[str, str]]:
+    """Map a raw finding to existing manifest artifacts by its source."""
+    source = str(finding.get("source") or "").lower()
+    index = artifact_index(manifest)
+    refs = []
+    for path in _SOURCE_ARTIFACTS.get(source, ()):
+        artifact = index.get(path)
+        if artifact:
+            refs.append({
+                "artifact_id": str(artifact["id"]),
+                "path": str(artifact["path"]),
+                "phase": str(artifact["phase"]),
+            })
+    return refs
+
+
+def attach_finding_refs(report: Dict[str, Any], manifest: Dict[str, Any]) -> int:
+    """Attach evidence_refs to vuln findings where a source artifact exists."""
+    vulns = report.get("phases", {}).get("vulns")
+    if not isinstance(vulns, dict):
+        return 0
+    findings = vulns.get("findings")
+    if not isinstance(findings, list):
+        return 0
+    attached = 0
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        refs = evidence_refs_for_finding(finding, manifest)
+        if refs:
+            finding["evidence_refs"] = refs
+            attached += 1
+    return attached

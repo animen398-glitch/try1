@@ -3209,6 +3209,47 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-19 - EPIC 14 Scope & Evidence Foundation: Evidence Manifest v1
+==============================================================================
+
+  EVIDENCE MANIFEST v1 (core-only, offline):
+    - New pure core/evidence.py builds scan-local evidence_manifest.json from
+      files already produced under a scan directory. Each artifact records id
+      (sha256:<hash>), phase, relative path, kind, size, sha256, and mtime.
+    - Manifest generation excludes generated report.json/report.html and the
+      manifest itself, so it inventories phase artifacts rather than reporting
+      outputs.
+    - CollectionRunner writes evidence_manifest.json before report.json and adds
+      report['evidence'] with manifest path, manifest hash, artifact count, and
+      number of findings that received evidence_refs.
+    - Findings get additive evidence_refs when their existing source maps to an
+      artifact already in the manifest: secret -> api/api_keys.json,
+      security-audit/secret-audit -> security/audit.json, dns -> dns/dns.json,
+      subdomain-active -> subdomains/subdomains.json, dependency-audit ->
+      recon/recon.json, osv/nuclei -> their existing evidence artifacts.
+    - verify_manifest(scan_dir) checks that artifacts still exist and sha256
+      values match. This is pure/offline and does not depend on GUI, SQLite, or
+      network access.
+
+  COMPATIBILITY:
+    - Existing scan readers are unaffected: report['evidence'] is additive and
+      old scans without evidence_manifest.json remain readable.
+    - No new scanners, no GUI changes, no new SQLite tables.
+
+  TESTS:
+    - tests/test_evidence.py covers manifest build/write/verify and source-to-
+      artifact refs.
+    - tests/test_collection_runner.py covers end-to-end offline creation of
+      evidence_manifest.json plus persisted report evidence_refs.
+
+  VERIFICATION:
+    - Targeted pytest for evidence/collection/project is green.
+    - Full ruff is clean; full pytest is green (1433 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+==============================================================================
+
+==============================================================================
   2026-06-19 - EPIC 14 Scope & Evidence Foundation: Scope Guard v1
 ==============================================================================
 

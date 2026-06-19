@@ -34,6 +34,7 @@ from core.cookie_auditor import CookieAuditor
 from core.dependency_audit import render_html as render_dependencies
 from core.executive_summary import build_summary
 from core.executive_summary import render_html as render_exec_summary
+from core.evidence import attach_finding_refs, write_manifest
 from core.external_tools import KatanaRunner, NucleiRunner
 from core.frontend_cloner import FrontendCloner
 from core.dns_intel import discover as discover_dns
@@ -460,6 +461,8 @@ class CollectionRunner:
             report['trends'] = []
             report['trends_summary'] = {}
 
+        self._attach_evidence_manifest(report, scan_dir)
+
         # Reports
         json_path = scan_dir / 'report.json'
         json_path.write_text(
@@ -484,6 +487,23 @@ class CollectionRunner:
         return report
 
     # ── phases ───────────────────────────────────────────────────────────────
+
+    def _attach_evidence_manifest(self, report: Dict, scan_dir: Path) -> None:
+        """Persist scan evidence manifest and attach compact report metadata."""
+        try:
+            result = write_manifest(scan_dir, report)
+            refs_attached = attach_finding_refs(report, result['manifest'])
+            report['evidence'] = {
+                'manifest': result['path'],
+                'manifest_sha256': result['sha256'],
+                'artifact_count': result['artifact_count'],
+                'finding_refs_attached': refs_attached,
+            }
+            self._log(f"  Evidence: {result['artifact_count']} artifact(s), "
+                      f"finding refs {refs_attached}")
+        except Exception as e:  # noqa: BLE001 - evidence is best-effort
+            report['evidence'] = {'error': str(e)}
+            self._log(f'  Evidence manifest failed: {e}')
 
     def _phase_recon(self, url: str, project_dir: Path) -> Dict:
         self._log('[1/7] Recon…')
