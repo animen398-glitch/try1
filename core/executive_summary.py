@@ -271,6 +271,20 @@ def _asset_criticality(report: Dict) -> Dict:
             'top_asset_criticality': _int(s.get('top_criticality'))}
 
 
+def _scan_accuracy(report: Dict) -> Dict:
+    """Scan Accuracy rollup for the display **metric** (MODULE 1).
+
+    Reads the unified-confidence rollup the accuracy engine stamped
+    (``report['accuracy']``): the average confidence across all scanned entities and
+    how many are low-confidence (worth verifying). Not a risk signal — it measures
+    detection trust, not exposure — so it is a metric only, no headline chip. Zero
+    when the engine didn't run (older reports)."""
+    acc = report.get('accuracy') or {}
+    summary = acc.get('summary') or {}
+    return {'scan_accuracy_avg': _int(summary.get('avg_confidence')),
+            'low_confidence_entities': len(acc.get('low_confidence') or [])}
+
+
 def _attack_paths(report: Dict) -> Dict:
     """Attack Paths rollup for the display **metric** (EPIC 11).
 
@@ -621,6 +635,8 @@ def build_summary(report: Dict) -> Dict:
     asset_crit = _asset_criticality(report)
     # Attack Paths (EPIC 11) — lateral routes over shared infra (display metric only).
     paths = _attack_paths(report)
+    # Scan Accuracy (MODULE 1) — average detection confidence (display metric only).
+    accuracy = _scan_accuracy(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -659,6 +675,8 @@ def build_summary(report: Dict) -> Dict:
         'attack_paths': paths['attack_paths'],
         'critical_attack_paths': paths['critical_attack_paths'],
         'top_attack_path': paths['top_attack_path'],
+        'scan_accuracy_avg': accuracy['scan_accuracy_avg'],
+        'low_confidence_entities': accuracy['low_confidence_entities'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

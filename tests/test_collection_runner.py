@@ -514,6 +514,25 @@ def test_render_asset_criticality_card_shows_top_assets():
     assert "<script" not in html.lower()
 
 
+def test_render_accuracy_card_shows_confidence_and_low():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "accuracy": {
+                  "summary": {"entities": 5, "avg_confidence": 78,
+                              "high_confidence": 3},
+                  "by_type": {"technology": {"count": 2, "avg_confidence": 90,
+                                             "high_confidence": 2}},
+                  "low_confidence": [{"entity_type": "secret",
+                                      "label": "Generic API Key", "score": 35,
+                                      "verification": "invalid_format"}]}}
+    html = r._render_html(report)
+    assert "Scan Accuracy" in html
+    assert "78%" in html and "technology" in html
+    assert "Generic API Key" in html and "invalid_format" in html
+    assert "<script" not in html.lower()
+
+
 def test_render_attack_paths_card_shows_lateral_route():
     r = CollectionRunner()
     report = {"url": "https://x", "domain": "x", "started_at": "",

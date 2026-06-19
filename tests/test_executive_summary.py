@@ -741,3 +741,23 @@ def test_attack_paths_metric_zero_without_engine():
     s = es.build_summary(_report())
     assert s['metrics']['attack_paths'] == 0
     assert all('attack path' not in c['label'] for c in es.headline(s)['chips'])
+
+
+# ── Scan Accuracy metric (MODULE 1) — display only ────────────────────────────
+
+def test_scan_accuracy_metric_from_report():
+    r = _report(high=0)
+    r['accuracy'] = {'summary': {'entities': 8, 'avg_confidence': 81,
+                                 'high_confidence': 5},
+                     'low_confidence': [{'label': 'x'}, {'label': 'y'}]}
+    base = es.build_summary(_report(high=0))
+    s = es.build_summary(r)
+    assert s['metrics']['scan_accuracy_avg'] == 81
+    assert s['metrics']['low_confidence_entities'] == 2
+    assert s['risk_score'] == base['risk_score']          # display only, no points
+
+
+def test_scan_accuracy_metric_zero_without_engine():
+    s = es.build_summary(_report())
+    assert s['metrics']['scan_accuracy_avg'] == 0
+    assert s['metrics']['low_confidence_entities'] == 0

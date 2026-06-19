@@ -380,6 +380,10 @@ class CollectionRunner:
         # Attack Paths (EPIC 11): lateral routes over shared infrastructure (entry →
         # pivot → co-located targets) — a display metric over the same views.
         self._build_attack_paths(report, project)
+        # Scan Accuracy (MODULE 1): unified confidence per entity (technologies /
+        # findings / assets / infra / API / secrets) — derived from the report +
+        # stores; flags the lowest-confidence detections to verify.
+        self._build_accuracy(report, project)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -1337,6 +1341,70 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — attack paths must not fail a scan
             self._log(f'  Attack paths failed: {e}')
 
+    def _build_accuracy(self, report: Dict, project) -> None:
+        """Score the scan's detection accuracy (MODULE 1, best-effort): a unified
+        confidence per entity (technologies / findings / assets / infra / API /
+        secrets). Read-only over the report + stores; a failure must never sink the
+        scan. Stored compactly in ``report['accuracy']`` (summary + per-type averages
+        + the lowest-confidence detections to double-check) for the card + metric."""
+        try:
+            from core.asset_store import AssetStore
+            from core.findings_store import FindingsStore
+            from core.intelligence import accuracy_from_report
+            findings = FindingsStore().active_findings(project.slug)
+            assets = AssetStore().list_assets(project=project.slug)
+            data = accuracy_from_report(report, findings=findings, assets=assets)
+            summary = data.get('summary') or {}
+            if not summary.get('entities'):
+                return
+            by_type = {t: {'count': b.get('count', 0),
+                           'avg_confidence': b.get('avg_confidence', 0),
+                           'high_confidence': b.get('high_confidence', 0)}
+                       for t, b in (data.get('by_type') or {}).items()}
+            # The least-confident detections are the ones a triager should verify.
+            low = [i for i in reversed(data.get('items') or [])
+                   if i.get('band') == 'low'][:10]
+            report['accuracy'] = {'summary': summary, 'by_type': by_type,
+                                  'low_confidence': low}
+            self._log(f"  Scan accuracy: {summary.get('entities', 0)} сущностей, "
+                      f"avg confidence {summary.get('avg_confidence', 0)}%, "
+                      f"{summary.get('high_confidence', 0)} высокой уверенности")
+        except Exception as e:  # noqa: BLE001 — accuracy must not fail a scan
+            self._log(f'  Scan accuracy failed: {e}')
+
+    @classmethod
+    def _render_accuracy_card(cls, adata: Dict) -> str:
+        """Offline HTML for the Scan Accuracy card: average confidence per entity
+        type + the lowest-confidence detections to double-check."""
+        e = html.escape
+        summary = adata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Сущностей: '
+                f'<b>{e(str(summary.get("entities", 0)))}</b> · средняя уверенность: '
+                f'<b>{e(str(summary.get("avg_confidence", 0)))}%</b> · высокой '
+                f'уверенности: <b>{e(str(summary.get("high_confidence", 0)))}</b></p>')
+        by_type = adata.get('by_type') or {}
+        type_rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(str(t))}</td>'
+            f'<td style="color:#888;">{e(str(b.get("count", 0)))} шт.</td>'
+            f'<td style="font-weight:bold;">{e(str(b.get("avg_confidence", 0)))}%'
+            f'</td></tr>'
+            for t, b in by_type.items())
+        type_table = (f'<table style="font-size:12px;margin:4px 0;">{type_rows}'
+                      f'</table>' if type_rows else '')
+        low = adata.get('low_confidence') or []
+        low_rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;color:#888;">'
+            f'{e(str(i.get("entity_type", "")))}</td>'
+            f'<td style="padding:1px 12px;">{e(str(i.get("label") or ""))}</td>'
+            f'<td style="color:#e64a19;">{e(str(i.get("score", 0)))}% '
+            f'({e(str(i.get("verification", "")))})</td></tr>'
+            for i in low)
+        low_table = (f'<p style="font-size:12px;color:#888;margin:8px 0 2px;">'
+                     f'Проверить (низкая уверенность):</p>'
+                     f'<table style="font-size:12px;">{low_rows}</table>'
+                     if low_rows else '')
+        return head + type_table + low_table
+
     @classmethod
     def _render_attack_paths_card(cls, pdata: Dict) -> str:
         """Offline HTML for the Attack Paths card: lateral routes (entry host →
@@ -2021,6 +2089,15 @@ class CollectionRunner:
                 'Attack Paths', self._render_attack_paths_card(pdata),
                 f"top {psum.get('top_score', 0)} · "
                 f"{psum.get('critical_paths', 0)} критичных"))
+
+        # Scan Accuracy (MODULE 1) — unified confidence per entity.
+        accdata = report.get('accuracy')
+        if isinstance(accdata, dict) and (accdata.get('summary') or {}).get('entities'):
+            accsum = accdata['summary']
+            body_parts.append(card(
+                'Scan Accuracy', self._render_accuracy_card(accdata),
+                f"avg {accsum.get('avg_confidence', 0)}% · "
+                f"{accsum.get('entities', 0)} сущн."))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')

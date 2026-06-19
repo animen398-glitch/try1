@@ -255,6 +255,35 @@ def test_build_accuracy_empty_is_safe():
     assert out['summary']['avg_confidence'] == 0
 
 
+def test_accuracy_from_report_collects_entities():
+    report = {'phases': {
+        'recon': {'data': {
+            'technologies': [{'name': 'Nginx', 'version': '1.25',
+                              'evidence': 'header:server'}],
+            'infrastructure': {'ip': '1.2.3.4', 'asn': 'AS13335',
+                               'provider': 'Cloudflare', 'source': 'asn_intel'}}},
+        'api': {'data': {'keys_found': 1,
+                         'details': {'AWS Access Key': ['AKIA' + 'A' * 16]}}},
+        'openapi': {'data': {'endpoints': [{'path': '/v1/u', 'method': 'GET'}]}}}}
+    findings = [{'id': 'f1', 'category': 'vuln', 'severity': 'high',
+                 'title': 't', 'evidence': {'source': 'nuclei'}}]
+    assets = [{'id': 'a1', 'type': 'subdomain', 'value': 'a.x.com',
+               'attrs': {'source': 'subdomains', 'http_status': 200}}]
+    out = intel.accuracy_from_report(report, findings=findings, assets=assets)
+    types = set(out['by_type'])
+    assert types == {'finding', 'asset', 'technology', 'infrastructure',
+                     'secret', 'api'}
+    # the AWS key (valid format, high-value) is a high-confidence secret
+    sec = out['by_type']['secret']['items'][0]
+    assert sec['verification'] == 'valid_format' and sec['score'] == 100
+    assert out['summary']['entities'] == 6
+
+
+def test_accuracy_from_report_empty_report_is_safe():
+    out = intel.accuracy_from_report({})
+    assert out['summary']['entities'] == 0
+
+
 # ── asset criticality (EPIC 9) ──────────────────────────────────────────────────
 
 def test_asset_criticality_type_weight_and_band():

@@ -387,6 +387,59 @@ def build_accuracy(entities_by_type: Dict[str, List[Dict]]) -> Dict:
     return {'by_type': by_type, 'items': items, 'summary': summary}
 
 
+def _accuracy_phase(report: Dict, name: str) -> Dict:
+    p = (report or {}).get('phases', {}).get(name, {})
+    d = p.get('data', {}) if isinstance(p, dict) else {}
+    return d if isinstance(d, dict) else {}
+
+
+def accuracy_from_report(report: Dict, *, findings: Optional[List[Dict]] = None,
+                         assets: Optional[List[Dict]] = None) -> Dict:
+    """Collect every scanned entity from a report (+ the stores' findings/assets)
+    and score its accuracy (MODULE 1 wiring). Pure derive over data already present —
+    technologies / infrastructure / API endpoints / secrets from the report phases,
+    findings + assets passed in from their stores. CVEs are findings here (a CVE
+    manifests as a ``cve-…`` finding — counted under ``finding`` via its cve-id
+    verification, not double-counted as a separate bucket). Returns
+    :func:`build_accuracy`'s rollup."""
+    recon = _accuracy_phase(report, 'recon')
+    api = _accuracy_phase(report, 'api')
+    entities: Dict[str, List[Dict]] = {}
+
+    if findings:
+        entities['finding'] = [f for f in findings if isinstance(f, dict)]
+    if assets:
+        entities['asset'] = [a for a in assets if isinstance(a, dict)]
+
+    techs = recon.get('technologies')
+    if isinstance(techs, list):
+        techs = [t for t in techs if isinstance(t, dict)]
+        if techs:
+            entities['technology'] = techs
+
+    infra = recon.get('infrastructure')
+    if isinstance(infra, dict) and infra:
+        entities['infrastructure'] = [infra]
+
+    details = api.get('details')
+    if isinstance(details, dict):
+        secrets = [{'type': stype, 'value': v, 'source': 'api'}
+                   for stype, values in details.items()
+                   for v in (values if isinstance(values, list) else [values])]
+        if secrets:
+            entities['secret'] = secrets
+
+    eps = _accuracy_phase(report, 'openapi').get('endpoints')
+    if isinstance(eps, list):
+        apis = [{'path': ep.get('path'), 'method': ep.get('method'),
+                 'source': 'openapi'}
+                for ep in eps if isinstance(ep, dict) and ep.get('path')]
+        if apis:
+            entities['api'] = apis
+
+    return build_accuracy(entities)
+
+
 # ── priority ──────────────────────────────────────────────────────────────────
 
 def priority(finding: Dict, confidence_score: int, *, exposed: bool = False,
