@@ -41,7 +41,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 безопасности (cookie, секреты, source-map, уязвимости).
 
 **Точки входа:**
-- `main.py` — GUI (PyQt5), 19 вкладок + внешний плагин Deep Crawl (итого 20).
+- `main.py` — GUI (PyQt5), 21 встроенная вкладка + внешний плагин Deep Crawl (итого 22).
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
 - `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8, + Alert Center #9).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
