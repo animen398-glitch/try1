@@ -766,6 +766,129 @@ def load_asset_criticality(project: str) -> Dict:
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
 
 
+# ── asset exposure (likelihood axis) ────────────────────────────────────────────
+#
+# Classic risk = likelihood × impact. ``asset_criticality`` is the *impact* axis
+# ("how valuable is the asset if compromised" — dominated by its type). Exposure is
+# the missing *likelihood* axis: "how reachable / attackable is this asset right
+# now" — reachability + open findings + blast radius, deliberately WITHOUT the
+# type-weight. That is why a reachable, low-value subdomain carrying a fresh vuln is
+# "hot" even though the asset itself is cheap, while a high-criticality apex with no
+# exposed surface is not.
+#
+# A display metric, NOT a risk-score addend (user decision, like criticality / paths):
+# the verdict (_risk_level) is untouched. Derived purely from data the inventory
+# already holds — reuses the SAME inputs as ``asset_criticality`` (the dependents map
+# from the asset graph, the attached-findings map from correlation, and
+# Asset.attrs reachability/takeover); no new data, no new table.
+
+_EXP_HIGH, _EXP_MED = 60, 30
+_EXP_SEV_PTS = {'critical': 30, 'high': 20, 'medium': 10, 'low': 4, 'info': 0}
+
+
+def _exp_band(score: int) -> str:
+    return ('high' if score >= _EXP_HIGH
+            else 'medium' if score >= _EXP_MED else 'low')
+
+
+def exposure_score(asset: Dict, *, dependents: int = 0,
+                   findings: Optional[Dict] = None, cluster_size: int = 0) -> Dict:
+    """How exposed / attackable an asset is right now → ``{score, band, factors}``.
+
+    The *likelihood* axis to ``asset_criticality``'s *impact* axis (pure). Built from
+    reachability (a takeover candidate / a publicly-reachable 2xx host / merely
+    resolved), the open findings attached to it (``findings`` = ``{count, worst}``
+    from correlation), and its blast radius (``dependents`` from the graph, or its
+    share of a co-hosted ``cluster_size`` — whichever is larger). Crucially it carries
+    NO asset-type weight, so the score reflects attack-likelihood, not asset value.
+    ``score`` 0–100; ``band`` high ≥60 / medium ≥30 / low. Each contribution is a
+    named factor so the number is auditable."""
+    attrs = asset.get('attrs') or {}
+    factors: List[Dict] = []
+    if attrs.get('takeover'):
+        factors.append({'factor': 'Кандидат на takeover', 'points': 35})
+    elif _reachable(attrs):
+        factors.append({'factor': 'Публично доступен (2xx)', 'points': 20})
+    elif attrs.get('ip'):
+        factors.append({'factor': 'Разрешается в IP', 'points': 5})
+
+    if findings and findings.get('count'):
+        worst = str(findings.get('worst') or 'info').lower()
+        cnt = int(findings.get('count') or 0)
+        pts = _EXP_SEV_PTS.get(worst, 0) + min(10, max(0, cnt - 1) * 2)
+        if pts:
+            factors.append({'factor': f'Открытые находки: {cnt} (worst {worst})',
+                            'points': pts})
+
+    blast = max(int(dependents or 0), int(cluster_size or 0) - 1)
+    if blast > 0:
+        factors.append({'factor': f'Blast radius: {blast} активов',
+                        'points': min(20, blast * 5)})
+
+    score = max(0, min(100, sum(int(f['points']) for f in factors)))
+    return {'score': score, 'band': _exp_band(score), 'factors': factors}
+
+
+def _cluster_size_map(asset_graph: Optional[Dict]) -> Dict[str, int]:
+    """host value (lower-cased) → size of the largest shared-infra cluster it is a
+    member of. A member of a co-hosted cluster can pivot to its peers, so it inherits
+    the cluster's blast radius even though it is not the infra node itself."""
+    out: Dict[str, int] = {}
+    for c in (asset_graph or {}).get('shared_infra') or []:
+        members = [m for m in (c.get('members') or []) if m]
+        size = int(c.get('count') or 0) or len(members)
+        for m in members:
+            v = str(m).strip().lower()
+            if v:
+                out[v] = max(out.get(v, 0), size)
+    return out
+
+
+def build_exposure(assets: List[Dict], correlation: Optional[Dict] = None,
+                   asset_graph: Optional[Dict] = None) -> Dict:
+    """Rank a project's assets by exposure (likelihood, pure).
+
+    ``assets`` are ``AssetStore`` rows; ``correlation`` / ``asset_graph`` are the
+    already-derived views (``load_correlation`` / ``load_asset_graph``). Reuses the
+    same dependents / attached-findings maps as ``build_asset_criticality`` (no
+    duplicate derivation). Returns ``{items (exposure desc), top, summary}``."""
+    assets = [a for a in (assets or []) if isinstance(a, dict)]
+    dep = _dependents_map(asset_graph, assets)
+    fmap = _asset_findings_map(correlation, assets)
+    csize = _cluster_size_map(asset_graph)
+    items: List[Dict] = []
+    for a in assets:
+        aid = a.get('id')
+        value = a.get('label') or a.get('value')
+        cluster_size = csize.get(str(value or '').strip().lower(), 0)
+        exp = exposure_score(a, dependents=dep.get(aid, 0),
+                             findings=fmap.get(aid), cluster_size=cluster_size)
+        items.append({'id': aid, 'type': a.get('type'), 'value': value,
+                      'exposure': exp['score'], 'band': exp['band'],
+                      'factors': exp['factors']})
+    items.sort(key=lambda i: (-i['exposure'], str(i.get('value') or '')))
+    summary = {
+        'assets': len(items),
+        'exposed_assets': sum(1 for i in items if i['band'] == 'high'),
+        'top_exposure': items[0]['exposure'] if items else 0,
+    }
+    return {'items': items, 'top': items[:10], 'summary': summary}
+
+
+def load_exposure(project: str) -> Dict:
+    """Build a project's asset-exposure ranking (thin reader; reuses the asset store,
+    correlation and the asset graph). Offline, read-only, guarded."""
+    try:
+        from core.asset_graph import load_asset_graph
+        from core.asset_store import AssetStore
+        from core.correlation import load_correlation
+        assets = AssetStore().list_assets(project=project)
+        return build_exposure(assets, load_correlation(project),
+                              load_asset_graph(project))
+    except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
+        return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
 # ── attack paths (EPIC 11) ──────────────────────────────────────────────────────
 #
 # "How is it connected?" — the last of the framework's questions. An attack path is

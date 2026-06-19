@@ -89,15 +89,25 @@ def test_attack_paths_view_derives_lateral_route():
     assert d['summary']['paths'] >= 1
 
 
+def test_exposure_view_ranks_assets():
+    _seed('p')
+    d = wa._exposure_view('p')
+    assert 'error' not in d and d['summary']['assets'] >= 1
+    # the ranking is exposure-descending; the top item carries a score
+    assert d['items'][0]['exposure'] >= d['items'][-1]['exposure']
+
+
 def test_criticality_and_paths_no_project_is_empty():
     assert wa._criticality_view(None)['items'] == []
     assert wa._attack_paths_view(None)['paths'] == []
+    assert wa._exposure_view(None)['items'] == []
 
 
 def test_dashboard_exposes_criticality_and_paths():
     html = wa._DASHBOARD
     assert 'showCriticality()' in html and '/criticality' in html
     assert 'showAttackPaths()' in html and '/attack-paths' in html
+    assert 'showExposure()' in html and '/exposure' in html
 
 
 def test_criticality_paths_endpoints_with_testclient():
@@ -110,6 +120,7 @@ def test_criticality_paths_endpoints_with_testclient():
     client = TestClient(wa.app)
     assert client.get('/criticality', params={'project': 'p'}).status_code == 200
     assert client.get('/attack-paths', params={'project': 'p'}).status_code == 200
+    assert client.get('/exposure', params={'project': 'p'}).status_code == 200
 
 
 # ── Scan Accuracy web parity (MODULE 1) ───────────────────────────────────────

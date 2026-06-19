@@ -373,6 +373,10 @@ class CollectionRunner:
         # + attached findings + exposure) — a display metric over the correlation /
         # asset-graph just produced; the risk verdict is untouched.
         self._build_asset_criticality(report, project)
+        # Asset Exposure (likelihood axis): rank assets by how reachable / attackable
+        # they are right now (reachability + open findings + blast radius, no
+        # type-weight) — a display metric complementing criticality's impact axis.
+        self._build_exposure(report, project)
         # Core Intelligence Framework (EPIC 7): rank findings by priority with a
         # confidence score + explanation — derived from the findings/correlation/
         # asset-graph just produced (no new data).
@@ -1303,6 +1307,50 @@ class CollectionRunner:
                  f'<td><b>Актив</b></td></tr>{rows}</table>' if rows else '')
         return head + table
 
+    def _build_exposure(self, report: Dict, project) -> None:
+        """Derive the Asset Exposure ranking (likelihood axis, best-effort): assets
+        ranked by how reachable / attackable they are right now. Read-only over the
+        stores / views just produced; a failure must never sink the scan. Stored
+        compactly in ``report['exposure']`` (summary + top assets) for the report
+        card + the display metric."""
+        try:
+            from core.intelligence import load_exposure
+            data = load_exposure(project.slug)
+            summary = data.get('summary') or {}
+            if data.get('error') or not summary.get('assets'):
+                return
+            report['exposure'] = {'summary': summary,
+                                  'top': (data.get('top') or [])[:10]}
+            self._log(f"  Asset exposure: {summary.get('assets', 0)} активов, "
+                      f"top {summary.get('top_exposure', 0)}, "
+                      f"{summary.get('exposed_assets', 0)} высокой экспозиции")
+        except Exception as e:  # noqa: BLE001 — exposure must not fail a scan
+            self._log(f'  Asset exposure failed: {e}')
+
+    @classmethod
+    def _render_exposure_card(cls, xdata: Dict) -> str:
+        """Offline HTML for the Asset Exposure card: the most exposed assets with
+        their exposure score + band (which asset is most attackable right now)."""
+        e = html.escape
+        summary = xdata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Активов: '
+                f'<b>{e(str(summary.get("assets", 0)))}</b> · высокой экспозиции: '
+                f'<b>{e(str(summary.get("exposed_assets", 0)))}</b> · макс. '
+                f'exposure: <b>{e(str(summary.get("top_exposure", 0)))}</b></p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;color:#888;">'
+            f'{e(str(i.get("exposure", 0)))}</td>'
+            f'<td style="color:{cls._CORR_SEV_COLOR.get("high" if i.get("band")=="high" else "medium" if i.get("band")=="medium" else "info", "#666")};'
+            f'font-weight:bold;">{e(str(i.get("band") or "—"))}</td>'
+            f'<td style="padding:1px 12px;color:#666;">{e(str(i.get("type") or ""))}</td>'
+            f'<td>{e(str(i.get("value") or ""))}</td></tr>'
+            for i in xdata.get('top', []))
+        table = (f'<table style="font-size:12px;"><tr>'
+                 f'<td style="padding-right:12px;"><b>Exp</b></td>'
+                 f'<td><b>Band</b></td><td style="padding:0 12px;"><b>Тип</b></td>'
+                 f'<td><b>Актив</b></td></tr>{rows}</table>' if rows else '')
+        return head + table
+
     def _build_intelligence(self, report: Dict, project) -> None:
         """Derive the Core Intelligence view (EPIC 7, best-effort): findings ranked
         by priority with a confidence score + explanation. Read-only over the stores
@@ -2070,6 +2118,15 @@ class CollectionRunner:
                 'Asset Criticality', self._render_asset_criticality_card(crdata),
                 f"top {crsum.get('top_criticality', 0)} · "
                 f"{crsum.get('high_criticality', 0)} критичных"))
+
+        # Asset Exposure (likelihood axis) — assets ranked by reachability/attackability.
+        xdata = report.get('exposure')
+        if isinstance(xdata, dict) and (xdata.get('summary') or {}).get('assets'):
+            xsum = xdata['summary']
+            body_parts.append(card(
+                'Asset Exposure', self._render_exposure_card(xdata),
+                f"top {xsum.get('top_exposure', 0)} · "
+                f"{xsum.get('exposed_assets', 0)} экспонированных"))
 
         # Priorities (EPIC 7) — Core Intelligence: findings ranked by priority +
         # confidence (what to fix first).

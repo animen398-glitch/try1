@@ -721,6 +721,27 @@ def test_asset_criticality_metric_zero_without_engine():
     assert all('critical asset' not in c['label'] for c in es.headline(s)['chips'])
 
 
+# ── Asset Exposure metric (likelihood axis) — display only ────────────────────
+
+def test_asset_exposure_metric_and_chip():
+    r = _report(high=0)
+    r['exposure'] = {'summary': {'assets': 9, 'exposed_assets': 2,
+                                 'top_exposure': 71}}
+    base = es.build_summary(_report(high=0))
+    s = es.build_summary(r)
+    assert s['metrics']['exposed_assets'] == 2
+    assert s['metrics']['top_exposure'] == 71
+    assert s['risk_score'] == base['risk_score']          # display only, no points
+    chips = [c['label'] for c in es.headline(s)['chips']]
+    assert '2 exposed assets' in chips
+
+
+def test_asset_exposure_metric_zero_without_engine():
+    s = es.build_summary(_report())
+    assert s['metrics']['exposed_assets'] == 0
+    assert all('exposed asset' not in c['label'] for c in es.headline(s)['chips'])
+
+
 # ── Attack Paths metric (EPIC 11) — display only ──────────────────────────────
 
 def test_attack_paths_metric_and_chip():

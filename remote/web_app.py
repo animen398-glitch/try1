@@ -511,6 +511,18 @@ def _attack_paths_view(project: Optional[str] = None) -> dict:
         return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}
 
 
+def _exposure_view(project: Optional[str] = None) -> dict:
+    """Assets ranked by exposure (likelihood — reachability/attackability) for one
+    project."""
+    if not project:
+        return {'items': [], 'top': [], 'summary': {}}
+    try:
+        from core.intelligence import load_exposure
+        return load_exposure(project)
+    except Exception as e:
+        return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
+
+
 def _accuracy_view(project: Optional[str] = None) -> dict:
     """Scan detection accuracy (confidence per scanned entity) for one project.
 
@@ -679,6 +691,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showTimeline()">Timeline</button>
       <button class="btn sec" onclick="showIntelligence()">Intelligence</button>
       <button class="btn sec" onclick="showCriticality()">Criticality</button>
+      <button class="btn sec" onclick="showExposure()">Exposure</button>
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
       <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
     </div>
@@ -1070,6 +1083,22 @@ async function showCriticality(){
   }catch(ex){log('Criticality failed: '+ex.message,'er');}
 }
 
+async function showExposure(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Exposure: no projects','data'); return;}
+    const r=await fetch('/exposure?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Asset exposure ['+proj+']: '+(s.assets||0)+' assets · top '
+        +(s.top_exposure||0)+' · '+(s.exposed_assets||0)+' exposed','data');
+    (d.top||[]).slice(0,10).forEach(i=>{
+      log('  X'+(i.exposure||0)+' ['+(i.band||'')+'] '+(i.type||'')+' '
+          +(i.value||''),'info');
+    });
+  }catch(ex){log('Exposure failed: '+ex.message,'er');}
+}
+
 async function showAttackPaths(){
   try{
     const o=await fetch('/overview'); const od=await o.json();
@@ -1358,6 +1387,10 @@ if _FASTAPI_OK:
     @app.get('/attack-paths')
     async def attack_paths(project: Optional[str] = None):
         return JSONResponse(_attack_paths_view(project))
+
+    @app.get('/exposure')
+    async def exposure(project: Optional[str] = None):
+        return JSONResponse(_exposure_view(project))
 
     @app.get('/accuracy')
     async def accuracy(project: Optional[str] = None):

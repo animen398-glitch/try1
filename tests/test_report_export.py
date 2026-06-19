@@ -162,6 +162,26 @@ def test_criticality_csv_empty_is_header_only():
     assert _parse(rx.criticality_csv(None))[0][0] == 'Criticality'
 
 
+# ── exposure_csv (likelihood axis — assets ranked by exposure) ──────────────────
+
+def test_exposure_csv_header_and_flattened_factors():
+    items = [{'exposure': 55, 'band': 'medium', 'type': 'subdomain',
+              'value': 'a.x.com', 'id': 'a-1',
+              'factors': [{'factor': 'Публично доступен (2xx)', 'points': 20},
+                          {'factor': 'Открытые находки: 1 (worst critical)',
+                           'points': 30}]}]
+    table = _parse(rx.exposure_csv(items))
+    assert table[0] == ['Exposure', 'Band', 'Type', 'Value', 'Factors', 'ID']
+    row = dict(zip(table[0], table[1]))
+    assert row['Exposure'] == '55' and row['Value'] == 'a.x.com'
+    assert 'Публично доступен (2xx) (+20)' in row['Factors']
+
+
+def test_exposure_csv_empty_is_header_only():
+    assert _parse(rx.exposure_csv([]))[0][0] == 'Exposure'
+    assert _parse(rx.exposure_csv(None))[0][0] == 'Exposure'
+
+
 # ── attack_paths_csv (EPIC 11 — lateral attack paths) ───────────────────────────
 
 def test_attack_paths_csv_header_and_flattened_targets():

@@ -514,6 +514,21 @@ def test_render_asset_criticality_card_shows_top_assets():
     assert "<script" not in html.lower()
 
 
+def test_render_exposure_card_shows_top_assets():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "exposure": {
+                  "summary": {"assets": 7, "exposed_assets": 1,
+                              "top_exposure": 65},
+                  "top": [{"type": "subdomain", "value": "a.x.com",
+                           "exposure": 65, "band": "high"}]}}
+    html = r._render_html(report)
+    assert "Asset Exposure" in html
+    assert "a.x.com" in html and "65" in html and "high" in html
+    assert "<script" not in html.lower()
+
+
 def test_render_accuracy_card_shows_confidence_and_low():
     r = CollectionRunner()
     report = {"url": "https://x", "domain": "x", "started_at": "",

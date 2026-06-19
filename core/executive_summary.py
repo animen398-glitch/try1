@@ -271,6 +271,20 @@ def _asset_criticality(report: Dict) -> Dict:
             'top_asset_criticality': _int(s.get('top_criticality'))}
 
 
+def _asset_exposure(report: Dict) -> Dict:
+    """Asset Exposure rollup for the display **metric** (likelihood axis).
+
+    Reads the ranking the exposure engine already stamped (``report['exposure']``):
+    how many assets are high-exposure (reachable / attackable right now) and the top
+    score. Deliberately NOT a score addend — exposure is derived from reachability +
+    attached findings + blast radius (those findings are already in the verdict);
+    this is the "which asset is most attackable" view, a metric/chip only. Zero when
+    the engine didn't run (older reports)."""
+    s = (report.get('exposure') or {}).get('summary') or {}
+    return {'exposed_assets': _int(s.get('exposed_assets')),
+            'top_exposure': _int(s.get('top_exposure'))}
+
+
 def _scan_accuracy(report: Dict) -> Dict:
     """Scan Accuracy rollup for the display **metric** (MODULE 1).
 
@@ -513,6 +527,10 @@ def headline(summary: Dict) -> Dict:
     if critical_assets:
         # High-criticality assets (EPIC 9) — which assets matter most (display).
         add(_plural(critical_assets, 'critical asset'), 'medium')
+    exposed_assets = _int(m.get('exposed_assets'))
+    if exposed_assets:
+        # High-exposure assets (likelihood axis) — most reachable/attackable (display).
+        add(_plural(exposed_assets, 'exposed asset'), 'medium')
     attack_paths = _int(m.get('attack_paths'))
     if attack_paths:
         # Lateral attack paths over shared infra (EPIC 11) — high when one reaches a
@@ -633,6 +651,9 @@ def build_summary(report: Dict) -> Dict:
     # Asset Criticality (EPIC 9) — how many assets are high-criticality + top score
     # (display metric only; criticality is not a risk-score addend).
     asset_crit = _asset_criticality(report)
+    # Asset Exposure (likelihood axis) — how many assets are high-exposure + top score
+    # (display metric only; exposure is not a risk-score addend).
+    asset_exp = _asset_exposure(report)
     # Attack Paths (EPIC 11) — lateral routes over shared infra (display metric only).
     paths = _attack_paths(report)
     # Scan Accuracy (MODULE 1) — average detection confidence (display metric only).
@@ -672,6 +693,8 @@ def build_summary(report: Dict) -> Dict:
         'high_confidence_findings': intel['high_confidence'],
         'critical_assets': asset_crit['critical_assets'],
         'top_asset_criticality': asset_crit['top_asset_criticality'],
+        'exposed_assets': asset_exp['exposed_assets'],
+        'top_exposure': asset_exp['top_exposure'],
         'attack_paths': paths['attack_paths'],
         'critical_attack_paths': paths['critical_attack_paths'],
         'top_attack_path': paths['top_attack_path'],

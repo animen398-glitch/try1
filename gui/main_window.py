@@ -19,6 +19,7 @@ from gui.tab_findings import FindingsTabMixin
 from gui.tab_assets import AssetsTabMixin
 from gui.tab_intelligence import IntelligenceTabMixin
 from gui.tab_criticality import CriticalityTabMixin
+from gui.tab_exposure import ExposureTabMixin
 from gui.tab_attack_paths import AttackPathsTabMixin
 from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_timeline import TimelineTabMixin
@@ -35,7 +36,8 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
                  CloneTabMixin, CookieAuditTabMixin, SecurityAuditTabMixin,
                  FinalReportTabMixin, FindingsTabMixin, AssetsTabMixin,
-                 IntelligenceTabMixin, CriticalityTabMixin, AttackPathsTabMixin,
+                 IntelligenceTabMixin, CriticalityTabMixin, ExposureTabMixin,
+                 AttackPathsTabMixin,
                  AccuracyTabMixin, TimelineTabMixin,
                  OverviewTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.
@@ -91,6 +93,10 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._crit_loaded = False
         self._crit_table_loading = False
         self._crit_filter_pending = False
+        self._exp_loading = False
+        self._exp_loaded = False
+        self._exp_table_loading = False
+        self._exp_filter_pending = False
         self._path_loading = False
         self._attack_paths_loaded = False
         self._path_table_loading = False

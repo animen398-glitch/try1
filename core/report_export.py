@@ -62,6 +62,11 @@ _CRITICALITY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('value', 'Value'), ('factors', 'Factors'), ('id', 'ID'),
 )
 
+_EXPOSURE_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('exposure', 'Exposure'), ('band', 'Band'), ('type', 'Type'),
+    ('value', 'Value'), ('factors', 'Factors'), ('id', 'ID'),
+)
+
 _ATTACK_PATHS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('score', 'Score'), ('band', 'Band'), ('entry', 'Entry'),
     ('entry_severity', 'Entry Severity'), ('pivot_type', 'Pivot Type'),
@@ -158,6 +163,21 @@ def criticality_csv(items: Optional[List[Dict]]) -> str:
             for f in (it.get('factors') or []) if isinstance(f, dict))
         flat.append({**it, 'factors': factors})
     return _rows_to_csv(flat, _CRITICALITY_COLUMNS)
+
+
+def exposure_csv(items: Optional[List[Dict]]) -> str:
+    """CSV of assets ranked by exposure (``intelligence.build_exposure`` items). The
+    nested ``factors`` list (each ``{factor, points}``) is flattened to a single
+    readable cell so the export stays a flat table, in exposure order."""
+    flat: List[Dict] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        factors = '; '.join(
+            f"{f.get('factor', '')} (+{f.get('points', 0)})"
+            for f in (it.get('factors') or []) if isinstance(f, dict))
+        flat.append({**it, 'factors': factors})
+    return _rows_to_csv(flat, _EXPOSURE_COLUMNS)
 
 
 def attack_paths_csv(paths: Optional[List[Dict]]) -> str:

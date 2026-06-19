@@ -1521,6 +1521,44 @@ Scan Accuracy).**
 (`/criticality`,`/attack-paths`); теперь поверхность есть и в GUI — Advanced
 Intelligence имеет полную GUI+web+report+monitoring проводку.**
 
+**Asset Exposure (likelihood axis) — `[ЗАКРЫТ]`.** Закрыт единственный
+запрошенный, но отсутствовавший скаляр из 4-формульного ТЗ Intelligence Foundation:
+нормализованный **per-asset Exposure Score (0–100)**. Из четырёх формул три уже были
+именованными величинами (`confidence`/`asset_criticality`/`priority`); экспозиция
+жила лишь в двух не-нормализованных местах (`attack_surface.surface_score` —
+проектная breadth; `correlation.exposure` — список хостов без балла). Классический
+risk = likelihood × impact: `asset_criticality` ≈ **impact** (доминирует type-вес);
+не хватало **likelihood**-оси — «насколько актив достижим/атакуем прямо сейчас».
+Расширение `core/intelligence.py` (НЕ новый движок — память
+`project-advanced-intelligence`), всё pure/derive-on-read, **переиспользует те же
+входы**, что `build_asset_criticality` (`_dependents_map` из asset_graph,
+`_asset_findings_map` из correlation, `Asset.attrs` reachability/takeover): новый
+`exposure_score(asset, *, dependents, findings, cluster_size)` = reachability
+(takeover +35 / public-2xx +20 / resolved +5) + открытые находки (worst-sev
+crit30/high20/med10/low4 + min(10,(cnt−1)×2)) + blast radius
+(min(20, max(dependents, cluster_size−1)×5)), clamp 0–100, band high≥60/med≥30/low —
+**без type-веса** (отличие от criticality: likelihood, не impact). `build_exposure`
+(ранжирование, как `build_asset_criticality`) + `load_exposure(project)` (тонкий
+ридер) + новый `_cluster_size_map` (host→размер co-hosted кластера для blast). Это
+**display-метрика, НЕ слагаемое risk-score** (вердикт `_risk_level` не тронут — как
+criticality/paths/accuracy). Проводка-паритет по образцу EPIC 9/Scan Accuracy:
+`collection_runner._build_exposure` → `report['exposure']` (после
+`_build_asset_criticality`) + карточка «Asset Exposure» (`_render_exposure_card`);
+`executive_summary._asset_exposure` → display-метрики `exposed_assets`/`top_exposure`
++ headline-чип «N exposed assets» (medium); web `_exposure_view` + `GET /exposure` +
+кнопка/`showExposure()` в консоли; GUI вкладка «Asset Exposure»
+(`gui/tab_exposure.py`, `ExposureTabMixin` — точное зеркало Criticality-таба,
+per-project через `AssetStore.projects()`, секция «Управление» между Criticality и
+Attack Paths); `report_export.exposure_csv` + `_EXPOSURE_COLUMNS` + Export-кнопка.
+Risk-числа байт-в-байт (фактор 0, экспозиция нигде не складывается в score). Покрыто
+`test_intelligence`(+6: no-type-weight/reachability-tiers/findings+blast/cluster-blast/
+ранжирование/empty), `test_exposure_tab`(+8), `test_report_export`(+2),
+`test_web_intelligence`(+1 view + assert в no-project/dashboard/testclient),
+`test_executive_summary`(+2: метрика+чип/zero), `test_collection_runner`(+1: карточка).
+1386 collected, full suite PASS, ruff чист. **Полный GUI+web+report паритет по
+likelihood-оси — все 4 формулы Intelligence Foundation теперь именованные величины с
+поверхностями.**
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

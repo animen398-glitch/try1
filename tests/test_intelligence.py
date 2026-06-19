@@ -342,6 +342,68 @@ def test_build_asset_criticality_empty_is_safe():
                                'top_criticality': 0}}
 
 
+# ── asset exposure (likelihood axis) ────────────────────────────────────────────
+
+def test_exposure_score_has_no_type_weight():
+    # Unlike criticality, a bare domain with no exposure signal scores 0 — exposure
+    # is likelihood, not asset value.
+    dom = intel.exposure_score({'type': 'domain', 'value': 'x.com', 'attrs': {}})
+    assert dom['score'] == 0 and dom['band'] == 'low'
+
+
+def test_exposure_score_reachability_tiers():
+    takeover = intel.exposure_score({'type': 'subdomain', 'attrs': {'takeover': True}})
+    assert takeover['score'] == 35
+    reachable = intel.exposure_score({'type': 'subdomain',
+                                      'attrs': {'http_status': 200}})
+    assert reachable['score'] == 20
+    resolved = intel.exposure_score({'type': 'subdomain', 'attrs': {'ip': '1.2.3.4'}})
+    assert resolved['score'] == 5
+
+
+def test_exposure_score_findings_and_blast():
+    x = intel.exposure_score({'type': 'subdomain', 'attrs': {'http_status': 200}},
+                             dependents=2, findings={'count': 3, 'worst': 'critical'})
+    # 20 (reachable) + (30 + min(10, 4)) findings + min(20, 2*5) blast = 64
+    assert x['score'] == 20 + 34 + 10 and x['band'] == 'high'
+
+
+def test_exposure_score_cluster_size_as_blast():
+    # A member of a 4-host cluster inherits blast radius (cluster_size - 1).
+    x = intel.exposure_score({'type': 'subdomain', 'attrs': {}},
+                             dependents=0, cluster_size=4)
+    assert x['score'] == min(20, 3 * 5)   # 15
+
+
+def test_build_exposure_ranks_and_summary():
+    assets = [
+        {'id': 'd', 'type': 'domain', 'value': 'x.com', 'attrs': {}},
+        {'id': 's1', 'type': 'subdomain', 'value': 'a.x.com',
+         'attrs': {'http_status': 200, 'ip': '1.2.3.4'}},
+        {'id': 's2', 'type': 'subdomain', 'value': 'b.x.com',
+         'attrs': {'ip': '1.2.3.4'}},
+    ]
+    asset_graph = {'shared_infra': [{'type': 'ip', 'node': '1.2.3.4',
+                                     'members': ['a.x.com', 'b.x.com'], 'count': 2}]}
+    correlation = {'asset_findings': {'s1': {'findings': [{'severity': 'critical'}],
+                                             'worst': 'critical'}}}
+    out = intel.build_exposure(assets, correlation, asset_graph)
+    assert out['summary']['assets'] == 3
+    top = out['items'][0]
+    # s1: 20 reachable + 30 critical-finding + 5 blast (cluster of 2 → 1) = 55
+    assert top['id'] == 's1' and top['exposure'] == 55 and top['band'] == 'medium'
+    assert out['summary']['top_exposure'] == 55
+    # the bare domain with no exposure signal sinks to the bottom at 0
+    assert out['items'][-1]['exposure'] == 0
+
+
+def test_build_exposure_empty_is_safe():
+    out = intel.build_exposure([])
+    assert out == {'items': [], 'top': [],
+                   'summary': {'assets': 0, 'exposed_assets': 0,
+                               'top_exposure': 0}}
+
+
 # ── attack paths (EPIC 11) ──────────────────────────────────────────────────────
 
 def test_build_attack_paths_lateral_over_shared_infra():
