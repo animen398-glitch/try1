@@ -32,6 +32,9 @@ def test_get_or_create_builds_skeleton(tmp_path):
     assert meta['slug'] == 'example.com'
     assert meta['url'] == 'https://example.com'
     assert meta['scan_count'] == 0
+    assert meta['scope']['allowed_domains'] == ['example.com']
+    assert meta['scope']['active_scan_enabled'] is False
+    assert meta['scope']['passive_only'] is True
 
 
 def test_get_or_create_is_idempotent_and_keeps_scans(tmp_path):
@@ -133,3 +136,39 @@ def test_load_metadata_tolerates_corruption(tmp_path):
     p.metadata_path.write_text('{ broken', encoding='utf-8')
     meta = p.load_metadata()        # falls back to a fresh metadata dict
     assert meta['scan_count'] == 0
+
+
+def test_project_get_set_clear_scope(tmp_path):
+    p = ProjectStore(tmp_path).get_or_create('https://example.com')
+
+    assert p.get_scope()['active_scan_enabled'] is False
+    assert p.get_scope()['passive_only'] is True
+    p.set_scope({
+        'allowed_domains': ['Example.com', '*.Example.com', ''],
+        'denied_domains': ['admin.example.com'],
+        'active_scan_enabled': False,
+        'passive_only': True,
+        'rate_limit': '2 rps',
+    })
+    scope = p.get_scope()
+    assert scope['allowed_domains'] == ['example.com', '*.example.com']
+    assert scope['denied_domains'] == ['admin.example.com']
+    assert scope['active_scan_enabled'] is False
+    assert scope['passive_only'] is True
+    assert scope['rate_limit'] == '2 rps'
+
+    p.set_scope(None)
+    assert 'scope' not in p.load_metadata()
+    assert p.get_scope()['active_scan_enabled'] is True
+
+
+def test_scope_survives_record_scan(tmp_path):
+    p = ProjectStore(tmp_path).get_or_create('https://example.com')
+    p.set_scope({'allowed_domains': ['example.com'], 'rate_limit': 'slow'})
+
+    scan_dir = p.start_scan('20260619_120000')
+    p.record_scan(scan_dir, _report())
+
+    scope = p.get_scope()
+    assert scope['allowed_domains'] == ['example.com']
+    assert scope['rate_limit'] == 'slow'

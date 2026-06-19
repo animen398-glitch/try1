@@ -3208,3 +3208,50 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
   Python 3.14/Windows выходит с PYTEST_EXIT=0.
 
 ==============================================================================
+==============================================================================
+  2026-06-19 - EPIC 14 Scope & Evidence Foundation: Scope Guard v1
+==============================================================================
+
+  SCOPE GUARD v1 (minimal foundation, core-only):
+    - New pure core/scope_guard.py: normalizes project scope, supports exact and
+      wildcard allowed domains (*.example.com), denied domains with deny
+      precedence, active_scan_enabled, passive_only, and rate_limit as a
+      non-enforced operator hint.
+    - Project metadata now owns scope via Project.get_scope()/set_scope().
+      Storage stays in Projects/<slug>/metadata.json; record_scan/set_monitor/
+      set_company compose by read-modify-write and do not clobber scope.
+    - Safe default for new projects: metadata.json is created with an explicit
+      scope bound to the target host, active_scan_enabled=False, passive_only=True.
+    - Backward compatibility: absent scope still normalizes to allowed_domains=[],
+      denied_domains=[], active_scan_enabled=True, passive_only=False,
+      rate_limit=None. Existing pre-Epic-14 projects therefore keep legacy active
+      opt-in behavior until an explicit project scope is set.
+    - CollectionRunner reads scope once per scan, records it in report['scope'],
+      and records decisions in report['scope_guard'] for traceability. Active
+      opt-in/live/external phases are checked before launch: security,
+      subdomains, certificate, openapi, historical, dns, emails, employees, ct,
+      asn_intel, osv, katana, screenshot, and nuclei. Base/passive collection
+      phases remain unblocked in v1 to preserve the existing pipeline.
+    - Blocked active phases are represented as ordinary phase results with
+      status='Skipped' and reason='scope guard: ...', so scan_diff/timeline and
+      asset/finding lifecycle treat them as "not run", not as disappeared data.
+    - Nuclei is now traceable as phases.nuclei when it runs or when Scope Guard
+      skips it; Findings lifecycle considers nuclei in-scope only after a real
+      successful nuclei phase when that phase record is present.
+
+  TESTS:
+    - tests/test_scope_guard.py covers defaults, exact/wildcard matching,
+      deny-before-allow, passive_only, active_scan_enabled, and out-of-scope
+      host blocking.
+    - tests/test_project.py covers scope persistence, clearing, normalization,
+      and survival across record_scan().
+    - tests/test_collection_runner.py covers legacy missing-scope behavior,
+      skipped active phases with base pipeline preserved, and nuclei skipping
+      before invoking the external runner.
+
+  VERIFICATION:
+    - Targeted pytest for scope/project/collection/monitor is green.
+    - Full ruff is clean; full pytest is green (1428 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+==============================================================================

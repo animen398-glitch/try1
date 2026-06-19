@@ -58,6 +58,7 @@ from core.llm_summary import generate_narrative as generate_llm_narrative
 from core.project import ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
+from core.scope_guard import active_phase_decision
 from core.screenshot import ScreenshotCapturer
 from core.screenshot import select_targets as select_screenshot_targets
 from core.subdomain_scanner import SubdomainScanner
@@ -223,6 +224,19 @@ class CollectionRunner:
 
     # ── pipeline ─────────────────────────────────────────────────────────────
 
+    def _scope_skip_active(self, report: Dict, phase: str, url: str) -> Optional[Dict]:
+        """Return a Skipped phase if Scope Guard blocks this active phase."""
+        decision = active_phase_decision(phase, url, report.get('scope'))
+        if decision.allowed:
+            return None
+        reason = f'scope guard: {decision.reason}'
+        entry = decision.as_dict()
+        entry['reason'] = reason
+        report.setdefault('scope_guard', {}).setdefault(
+            'skipped_active_phases', []).append(entry)
+        self._log(f'  {phase} - skipped ({reason})')
+        return {'status': 'Skipped', 'reason': reason, 'scope_guard': entry}
+
     def run(self, url: str, output_base: str) -> Dict:
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
@@ -236,6 +250,7 @@ class CollectionRunner:
         # internal layout is unchanged, so every existing reader keeps working.
         project = ProjectStore(output_base).get_or_create(url)
         scan_dir = project.start_scan(stamp)
+        scope = project.get_scope()
 
         report: Dict = {
             'url': url,
@@ -244,6 +259,11 @@ class CollectionRunner:
             'started_at': datetime.now().isoformat(timespec='seconds'),
             'project_dir': str(scan_dir),       # backward-compatible: scan dir
             'project_root': str(project.root),
+            'scope': scope,
+            'scope_guard': {
+                'rate_limit': scope.get('rate_limit'),
+                'skipped_active_phases': [],
+            },
             'phases': {},
         }
 
@@ -288,12 +308,15 @@ class CollectionRunner:
         # maps, reachable GraphQL endpoints. Feeds the risk engine (source-map
         # leaks + GraphQL introspection) and the attack-surface graph.
         if self.security and not self._cancelled(report):
-            report['phases']['security'] = self._phase_security(
+            skipped = self._scope_skip_active(report, 'security', url)
+            report['phases']['security'] = skipped or self._phase_security(
                 url, scan_dir, report)
         # 7b. Subdomain enumeration (opt-in) → feeds the takeover risk signal
         # and the Scan Diff subdomain section.
         if self.subdomains and not self._cancelled(report):
-            report['phases']['subdomains'] = self._phase_subdomains(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'subdomains', url)
+            report['phases']['subdomains'] = skipped or self._phase_subdomains(
+                url, scan_dir)
             # Fold each takeover candidate into the vuln phase as a first-class
             # finding (lifecycle / SLA / triage; counted once via its severity,
             # not a second time as a dedicated risk factor — same pattern as the
@@ -306,41 +329,59 @@ class CollectionRunner:
                 vulns['summary'] = VulnScanner.summarize(vulns['findings'])
         # 7c. TLS certificate (opt-in) → Scan Diff certificate section.
         if self.certificate and not self._cancelled(report):
-            report['phases']['certificate'] = self._phase_certificate(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'certificate', url)
+            report['phases']['certificate'] = skipped or self._phase_certificate(
+                url, scan_dir)
         # 7d. OpenAPI/Swagger discovery (opt-in) → API map for report/surface/diff.
         if self.openapi and not self._cancelled(report):
-            report['phases']['openapi'] = self._phase_openapi(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'openapi', url)
+            report['phases']['openapi'] = skipped or self._phase_openapi(
+                url, scan_dir)
         # 7e. Historical URL intelligence (opt-in) → archived URLs classified.
         if self.historical and not self._cancelled(report):
-            report['phases']['historical'] = self._phase_historical(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'historical', url)
+            report['phases']['historical'] = skipped or self._phase_historical(
+                url, scan_dir)
         # 7f. DNS intelligence (opt-in) → records + email-auth; findings fold
         # into the vuln phase so the risk engine accounts for them.
         if self.dns and not self._cancelled(report):
-            report['phases']['dns'] = self._phase_dns(url, scan_dir, report)
+            skipped = self._scope_skip_active(report, 'dns', url)
+            report['phases']['dns'] = skipped or self._phase_dns(
+                url, scan_dir, report)
         # 7g. Email intelligence (opt-in) → harvested + grouped addresses.
         if self.emails and not self._cancelled(report):
-            report['phases']['emails'] = self._phase_emails(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'emails', url)
+            report['phases']['emails'] = skipped or self._phase_emails(
+                url, scan_dir)
         # 7h. Employee intelligence (opt-in) → named people + e-mail scheme.
         if self.employees and not self._cancelled(report):
-            report['phases']['employees'] = self._phase_employees(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'employees', url)
+            report['phases']['employees'] = skipped or self._phase_employees(
+                url, scan_dir)
         # 7i. CT history (opt-in) → certificate-transparency timeline (crt.sh).
         if self.ct and not self._cancelled(report):
-            report['phases']['ct'] = self._phase_ct(url, scan_dir)
+            skipped = self._scope_skip_active(report, 'ct', url)
+            report['phases']['ct'] = skipped or self._phase_ct(url, scan_dir)
         # 7j. Active ASN/netblock recon (opt-in) → CIDR + ASN prefixes +
         # reverse-IP co-hosted hosts (needs the recon-derived ip/asn).
         if self.asn_intel and not self._cancelled(report):
-            report['phases']['asn_intel'] = self._phase_asn_intel(report, scan_dir)
+            skipped = self._scope_skip_active(report, 'asn_intel', url)
+            report['phases']['asn_intel'] = skipped or self._phase_asn_intel(
+                report, scan_dir)
         # 7k. CVE correlation via OSV.dev (opt-in, active) → live advisories per
         # detected JS library; supersedes the bundled dependency-audit table and
         # folds its findings into the vuln phase (so risk/summary account for them).
         if self.osv and not self._cancelled(report):
-            report['phases']['osv'] = self._phase_osv(report, scan_dir)
+            skipped = self._scope_skip_active(report, 'osv', url)
+            report['phases']['osv'] = skipped or self._phase_osv(report, scan_dir)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
-            report['phases']['katana'] = self._phase_katana(url)
+            skipped = self._scope_skip_active(report, 'katana', url)
+            report['phases']['katana'] = skipped or self._phase_katana(url)
         # 8b. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
         if self.screenshots and not self._cancelled(report):
-            report['phases']['screenshot'] = self._phase_screenshot(
+            skipped = self._scope_skip_active(report, 'screenshot', url)
+            report['phases']['screenshot'] = skipped or self._phase_screenshot(
                 url, scan_dir, report)
         # 9. Analyzer plugins (user-supplied) — see the whole report; their
         # findings fold into vulns so the summary/exec/graph reflect them.
@@ -545,7 +586,8 @@ class CollectionRunner:
             findings = VulnScanner().scan(recon, {}, cookies)
             # Optionally enrich with external nuclei findings (same shape), so
             # summary / executive summary / attack surface all account for them.
-            nuclei_count = self._merge_nuclei(report.get('url', ''), findings)
+            nuclei_count = self._merge_nuclei(report.get('url', ''), findings,
+                                             report)
             summary = VulnScanner.summarize(findings)
             if nuclei_count:
                 summary['nuclei'] = nuclei_count
@@ -1133,6 +1175,9 @@ class CollectionRunner:
                 if s == 'dns':
                     return phase_ok('dns')
                 if s == 'nuclei':
+                    p = phases.get('nuclei')
+                    if isinstance(p, dict):
+                        return p.get('status') == 'Success'
                     return bool(self.nuclei) and phase_ok('vulns')
                 if s == 'dependency-audit':
                     return phase_ok('recon')
@@ -1745,7 +1790,8 @@ class CollectionRunner:
             self._log(f'  Katana failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
-    def _merge_nuclei(self, url: str, findings: list) -> int:
+    def _merge_nuclei(self, url: str, findings: list,
+                      report: Optional[Dict] = None) -> int:
         """Run nuclei (if enabled + installed) and append its findings in place.
 
         Returns the number of nuclei findings added. Opt-in and best-effort: a
@@ -1754,6 +1800,11 @@ class CollectionRunner:
         """
         if not self.nuclei or not url:
             return 0
+        if report is not None:
+            skipped = self._scope_skip_active(report, 'nuclei', url)
+            if skipped:
+                report.setdefault('phases', {})['nuclei'] = skipped
+                return 0
         if not NucleiRunner.available():
             self._log('  nuclei — пропущено (бинарь не установлен)')
             return 0
@@ -1762,6 +1813,11 @@ class CollectionRunner:
         data = runner.scan(url)
         extra = data.get('findings', [])
         findings.extend(extra)
+        if report is not None:
+            report.setdefault('phases', {})['nuclei'] = {
+                'status': data.get('status', 'Success'),
+                'data': {'findings_added': len(extra)},
+            }
         return len(extra)
 
     def _attach_llm_narrative(self, summary: Dict) -> None:

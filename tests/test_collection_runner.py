@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from core.collection_runner import CollectionRunner, _domain_slug
+from core.project import ProjectStore
 
 
 def test_domain_slug_normalizes():
@@ -731,6 +732,98 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     assert meta['latest_scan']['id'] == result['scan_id']
     assert result['project_scan']['status'] == 'Success'
     assert (project_root / 'history' / f"{result['scan_id']}.json").exists()
+
+
+def _stub_base_run(monkeypatch, runner):
+    """Offline stubs for the always-on collection phases."""
+    monkeypatch.setattr(runner, '_phase_recon',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'ip': '1.2.3.4', 'cms': []}})
+    monkeypatch.setattr(runner, '_phase_api',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'keys_found': 0}})
+    monkeypatch.setattr(runner, '_phase_capture',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'pages_captured': 0, 'errors': []}})
+    monkeypatch.setattr(runner, '_phase_images',
+                        lambda url, d: {'status': 'Skipped'})
+    monkeypatch.setattr(runner, '_phase_cookies',
+                        lambda url, d: {'status': 'Success',
+                                        'data': {'total': 0, 'weak': 0}})
+    monkeypatch.setattr(runner, '_phase_vulns',
+                        lambda report, d: {'status': 'Success',
+                                           'summary': {'high': 0, 'medium': 0,
+                                                       'info': 0, 'risk_score': 0},
+                                           'findings': []})
+
+
+def test_run_without_scope_keeps_legacy_active_opt_in_behavior(tmp_path, monkeypatch):
+    ProjectStore(tmp_path).get_or_create('https://example.com').set_scope(None)
+    r = CollectionRunner(subdomains=True)
+    _stub_base_run(monkeypatch, r)
+    called = {'subdomains': 0}
+
+    def subdomains(url, scan_dir):
+        called['subdomains'] += 1
+        return {'status': 'Success', 'data': {'summary': {}, 'results': []}}
+
+    monkeypatch.setattr(r, '_phase_subdomains', subdomains)
+
+    result = r.run('https://example.com', str(tmp_path))
+
+    assert called['subdomains'] == 1
+    assert result['phases']['subdomains']['status'] == 'Success'
+    assert result['scope']['active_scan_enabled'] is True
+
+
+def test_scope_guard_skips_active_phases_but_not_base_pipeline(tmp_path,
+                                                               monkeypatch):
+    project = ProjectStore(tmp_path).get_or_create('https://example.com')
+    project.set_scope({
+        'allowed_domains': ['example.com'],
+        'active_scan_enabled': False,
+        'rate_limit': '1 rps',
+    })
+    r = CollectionRunner(subdomains=True, security=True, certificate=True,
+                         nuclei=True)
+    _stub_base_run(monkeypatch, r)
+    monkeypatch.setattr(r, '_phase_subdomains',
+                        lambda url, d: (_ for _ in ()).throw(
+                            AssertionError('subdomains must be scoped out')))
+    monkeypatch.setattr(r, '_phase_security',
+                        lambda url, d, report: (_ for _ in ()).throw(
+                            AssertionError('security must be scoped out')))
+    monkeypatch.setattr(r, '_phase_certificate',
+                        lambda url, d: (_ for _ in ()).throw(
+                            AssertionError('certificate must be scoped out')))
+
+    result = r.run('https://example.com', str(tmp_path))
+
+    assert result['phases']['recon']['status'] == 'Success'
+    assert result['phases']['subdomains']['status'] == 'Skipped'
+    assert result['phases']['security']['status'] == 'Skipped'
+    assert result['phases']['certificate']['status'] == 'Skipped'
+    assert result['scope_guard']['rate_limit'] == '1 rps'
+    skipped = {p['phase'] for p in result['scope_guard']['skipped_active_phases']}
+    assert {'subdomains', 'security', 'certificate'} <= skipped
+
+
+def test_scope_guard_skips_nuclei_before_external_runner():
+    r = CollectionRunner(nuclei=True)
+    report = {
+        'url': 'https://example.com',
+        'scope': {'active_scan_enabled': False},
+        'scope_guard': {'skipped_active_phases': []},
+        'phases': {},
+    }
+    findings = []
+
+    added = r._merge_nuclei('https://example.com', findings, report)
+
+    assert added == 0
+    assert findings == []
+    assert report['phases']['nuclei']['status'] == 'Skipped'
+    assert report['scope_guard']['skipped_active_phases'][0]['phase'] == 'nuclei'
 
 
 def test_render_html_escapes_values():

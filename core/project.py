@@ -68,10 +68,11 @@ class Project:
         return self
 
     def _new_metadata(self) -> Dict:
+        from core.scope_guard import default_scope_for_target
         now = datetime.now().isoformat(timespec='seconds')
         return {'slug': self.slug, 'url': self.url, 'created_at': now,
                 'updated_at': now, 'scan_count': 0, 'latest_scan': None,
-                'scans': []}
+                'scans': [], 'scope': default_scope_for_target(self.url)}
 
     # ---------------------------------------------------------------- metadata
     def load_metadata(self) -> Dict:
@@ -217,6 +218,33 @@ class Project:
             meta['company'] = str(company).strip()
         else:
             meta.pop('company', None)
+        meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
+        self._write_metadata(meta)
+
+    # ---------------------------------------------------------------- scope
+    def get_scope(self) -> Dict:
+        """The project's Scope Guard config.
+
+        Missing ``scope`` is normalized to a legacy-safe default: no explicit
+        allowlist/denylist, active opt-in phases enabled, and no rate-limit
+        enforcement. Callers can still surface this default explicitly in reports.
+        """
+        from core.scope_guard import normalize_scope
+        return normalize_scope(self.load_metadata().get('scope'))
+
+    def set_scope(self, config: Optional[Dict]) -> None:
+        """Store (or, with ``None``, clear) the project Scope Guard config.
+
+        Read-modify-write so it composes with ``record_scan``/``set_monitor`` and
+        keeps ``Projects/<slug>/metadata.json`` as the only project-level file.
+        """
+        from core.scope_guard import normalize_scope
+        self.ensure()
+        meta = self.load_metadata()
+        if config is None:
+            meta.pop('scope', None)
+        else:
+            meta['scope'] = normalize_scope(config)
         meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
         self._write_metadata(meta)
 
