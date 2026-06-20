@@ -263,7 +263,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 
 **Базовая зрелость:** платформа-анализатор + Full Collection + risk-движок +
 Scan Diff + проекты (`Projects/<домен>/`) + ASM 2.0 (F1–F6) + Asset Inventory.
-Тесты: 1214 collected (offline/headless; web-live skip без httpx).
+Тесты: 1506 collected (offline/headless; web-live skip без httpx).
 
 **Сделано до эпика (legacy #1–#13):** OSINT-бандл #13 (dns_intel, email_intel,
 employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **заменён**
