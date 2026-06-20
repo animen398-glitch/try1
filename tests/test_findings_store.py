@@ -75,6 +75,48 @@ def test_upsert_stores_evidence_as_json(tmp_path):
 
 # ── set_status + events ───────────────────────────────────────────────────────
 
+def test_sync_persists_finding_evidence_refs(tmp_path):
+    s = _store(tmp_path)
+    raw = {
+        'title': 'Leaked secret',
+        'severity': 'High',
+        'source': 'secret',
+        'location': 'https://x.com',
+        'evidence_refs': [{
+            'artifact_id': 'sha256:abc',
+            'path': 'api/api_keys.json',
+            'phase': 'api',
+        }],
+    }
+
+    s.sync('proj', 'scan-1', [raw])
+    row = s.list_findings('proj')[0]
+
+    assert row['evidence']['evidence_refs'] == raw['evidence_refs']
+
+
+def test_sync_refreshes_existing_finding_evidence_refs(tmp_path):
+    s = _store(tmp_path)
+    base = {
+        'title': 'Leaked secret',
+        'severity': 'High',
+        'source': 'secret',
+        'location': 'https://x.com',
+    }
+    s.sync('proj', 'scan-1', [{**base, 'evidence_refs': [{
+        'artifact_id': 'sha256:old', 'path': 'api/api_keys.json',
+        'phase': 'api',
+    }]}])
+
+    s.sync('proj', 'scan-2', [{**base, 'evidence_refs': [{
+        'artifact_id': 'sha256:new', 'path': 'api/api_keys.json',
+        'phase': 'api',
+    }]}])
+    row = s.list_findings('proj')[0]
+
+    assert row['evidence']['evidence_refs'][0]['artifact_id'] == 'sha256:new'
+
+
 def test_set_status_logs_transition(tmp_path):
     s = _store(tmp_path)
     f = _finding()

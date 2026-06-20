@@ -167,6 +167,7 @@ class Finding:
     description: str = ''
     impact: str = ''
     remediation: str = ''
+    evidence_refs: List[Dict[str, str]] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -179,6 +180,8 @@ class Finding:
                     'detail': self.detail, 'discriminator': self.discriminator,
                     'description': self.description, 'impact': self.impact,
                     'remediation': self.remediation}
+        if self.evidence_refs:
+            evidence['evidence_refs'] = self.evidence_refs
         # Keep the cross-scanner reference list only when several tools agree.
         if len(self.sources) > 1:
             evidence['sources'] = self.sources
@@ -193,6 +196,35 @@ def _knowledge(raw: Dict) -> Dict[str, str]:
     """Producer-supplied description/impact/remediation (optional, F-O2)."""
     return {k: str(raw.get(k) or '') for k in ('description', 'impact',
                                                'remediation')}
+
+
+def _evidence_refs(raw: Dict) -> List[Dict[str, str]]:
+    """Sanitize report-level evidence_refs before storing them.
+
+    Evidence refs point to manifest artifacts, not scanner payload. Keep only
+    flat string fields so the stored finding evidence stays compact and safe.
+    """
+    refs = raw.get('evidence_refs')
+    if not isinstance(refs, list):
+        return []
+    out: List[Dict[str, str]] = []
+    seen: set = set()
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        clean = {
+            key: str(ref.get(key) or '').strip()
+            for key in ('artifact_id', 'path', 'phase')
+        }
+        clean = {k: v for k, v in clean.items() if v}
+        if not clean.get('artifact_id') or not clean.get('path'):
+            continue
+        ident = (clean.get('artifact_id'), clean.get('path'), clean.get('phase'))
+        if ident in seen:
+            continue
+        seen.add(ident)
+        out.append(clean)
+    return out
 
 
 def from_raw(raw: Dict) -> Finding:
@@ -215,6 +247,7 @@ def from_raw(raw: Dict) -> Finding:
             source=str(raw.get('source', '')),
             detail=str(raw.get('detail', '')),
             sources=_sources_of(raw),
+            evidence_refs=_evidence_refs(raw),
             **_knowledge(raw),
         )
     category = _category(raw)
@@ -228,6 +261,7 @@ def from_raw(raw: Dict) -> Finding:
         source=str(raw.get('source', '')),
         detail=str(raw.get('detail', '')),
         sources=_sources_of(raw),
+        evidence_refs=_evidence_refs(raw),
         **_knowledge(raw),
     )
 

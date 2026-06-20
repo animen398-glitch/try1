@@ -60,6 +60,28 @@ def test_knowledge_fields_absent_by_default():
 
 # ── rule_id stability (the identity property) ────────────────────────────────
 
+def test_evidence_refs_carried_into_store_evidence_safely():
+    raw = {
+        'title': 'Leaked secret',
+        'severity': 'High',
+        'source': 'secret',
+        'evidence_refs': [
+            {'artifact_id': 'sha256:abc', 'path': 'api/api_keys.json',
+             'phase': 'api', 'extra': {'nested': 'drop'}},
+            {'artifact_id': '', 'path': 'bad.json', 'phase': 'api'},
+            'not-a-ref',
+        ],
+    }
+
+    ev = fa.from_raw(raw).to_store()['evidence']
+
+    assert ev['evidence_refs'] == [{
+        'artifact_id': 'sha256:abc',
+        'path': 'api/api_keys.json',
+        'phase': 'api',
+    }]
+
+
 def test_volatile_counts_do_not_fork_identity():
     a = fa.from_raw({'severity': 'Medium', 'title': 'Missing security headers (3)',
                      'detail': 'csp'})

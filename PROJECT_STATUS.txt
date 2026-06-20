@@ -3209,6 +3209,43 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Finding Evidence Persistence v1
+==============================================================================
+
+  FINDING EVIDENCE PERSISTENCE v1:
+    - Existing report-level finding evidence_refs now survive the full lifecycle:
+      report['phases']['vulns']['findings'][i]['evidence_refs']
+        -> findings_adapter.Finding.evidence_refs
+        -> Finding.to_store()['evidence']['evidence_refs']
+        -> FindingsStore.evidence JSON column.
+    - No SQLite migration was needed: findings.evidence is already the masked JSON
+      evidence container and evidence_refs are additive metadata.
+    - Adapter sanitizes refs before persistence: only flat artifact_id/path/phase
+      strings are kept; malformed refs and extra nested payload are dropped.
+    - Store refresh keeps refs current on recurring findings: a repeated finding
+      updates the evidence JSON with the latest manifest artifact hash/path.
+
+  COMPATIBILITY:
+    - Old findings without evidence_refs still read exactly as before.
+    - GUI/web/export surfaces that already read FindingsStore evidence can use
+      refs without schema changes; no GUI changes were made.
+
+  TESTS:
+    - tests/test_findings_adapter.py covers safe evidence_refs carry-through.
+    - tests/test_findings_store.py covers sync persistence and recurring-finding
+      evidence_refs refresh.
+    - Targeted collection/evidence tests confirm the report -> refs path remains
+      compatible with Evidence Manifest v1.
+
+  VERIFICATION:
+    - Targeted pytest for findings_adapter/findings_store/collection/evidence is
+      green.
+    - Full ruff is clean; full pytest is green (1441 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Scope & Evidence Foundation: Evidence Integrity Hook
 ==============================================================================
 
