@@ -1667,9 +1667,32 @@ process exit-code; опц. `--sarif-out` пишет SARIF активных на�
 без baseline = PASS. Покрыто `test_ci_gate`(7: пороги/exit/summary/non-dict/empty)
 + `test_monitor_cli`(+4: single-scan PASS, takeover→critical FAIL, scan вызывает
 run_fn, SARIF записан). Коммиты c42e70c (F0+F1) / 041da8c (F2) / ba7cbf4 (F3) /
-28cf617 (F4). **Wave 2 (GitHub Issues, compliance-маппинг) отложен** (нужны внешние
-интеграции/токены — за пределами безопасной волны; память
-`project-epic16-integrations-reporting`).
+28cf617 (F4).
+
+**EPIC 16 — wave 2: GitHub Issues push (B2) — `[ЗАКРЫТ]`.** Открывает GitHub-issue
+на каждую активную находку (триаж/закрытие в трекере). **Create-only и
+идемпотентно**: маппинг `находка→issue` = событие `ISSUE_CREATED` в **существующей**
+таблице `finding_events` (`note={number,url}`) — без новой таблицы, без schema-bump;
+переоткрытая находка (новый REOPENED-эпизод) снова получает issue; авто-закрытие при
+FIXED осознанно отложено. `core/github_issues.py` (pure-логика + инъектируемый
+urllib-транспорт `_api_request`, зеркало `alerts.py`): `issue_title`/`issue_body`
+рендерятся из `finding_knowledge` (то же обогащение, что SARIF/CSV);
+`GitHubIssueClient.create_issue` (POST `/repos/{owner}/{repo}/issues`, 2xx=успех);
+`sync_findings(store, project, config, *, client)` гейтит по `min_severity` (дефолт
+high), скипает уже-отслеженные (`untracked_for_issue` — episode-aware read), пишет
+маппинг **только после** успешного создания (упавший API оставляет находку
+неотслеженной → ретрай). `findings_store`: тип события `ISSUE_CREATED` +
+`record_issue`/`untracked_for_issue`. CLI `monitor_cli issues <url> [--min-severity]`;
+дефолт `settings.json "github": {enabled:False}` (токен вне project-metadata, как
+`alerts`). Решения пользователя: create-only/идемпотентно, min_severity=high,
+**только core+CLI** (GUI/web отложены — `feedback-internals-first-no-gui`).
+Offline-first, opt-in, без новых зависимостей. Покрыто `test_github_issues`(11:
+рендер/гейт/build_client/idempotent-sync/min-sev/error-leaves-untracked/non-2xx)
++ `test_findings_store`(+3: record+untracked/reopen-reset/empty) +
+`test_monitor_cli`(+1: cmd_issues через инъектируемый client). Коммит a5a1cdf.
+**Остаток wave 2 (отложен):** A3 compliance-маппинг (OWASP/CWE) отчёт; опц.
+GitHub auto-close при FIXED; GUI/web-поверхности sync. Память
+`project-epic16-integrations-reporting`.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

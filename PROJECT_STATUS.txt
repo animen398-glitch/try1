@@ -3804,3 +3804,70 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     - Commits: c42e70c (F0+F1), 041da8c (F2), ba7cbf4 (F3), 28cf617 (F4).
 
 ==============================================================================
+  2026-06-20 - EPIC 16 wave 2: GitHub Issues push (B2)
+==============================================================================
+
+  CONTEXT:
+    - Wave 2 of EPIC 16, started on the user's explicit go-ahead. The deferred
+      piece from wave 1: push findings to a real issue tracker. First (and only,
+      for this increment) tracker = GitHub Issues. Same invariants as wave 1:
+      offline-first, opt-in, urllib only (no new deps), logic in core/, reuse the
+      finding_knowledge SSOT, alerts.py channel pattern (injectable transport).
+    - Decisions (AskUserQuestion): create-only + idempotent (NO auto-close on
+      FIXED yet), min_severity default = high, core + CLI only (GUI/web deferred
+      per feedback-internals-first-no-gui).
+
+  THE finding -> issue MAPPING (the one persistence touch-point):
+    - An ISSUE_CREATED event in the EXISTING finding_events table, with the issue
+      number/url in the note column (json {number,url}). NO new table, NO schema
+      bump (SCHEMA_VERSION stays 2; EVENT_TYPES is a validation tuple, type is a
+      TEXT column).
+    - FindingsStore.record_issue(project, fid, number, url): logs ISSUE_CREATED,
+      called ONLY after a successful create (a failed API call leaves the finding
+      untracked, so it retries next run).
+    - FindingsStore.untracked_for_issue(project, ids): read-only; returns the ids
+      whose latest ISSUE_CREATED predates their latest REOPENED (or is absent) -
+      same episode-aware semantics as the one-shot alert guard, so a fixed finding
+      that reappears gets a fresh issue.
+
+  core/github_issues.py (pure logic + injectable urllib transport):
+    - _api_request(method, url, token, data): module-level GitHub REST v3 call
+      (Authorization: token, Accept: vnd.github+json), stubbed in tests.
+    - issue_title / issue_body: rendered from finding_knowledge.describe (same
+      description/impact/remediation enrichment as the SARIF / CSV exports);
+      issue_labels adds the severity to the configured base labels.
+    - GitHubIssueClient.create_issue(title, body, labels): POST /repos/{owner}/
+      {repo}/issues; any 2xx is success, non-2xx raises.
+    - build_client(config): returns a client only when enabled + token/owner/repo.
+    - sync_findings(store, project, config, *, client): active findings at/above
+      min_severity (default high) -> untracked subset -> create issue -> record
+      mapping. Returns {enabled, created, skipped, errors, total, reason?}; one
+      API failure is captured in errors and never blocks the rest.
+
+  WIRING:
+    - monitor_cli issues <url> [--min-severity]: cmd_issues resolves the project
+      then delegates to sync_findings over the FindingsStore (findings_store /
+      client injectable for tests). Prints opened / already-tracked / error counts.
+    - core/config.py DEFAULT_SETTINGS: "github": {"enabled": False} (token stays
+      out of project metadata, like "alerts").
+
+  DEFERRED (rest of wave 2): A3 OWASP/CWE compliance mapping report; optional
+    GitHub auto-close when a finding is FIXED; GUI/web surfaces for issue sync.
+
+  TESTS:
+    - tests/test_github_issues.py (11): title/body from catalog, labels, min gate,
+      build_client completeness, disabled/not-configured no-ops, create-then-
+      idempotent (re-run = skipped, no second API call), min-severity filter,
+      error leaves the finding untracked, non-2xx raises.
+    - tests/test_findings_store.py (+3): record_issue + untracked_for_issue,
+      reopen reset, empty.
+    - tests/test_monitor_cli.py (+1): cmd_issues via an injected client.
+
+  VERIFICATION:
+    - Targeted pytest (github_issues / findings_store / monitor_cli) is green;
+      ruff clean on the changed files; CLI smoke with a disabled config degrades
+      cleanly ("sync skipped: disabled").
+    - Full pytest is green (EXIT 0).
+    - Commit: a5a1cdf.
+
+==============================================================================
