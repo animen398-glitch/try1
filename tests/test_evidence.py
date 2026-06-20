@@ -5,6 +5,7 @@ from core.evidence import (
     attach_finding_refs,
     audit_scan,
     build_manifest,
+    evidence_refs_for_finding,
     verify_manifest,
     write_manifest,
 )
@@ -61,6 +62,57 @@ def test_attach_finding_refs_maps_sources_to_existing_artifacts(tmp_path):
     refs = report["phases"]["vulns"]["findings"][0]["evidence_refs"]
     assert refs[0]["path"] == "api/api_keys.json"
     assert "evidence_refs" not in report["phases"]["vulns"]["findings"][1]
+
+
+def test_evidence_refs_cover_native_cookie_and_header_findings(tmp_path):
+    scan = tmp_path / "scan"
+    (scan / "recon").mkdir(parents=True)
+    (scan / "security").mkdir()
+    (scan / "recon" / "recon.json").write_text("{}", encoding="utf-8")
+    (scan / "security" / "cookies.json").write_text("{}", encoding="utf-8")
+    (scan / "security" / "vulns.json").write_text("{}", encoding="utf-8")
+    manifest = build_manifest(scan)
+
+    cookie_refs = evidence_refs_for_finding({
+        "title": "Weakly protected cookie: sid",
+        "category": "cookie",
+    }, manifest)
+    header_refs = evidence_refs_for_finding({
+        "title": "Weak Content-Security-Policy",
+        "source": "vuln",
+    }, manifest)
+
+    assert [r["path"] for r in cookie_refs] == [
+        "security/cookies.json", "security/vulns.json"]
+    assert [r["path"] for r in header_refs] == [
+        "recon/recon.json", "security/vulns.json"]
+
+
+def test_evidence_refs_cover_security_audit_categories(tmp_path):
+    scan = tmp_path / "scan"
+    (scan / "security").mkdir(parents=True)
+    (scan / "security" / "audit.json").write_text("{}", encoding="utf-8")
+    manifest = build_manifest(scan)
+
+    smap = evidence_refs_for_finding({"category": "sourcemap"}, manifest)
+    gql = evidence_refs_for_finding({"category": "graphql"}, manifest)
+
+    assert smap[0]["path"] == "security/audit.json"
+    assert gql[0]["path"] == "security/audit.json"
+
+
+def test_evidence_refs_do_not_invent_missing_artifacts(tmp_path):
+    scan = tmp_path / "scan"
+    (scan / "security").mkdir(parents=True)
+    (scan / "security" / "vulns.json").write_text("{}", encoding="utf-8")
+    manifest = build_manifest(scan)
+
+    refs = evidence_refs_for_finding({
+        "title": "Weakly protected cookie: sid",
+        "category": "cookie",
+    }, manifest)
+
+    assert [r["path"] for r in refs] == ["security/vulns.json"]
 
 
 def test_manifest_file_is_valid_json(tmp_path):

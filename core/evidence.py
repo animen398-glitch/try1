@@ -26,6 +26,27 @@ _SOURCE_ARTIFACTS = {
     "nuclei": ("security/vulns.json", "recon/osv.json"),
     "osv": ("recon/osv.json", "security/vulns.json"),
 }
+_CATEGORY_ARTIFACTS = {
+    "cookie": ("security/cookies.json", "security/vulns.json"),
+    "dependency": ("recon/recon.json", "security/vulns.json"),
+    "graphql": ("security/audit.json",),
+    "header": ("recon/recon.json", "security/vulns.json"),
+    "sourcemap": ("security/audit.json",),
+    "tech": ("recon/recon.json",),
+    "transport": ("recon/recon.json", "security/vulns.json"),
+}
+_TITLE_ARTIFACTS = (
+    ("cookie", ("security/cookies.json", "security/vulns.json")),
+    ("content-security-policy", ("recon/recon.json", "security/vulns.json")),
+    ("csp", ("recon/recon.json", "security/vulns.json")),
+    ("hsts", ("recon/recon.json", "security/vulns.json")),
+    ("referrer-policy", ("recon/recon.json", "security/vulns.json")),
+    ("x-frame-options", ("recon/recon.json", "security/vulns.json")),
+    ("security header", ("recon/recon.json", "security/vulns.json")),
+    ("plain http", ("recon/recon.json", "security/vulns.json")),
+    ("cms/stack", ("recon/recon.json",)),
+    ("framework", ("recon/recon.json",)),
+)
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -209,9 +230,21 @@ def evidence_refs_for_finding(finding: Dict[str, Any],
                               manifest: Dict[str, Any]) -> list[Dict[str, str]]:
     """Map a raw finding to existing manifest artifacts by its source."""
     source = str(finding.get("source") or "").lower()
+    category = str(finding.get("category") or "").lower()
+    title = str(finding.get("title") or "").lower()
     index = artifact_index(manifest)
     refs = []
-    for path in _SOURCE_ARTIFACTS.get(source, ()):
+    paths: list[str] = []
+    for group in (
+        _SOURCE_ARTIFACTS.get(source, ()),
+        _CATEGORY_ARTIFACTS.get(category, ()),
+        next((v for k, v in _TITLE_ARTIFACTS if k in title), ()),
+        ("security/vulns.json",) if source == "vuln" else (),
+    ):
+        for path in group:
+            if path not in paths:
+                paths.append(path)
+    for path in paths:
         artifact = index.get(path)
         if artifact:
             refs.append({

@@ -3209,6 +3209,46 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Evidence Refs Coverage Expansion
+==============================================================================
+
+  EVIDENCE REFS COVERAGE EXPANSION (E14.6):
+    - core/evidence.py now maps findings to artifacts by source, category, and
+      title fallback. Refs are still attached only when the artifact exists in
+      evidence_manifest.json.
+    - Added coverage for native risk findings that previously had source='vuln'
+      or no precise source:
+        * cookie findings -> security/cookies.json + security/vulns.json
+        * security header / CSP / HSTS / XFO / Referrer-Policy findings ->
+          recon/recon.json + security/vulns.json
+        * plain HTTP / transport findings -> recon/recon.json + security/vulns.json
+        * tech/dependency-like findings -> recon/recon.json
+        * sourcemap/graphql categories -> security/audit.json
+    - Existing source mappings remain: secret, secret-audit, security-audit, dns,
+      subdomain-active, dependency-audit, nuclei, osv.
+    - No new scanners and no duplicate artifact files were added.
+
+  COMPATIBILITY:
+    - evidence_refs stay flat (artifact_id/path/phase).
+    - Missing artifacts do not produce fake refs; old reports/findings are still
+      valid.
+
+  TESTS:
+    - tests/test_evidence.py covers native cookie/header refs, security-audit
+      category refs, and missing-artifact behavior.
+
+  VERIFICATION:
+    - Targeted pytest for evidence/collection/findings_adapter/findings_store is
+      green.
+    - Full ruff is clean; full pytest is green (1454 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+  NEXT:
+    - E14.7 Report / Export Traceability.
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Scope & Evidence Foundation: Scope CLI / Project Scope Management
 ==============================================================================
 
