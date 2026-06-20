@@ -166,6 +166,25 @@ class EmailChannel:
         return {'channel': self.name, 'status': 'ok'}
 
 
+class WebhookChannel:
+    """Generic JSON webhook (EPIC 16 F3) — the universal outbound primitive.
+
+    POSTs a structured JSON envelope to any HTTP endpoint, so Slack/Teams incoming
+    webhooks (which read ``text``), Zapier/n8n/Make and bespoke systems all consume
+    it. urllib only, no new dependency; any 2xx is success."""
+    name = 'webhook'
+
+    def __init__(self, url: str):
+        self.url = url
+
+    def send(self, subject: str, body: str) -> Dict:
+        payload = json.dumps({'text': f'{subject}\n\n{body}',
+                              'subject': subject, 'body': body}).encode('utf-8')
+        status = _http_post(self.url, payload, {'Content-Type': 'application/json'})
+        return {'channel': self.name,
+                'status': 'ok' if 200 <= status < 300 else f'http {status}'}
+
+
 def build_channels(config: Dict) -> List:
     """Construct the channels whose required fields are present in ``config``."""
     channels: List = []
@@ -178,6 +197,9 @@ def build_channels(config: Dict) -> List:
     em = config.get('email') or {}
     if em.get('host') and em.get('from') and em.get('to'):
         channels.append(EmailChannel(em))
+    wh = config.get('webhook') or {}
+    if wh.get('url'):
+        channels.append(WebhookChannel(wh['url']))
     return channels
 
 

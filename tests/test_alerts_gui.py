@@ -39,11 +39,23 @@ def test_collect_alerts_config_round_trips(qapp, monkeypatch):
     d.alerts_enabled_cb.setChecked(True)
     d._alert_type_cbs['new_secret'].setChecked(True)
     d.alert_dc_webhook.setText('https://hook')
+    d.alert_wh_url.setText('https://generic.hook/path')
     cfg = d._collect_alerts_config()
     assert cfg['enabled'] is True
     assert cfg['types'] == ['new_secret']
     assert cfg['discord'] == {'webhook_url': 'https://hook'}
+    assert cfg['webhook'] == {'url': 'https://generic.hook/path'}   # F3
     assert cfg['email']['port'] == 587   # default carried
+
+
+def test_alerts_tab_populates_webhook_from_settings(qapp, monkeypatch):
+    from core import config
+    monkeypatch.setattr(config, 'load_settings', lambda: {
+        'output_dir': 'x',
+        'alerts': {'webhook': {'url': 'https://generic.hook'}}})
+    from gui.dialogs import SettingsDialog
+    d = SettingsDialog()
+    assert d.alert_wh_url.text() == 'https://generic.hook'
 
 
 def test_test_button_calls_send_test(qapp, monkeypatch):

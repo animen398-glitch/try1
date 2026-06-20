@@ -80,9 +80,39 @@ def test_build_channels_by_present_fields():
         'telegram': {'token': 't', 'chat_id': 'c'},
         'discord': {'webhook_url': 'https://d'},
         'email': {'host': 'h', 'from': 'a@b', 'to': 'c@d'},
+        'webhook': {'url': 'https://hook'},
     }
     names = {c.name for c in alerts.build_channels(cfg)}
-    assert names == {'telegram', 'discord', 'email'}
+    assert names == {'telegram', 'discord', 'email', 'webhook'}
+
+
+def test_build_channels_skips_webhook_without_url():
+    assert all(c.name != 'webhook'
+               for c in alerts.build_channels({'webhook': {}}))
+
+
+def test_webhook_channel_posts_json_envelope(monkeypatch):
+    import json as _json
+    captured = {}
+
+    def _fake(url, data, headers, timeout=10.0):
+        captured['url'] = url
+        captured['payload'] = _json.loads(data.decode('utf-8'))
+        captured['ctype'] = headers.get('Content-Type')
+        return 202   # a 2xx that is neither 200 nor 204
+
+    monkeypatch.setattr(alerts, '_http_post', _fake)
+    res = alerts.WebhookChannel('https://hook').send('Subj', 'Body')
+    assert res == {'channel': 'webhook', 'status': 'ok'}      # any 2xx is ok
+    assert captured['url'] == 'https://hook'
+    assert captured['ctype'] == 'application/json'
+    assert captured['payload'] == {'text': 'Subj\n\nBody',
+                                   'subject': 'Subj', 'body': 'Body'}
+
+
+def test_webhook_channel_non_2xx_status(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 500)
+    assert 'http 500' in alerts.WebhookChannel('https://hook').send('s', 'b')['status']
 
 
 def test_build_channels_skips_incomplete():

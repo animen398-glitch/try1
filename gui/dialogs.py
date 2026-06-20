@@ -231,6 +231,16 @@ class SettingsDialog(QDialog):
         dc_grp.setLayout(dcl)
         layout.addWidget(dc_grp)
 
+        wh = cfg.get('webhook') or {}
+        wh_grp = SectionGroupBox("Webhook (generic)")
+        whl = QVBoxLayout()
+        self.alert_wh_url = QLineEdit(wh.get('url', ''))
+        self.alert_wh_url.setPlaceholderText(
+            "HTTPS endpoint (Slack/Teams/Zapier/n8n/свой) — JSON {text, subject, body}")
+        whl.addWidget(self.alert_wh_url)
+        wh_grp.setLayout(whl)
+        layout.addWidget(wh_grp)
+
         em = cfg.get('email') or {}
         em_grp = SectionGroupBox("Email (SMTP)")
         eml = QVBoxLayout()
@@ -278,6 +288,7 @@ class SettingsDialog(QDialog):
             'telegram': {'token': self.alert_tg_token.text().strip(),
                          'chat_id': self.alert_tg_chat.text().strip()},
             'discord': {'webhook_url': self.alert_dc_webhook.text().strip()},
+            'webhook': {'url': self.alert_wh_url.text().strip()},
             'email': {'host': self.alert_em_host.text().strip(),
                       'port': self.alert_em_port.value(),
                       'username': self.alert_em_user.text().strip(),
