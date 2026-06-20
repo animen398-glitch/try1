@@ -1354,7 +1354,7 @@ risk-числа не тронуты (priority — display). Покрыто `test
 `intelligence_csv` в `test_report_export`(3). **Web-паритет был с EPIC 7
 (`/intelligence`); теперь поверхность есть и в GUI.**
 
-**Advanced Intelligence Framework — MODULE 1: Unified Scan Accuracy — `[В РАБОТЕ]`.**
+**Advanced Intelligence Framework — MODULE 1: Unified Scan Accuracy — `[ЗАКРЫТ]`.**
 Backend-фаза, расширение EPIC 7 (решение пользователя: «расширять, не дублировать» +
 жить в `core/intelligence.py`, НЕ новый `accuracy.py` — память
 `project-advanced-intelligence`). EPIC 7 дал confidence/priority/explanation **только
@@ -1376,9 +1376,11 @@ report (extraction = EPIC 12). `confidence()` отрефакторён на об
 Risk-вердикт НЕ тронут (display-метрики — решение пользователя). Покрыто
 `test_intelligence.py` (+13: per-type confidence_for, build_accuracy rollup,
 unified-поля в build_intelligence). 1227 collected, full suite PASS, ruff чист.
-**Дальше (по полному ТЗ пользователя):** Asset Criticality, Priority deepening,
-Attack Paths (все display-метрики), затем Surfaces (report/GUI/web/CSV) +
-Monitoring/Docs.
+**Все запланированные продолжения закрыты** (отдельными блоками ниже): Asset
+Criticality (EPIC 9), Priority deepening (EPIC 10), Attack Paths (EPIC 11) —
+display-метрики; Surfaces report/web (EPIC 12) + Scan Accuracy GUI+web и
+GUI-хвосты Criticality/Attack Paths/Exposure; Monitoring (EPIC 13). Advanced
+Intelligence имеет полный GUI+web+report+monitoring паритет — MODULE 1 закрыт.
 
 **Advanced Intelligence Framework — EPIC 9: Asset Criticality — `[ЗАКРЫТ]`.**
 Backend+report-фаза (паттерн EPIC 5/7). «Какой актив важнее» (priority = «какую
