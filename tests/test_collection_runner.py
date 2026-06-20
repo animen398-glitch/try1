@@ -3,7 +3,11 @@
 import json
 from pathlib import Path
 
-from core.collection_runner import CollectionRunner, _domain_slug
+from core.collection_runner import (
+    ACTIVE_SCOPE_GUARDED_PHASES,
+    CollectionRunner,
+    _domain_slug,
+)
 from core.project import ProjectStore
 
 
@@ -834,6 +838,71 @@ def test_scope_guard_skips_active_phases_but_not_base_pipeline(tmp_path,
     assert result['scope_guard']['rate_limit'] == '1 rps'
     skipped = {p['phase'] for p in result['scope_guard']['skipped_active_phases']}
     assert {'subdomains', 'security', 'certificate'} <= skipped
+
+
+def test_scope_guard_blocks_all_run_active_phase_callables(tmp_path,
+                                                           monkeypatch):
+    run_flags = {
+        'security': 'security',
+        'subdomains': 'subdomains',
+        'certificate': 'certificate',
+        'openapi': 'openapi',
+        'historical': 'historical',
+        'dns': 'dns',
+        'emails': 'emails',
+        'employees': 'employees',
+        'ct': 'ct',
+        'asn_intel': 'asn_intel',
+        'osv': 'osv',
+        'katana': 'katana',
+        'screenshot': 'screenshots',
+    }
+    assert set(run_flags) < set(ACTIVE_SCOPE_GUARDED_PHASES)
+    assert 'nuclei' in ACTIVE_SCOPE_GUARDED_PHASES
+
+    def run_with_scope(base, scope):
+        project = ProjectStore(base).get_or_create('https://example.com')
+        project.set_scope({'allowed_domains': ['example.com'], **scope})
+        runner = CollectionRunner(**{flag: True for flag in run_flags.values()})
+        _stub_base_run(monkeypatch, runner)
+        called = []
+
+        def blocked(phase):
+            def _boom(*args, **kwargs):
+                called.append(phase)
+                raise AssertionError(f'{phase} must be scoped out')
+            return _boom
+
+        for phase in run_flags:
+            monkeypatch.setattr(runner, f'_phase_{phase}', blocked(phase))
+
+        result = runner.run('https://example.com', str(base))
+        skipped = {
+            item['phase']
+            for item in result['scope_guard']['skipped_active_phases']
+        }
+        return result, skipped, called
+
+    disabled, disabled_skipped, disabled_called = run_with_scope(
+        tmp_path / 'disabled',
+        {'active_scan_enabled': False, 'passive_only': False},
+    )
+    passive, passive_skipped, passive_called = run_with_scope(
+        tmp_path / 'passive',
+        {'active_scan_enabled': True, 'passive_only': True},
+    )
+
+    expected = set(run_flags)
+    assert disabled_called == []
+    assert passive_called == []
+    assert disabled_skipped == expected
+    assert passive_skipped == expected
+    assert all(disabled['phases'][phase]['status'] == 'Skipped'
+               for phase in expected)
+    assert all(passive['phases'][phase]['status'] == 'Skipped'
+               for phase in expected)
+    assert disabled['phases']['recon']['status'] == 'Success'
+    assert passive['phases']['recon']['status'] == 'Success'
 
 
 def test_scope_guard_skips_nuclei_before_external_runner():

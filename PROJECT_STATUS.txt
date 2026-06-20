@@ -3209,6 +3209,44 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Scope Guard Coverage Audit
+==============================================================================
+
+  SCOPE GUARD COVERAGE AUDIT (E14.8):
+    - core/collection_runner.py now exposes ACTIVE_SCOPE_GUARDED_PHASES as the
+      explicit audit registry for active operations guarded by Scope Guard:
+      security, subdomains, certificate, openapi, historical, dns, emails,
+      employees, ct, asn_intel, osv, katana, screenshot, and nuclei.
+    - The runtime guard path is unchanged: active phases still call the existing
+      _scope_skip_active() before their phase callable, and passive/base phases
+      remain unblocked.
+    - No adjacent CLI performs active scanning directly in this increment;
+      scope_cli.py and evidence_cli.py remain metadata/integrity-only wrappers.
+
+  COMPATIBILITY:
+    - CollectionRunner public signatures and report shapes are unchanged.
+    - Missing-scope legacy projects still keep active opt-in behavior.
+    - New safe project defaults still block active phases until explicitly
+      enabled.
+
+  TESTS:
+    - tests/test_collection_runner.py now enables every run-driven active
+      opt-in flag and asserts active_scan_enabled=False and passive_only=True
+      skip all guarded phase callables without invoking them.
+    - The existing nuclei guard test covers the external nuclei path before the
+      runner/binary can be invoked.
+
+  VERIFICATION:
+    - Targeted pytest for collection/scope is green (68 passed).
+    - Full ruff is clean; full pytest is green (1457 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+  NEXT:
+    - E14.9 Evidence Integrity Integration With Monitor/Export.
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Scope & Evidence Foundation: Report / Export Traceability
 ==============================================================================
 

@@ -69,6 +69,24 @@ from core.vuln_scanner import VulnScanner
 from utils.image_processor import ImageExtractor
 
 
+ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
+    'security',
+    'subdomains',
+    'certificate',
+    'openapi',
+    'historical',
+    'dns',
+    'emails',
+    'employees',
+    'ct',
+    'asn_intel',
+    'osv',
+    'katana',
+    'screenshot',
+    'nuclei',
+)
+
+
 def _domain_slug(url: str) -> str:
     """Backward-compatible alias — the canonical slug lives in core.project."""
     return project_slug(url)
