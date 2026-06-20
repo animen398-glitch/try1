@@ -19,6 +19,7 @@ anything rendered or serialized from it — never carries a full leaked key.
 import html
 from typing import Dict, List, Optional
 
+from core.evidence import audit_scan, integrity_warning
 from core.executive_summary import (RISK_COLORS, cert_expiry_status,
                                      is_high_value_secret, parse_cert_date)
 from core.security_headers import SECURITY_HEADER_NAMES
@@ -841,12 +842,27 @@ def write_diff_report(project, id_a: str, id_b: str) -> Dict:
     report_a.setdefault('scan_id', id_a)
     report_b.setdefault('scan_id', id_b)
 
+    integrity = {
+        'a': audit_scan(project.root / 'scans' / id_a),
+        'b': audit_scan(project.root / 'scans' / id_b),
+    }
+    warnings = [
+        w for w in (
+            integrity_warning(integrity['a'], f'scan {id_a}'),
+            integrity_warning(integrity['b'], f'scan {id_b}'),
+        ) if w
+    ]
+    integrity['ok'] = not warnings
+    integrity['warnings'] = warnings
+
     d = diff(report_a, report_b)
+    d['evidence_integrity'] = integrity
     out_dir = project.root / 'reports'
     out_dir.mkdir(parents=True, exist_ok=True)
     html_path = out_dir / f'diff_{id_a}_vs_{id_b}.html'
     html_path.write_text(render_html(d), encoding='utf-8')
-    return {'diff': d, 'html_path': str(html_path), 'line': summarize_line(d)}
+    return {'diff': d, 'html_path': str(html_path), 'line': summarize_line(d),
+            'evidence_integrity': integrity}
 
 
 # ── offline HTML report ──────────────────────────────────────────────────────
@@ -871,6 +887,18 @@ def render_html(d: Dict) -> str:
         f' <span style="color:#888;">→</span> '
         f'{risk_chip(risk.get("level_b"), risk.get("risk_100_b", 0))}</div>'
     )
+
+    integrity = d.get('evidence_integrity')
+    warnings = integrity.get('warnings') if isinstance(integrity, dict) else []
+    if warnings:
+        warn_items = ''.join(f'<li>{e(str(w))}</li>' for w in warnings)
+        banner += (
+            f'<div style="border:1px solid #f0c36d;background:#fff8e1;'
+            f'border-radius:6px;padding:10px 16px;margin:8px 0;'
+            f'font-size:13px;color:#6d4c00;">'
+            f'<b>Evidence integrity warning</b>'
+            f'<ul style="margin:6px 0 0 18px;">{warn_items}</ul></div>'
+        )
 
     def items(lines, color, sign) -> str:
         return ''.join(

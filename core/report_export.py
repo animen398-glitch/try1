@@ -80,6 +80,12 @@ _ACCURACY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('source', 'Source'), ('evidence', 'Evidence'),
 )
 
+_EVIDENCE_INTEGRITY_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('scan_id', 'Scan'), ('status', 'Status'), ('ok', 'OK'),
+    ('checked', 'Checked'), ('missing_count', 'Missing'),
+    ('changed_count', 'Changed'), ('warning', 'Warning'), ('scan_dir', 'Scan Dir'),
+)
+
 
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
@@ -230,6 +236,30 @@ def accuracy_csv(items: Optional[List[Dict]]) -> str:
                      'source': '; '.join(str(s) for s in (it.get('source') or [])),
                      'evidence': '; '.join(str(e) for e in (it.get('evidence') or []))})
     return _rows_to_csv(flat, _ACCURACY_COLUMNS)
+
+
+def evidence_integrity_csv(audits) -> str:
+    """CSV of ``core.evidence.audit_scan`` results for handoff/export.
+
+    The helper is intentionally pure: callers decide which scans to audit and
+    pass the resulting dicts here. Artifact contents are never exported.
+    """
+    from core.evidence import integrity_warning
+    if isinstance(audits, dict):
+        audits = [audits]
+    rows: List[Dict] = []
+    for audit in audits or []:
+        if not isinstance(audit, dict):
+            continue
+        missing = audit.get('missing') if isinstance(audit.get('missing'), list) else []
+        changed = audit.get('changed') if isinstance(audit.get('changed'), list) else []
+        rows.append({
+            **audit,
+            'missing_count': len(missing),
+            'changed_count': len(changed),
+            'warning': integrity_warning(audit) or '',
+        })
+    return _rows_to_csv(rows, _EVIDENCE_INTEGRITY_COLUMNS)
 
 
 def portfolio_csv(portfolio) -> str:

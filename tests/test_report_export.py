@@ -236,6 +236,29 @@ def test_accuracy_csv_empty_is_header_only():
     assert _parse(rx.accuracy_csv(None))[0][0] == 'Confidence'
 
 
+# ── evidence_integrity_csv ───────────────────────────────────────────────────
+
+def test_evidence_integrity_csv_exports_warning_summary():
+    audit = {
+        'scan_id': 's1',
+        'status': 'failed',
+        'ok': False,
+        'checked': 2,
+        'missing': ['api/api_keys.json'],
+        'changed': ['recon/recon.json'],
+        'scan_dir': '/tmp/s1',
+    }
+    table = _parse(rx.evidence_integrity_csv(audit))
+    row = dict(zip(table[0], table[1]))
+
+    assert table[0] == ['Scan', 'Status', 'OK', 'Checked', 'Missing',
+                        'Changed', 'Warning', 'Scan Dir']
+    assert row['Scan'] == 's1'
+    assert row['Missing'] == '1'
+    assert row['Changed'] == '1'
+    assert 'failed' in row['Warning']
+
+
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
 def test_portfolio_csv_from_full_dict():

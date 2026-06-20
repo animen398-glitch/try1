@@ -43,6 +43,9 @@ def test_write_diff_report_creates_html_in_reports(tmp_path):
     page = out.read_text(encoding='utf-8')
     assert page.startswith('<!DOCTYPE html>')
     assert '<script' not in page
+    assert result['evidence_integrity']['ok'] is False
+    assert 'Evidence integrity warning' in page
+    assert 'missing_manifest' in page
     # The two scans saw different pages → both show up in the diff.
     d = result['diff']
     assert d['sections']['pages']['added'] == ['/20260613_020000 [200]']

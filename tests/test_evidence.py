@@ -6,6 +6,7 @@ from core.evidence import (
     audit_scan,
     build_manifest,
     evidence_refs_for_finding,
+    integrity_warning,
     verify_manifest,
     write_manifest,
 )
@@ -152,3 +153,19 @@ def test_audit_scan_reports_ok_missing_changed_and_corrupt(tmp_path):
     assert changed["ok"] is False
     assert changed["status"] == "failed"
     assert changed["changed"] == ["api/api_keys.json"]
+
+
+def test_integrity_warning_summarizes_without_artifact_contents():
+    assert integrity_warning({"ok": True}) is None
+
+    warning = integrity_warning({
+        "ok": False,
+        "status": "failed",
+        "missing": ["api/api_keys.json"],
+        "changed": ["recon/recon.json"],
+    }, "scan s1")
+
+    assert "scan s1" in warning
+    assert "failed" in warning
+    assert "missing=1" in warning
+    assert "changed=1" in warning

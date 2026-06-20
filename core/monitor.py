@@ -173,6 +173,11 @@ def format_event(ev: Dict) -> str:
                 + (f' · {line}' if line else ' (first scan)'))
     if kind in ('error', 'diff_error'):
         return f'[monitor] {slug}: {kind}: {ev.get("error", "")}'
+    if kind == 'evidence_integrity':
+        warnings = ev.get('warnings') or []
+        if warnings:
+            return f'[monitor] {slug}: evidence integrity warning: {warnings[0]}'
+        return f'[monitor] {slug}: evidence integrity warning'
     if kind == 'alerts':
         # Carries alerts/sent/reason/alert_kind from the dispatchers; the generic
         # fallthrough would drop the count and channel kind (diff / sla / secret /
@@ -257,6 +262,7 @@ def run_project(project, run_fn: Callable[[str], Dict],
                     'prev_scan_id': prev_id, 'diff_line': None,
                     'diff_html': None, 'alerts': None, 'sla_alerts': None,
                     'secret_alerts': None, 'finding_alerts': None,
+                    'evidence_integrity': None,
                     'status': 'Success', 'error': None}
     emit('scan_start', url=url, prev_scan_id=prev_id)
     try:
@@ -274,6 +280,34 @@ def run_project(project, run_fn: Callable[[str], Dict],
     result['scan_id'] = new_id
     result['status'] = report.get('status', 'Success')
 
+    def attach_integrity(current=None, previous=None, pair=None) -> None:
+        if pair:
+            warnings = list(pair.get('warnings') or [])
+            payload = {
+                'ok': pair.get('ok'),
+                'previous': pair.get('a'),
+                'current': pair.get('b'),
+                'warnings': warnings,
+            }
+        else:
+            from core.evidence import integrity_warning
+            warnings = [
+                w for w in (
+                    integrity_warning(previous, f'scan {prev_id}') if previous else None,
+                    integrity_warning(current, f'scan {new_id}') if current else None,
+                ) if w
+            ]
+            payload = {
+                'ok': not warnings,
+                'previous': previous,
+                'current': current,
+                'warnings': warnings,
+            }
+        result['evidence_integrity'] = payload
+        if payload['warnings']:
+            emit('evidence_integrity', scan_id=new_id,
+                 warnings=payload['warnings'])
+
     # Auto Scan Diff against the prior scan (skipped on the very first run, or
     # if the runner somehow produced no new scan id).
     if prev_id and new_id and prev_id != new_id:
@@ -281,6 +315,7 @@ def run_project(project, run_fn: Callable[[str], Dict],
             out = write_diff_report(project, prev_id, new_id)
             result['diff_line'] = out['line']
             result['diff_html'] = out['html_path']
+            attach_integrity(pair=out.get('evidence_integrity'))
             emit('diff', prev_scan_id=prev_id, scan_id=new_id, line=out['line'])
             # Alert Center (#9): dispatch alertable changes from this diff.
             if alert_config:
@@ -289,6 +324,10 @@ def run_project(project, run_fn: Callable[[str], Dict],
         except Exception as e:   # noqa: BLE001 — a failed diff must not fail the run
             result['error'] = f'diff failed: {e}'
             emit('diff_error', error=str(e))
+
+    if result['evidence_integrity'] is None and new_id:
+        from core.evidence import audit_scan
+        attach_integrity(current=audit_scan(project.root / 'scans' / new_id))
 
     # Finding-store-based alert channels (Alert Center): the triggers with no Scan
     # Diff representation, so they are checked every successful run independent of the

@@ -114,6 +114,12 @@ def test_format_event_kinds():
     assert 'd' in done and 'first scan' not in done
     assert 'error' in monitor.format_event(
         {'type': 'error', 'slug': 'x', 'error': 'boom'})
+    integrity = monitor.format_event({
+        'type': 'evidence_integrity',
+        'slug': 'x',
+        'warnings': ['scan s1: evidence integrity missing_manifest'],
+    })
+    assert 'evidence integrity warning' in integrity and 'missing_manifest' in integrity
     # Alert events render the count / sent / channel kind (not a bare "alerts").
     diff_al = monitor.format_event(
         {'type': 'alerts', 'slug': 'x', 'alerts': 3, 'sent': 2})
@@ -246,6 +252,21 @@ def test_run_project_second_run_writes_auto_diff(tmp_path):
     assert out['diff_html'] and out['diff_html'].endswith('.html')
     # the diff saw the added page
     assert 'Страницы' in out['diff_line']
+
+
+def test_run_project_attaches_evidence_integrity_warning(tmp_path):
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+    events = []
+    run_fn = _fake_run_fn(project, [('20260613_010000', ['/a'])])
+
+    out = monitor.run_project(project, run_fn, now=datetime(2026, 6, 13, 10, 0),
+                              on_event=events.append)
+
+    assert out['status'] == 'Success'
+    assert out['evidence_integrity']['ok'] is False
+    assert out['evidence_integrity']['warnings']
+    assert any(e['type'] == 'evidence_integrity' for e in events)
 
 
 def test_run_project_records_last_status_ok_then_failed(tmp_path):

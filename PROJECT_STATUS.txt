@@ -3209,6 +3209,49 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Evidence Integrity Integration
+==============================================================================
+
+  EVIDENCE INTEGRITY INTEGRATION WITH MONITOR/EXPORT (E14.9):
+    - core.evidence now exposes integrity_warning(audit, label), a shared
+      non-blocking formatter over audit_scan() results. It summarizes manifest
+      status and artifact counts/paths only; artifact contents are never read
+      into warnings.
+    - core.scan_diff.write_diff_report() audits both scan directories before
+      rendering the diff, attaches diff['evidence_integrity'], returns the same
+      payload to callers, and renders an "Evidence integrity warning" banner in
+      diff HTML when manifests are missing/corrupt/changed.
+    - core.monitor.run_project() attaches evidence_integrity to run summaries
+      and emits a non-fatal evidence_integrity event when the current scan or
+      compared scan pair has integrity warnings. Monitoring status/schedule/diff
+      behavior remains unchanged.
+    - core.report_export.py adds evidence_integrity_csv(), a pure CSV export
+      helper for audit_scan() rows. It performs no filesystem reads itself.
+
+  COMPATIBILITY:
+    - All new fields are additive: report/diff consumers that ignore
+      evidence_integrity continue to work.
+    - Missing manifests warn but do not block diff, monitor, alerts, or exports.
+    - No GUI/design changes, no new scanners, and no new storage tables.
+
+  TESTS:
+    - tests/test_evidence.py covers integrity_warning().
+    - tests/test_scan_diff_gui.py covers diff return payload and HTML warning.
+    - tests/test_monitor.py covers monitor summary/event integration.
+    - tests/test_report_export.py covers evidence_integrity_csv().
+
+  VERIFICATION:
+    - Targeted pytest for evidence/scan_diff/monitor/report_export is green
+      (72 passed).
+    - Full ruff is clean; full pytest is green (1460 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+  NEXT:
+    - E14.10 Roadmap / Status Cleanup.
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Scope & Evidence Foundation: Scope Guard Coverage Audit
 ==============================================================================
 

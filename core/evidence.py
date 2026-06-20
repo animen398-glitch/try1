@@ -226,6 +226,31 @@ def audit_scan(scan_dir: Path) -> Dict[str, Any]:
     }
 
 
+def integrity_warning(audit: Optional[Dict[str, Any]],
+                      label: str = "scan") -> Optional[str]:
+    """Human-readable non-blocking warning for an audit result.
+
+    ``None`` means evidence is intact. The text intentionally summarizes only
+    manifest status and artifact paths, never artifact contents.
+    """
+    if not isinstance(audit, dict):
+        return f"{label}: evidence integrity unavailable"
+    if audit.get("ok"):
+        return None
+    status = str(audit.get("status") or "failed")
+    parts = [f"{label}: evidence integrity {status}"]
+    missing = audit.get("missing") if isinstance(audit.get("missing"), list) else []
+    changed = audit.get("changed") if isinstance(audit.get("changed"), list) else []
+    if missing:
+        parts.append(f"missing={len(missing)}")
+    if changed:
+        parts.append(f"changed={len(changed)}")
+    error = audit.get("error")
+    if error and not missing and not changed:
+        parts.append(str(error))
+    return parts[0] + (f" ({', '.join(parts[1:])})" if len(parts) > 1 else "")
+
+
 def evidence_refs_for_finding(finding: Dict[str, Any],
                               manifest: Dict[str, Any]) -> list[Dict[str, str]]:
     """Map a raw finding to existing manifest artifacts by its source."""
