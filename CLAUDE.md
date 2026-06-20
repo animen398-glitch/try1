@@ -1645,6 +1645,32 @@ attention), rollup-карты, панель причина+доказатель�
 влияние на risk-score, новые таблицы, расширение EOL-политик за консервативный
 минимум (для CVE есть EPIC 3). **EPIC 15 имеет полную GUI+web+report+CSV проводку.**
 
+**EPIC 16 — Integrations & Reporting (wave 1) — `[ЗАКРЫТ]`.** Безопасная волна
+интеграций без новых тяжёлых зависимостей (всё stdlib, opt-in). **F0+F1** SARIF
+2.1.0 экспорт находок (`report_export.findings_sarif`: `APP_VERSION` из config;
+каждая находка → SARIF result, пары category/rule_id → reportingDescriptors с
+description/impact/remediation из `finding_knowledge` (то же обогащение, что
+`findings_csv`); severity → SARIF level + numeric security-severity для GitHub;
+`evidence.location` → physicalLocation URI; пустой список = валидный пустой run).
+**F2** Markdown-отчёт. **F3** generic-webhook alert-канал (снят отложенный YAGNI из
+F4 Alert Center — плоский POST). **F4 CI/CD-gate** (`core/ci_gate.py` pure-политика
++ `monitor_cli ci`): `evaluate_gate(events, fail_on='high')` фейлит сборку, если
+появилась новая находка ≥ порога severity (counts/triggers/total; пустой/None =
+PASS, как первый скан без baseline); `exit_code`/`summary_line` — CLI-обёртки.
+Команда `monitor_cli ci <url>` — тонкая оркестрация: прогон скана через
+`CollectionRunner` (или `--no-scan` гейтит два последних существующих скана) →
+**канонический change-feed `timeline.build_timeline`, отфильтрованный по текущему
+scan_id** (НЕ сырой `diff_events`: свежая generic high/critical vuln всплывает как
+`new_finding` с её severity только через F1-lifecycle; timeline мёржит это с
+Scan-Diff регрессиями takeover/source-map/GraphQL/dependency) → `ci_gate` →
+process exit-code; опц. `--sarif-out` пишет SARIF активных находок. Первый скан
+без baseline = PASS. Покрыто `test_ci_gate`(7: пороги/exit/summary/non-dict/empty)
++ `test_monitor_cli`(+4: single-scan PASS, takeover→critical FAIL, scan вызывает
+run_fn, SARIF записан). Коммиты c42e70c (F0+F1) / 041da8c (F2) / ba7cbf4 (F3) /
+28cf617 (F4). **Wave 2 (GitHub Issues, compliance-маппинг) отложен** (нужны внешние
+интеграции/токены — за пределами безопасной волны; память
+`project-epic16-integrations-reporting`).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

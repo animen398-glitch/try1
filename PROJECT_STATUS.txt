@@ -3744,3 +3744,63 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     - Commit: bf3a6e5.
 
 ==============================================================================
+  2026-06-20 - EPIC 16: Integrations & Reporting (wave 1, safe)
+==============================================================================
+
+  CONTEXT:
+    - A safe integration wave: SARIF / Markdown / generic-webhook / CI-gate,
+      all stdlib and opt-in, no new heavy dependencies (invariant 6). Wave 2
+      (GitHub Issues, compliance mapping) is deferred - it needs external
+      integrations / tokens, out of this safe wave.
+
+  F0 + F1 - SARIF 2.1.0 export (commit c42e70c):
+    - report_export.findings_sarif(findings, tool_version): each finding -> a
+      SARIF result; distinct (category, rule_id) pairs -> reportingDescriptors
+      (rules) with description/impact/remediation pulled from finding_knowledge
+      (same enrichment as findings_csv). severity -> SARIF level + the numeric
+      security-severity GitHub reads; evidence.location -> physicalLocation URI.
+      Pure stdlib json; an empty list yields a valid empty run.
+    - F0: APP_VERSION added to core/config.py (stamped as tool version).
+
+  F2 - Markdown report deliverable (commit 041da8c).
+
+  F3 - generic webhook alert channel (commit ba7cbf4): lifts the YAGNI-deferred
+    generic-webhook from F4 Alert Center (a flat POST channel alongside
+    telegram/discord/email).
+
+  F4 - CI/CD gate (commit 28cf617):
+    - core/ci_gate.py (pure policy, no I/O): evaluate_gate(events,
+      fail_on='high') fails the build when a new finding at/above the severity
+      threshold appears (returns {fail, fail_on, triggers, counts, total}; an
+      empty/None event list - e.g. the first scan with no baseline - passes).
+      exit_code / summary_line are the CLI-facing helpers.
+    - monitor_cli ci <url>: thin orchestration over reusable parts. Runs a scan
+      via CollectionRunner (or --no-scan gates the two most recent existing
+      scans), gets the change feed, evaluates the gate, and turns the result into
+      a process exit code. --fail-on {critical,high,medium,low,info};
+      --sarif-out writes a SARIF report of active findings.
+    - Uses the CANONICAL change feed timeline.build_timeline filtered to the
+      current scan_id - NOT raw scan_diff.diff_events. diff_events has no generic
+      new_finding handler (F1 owns finding events in the timeline), so a brand-new
+      high/critical vuln would otherwise be missed by a gate whose headline
+      purpose is "fail on new vulnerabilities". The timeline feed merges the F1
+      finding lifecycle (new_finding carries the finding's own severity) with the
+      Scan-Diff regressions (takeover / new source map / opened GraphQL /
+      vulnerable dependency / dropped security header / DMARC downgrade / ...).
+
+  TESTS:
+    - tests/test_ci_gate.py (7): thresholds (fail-on high catches high+critical,
+      fail-on critical ignores high, fail-on info catches all), empty/None pass,
+      non-dict events skipped, unknown fail-on defaults to high, summary lines.
+    - tests/test_monitor_cli.py (+4): single existing scan = baseline None + PASS;
+      a new takeover subdomain in the second scan -> critical event -> FAIL at the
+      high threshold; scan=True invokes the injected run_fn and records;
+      --sarif-out writes a valid 2.1.0 SARIF file.
+
+  VERIFICATION:
+    - Targeted pytest (ci_gate/monitor_cli/timeline/scan_diff/diff_events/
+      report_export) is green; ruff clean on the changed files.
+    - Full pytest is green (EXIT 0).
+    - Commits: c42e70c (F0+F1), 041da8c (F2), ba7cbf4 (F3), 28cf617 (F4).
+
+==============================================================================
