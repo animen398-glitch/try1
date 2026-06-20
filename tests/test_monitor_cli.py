@@ -148,6 +148,23 @@ def test_cmd_issues_creates_via_injected_client(tmp_path):
     assert out['skipped'] == 0
 
 
+def test_cmd_compliance_writes_report(tmp_path):
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    fstore = FindingsStore(tmp_path / 'f.db')
+    fstore.upsert('t.com', {'id': fingerprint('vuln', 'sqli', 'https://t.com/s'),
+                            'category': 'vuln', 'rule_id': 'sqli',
+                            'title': 'SQLi', 'severity': 'high',
+                            'evidence': {'location': 'https://t.com/s'}})
+    store = ProjectStore(tmp_path)
+    out_path = tmp_path / 'compliance.md'
+    out = cli.cmd_compliance(store, 'https://t.com', out=str(out_path),
+                             findings_store=fstore)
+    assert out['out'] == str(out_path) and out_path.exists()
+    assert out['summary']['total_findings'] == 1
+    assert 'A03:2021 Injection' in out_path.read_text(encoding='utf-8')
+
+
 def test_main_enable_then_status(tmp_path, capsys):
     base = str(tmp_path)
     cli.main(['--output', base, 'enable', 'https://example.com',

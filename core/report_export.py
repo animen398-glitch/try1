@@ -449,3 +449,59 @@ def report_markdown(report: Optional[Dict]) -> str:
     _section('Recommendations', summary.get('recommendations'), lambda r: str(r))
 
     return '\n'.join(out).rstrip() + '\n'
+
+
+# ── OWASP/CWE compliance report (EPIC 16 wave 2, A3) ────────────────────────────
+# A compliance deliverable: the active findings rolled up against the OWASP Top 10
+# 2021 (+ CWE), showing both coverage and the clean categories. Pure stdlib.
+
+def _severities_cell(sev: Dict[str, int]) -> str:
+    """'2 high, 1 medium' from a severity-count dict (worst first), or '—'."""
+    order = ('critical', 'high', 'medium', 'low', 'info')
+    parts = [f'{sev[s]} {s}' for s in order if sev.get(s)]
+    return ', '.join(parts) if parts else '—'
+
+
+def compliance_markdown(findings: Optional[List[Dict]]) -> str:
+    """OWASP Top 10 (2021) + CWE compliance report from a findings list (pure).
+
+    Renders the ``core.compliance.build_compliance`` roll-up as a portable Markdown
+    table — every Top-10 category (clean ones marked OK), the mapped CWEs, finding
+    counts and severities, plus an Unmapped section for unrecognized vuln subtypes.
+    An empty list yields a valid all-clean report."""
+    from core.compliance import build_compliance
+    data = build_compliance(findings)
+    s = data['summary']
+
+    out: List[str] = ['# OWASP Top 10 (2021) Compliance Report', '']
+    out.append(f"_Active findings: {s['total_findings']} · categories with "
+               f"findings: {s['categories_with_findings']}/10"
+               + (f" · unmapped: {s['unmapped']}" if s['unmapped'] else '') + '_')
+    out.append('')
+    out.append('| OWASP category | Status | CWE | Findings | Severities |')
+    out.append('|---|---|---|---|---|')
+    for b in data['by_owasp']:
+        status = '⚠️ findings' if b['count'] else '✅ OK'
+        cwe = ', '.join(b['cwe']) if b['cwe'] else '—'
+        out.append(f"| {b['id']} {b['name']} | {status} | {cwe} | "
+                   f"{b['count']} | {_severities_cell(b['severities'])} |")
+    out.append('')
+
+    for b in data['by_owasp']:
+        if not b['count']:
+            continue
+        out.append(f"## {b['id']} {b['name']} ({b['count']})")
+        for f in b['findings']:
+            cwe = f" ({', '.join(f['cwe'])})" if f['cwe'] else ''
+            out.append(f"- [{f['severity']}] {f['title']}{cwe}")
+        out.append('')
+
+    if data['unmapped']:
+        out.append('## Unmapped (review)')
+        out.append('_Findings without a confident OWASP class — review manually._')
+        for f in data['unmapped']:
+            out.append(f"- [{f['severity']}] {f['title']} "
+                       f"({f['category'] or 'unknown'})")
+        out.append('')
+
+    return '\n'.join(out).rstrip() + '\n'

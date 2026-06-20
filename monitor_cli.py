@@ -130,6 +130,29 @@ def cmd_issues(store: ProjectStore, target: str, *, config=None,
     return github_issues.sync_findings(fstore, project.slug, cfg, client=client)
 
 
+def cmd_compliance(store: ProjectStore, target: str, *, out=None,
+                   findings_store=None) -> dict:
+    """OWASP/CWE compliance report (EPIC 16 wave 2, A3): roll the target project's
+    active findings up against the OWASP Top 10 2021 and render Markdown.
+
+    Thin orchestration over ``FindingsStore`` (current posture) + ``compliance`` +
+    ``report_export.compliance_markdown``. Writes to ``out`` when given. Returns
+    ``{markdown, out, summary}``; ``findings_store`` is injectable for tests."""
+    from core.compliance import build_compliance
+    from core.findings_store import FindingsStore
+    from core.report_export import compliance_markdown
+    project = store.get_or_create(target)
+    fstore = findings_store if findings_store is not None else FindingsStore()
+    findings = fstore.active_findings(project.slug)
+    md = compliance_markdown(findings)
+    written = None
+    if out:
+        Path(out).write_text(md, encoding='utf-8')
+        written = str(out)
+    return {'markdown': md, 'out': written,
+            'summary': build_compliance(findings)['summary']}
+
+
 # ── pretty printing ───────────────────────────────────────────────────────────
 
 def _print_event(ev: dict) -> None:
@@ -190,6 +213,12 @@ def main(argv=None):
     p_iss.add_argument('--min-severity', default=None,
                        choices=['critical', 'high', 'medium', 'low', 'info'],
                        help='Override the min severity from settings (default: high)')
+
+    p_comp = sub.add_parser(
+        'compliance', help='OWASP Top 10 / CWE compliance report for active findings')
+    p_comp.add_argument('url')
+    p_comp.add_argument('--out', default=None,
+                        help='Write the Markdown report here (default: print)')
 
     opts = parser.parse_args(argv)
 
@@ -262,6 +291,15 @@ def main(argv=None):
                       f'— {c.get("url", "")}')
             for e in out['errors']:
                 print(f'  error ({e.get("id")}): {e.get("error")}')
+    elif opts.command == 'compliance':
+        out = cmd_compliance(store, opts.url, out=opts.out)
+        if out['out']:
+            s = out['summary']
+            print(f'Compliance report written: {out["out"]} '
+                  f'({s["categories_with_findings"]}/10 categories with findings, '
+                  f'{s["total_findings"]} active).')
+        else:
+            print(out['markdown'])
     elif opts.command == 'watch':
         sched = monitor.MonitorScheduler(store, check_interval=opts.every,
                                          on_event=_print_event,

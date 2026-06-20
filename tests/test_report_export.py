@@ -313,6 +313,36 @@ def test_report_markdown_handles_non_dict():
     assert rx.report_markdown(None).startswith('# Security Report')
 
 
+# ── compliance_markdown (EPIC 16 wave 2 A3) ─────────────────────────────────────
+
+def test_compliance_markdown_renders_table_and_sections():
+    findings = [
+        {'id': 'h', 'category': 'header', 'title': 'Missing HSTS',
+         'severity': 'medium'},
+        {'id': 'q', 'category': 'vuln', 'rule_id': 'sqli',
+         'title': 'SQL injection', 'severity': 'high'},
+    ]
+    md = rx.compliance_markdown(findings)
+    assert md.startswith('# OWASP Top 10 (2021) Compliance Report')
+    assert '| OWASP category | Status |' in md
+    assert 'A03:2021 Injection' in md and 'CWE-89' in md
+    assert '⚠️ findings' in md and '✅ OK' in md       # both a hit and clean rows
+    assert '## A05:2021 Security Misconfiguration (1)' in md
+    assert '[high] SQL injection (CWE-89)' in md
+
+
+def test_compliance_markdown_empty_is_all_clean():
+    md = rx.compliance_markdown([])
+    assert 'Active findings: 0' in md
+    assert '⚠️ findings' not in md and md.count('✅ OK') == 10
+
+
+def test_compliance_markdown_unmapped_section():
+    md = rx.compliance_markdown([{'id': 'm', 'category': 'vuln', 'rule_id': 'x',
+                                  'title': 'Mystery', 'severity': 'low'}])
+    assert '## Unmapped (review)' in md and 'Mystery' in md
+
+
 # ── technology_risk_csv (EPIC 15 — technology-risk items) ───────────────────────
 
 def test_technology_risk_csv_header_and_flattened_evidence():
