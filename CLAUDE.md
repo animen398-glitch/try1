@@ -1254,7 +1254,8 @@ CVE-движок поверх существующего OSV-пайплайна 
 дата; GUI clear-cache + `nvd_api_key`/`CVE_CACHE_DB`. **Dedup автоматом** (findings_
 adapter мёржит nuclei+OSV+bundled по CVE id). Решения пользователя: метрика / NVD
 live+кеш / фаза 1 только JS (server-версии через CPE — фаза 2). EPIC 4 (Historical
-Intelligence) — ТЗ обрезано, НЕ реализовано. Покрыто `test_cve_store`/`test_nvd_
+Intelligence) на тот момент в scope не входил — **закрыт позже** отдельным блоком
+ниже. Покрыто `test_cve_store`/`test_nvd_
 provider`/`test_cve_intel` (+17) + правки `test_osv_correlation`/`test_executive_
 summary`. 1214 collected, full suite PASS, ruff чист.
 
@@ -1613,8 +1614,8 @@ load-summary owned-only/shared_infra игнорит external), `test_collection_
 surface). **Не делалось** (осознанно): промоут co-hosted в AssetStore, correlation,
 GUI, влияние на risk/criticality/exposure.
 
-**EPIC 15 — Technology Risk Scoring — `[ЗАКРЫТ]`.** Backend+report+web+CSV-фаза
-(GUI отложен — `feedback-internals-first-no-gui`). Чистый **display-слой**
+**EPIC 15 — Technology Risk Scoring — `[ЗАКРЫТ]`.** Полный backend+report+web+CSV+GUI
+паритет (GUI-вкладка добавлена — см. ниже). Чистый **display-слой**
 (derive-on-read, **НЕ слагаемое risk-score** `_risk_level`/`risk_100` — как
 exposure/criticality/accuracy): «какие из обнаруженных технологий/JS-зависимостей
 заслуживают внимания» — EOL/устаревшие версии и уязвимые либы, **без двойного счёта
