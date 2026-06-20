@@ -394,3 +394,58 @@ def findings_sarif(findings: Optional[List[Dict]], *,
         }],
     }
     return json.dumps(doc, ensure_ascii=False, indent=2)
+
+
+# ── Markdown report (EPIC 16 F2) ────────────────────────────────────────────────
+# A client/GitHub-friendly text deliverable rendered from the same scan report dict
+# that feeds report.html — for issues, wikis, email and PRs. Pure stdlib.
+
+def report_markdown(report: Optional[Dict]) -> str:
+    """Markdown deliverable from a scan ``report`` dict (pure, offline).
+
+    Renders the executive summary already in ``report['summary']`` (verdict +
+    headline chips + key findings + score breakdown + recommendations) — the same
+    narrative as report.html, as portable Markdown. Empty/old reports degrade to a
+    minimal header rather than raising."""
+    report = report if isinstance(report, dict) else {}
+    summary = report.get('summary') if isinstance(report.get('summary'), dict) else {}
+
+    target = report.get('domain') or report.get('url') or 'target'
+    out: List[str] = [f'# Security Report — {target}', '']
+
+    started, finished = report.get('started_at') or '', report.get('finished_at') or ''
+    if started or finished:
+        out.append(f'_Scan: {started} → {finished}_')
+        out.append('')
+
+    level = summary.get('risk_level', 'Clean')
+    score = summary.get('risk_100', summary.get('risk_score', 0))
+    out.append(f'## Risk verdict: **{level}** ({score}/100)')
+    out.append('')
+
+    try:
+        from core.executive_summary import headline
+        chips = (headline(summary) or {}).get('chips') or []
+    except Exception:  # noqa: BLE001 — headline is best-effort decoration
+        chips = []
+    if chips:
+        out.append('**Highlights:** ' + ' · '.join(
+            f"`{c.get('label', '')}`" for c in chips if isinstance(c, dict)))
+        out.append('')
+
+    def _section(title: str, items, fmt) -> None:
+        rows = [fmt(it) for it in (items or []) if it]
+        rows = [r for r in rows if r]
+        if rows:
+            out.append(f'## {title}')
+            out.extend(f'- {r}' for r in rows)
+            out.append('')
+
+    _section('Key findings', summary.get('key_findings'), lambda k: str(k))
+    _section('Из чего риск (score breakdown)', summary.get('risk_factors'),
+             lambda f: (f"{f.get('factor', '')}: +{f.get('points', 0)}"
+                        f"{(' — ' + str(f.get('detail'))) if f.get('detail') else ''}"
+                        if isinstance(f, dict) else str(f)))
+    _section('Recommendations', summary.get('recommendations'), lambda r: str(r))
+
+    return '\n'.join(out).rstrip() + '\n'

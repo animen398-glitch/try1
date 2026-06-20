@@ -279,6 +279,40 @@ def test_sarif_none_is_valid_empty_run():
     assert doc['runs'][0]['results'] == []
 
 
+# ── report_markdown (EPIC 16 F2) ────────────────────────────────────────────────
+
+def test_report_markdown_renders_verdict_and_sections():
+    report = {
+        'domain': 'acme.com', 'started_at': '2026-06-20T10:00:00',
+        'finished_at': '2026-06-20T10:05:00',
+        'summary': {
+            'risk_level': 'High', 'risk_100': 72,
+            'metrics': {'high': 3},
+            'key_findings': ['1 leaked secret', '3 high vulns'],
+            'risk_factors': [{'factor': 'Leaked secrets', 'points': 5,
+                              'detail': '1 plausible'}],
+            'recommendations': ['Rotate the AWS key', 'Add CSP'],
+        }}
+    md = rx.report_markdown(report)
+    assert md.startswith('# Security Report — acme.com')
+    assert 'Risk verdict: **High** (72/100)' in md
+    assert '## Key findings' in md and '- 1 leaked secret' in md
+    assert 'Leaked secrets: +5 — 1 plausible' in md           # score breakdown
+    assert '## Recommendations' in md and '- Rotate the AWS key' in md
+
+
+def test_report_markdown_empty_is_minimal_header():
+    md = rx.report_markdown({})
+    assert md.startswith('# Security Report — target')
+    assert 'Risk verdict: **Clean**' in md
+    # no spurious sections when summary is empty
+    assert '## Key findings' not in md
+
+
+def test_report_markdown_handles_non_dict():
+    assert rx.report_markdown(None).startswith('# Security Report')
+
+
 # ── technology_risk_csv (EPIC 15 — technology-risk items) ───────────────────────
 
 def test_technology_risk_csv_header_and_flattened_evidence():

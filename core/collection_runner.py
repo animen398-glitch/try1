@@ -494,6 +494,16 @@ class CollectionRunner:
         html_path = scan_dir / 'report.html'
         html_path.write_text(self._render_html(report), encoding='utf-8')
 
+        # Markdown deliverable (EPIC 16 F2) alongside JSON/HTML — for issues, wikis,
+        # PRs and email. Best-effort: a render failure must not sink the scan.
+        md_path = scan_dir / 'report.md'
+        try:
+            from core.report_export import report_markdown
+            md_path.write_text(report_markdown(report), encoding='utf-8')
+            report['report_md'] = str(md_path)
+        except Exception as e:  # noqa: BLE001 — markdown is a nice-to-have artifact
+            self._log(f'  Markdown report failed: {e}')
+
         report['report_json'] = str(json_path)
         report['report_html'] = str(html_path)
         report['status'] = 'Cancelled' if report.get('cancelled') else 'Success'

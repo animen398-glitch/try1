@@ -382,6 +382,24 @@ def _findings_sarif(project: Optional[str] = None) -> str:
     return findings_sarif(findings, tool_version=APP_VERSION)
 
 
+def _report_markdown_view(project: Optional[str] = None) -> str:
+    """Markdown deliverable of a project's latest scan (EPIC 16 F2).
+
+    Report-based (resolves the project and loads its latest report.json); always
+    returns valid Markdown (at least a header) so the endpoint never errors."""
+    from core.report_export import report_markdown
+    try:
+        proj = ProjectStore(str(_REPORT_BASE)).get(project) if project else None
+        report = None
+        if proj is not None:
+            latest = proj.latest_scan()
+            sid = latest.get('id') if isinstance(latest, dict) else None
+            report = proj.load_scan_report(sid) if sid else None
+        return report_markdown(report if isinstance(report, dict) else {})
+    except Exception:  # noqa: BLE001 — degrade to a minimal valid Markdown header
+        return report_markdown({})
+
+
 def _findings_set_status(finding_id: str, status: str,
                          note: Optional[str] = None) -> dict:
     """Change one finding's triage status (user-sourced). Returns the updated
@@ -1431,6 +1449,11 @@ if _FASTAPI_OK:
     async def findings_sarif_route(project: Optional[str] = None):
         return Response(_findings_sarif(project),
                         media_type='application/sarif+json')
+
+    @app.get('/report.md')
+    async def report_md_route(project: Optional[str] = None):
+        return Response(_report_markdown_view(project),
+                        media_type='text/markdown; charset=utf-8')
 
     @app.post('/findings/{finding_id}/status')
     async def findings_set_status(finding_id: str, body: StatusRequest):

@@ -813,6 +813,10 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     # The scan's own report still lives inside the scan dir (layout unchanged).
     assert (scan_dir / 'report.html').exists()
     assert (scan_dir / 'report.json').exists()
+    # Markdown deliverable (EPIC 16 F2) is written alongside.
+    md = (scan_dir / 'report.md')
+    assert md.exists() and md.read_text(encoding='utf-8').startswith('# Security Report')
+    assert result['report_md'] == str(md)
 
     # The scan is indexed in the project metadata + history.
     meta = json.loads((project_root / 'metadata.json').read_text('utf-8'))

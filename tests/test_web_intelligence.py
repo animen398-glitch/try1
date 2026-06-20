@@ -245,6 +245,53 @@ def test_technology_risk_endpoint_with_testclient(tmp_path, monkeypatch):
     assert r.json()['summary']['items'] >= 2
 
 
+# ── Markdown report (EPIC 16 F2) ──────────────────────────────────────────────
+
+def _seed_markdown_project(base):
+    import json
+
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://acme.com')
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    report = {'scan_id': sid, 'domain': 'acme.com',
+              'summary': {'risk_level': 'High', 'risk_100': 70,
+                          'key_findings': ['1 leaked secret'],
+                          'recommendations': ['Rotate the key']}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    return 'acme.com'
+
+
+def test_report_markdown_view_renders_latest(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_markdown_project(str(tmp_path))
+    md = wa._report_markdown_view(slug)
+    assert md.startswith('# Security Report — acme.com')
+    assert 'Risk verdict: **High** (70/100)' in md
+    assert '- Rotate the key' in md
+
+
+def test_report_markdown_view_unknown_project_is_minimal():
+    md = wa._report_markdown_view('definitely-not-a-project')
+    assert md.startswith('# Security Report')
+
+
+def test_report_markdown_endpoint_with_testclient(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_markdown_project(str(tmp_path))
+    client = TestClient(wa.app)
+    r = client.get('/report.md', params={'project': slug})
+    assert r.status_code == 200
+    assert r.headers['content-type'].startswith('text/markdown')
+    assert '# Security Report — acme.com' in r.text
+
+
 # ── Related Assets web parity (infra-chain tail) ──────────────────────────────
 
 def _seed_related_project(base):
