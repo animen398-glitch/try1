@@ -1609,9 +1609,13 @@ EOL/version-exposed/vuln-деп/clamp/band/сортировка/summary/empty/ma
 `test_executive_summary`(+2: метрика+чип/zero, risk_score неизменен),
 `test_report_export`(+2), `test_web_intelligence`(+5: view/empty/unknown/dashboard/
 testclient), `test_collection_runner`(+3: карточка/build/skip-when-empty). **GUI-
-вкладка отложена** (опц. хвост, как Criticality/Exposure). **Не делалось**
-(осознанно): влияние на risk-score, новые таблицы, расширение EOL-политик за
-консервативный минимум (для CVE есть EPIC 3).
+вкладка добавлена** (`gui/tab_technology_risk.py`, `TechnologyRiskTabMixin` — зеркало
+Scan Accuracy: per-project report-based, таблица risk-desc с band-подсветкой (high =
+attention), rollup-карты, панель причина+доказательства, Export CSV; секция
+«Управление» после Scan Accuracy; lazy-load в `tab_history`; покрыто
+`test_technology_risk_tab`(10) + `TechnologyRiskHost`). **Не делалось** (осознанно):
+влияние на risk-score, новые таблицы, расширение EOL-политик за консервативный
+минимум (для CVE есть EPIC 3). **EPIC 15 имеет полную GUI+web+report+CSV проводку.**
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

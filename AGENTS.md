@@ -1574,8 +1574,10 @@ Scan Accuracy): `collection_runner._build_technology_risk` → `report['technolo
 risk-числа байт-в-байт); web `GET /technology-risk` + кнопка; `report_export.
 technology_risk_csv`. Покрыто `test_tech_risk`(16)/`test_executive_summary`(+2)/
 `test_report_export`(+2)/`test_web_intelligence`(+5)/`test_collection_runner`(+3).
-GUI-вкладка отложена (опц. хвост). Не делалось: влияние на risk-score, новые таблицы,
-расширение EOL-политик (для CVE есть EPIC 3).
+GUI-вкладка добавлена (`gui/tab_technology_risk.py`, зеркало Scan Accuracy; покрыто
+`test_technology_risk_tab`(10)). Не делалось: влияние на risk-score, новые таблицы,
+расширение EOL-политик (для CVE есть EPIC 3). EPIC 15 — полная GUI+web+report+CSV
+проводка.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
