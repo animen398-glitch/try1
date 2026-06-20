@@ -3209,6 +3209,42 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Evidence Integrity Hook
+==============================================================================
+
+  EVIDENCE INTEGRITY HOOK (core + thin CLI):
+    - core/evidence.py now exposes audit_scan(scan_dir): a stable structured
+      integrity contract over evidence_manifest.json. It reports ok/status,
+      checked, missing, changed, error, scan_id, url, and artifact_count.
+    - Normal failure states do not raise exceptions: missing_scan_dir,
+      missing_manifest, corrupt_manifest, and failed hash verification are
+      returned as data.
+    - New evidence_cli.py is a thin wrapper with:
+        python evidence_cli.py verify <scan_dir>
+        python evidence_cli.py json <scan_dir>
+      It performs no scanning and delegates all logic to core.evidence.
+    - CLI exit code is 0 only when evidence integrity is OK; otherwise 1. This
+      makes it usable before export, in scripts, or later from monitoring.
+
+  COMPATIBILITY:
+    - evidence_manifest.json v1 format is unchanged.
+    - GUI, SQLite stores, scanner phases, CollectionRunner signatures, and old
+      scans remain compatible. Old scans without a manifest return
+      missing_manifest instead of crashing.
+
+  TESTS:
+    - tests/test_evidence.py covers audit_scan OK/missing/corrupt/changed states.
+    - tests/test_evidence_cli.py covers command wrappers, output, and exit codes
+      without spawning a subprocess.
+
+  VERIFICATION:
+    - Targeted pytest for evidence/evidence_cli/collection is green.
+    - Full ruff is clean; full pytest is green (1438 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+==============================================================================
+
+==============================================================================
   2026-06-19 - EPIC 14 Scope & Evidence Foundation: Evidence Manifest v1
 ==============================================================================
 

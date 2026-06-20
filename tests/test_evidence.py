@@ -3,6 +3,7 @@ import json
 from core.evidence import (
     MANIFEST_NAME,
     attach_finding_refs,
+    audit_scan,
     build_manifest,
     verify_manifest,
     write_manifest,
@@ -69,3 +70,33 @@ def test_manifest_file_is_valid_json(tmp_path):
 
     data = json.loads((scan / result["path"]).read_text(encoding="utf-8"))
     assert data["artifact_count"] == 0
+
+
+def test_audit_scan_reports_ok_missing_changed_and_corrupt(tmp_path):
+    missing_dir = audit_scan(tmp_path / "nope")
+    assert missing_dir["ok"] is False
+    assert missing_dir["status"] == "missing_scan_dir"
+
+    scan = tmp_path / "scan"
+    scan.mkdir()
+    missing_manifest = audit_scan(scan)
+    assert missing_manifest["status"] == "missing_manifest"
+
+    (scan / MANIFEST_NAME).write_text("{ broken", encoding="utf-8")
+    corrupt = audit_scan(scan)
+    assert corrupt["status"] == "corrupt_manifest"
+
+    (scan / "api").mkdir()
+    artifact = scan / "api" / "api_keys.json"
+    artifact.write_text("{}", encoding="utf-8")
+    write_manifest(scan, {"scan_id": "s1", "url": "https://x.com"})
+    ok = audit_scan(scan)
+    assert ok["ok"] is True
+    assert ok["status"] == "ok"
+    assert ok["scan_id"] == "s1"
+
+    artifact.write_text('{"changed":true}', encoding="utf-8")
+    changed = audit_scan(scan)
+    assert changed["ok"] is False
+    assert changed["status"] == "failed"
+    assert changed["changed"] == ["api/api_keys.json"]

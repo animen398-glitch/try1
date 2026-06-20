@@ -149,6 +149,62 @@ def verify_manifest(scan_dir: Path,
     }
 
 
+def audit_scan(scan_dir: Path) -> Dict[str, Any]:
+    """Read and verify a scan's evidence manifest.
+
+    This is the stable, CLI-friendly integrity contract: no exceptions for normal
+    missing/corrupt/changed evidence states, just a structured status.
+    """
+    root = Path(scan_dir)
+    manifest_path = root / MANIFEST_NAME
+    if not root.is_dir():
+        return {
+            "ok": False,
+            "status": "missing_scan_dir",
+            "scan_dir": str(root),
+            "manifest": MANIFEST_NAME,
+            "checked": 0,
+            "missing": [],
+            "changed": [],
+            "error": "scan directory not found",
+        }
+    if not manifest_path.is_file():
+        return {
+            "ok": False,
+            "status": "missing_manifest",
+            "scan_dir": str(root),
+            "manifest": MANIFEST_NAME,
+            "checked": 0,
+            "missing": [],
+            "changed": [],
+            "error": "evidence manifest not found",
+        }
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "status": "corrupt_manifest",
+            "scan_dir": str(root),
+            "manifest": MANIFEST_NAME,
+            "checked": 0,
+            "missing": [],
+            "changed": [],
+            "error": str(exc),
+        }
+    verified = verify_manifest(root, manifest)
+    status = "ok" if verified.get("ok") else "failed"
+    return {
+        **verified,
+        "status": status,
+        "scan_dir": str(root),
+        "manifest": MANIFEST_NAME,
+        "artifact_count": manifest.get("artifact_count"),
+        "scan_id": manifest.get("scan_id"),
+        "url": manifest.get("url"),
+    }
+
+
 def evidence_refs_for_finding(finding: Dict[str, Any],
                               manifest: Dict[str, Any]) -> list[Dict[str, str]]:
     """Map a raw finding to existing manifest artifacts by its source."""
