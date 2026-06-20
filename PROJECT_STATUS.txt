@@ -3209,6 +3209,65 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Approved Backlog / Next Tasks
+==============================================================================
+
+  CURRENT EPIC 14 GOAL:
+    Scope & Evidence Foundation. Do not add scanners and do not work on GUI/design.
+    Focus: trust in collected data, safe active operations, evidence traceability,
+    and backend/reporting integration.
+
+  COMPLETED IN EPIC 14:
+    - E14.1 Scope Guard v1 (commit 29795d2): project-level scope, safe defaults,
+      active phase gating.
+    - E14.2 Evidence Manifest v1 (commit e7632e0): scan-local
+      evidence_manifest.json + report['evidence'].
+    - E14.3 Evidence Integrity Hook (commit c14e7d4): core audit_scan() +
+      evidence_cli.py verify/json.
+    - E14.4 Finding Evidence Persistence v1 (commit 249e351): evidence_refs
+      persist through FindingsStore evidence JSON.
+
+  APPROVED REMAINING ORDER:
+    1. E14.5 Scope CLI / Project Scope Management
+       Add a thin local CLI over Project.get_scope()/set_scope(): show/set/clear,
+       allowed/wildcard/denied domains, active_scan_enabled, passive_only,
+       rate_limit. Core logic only; CLI parses/prints; no GUI, no network.
+
+    2. E14.6 Evidence Refs Coverage Expansion
+       Audit all finding producers and source labels (cookie, dependency-audit,
+       nuclei, osv, graphql, sourcemap, secret, secret-audit, dns,
+       subdomain-active, analyzer plugins). Extend refs only to existing
+       artifacts; no new scanners or duplicate files.
+
+    3. E14.7 Report / Export Traceability
+       Surface evidence refs in backend report/export surfaces where findings are
+       already rendered/exported. Include artifact path, phase, hash/id. No raw
+       secrets, no GUI redesign.
+
+    4. E14.8 Scope Guard Coverage Audit
+       Regression audit that active operations cannot bypass Scope Guard:
+       external tools, screenshot probes, OSV/NVD, ASN reverse-IP, OpenAPI probes,
+       active subdomain takeover checks. Passive/base phases remain unblocked.
+
+    5. E14.9 Evidence Integrity Integration With Monitor/Export
+       Attach non-blocking integrity status/warnings before monitor diff/report
+       consumption or export. Missing/corrupt/changed evidence should warn, not
+       block by default.
+
+    6. E14.10 Roadmap / Status Cleanup
+       Keep ROADMAP_ASM_2.0.md, PROJECT_STATUS.txt, PROJECT_REPORT.md, and
+       KICKOFF_PROMPT.md aligned. Do not create parallel roadmap docs.
+
+  PROCESS FOR EACH REMAINING TASK:
+    - Show short plan before code.
+    - Keep logic in core/ when possible; CLI/web/reporting remain thin.
+    - Offline tests only; no real network or external binaries.
+    - Run ruff, targeted pytest, full pytest.
+    - Make a local commit; do not push/fetch/pull/clone.
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Scope & Evidence Foundation: Finding Evidence Persistence v1
 ==============================================================================
 
