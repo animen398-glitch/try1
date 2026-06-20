@@ -3642,3 +3642,105 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
       Starlette/httpx deprecation warning).
 
 ==============================================================================
+
+==============================================================================
+  2026-06-20 - EPIC 15 Technology Risk Scoring (display posture, derive-on-read)
+==============================================================================
+
+  TECHNOLOGY RISK SCORING (backend + report + web + CSV):
+    - New pure core/tech_risk.py derives a display posture over the technologies
+      and JS dependencies already in a scan report's recon phase: end-of-life /
+      outdated versions (PHP < 8.1, AngularJS, older Flask/Werkzeug), publicly
+      exposed Server/Backend/Language versions, and known-vulnerable JS libs.
+      build_technology_risk(report) returns {summary, items} (score, band, kind,
+      name, version, reason, evidence); load_technology_risk(project) is a thin
+      report-based reader. Degrade-not-raise on malformed input.
+    - DISPLAY layer only, never an addend to the authoritative risk score
+      (mirrors exposure/criticality/accuracy). Vulnerable deps / CVEs are already
+      counted in the verdict via their findings (Epic 3), so no double counting.
+    - CollectionRunner._build_technology_risk stores report['technology_risk']
+      ({summary, top:10}); the orphaned _render_technology_risk_card is now hooked
+      into report.html next to Scan Accuracy (closed pre-existing dead code).
+    - executive_summary._technology_risk adds display metrics tech_risk_score /
+      outdated_technologies / vulnerable_dependencies and a headline chip
+      "N outdated components"; risk numbers are byte-for-byte unchanged.
+    - Web parity: remote/web_app._technology_risk_view + GET /technology-risk +
+      a "Technology Risk" console button.
+    - CSV: report_export.technology_risk_csv (+ _TECHNOLOGY_RISK_COLUMNS).
+
+  GUI TAB:
+    - New gui/tab_technology_risk.py (TechnologyRiskTabMixin): read-only,
+      per-project tab mirroring Scan Accuracy - project selector, three rollup
+      cards (Elements / High risk / Vulnerable deps), a risk-desc table
+      (Score / Band / Type / Technology / Reason) with high-band attention
+      colour, a reason+evidence detail panel, and Export CSV. Registered under
+      the "Management" section after Scan Accuracy; lazy-loaded on first open.
+    - UI stays thin (all logic in core/tech_risk.py); two-stage off-thread load
+      via _run_async. Verified live in the rebuilt .exe.
+
+  TESTS:
+    - tests/test_tech_risk.py (16): EOL policies, version-exposed, vulnerable
+      deps, score clamp/band, ranking, summary, empty, malformed input, reader.
+    - tests/test_technology_risk_tab.py (10): build/registration, off-GUI
+      queries, populate + selector, stale-result discard, detail panel.
+    - Parity tests extended in test_executive_summary (+2, risk score unchanged),
+      test_report_export (+2), test_web_intelligence (+5), test_collection_runner
+      (+3: card render / build / skip-when-empty).
+
+  VERIFICATION:
+    - Targeted pytest for tech_risk/es/report_export/web/collection/tab is green.
+    - Full ruff is clean; full pytest is green (EXIT 0; 1506 tests collected).
+    - Commits: df3f91b (backend/report/web/CSV), 1e56b91 (GUI tab),
+      5170504 (status docs).
+
+==============================================================================
+
+
+==============================================================================
+  2026-06-20 - Infrastructure Chain Phase 2: Co-hosted Domains in Asset Graph
+==============================================================================
+
+  CONTEXT:
+    - Most of Phase 2 already shipped earlier (commit feea0a6): the co-hosted
+      related-assets derive view (asn_intel.related_assets / load_related_assets),
+      the "Related Assets" report card, and web /related-assets. This increment
+      closes the remaining tail: surfacing co-hosted neighbours in the asset
+      relationship graph.
+
+  CO-HOSTED RELATED ASSETS IN ASSET GRAPH:
+    - The reverse-IP co-hosted external domains (from the opt-in asn_intel phase)
+      now appear in core/asset_graph as external, non-owned `related` nodes
+      (external=True) with a `co_hosted` edge from our owned IP node. They are
+      NEVER written to AssetStore - this respects the deliberate asn_intel policy
+      (asn_intel.py) that a co-hosted neighbour is not our asset and promoting it
+      would invite false ownership / takeover signals.
+    - build_asset_graph(assets, related=None) + _add_co_hosted: anchors only when
+      the shared IP is itself an owned ip asset, de-dups hosts, and drops any that
+      collide with an existing node value. related=None leaves the owned-only
+      graph byte-for-byte unchanged.
+    - load_asset_graph(project, related=None): the summary keeps nodes/edges
+      measuring the OWNED topology; external nodes / co_hosted edges are reported
+      separately as a `related` count, so existing metrics never inflate.
+    - CollectionRunner._build_asset_graph passes related_assets_from_report(report)
+      (read straight from the asn_intel phase, so ordering vs _build_related_assets
+      does not matter); the "Asset Relationships" card shows the co-hosted count.
+      Web _correlation_view resolves the project -> load_related_assets ->
+      load_asset_graph(related=...); the console prints co-hosted domains.
+    - Criticality / Exposure / Attack Paths / shared_infra are untouched: they
+      call load_asset_graph(project) WITHOUT related, and external nodes are not
+      owned assets, so blast-radius (_dependents_map) of owned assets is unchanged
+      (the co_hosted edge points FROM the IP TO the external node).
+
+  TESTS:
+    - tests/test_asset_graph.py (+7): external nodes/edge, anchor-skip when IP not
+      owned, dedup + own-host filtering, related=None unchanged, load-summary
+      owned-only counts, shared_infra ignores external related.
+    - tests/test_collection_runner.py (+2): card shows / hides co-hosted.
+    - tests/test_web_intelligence.py (+1): correlation view surfaces co-hosted.
+
+  VERIFICATION:
+    - Targeted pytest for asset_graph/collection/web is green.
+    - Full ruff is clean; full pytest is green (EXIT 0; 1506 tests collected).
+    - Commit: bf3a6e5.
+
+==============================================================================
