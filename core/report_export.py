@@ -17,7 +17,7 @@ _FINDINGS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('project', 'Project'), ('severity', 'Severity'), ('status', 'Status'),
     ('category', 'Category'), ('title', 'Title'), ('rule_id', 'Rule'),
     ('description', 'Description'), ('impact', 'Impact'),
-    ('remediation', 'Remediation'),
+    ('remediation', 'Remediation'), ('evidence_artifacts', 'Evidence Artifacts'),
     ('first_seen_at', 'First seen'), ('last_seen_at', 'Last seen'), ('id', 'ID'),
 )
 
@@ -100,6 +100,26 @@ def _rows_to_csv(rows: Optional[List[Dict]],
     return buf.getvalue()
 
 
+def _evidence_artifacts(row: Dict) -> str:
+    evidence = row.get('evidence') if isinstance(row, dict) else {}
+    refs = evidence.get('evidence_refs') if isinstance(evidence, dict) else None
+    if not isinstance(refs, list):
+        return ''
+    out = []
+    for ref in refs:
+        if not isinstance(ref, dict):
+            continue
+        path = str(ref.get('path') or '').strip()
+        if not path:
+            continue
+        phase = str(ref.get('phase') or '').strip()
+        aid = str(ref.get('artifact_id') or '').strip()
+        prefix = aid.split(':', 1)[-1][:12] if aid else ''
+        label = f'{phase}:{path}' if phase else path
+        out.append(f'{label}#{prefix}' if prefix else label)
+    return '; '.join(out)
+
+
 def findings_csv(findings: Optional[List[Dict]]) -> str:
     """CSV of a findings list (``FindingsStore.list_findings`` rows).
 
@@ -107,7 +127,10 @@ def findings_csv(findings: Optional[List[Dict]]) -> str:
     finding_knowledge catalog (F-O3) so the export carries the full finding
     object, DefectDojo-style."""
     from core.finding_knowledge import annotate
-    return _rows_to_csv(annotate(list(findings or [])), _FINDINGS_COLUMNS)
+    rows = []
+    for row in annotate(list(findings or [])):
+        rows.append({**row, 'evidence_artifacts': _evidence_artifacts(row)})
+    return _rows_to_csv(rows, _FINDINGS_COLUMNS)
 
 
 def assets_csv(assets: Optional[List[Dict]]) -> str:

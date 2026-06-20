@@ -24,7 +24,7 @@ def test_findings_csv_header_and_row():
     table = _parse(rx.findings_csv(rows))
     assert table[0] == ['Project', 'Severity', 'Status', 'Category', 'Title',
                         'Rule', 'Description', 'Impact', 'Remediation',
-                        'First seen', 'Last seen', 'ID']
+                        'Evidence Artifacts', 'First seen', 'Last seen', 'ID']
     row = table[1]
     assert row[rx_idx('Project')] == 'a.com'
     assert row[rx_idx('Title')] == 'Weak CSP'
@@ -40,6 +40,19 @@ def test_findings_csv_uses_producer_remediation():
              'evidence': {'remediation': 'Upgrade to 2.0'}}]
     table = _parse(rx.findings_csv(rows))
     assert table[1][rx_idx('Remediation')] == 'Upgrade to 2.0'
+
+
+def test_findings_csv_exports_evidence_refs():
+    rows = [{'title': 'Weak CSP', 'severity': 'high',
+             'evidence': {'evidence_refs': [{
+                 'artifact_id': 'sha256:abcdef1234567890',
+                 'path': 'recon/recon.json',
+                 'phase': 'recon',
+             }]}}]
+    table = _parse(rx.findings_csv(rows))
+
+    assert table[1][rx_idx('Evidence Artifacts')] == (
+        'recon:recon/recon.json#abcdef123456')
 
 
 def test_findings_csv_missing_keys_become_blank():

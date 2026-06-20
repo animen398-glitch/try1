@@ -2183,9 +2183,31 @@ class CollectionRunner:
         vuln = phases.get('vulns', {})
         vs = vuln.get('summary', {})
         findings = vuln.get('findings', [])
+
+        def evidence_line(finding: Dict) -> str:
+            refs = finding.get('evidence_refs')
+            if not isinstance(refs, list):
+                return ''
+            chips = []
+            for ref in refs[:3]:
+                if not isinstance(ref, dict):
+                    continue
+                path = str(ref.get('path') or '')
+                if not path:
+                    continue
+                phase = str(ref.get('phase') or '')
+                aid = str(ref.get('artifact_id') or '')
+                short = aid.split(':', 1)[-1][:12] if aid else ''
+                label = f'{phase}:{path}' if phase else path
+                chips.append(e(label + (f' #{short}' if short else '')))
+            if not chips:
+                return ''
+            return (f'<div style="font-size:11px;color:#666;margin-left:18px;">'
+                    f'Evidence: {"; ".join(chips)}</div>')
+
         items = ''.join(
             f'<li style="margin:2px 0;"><b>[{e(f.get("severity",""))}]</b> '
-            f'{e(f.get("title",""))}</li>'
+            f'{e(f.get("title",""))}{evidence_line(f)}</li>'
             for f in findings[:15]
         )
         sev_bar = stacked_bar([

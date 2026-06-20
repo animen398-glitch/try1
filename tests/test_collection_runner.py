@@ -669,6 +669,34 @@ def test_render_html_includes_security_sections():
     assert "Weak cookie sid" in html
 
 
+def test_render_html_vulnerabilities_show_evidence_refs():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {
+            "vulns": {"status": "Success",
+                      "summary": {"high": 1, "medium": 0, "info": 0,
+                                  "risk_score": 50},
+                      "findings": [{
+                          "severity": "High",
+                          "title": "Weak CSP",
+                          "evidence_refs": [{
+                              "artifact_id": "sha256:abcdef1234567890",
+                              "path": "recon/recon.json",
+                              "phase": "recon",
+                          }],
+                      }]},
+        },
+    }
+
+    html = r._render_html(report)
+
+    assert "Evidence:" in html
+    assert "recon:recon/recon.json #abcdef123456" in html
+    assert "<script" not in html.lower()
+
+
 def test_render_html_attack_surface_is_interactive_and_offline():
     r = CollectionRunner()
     report = {

@@ -3209,6 +3209,44 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Report / Export Traceability
+==============================================================================
+
+  REPORT / EXPORT TRACEABILITY (E14.7):
+    - core/report_export.py now includes an additive "Evidence Artifacts" column
+      in findings_csv(). It flattens stored evidence_refs as stable local
+      artifact pointers: phase:path#sha256prefix.
+    - core/collection_runner.py now renders finding evidence refs in the
+      self-contained report.html Vulnerabilities card. The report shows the
+      local artifact path and a short hash prefix; it does not inline raw
+      artifact contents or secrets.
+    - HTML rendering keeps the existing offline/no-JavaScript report contract and
+      escapes finding/ref values before output.
+
+  COMPATIBILITY:
+    - Existing exports keep all previous columns and append the new traceability
+      field near remediation.
+    - Findings without evidence_refs export a blank cell and render as before.
+    - No GUI/design changes, no new scanners, and no new storage tables.
+
+  TESTS:
+    - tests/test_report_export.py covers the new CSV column and evidence ref
+      formatting.
+    - tests/test_collection_runner.py covers report.html evidence ref rendering
+      and the no-script contract.
+
+  VERIFICATION:
+    - Targeted pytest for report_export/collection_runner is green
+      (77 passed).
+    - Full ruff is clean; full pytest is green (1456 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+  NEXT:
+    - E14.8 Scope Guard Coverage Audit.
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Scope & Evidence Foundation: Evidence Refs Coverage Expansion
 ==============================================================================
 
