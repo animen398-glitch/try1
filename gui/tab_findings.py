@@ -74,6 +74,11 @@ class FindingsTabMixin:
         btn_export.setToolTip("Сохранить текущий (отфильтрованный) список находок в CSV.")
         btn_export.clicked.connect(self._export_findings_csv)
         ctrl.addWidget(btn_export)
+        btn_sarif = StyledButton("Export SARIF", style='secondary')
+        btn_sarif.setToolTip(
+            "Сохранить находки в SARIF 2.1.0 (GitHub code scanning / CI / IDE).")
+        btn_sarif.clicked.connect(self._export_findings_sarif)
+        ctrl.addWidget(btn_sarif)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_findings)
         ctrl.addWidget(btn_refresh)
@@ -155,6 +160,29 @@ class FindingsTabMixin:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить CSV: {e}")
             return
         self.findings_status.setText(f"Экспортировано находок: {len(rows)}")
+
+    def _export_findings_sarif(self):
+        """Save the currently loaded (filtered) findings to a SARIF 2.1.0 file."""
+        from datetime import datetime
+
+        from core.config import APP_VERSION
+        from core.report_export import findings_sarif
+        rows = self._findings_records
+        if not rows:
+            self.findings_status.setText("Нечего экспортировать")
+            return
+        default = f"findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sarif"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export SARIF", default, "SARIF Files (*.sarif *.json)")
+        if not path:
+            return
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(findings_sarif(rows, tool_version=APP_VERSION))
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить SARIF: {e}")
+            return
+        self.findings_status.setText(f"Экспортировано (SARIF): {len(rows)}")
 
     def _refresh_findings(self):
         if self._findings_loading:

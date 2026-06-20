@@ -10,6 +10,7 @@ from the browser, so no heavy PDF dependency is bundled into the ``.exe``.
 
 import csv
 import io
+import json
 from typing import Dict, List, Optional, Sequence, Tuple
 
 # (row key, CSV header) — explicit so column order/names are stable for export.
@@ -287,3 +288,109 @@ def portfolio_csv(portfolio) -> str:
     ``portfolio.load_portfolio`` dict (``{'rows': [...]}``) or a bare row list."""
     rows = portfolio.get('rows') if isinstance(portfolio, dict) else portfolio
     return _rows_to_csv(rows, _PORTFOLIO_COLUMNS)
+
+
+# ── SARIF 2.1.0 (EPIC 16 F1) ────────────────────────────────────────────────────
+# The standard static-analysis interchange format: GitHub code scanning, Azure
+# DevOps and IDEs ingest it directly. Pure stdlib json, same purity invariant as
+# the CSV exporters - turns already-loaded findings into a string, no I/O.
+
+_SARIF_TOOL_NAME = 'Advanced Site Analyzer'
+_SARIF_INFO_URI = 'https://github.com/animen398-glitch/try1'
+
+# severity -> SARIF result level (error/warning/note is the SARIF vocabulary).
+_SARIF_LEVEL = {'critical': 'error', 'high': 'error', 'medium': 'warning',
+                'low': 'note', 'info': 'note'}
+# GitHub code scanning ranks/ filters by the numeric security-severity (0-10)
+# carried in rule properties.
+_SARIF_SECURITY_SEVERITY = {'critical': '9.5', 'high': '8.0', 'medium': '5.0',
+                            'low': '3.0', 'info': '1.0'}
+
+
+def _sarif_rule_id(finding: Dict) -> str:
+    """Stable rule identity for a finding: rule_id, else category, else generic."""
+    return (str(finding.get('rule_id') or '').strip()
+            or str(finding.get('category') or '').strip()
+            or 'finding')
+
+
+def _sarif_location(finding: Dict):
+    """SARIF physicalLocation from evidence.location (URL/host), or None."""
+    ev = finding.get('evidence') if isinstance(finding, dict) else None
+    loc = str((ev.get('location') if isinstance(ev, dict) else '') or '').strip()
+    if not loc:
+        return None
+    return {'physicalLocation': {'artifactLocation': {'uri': loc}}}
+
+
+def _sarif_help(finding: Dict) -> str:
+    """Rule help text: impact + remediation from the annotated finding object."""
+    parts = []
+    if finding.get('impact'):
+        parts.append(f"Impact: {finding['impact']}")
+    if finding.get('remediation'):
+        parts.append(f"Remediation: {finding['remediation']}")
+    return '\n\n'.join(parts)
+
+
+def findings_sarif(findings: Optional[List[Dict]], *,
+                   tool_version: str = '') -> str:
+    """SARIF 2.1.0 JSON for a findings list (``FindingsStore`` rows).
+
+    Each finding becomes a SARIF result; distinct (category/rule_id) pairs become
+    reportingDescriptors (rules) with description/impact/remediation pulled from the
+    finding_knowledge catalog (same enrichment as ``findings_csv``). ``severity``
+    maps to the SARIF level + the numeric security-severity GitHub reads;
+    ``evidence.location`` is emitted as the result's physicalLocation URI when
+    present. Pure stdlib json; an empty list yields a valid empty run."""
+    from core.finding_knowledge import annotate
+    rows = annotate(list(findings or []))
+
+    rules: Dict[str, Dict] = {}
+    results: List[Dict] = []
+    for f in rows:
+        rid = _sarif_rule_id(f)
+        sev = str(f.get('severity') or 'info').lower()
+        level = _SARIF_LEVEL.get(sev, 'note')
+        if rid not in rules:
+            rules[rid] = {
+                'id': rid,
+                'name': rid,
+                'shortDescription': {'text': str(f.get('category') or rid)},
+                'fullDescription': {'text': str(f.get('description') or '')},
+                'help': {'text': _sarif_help(f)},
+                'defaultConfiguration': {'level': level},
+                'properties': {
+                    'tags': [t for t in [str(f.get('category') or '')] if t],
+                    'security-severity': _SARIF_SECURITY_SEVERITY.get(sev, '1.0'),
+                },
+            }
+        result = {
+            'ruleId': rid,
+            'level': level,
+            'message': {'text': str(f.get('title') or rid)},
+            'properties': {
+                'severity': sev,
+                'status': str(f.get('status') or ''),
+                'firstSeen': str(f.get('first_seen_at') or ''),
+            },
+        }
+        loc = _sarif_location(f)
+        if loc:
+            result['locations'] = [loc]
+        results.append(result)
+
+    doc = {
+        '$schema': 'https://json.schemastore.org/sarif-2.1.0.json',
+        'version': '2.1.0',
+        'runs': [{
+            'tool': {'driver': {
+                'name': _SARIF_TOOL_NAME,
+                'version': str(tool_version or '0.0.0'),
+                'informationUri': _SARIF_INFO_URI,
+                'rules': list(rules.values()),
+            }},
+            'results': results,
+        }],
+    }
+    return json.dumps(doc, ensure_ascii=False, indent=2)

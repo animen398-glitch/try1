@@ -178,3 +178,31 @@ def test_finding_detail_prefers_producer_remediation(qapp):
                             'severity': 'high', 'status': 'OPEN',
                             'evidence': {'remediation': 'Patch to 2.0'}})
     assert 'Patch to 2.0' in w.findings_detail.toPlainText()
+
+
+# ── SARIF export (EPIC 16 F1) ───────────────────────────────────────────────────
+
+def test_export_findings_sarif_writes_valid_file(qapp, tmp_path, monkeypatch):
+    import json
+
+    import gui.tab_findings as tf
+    w = _window(qapp)
+    w._findings_records = [
+        {'id': 'f-a', 'project': 'p1', 'category': 'header', 'rule_id': 'csp',
+         'title': 'Weak CSP', 'severity': 'high', 'status': 'OPEN',
+         'evidence': {'location': 'https://x.com/'}}]
+    out = tmp_path / 'out.sarif'
+    monkeypatch.setattr(tf.QFileDialog, 'getSaveFileName',
+                        staticmethod(lambda *a, **k: (str(out), '')))
+    w._export_findings_sarif()
+    doc = json.loads(out.read_text(encoding='utf-8'))
+    assert doc['version'] == '2.1.0'
+    assert doc['runs'][0]['results'][0]['ruleId'] == 'csp'
+    assert doc['runs'][0]['tool']['driver']['version']   # APP_VERSION wired
+
+
+def test_export_findings_sarif_empty_is_noop(qapp):
+    w = _window(qapp)
+    w._findings_records = []
+    w._export_findings_sarif()
+    assert 'Нечего экспортировать' in w.findings_status.text()

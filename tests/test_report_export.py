@@ -6,6 +6,7 @@ terminator / quoting details that csv handles internally.
 
 import csv
 import io
+import json
 
 from core import report_export as rx
 
@@ -214,6 +215,68 @@ def test_attack_paths_csv_header_and_flattened_targets():
 def test_attack_paths_csv_empty_is_header_only():
     assert _parse(rx.attack_paths_csv([]))[0][0] == 'Score'
     assert _parse(rx.attack_paths_csv(None))[0][0] == 'Score'
+
+
+# ── findings_sarif (EPIC 16 F1 — SARIF 2.1.0) ───────────────────────────────────
+
+def _sarif(findings, **kw):
+    return json.loads(rx.findings_sarif(findings, **kw))
+
+
+def test_sarif_skeleton_and_tool():
+    doc = _sarif([], tool_version='1.2.3')
+    assert doc['version'] == '2.1.0'
+    assert doc['$schema'].endswith('sarif-2.1.0.json')
+    driver = doc['runs'][0]['tool']['driver']
+    assert driver['name'] == 'Advanced Site Analyzer'
+    assert driver['version'] == '1.2.3'
+    assert doc['runs'][0]['results'] == [] and driver['rules'] == []
+
+
+def test_sarif_result_and_rule_mapping():
+    findings = [
+        {'category': 'secret', 'rule_id': 'aws-key', 'severity': 'critical',
+         'title': 'Leaked secret: AWS', 'status': 'OPEN',
+         'first_seen_at': '2026-01-01',
+         'evidence': {'location': 'https://x.com/app.js'}},
+        {'category': 'header', 'rule_id': '', 'severity': 'medium',
+         'title': 'Missing CSP', 'status': 'OPEN', 'evidence': {}},
+    ]
+    doc = _sarif(findings)
+    results = doc['runs'][0]['results']
+    rules = {r['id']: r for r in doc['runs'][0]['tool']['driver']['rules']}
+    # rule ids: rule_id when present, else category.
+    assert 'aws-key' in rules and 'header' in rules
+    # severity -> level + numeric security-severity on the rule.
+    crit = next(r for r in results if r['ruleId'] == 'aws-key')
+    assert crit['level'] == 'error'
+    assert rules['aws-key']['properties']['security-severity'] == '9.5'
+    assert crit['locations'][0]['physicalLocation']['artifactLocation']['uri'] \
+        == 'https://x.com/app.js'
+    med = next(r for r in results if r['ruleId'] == 'header')
+    assert med['level'] == 'warning'
+    # no evidence.location -> no locations key.
+    assert 'locations' not in med
+
+
+def test_sarif_dedups_rules_and_carries_severity_property():
+    findings = [
+        {'category': 'cookie', 'rule_id': 'samesite', 'severity': 'low',
+         'title': 'A', 'status': 'OPEN', 'evidence': {}},
+        {'category': 'cookie', 'rule_id': 'samesite', 'severity': 'low',
+         'title': 'B', 'status': 'OPEN', 'evidence': {}},
+    ]
+    doc = _sarif(findings)
+    rules = doc['runs'][0]['tool']['driver']['rules']
+    assert sum(1 for r in rules if r['id'] == 'samesite') == 1   # deduped
+    results = doc['runs'][0]['results']
+    assert len(results) == 2 and all(r['level'] == 'note' for r in results)
+    assert results[0]['properties']['severity'] == 'low'
+
+
+def test_sarif_none_is_valid_empty_run():
+    doc = _sarif(None)
+    assert doc['runs'][0]['results'] == []
 
 
 # ── technology_risk_csv (EPIC 15 — technology-risk items) ───────────────────────

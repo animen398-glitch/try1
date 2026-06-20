@@ -79,6 +79,24 @@ def test_dashboard_exposes_findings():
     assert 'showFindings()' in html and '/findings' in html
 
 
+def test_findings_sarif_helper_emits_active_findings():
+    import json
+    _seed()
+    doc = json.loads(wa._findings_sarif('p2'))
+    assert doc['version'] == '2.1.0'
+    results = doc['runs'][0]['results']
+    assert [r['ruleId'] for r in results] == ['aws']   # the critical secret
+    assert results[0]['level'] == 'error'
+    # tool version is wired from config.APP_VERSION (non-empty).
+    assert doc['runs'][0]['tool']['driver']['version']
+
+
+def test_findings_sarif_helper_always_valid_when_empty():
+    import json
+    doc = json.loads(wa._findings_sarif('nope'))
+    assert doc['version'] == '2.1.0' and doc['runs'][0]['results'] == []
+
+
 # ── live endpoints ─────────────────────────────────────────────────────────────
 
 def test_findings_endpoints_with_testclient():
@@ -108,3 +126,20 @@ def test_findings_endpoints_with_testclient():
                        json={'status': 'NOPE'}).status_code == 400
     assert client.post('/findings/zzz/status',
                        json={'status': 'FIXED'}).status_code == 404
+
+
+def test_findings_sarif_endpoint_with_testclient():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    import json
+    from fastapi.testclient import TestClient
+    _seed()
+    client = TestClient(wa.app)
+    r = client.get('/findings.sarif', params={'project': 'p1'})
+    assert r.status_code == 200
+    assert r.headers['content-type'].startswith('application/sarif+json')
+    doc = json.loads(r.text)
+    assert doc['version'] == '2.1.0'
+    assert {res['ruleId'] for res in doc['runs'][0]['results']} == {'csp', 'sess'}

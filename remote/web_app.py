@@ -26,7 +26,7 @@ try:
     from fastapi import BackgroundTasks, FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import (
-        FileResponse, HTMLResponse, JSONResponse, StreamingResponse,
+        FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse,
     )
     from pydantic import BaseModel
     _FASTAPI_OK = True
@@ -366,6 +366,20 @@ def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
                 'summary': store.summary(project)}
     except Exception as e:
         return {'projects': [], 'findings': [], 'summary': {}, 'error': str(e)}
+
+
+def _findings_sarif(project: Optional[str] = None) -> str:
+    """SARIF 2.1.0 of a project's active findings (EPIC 16 F1).
+
+    Always returns a valid SARIF document so the endpoint can be uploaded straight
+    to GitHub code scanning / a CI step; a store failure degrades to an empty run."""
+    from core.config import APP_VERSION
+    from core.report_export import findings_sarif
+    try:
+        findings = FindingsStore().active_findings(project)
+    except Exception:  # noqa: BLE001 — degrade to an empty but valid SARIF run
+        findings = []
+    return findings_sarif(findings, tool_version=APP_VERSION)
 
 
 def _findings_set_status(finding_id: str, status: str,
@@ -1412,6 +1426,11 @@ if _FASTAPI_OK:
                        status: Optional[str] = None,
                        severity: Optional[str] = None):
         return JSONResponse(_findings_list(project, status, severity))
+
+    @app.get('/findings.sarif')
+    async def findings_sarif_route(project: Optional[str] = None):
+        return Response(_findings_sarif(project),
+                        media_type='application/sarif+json')
 
     @app.post('/findings/{finding_id}/status')
     async def findings_set_status(finding_id: str, body: StatusRequest):
