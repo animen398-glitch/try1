@@ -3209,6 +3209,47 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
 ==============================================================================
 ==============================================================================
+  2026-06-20 - EPIC 14 Scope & Evidence Foundation: Scope CLI / Project Scope Management
+==============================================================================
+
+  SCOPE CLI / PROJECT SCOPE MANAGEMENT (E14.5):
+    - New core/scope_management.py centralizes project scope lookup, patching,
+      setting, clearing, and response shape over ProjectStore/Project.
+    - New scope_cli.py is a thin local wrapper:
+        python scope_cli.py show <project-slug-or-url>
+        python scope_cli.py show <target> --create
+        python scope_cli.py set <target> --allow example.com --allow "*.example.com"
+          --deny admin.example.com --active --no-passive-only --rate-limit "1 rps"
+        python scope_cli.py clear <project-slug-or-url>
+      Global --json prints structured output; --output selects the project base.
+    - CLI never launches scans or network operations. It only edits
+      Projects/<slug>/metadata.json via Project.get_scope()/set_scope().
+    - New projects still get safe explicit scope defaults. clear removes the
+      explicit scope key and therefore falls back to legacy-compatible missing
+      scope behavior.
+
+  COMPATIBILITY:
+    - No GUI, scanner, SQLite, report, or CollectionRunner contract changes.
+    - Existing scope metadata shape remains unchanged.
+
+  TESTS:
+    - tests/test_scope_management.py covers show/set/clear, patch normalization,
+      safe defaults, and missing-project behavior.
+    - tests/test_scope_cli.py covers command wrappers, human output, JSON output,
+      and error exit path without subprocess.
+
+  VERIFICATION:
+    - Targeted pytest for scope_guard/scope_management/scope_cli/project/
+      collection_runner is green.
+    - Full ruff is clean; full pytest is green (1451 passed, 1 existing
+      Starlette/httpx deprecation warning).
+
+  NEXT:
+    - E14.6 Evidence Refs Coverage Expansion.
+
+==============================================================================
+
+==============================================================================
   2026-06-20 - EPIC 14 Approved Backlog / Next Tasks
 ==============================================================================
 
