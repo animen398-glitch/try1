@@ -742,6 +742,30 @@ def test_asset_exposure_metric_zero_without_engine():
     assert all('exposed asset' not in c['label'] for c in es.headline(s)['chips'])
 
 
+# ── Technology Risk metric (EPIC 15) — display only ───────────────────────────
+
+def test_technology_risk_metric_and_chip():
+    r = _report(high=0)
+    r['technology_risk'] = {'summary': {'score': 70, 'band': 'high', 'items': 3,
+                                        'outdated_technologies': 2,
+                                        'vulnerable_dependencies': 1}}
+    base = es.build_summary(_report(high=0))
+    s = es.build_summary(r)
+    assert s['metrics']['tech_risk_score'] == 70
+    assert s['metrics']['outdated_technologies'] == 2
+    assert s['metrics']['vulnerable_dependencies'] == 1
+    assert s['risk_score'] == base['risk_score']          # display only, no points
+    chips = [c['label'] for c in es.headline(s)['chips']]
+    assert '2 outdated components' in chips
+
+
+def test_technology_risk_metric_zero_without_engine():
+    s = es.build_summary(_report())
+    assert s['metrics']['tech_risk_score'] == 0
+    assert s['metrics']['outdated_technologies'] == 0
+    assert all('outdated component' not in c['label'] for c in es.headline(s)['chips'])
+
+
 # ── Attack Paths metric (EPIC 11) — display only ──────────────────────────────
 
 def test_attack_paths_metric_and_chip():

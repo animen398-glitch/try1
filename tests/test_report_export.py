@@ -216,6 +216,26 @@ def test_attack_paths_csv_empty_is_header_only():
     assert _parse(rx.attack_paths_csv(None))[0][0] == 'Score'
 
 
+# ── technology_risk_csv (EPIC 15 — technology-risk items) ───────────────────────
+
+def test_technology_risk_csv_header_and_flattened_evidence():
+    items = [{'kind': 'dependency', 'name': 'jquery', 'version': '1.7.0',
+              'category': 'JS dependency', 'score': 40, 'band': 'medium',
+              'reason': '1 known vulnerable advisory/advisories; worst=high',
+              'evidence': ['CVE-2020-11022', 'CVE-2020-11023']}]
+    table = _parse(rx.technology_risk_csv(items))
+    assert table[0] == ['Score', 'Band', 'Kind', 'Name', 'Version', 'Category',
+                        'Reason', 'Evidence']
+    row = dict(zip(table[0], table[1]))
+    assert row['Score'] == '40' and row['Name'] == 'jquery'
+    assert row['Evidence'] == 'CVE-2020-11022; CVE-2020-11023'
+
+
+def test_technology_risk_csv_empty_is_header_only():
+    assert _parse(rx.technology_risk_csv([]))[0][0] == 'Score'
+    assert _parse(rx.technology_risk_csv(None))[0][0] == 'Score'
+
+
 # ── accuracy_csv (MODULE 1 — scan-accuracy entities) ────────────────────────────
 
 def test_accuracy_csv_header_and_flattened_lists():

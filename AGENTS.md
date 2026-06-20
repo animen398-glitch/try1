@@ -1,6 +1,6 @@
-# CLAUDE.md — Advanced Site Analyzer
+# AGENTS.md — Advanced Site Analyzer
 
-> Этот файл Claude Code читает автоматически в начале каждой сессии.
+> Этот файл Codex читает автоматически в начале каждой сессии.
 > Он задаёт контекст, архитектуру и **жёсткие правила**. Не нарушать.
 
 ---
@@ -147,7 +147,7 @@ Projects/<домен>/
 
 ### 5.1 Работа только локально
 
-**Разрешено** (норма с 2026-06-15): локальные коммиты — Claude сам коммитит
+**Разрешено** (норма с 2026-06-15): локальные коммиты — Codex сам коммитит
 завершённую, проверенную (`pytest`/`ruff`) единицу работы с осмысленным
 сообщением. Артефакты сборки (`dist/`, `dist_pyside6/`, `build/`, `temp/`) в
 коммит не попадают (см. `.gitignore`).
@@ -194,7 +194,7 @@ Testing → Review → следующий Task**.
 
 ## 7. Формат отчёта после каждой задачи
 
-После каждой задачи Claude обязан выдать:
+После каждой задачи Codex обязан выдать:
 
 - **Что сделано**
 - **Какие файлы изменены** (список путей)
@@ -229,14 +229,14 @@ pytest
 
 ---
 
-## 10. Роль Claude Code в связке
+## 10. Роль Codex в связке
 
 - **GPT** — CTO / Architect / Reviewer / Planner (стратегия, ревью плана).
-- **Claude Code** — Senior Engineer: рефакторинг, тесты, аккуратная реализация
+- **Codex** — Senior Engineer: рефакторинг, тесты, аккуратная реализация
   утверждённого плана.
 - **Gemini** — альтернативные идеи / research / критика архитектуры.
 
-Claude Code не принимает крупных архитектурных решений в одиночку без плана —
+Codex не принимает крупных архитектурных решений в одиночку без плана —
 сначала план, утверждение, потом реализация поэтапно.
 
 ---
@@ -252,10 +252,10 @@ Dashboard и Reporting, риски и точки интеграции описа
 ## 12. Текущее состояние (единый ориентир — чтобы не путаться)
 
 > Это краткая «карта» статуса. Полный хронологический лог — `PROJECT_STATUS.txt`,
-> каталог модулей — `PROJECT_REPORT.md`. **CLAUDE.md — единственная точка входа.**
+> каталог модулей — `PROJECT_REPORT.md`. **AGENTS.md — единственная точка входа.**
 
 **Документы-источники (не плодить новые):**
-- `CLAUDE.md` — правила + архитектура + статус (этот файл, авто-загрузка).
+- `AGENTS.md` — правила + архитектура + статус (этот файл, авто-загрузка).
 - `ROADMAP_ASM_2.0.md` — план эпика F1–F6 (корень, НЕ `docs/`).
 - `KICKOFF_PROMPT.md` — стартовый промпт эпика.
 - `PROJECT_STATUS.txt` — детальный лог реализаций (исторический).
@@ -1559,59 +1559,23 @@ Risk-числа байт-в-байт (фактор 0, экспозиция ни�
 likelihood-оси — все 4 формулы Intelligence Foundation теперь именованные величины с
 поверхностями.**
 
-**Infrastructure chain — Cloud + Region классификация (EPIC infra-chain, phase 1) —
-`[ЗАКРЫТ]`.** Backend-фаза. Достроена инфра-цепочка Domain→Subdomain→IP→ASN→Provider→
-**Cloud→Region**→Certificate→Related Assets: первые 5 и Certificate/Related уже были
-(`asset_graph` рёбра, `infrastructure.py`, `correlation` chain, `asn_intel`), не
-хватало **нормализованного Cloud** и **структурного Region**. Решение: единый pure
-`core/cloud_classifier.py` (`classify_cloud(provider, asn_name, asn, technologies,
-cname)` → `{cloud, confidence, evidence}` или `{}`) — табличный матч по уже собранным
-сигналам (provider/ASN-строка, CDN-tech из `tech_fingerprint`, takeover-CNAME из
-`subdomain_active`), **сильнейший сигнал**: exact ASN-номер (90) > provider-keyword
-(80) > CDN-tech (75) > CNAME (70); unknown остаётся unknown (нет догадок). Offline,
-без сети/зависимостей, **не входит в risk-score** (display/derive, как exposure/
-criticality). Проводка: `infrastructure.build_infrastructure` — структурные
-`cloud`/`region`/`country` + hops Cloud/Region в `chain` + `render_html` (cloud
-`#e65100`, region `#00838f`; cloud классифицируется по always-available provider/ASN,
-т.к. recon строит infra ДО technologies — порядок учтён); `asset_adapter` кладёт
-`cloud`/`region` в attrs domain/ip/asn (из infra) и **per-subdomain cloud из CNAME**
-(аддитивно, identity байт-в-байт → ноль churn в сторе). **True cloud-region**
-(`us-east-1`) **намеренно НЕ выдумывается** — не выводим offline из GeoIP. Покрыто
-`test_cloud_classifier`(11: keyword/ASN/CDN/CNAME/unknown/strongest-wins/bad-types),
-`test_infrastructure`(+3: cloud+region в chain/ASN-номер→AWS/unknown без hop),
-`test_asset_adapter`(+4: cloud/region attrs domain/ip/asn, subdomain-cloud-from-CNAME,
-no-cname→no-cloud, identity-инвариант). **Phase 2 (отложено, по подтверждению):**
-promote `asn_intel.neighbors` (reverse-IP co-hosted) в derive-on-read related-assets +
-surface в asset_graph/correlation. **Не делалось** (осознанно): cloud/region в
-risk-score, новые SQLite-таблицы, сетевые cloud-лукапы, промоут co-hosted в активы
-(churn/FP-риск), GUI.
-
 **EPIC 15 — Technology Risk Scoring — `[ЗАКРЫТ]`.** Backend+report+web+CSV-фаза
 (GUI отложен — `feedback-internals-first-no-gui`). Чистый **display-слой**
-(derive-on-read, **НЕ слагаемое risk-score** `_risk_level`/`risk_100` — как
-exposure/criticality/accuracy): «какие из обнаруженных технологий/JS-зависимостей
-заслуживают внимания» — EOL/устаревшие версии и уязвимые либы, **без двойного счёта
-CVE** (уязвимые деп уже считаются через находки, EPIC 3). Новый pure
-`core/tech_risk.py` (`build_technology_risk(report)` — читает только `phases.recon.data`
-technologies+dependencies; консервативные `_TECH_POLICIES` PHP<8.1/AngularJS/Flask +
-`_DEPENDENCY_EOL`; version-exposed для Server/Backend/Language; band high≥60/medium≥25/
-low>0/clean; degrade-not-raise по этосу F-SR1; `load_technology_risk(project)` тонкий
-report-based ридер, зеркало `intelligence.load_accuracy`). Проводка-паритет по образцу
-Scan Accuracy: `collection_runner._build_technology_risk` → `report['technology_risk']`
-(`{summary, top:10}`) + карточка «Technology Risk» (`_render_technology_risk_card` —
-**был написан, но не вызван; хук добавлен**, закрыт техдолг); `executive_summary.
-_technology_risk` → display-метрики `tech_risk_score`/`outdated_technologies`/
-`vulnerable_dependencies` + headline-чип «N outdated components» (medium, НЕ score-
-фактор — числа риска байт-в-байт); web `_technology_risk_view` + `GET /technology-risk`
-+ кнопка «Technology Risk»/`showTechnologyRisk()` в консоли; `report_export.
-technology_risk_csv` (+`_TECHNOLOGY_RISK_COLUMNS`). Покрыто `test_tech_risk`(16:
-EOL/version-exposed/vuln-деп/clamp/band/сортировка/summary/empty/malformed/reader),
-`test_executive_summary`(+2: метрика+чип/zero, risk_score неизменен),
-`test_report_export`(+2), `test_web_intelligence`(+5: view/empty/unknown/dashboard/
-testclient), `test_collection_runner`(+3: карточка/build/skip-when-empty). **GUI-
-вкладка отложена** (опц. хвост, как Criticality/Exposure). **Не делалось**
-(осознанно): влияние на risk-score, новые таблицы, расширение EOL-политик за
-консервативный минимум (для CVE есть EPIC 3).
+(derive-on-read, **НЕ слагаемое risk-score** — как exposure/criticality/accuracy):
+EOL/устаревшие технологии и уязвимые JS-либы, **без двойного счёта CVE** (уязвимые
+деп уже считаются через находки, EPIC 3). Новый pure `core/tech_risk.py`
+(`build_technology_risk(report)` поверх `phases.recon.data`; `_TECH_POLICIES`/
+`_DEPENDENCY_EOL`; version-exposed для Server/Backend/Language; degrade-not-raise;
+`load_technology_risk(project)` тонкий report-based ридер). Проводка-паритет (образец
+Scan Accuracy): `collection_runner._build_technology_risk` → `report['technology_risk']`
++ карточка «Technology Risk» (`_render_technology_risk_card` — был осиротевшим, хук
+добавлен); `executive_summary._technology_risk` → метрики `tech_risk_score`/
+`outdated_technologies`/`vulnerable_dependencies` + чип «N outdated components» (display,
+risk-числа байт-в-байт); web `GET /technology-risk` + кнопка; `report_export.
+technology_risk_csv`. Покрыто `test_tech_risk`(16)/`test_executive_summary`(+2)/
+`test_report_export`(+2)/`test_web_intelligence`(+5)/`test_collection_runner`(+3).
+GUI-вкладка отложена (опц. хвост). Не делалось: влияние на risk-score, новые таблицы,
+расширение EOL-политик (для CVE есть EPIC 3).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

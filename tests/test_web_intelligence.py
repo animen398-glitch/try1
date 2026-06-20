@@ -187,6 +187,64 @@ def test_accuracy_endpoint_with_testclient(tmp_path, monkeypatch):
     assert r.json()['summary']['entities'] >= 1
 
 
+# ── Technology Risk web parity (EPIC 15) ──────────────────────────────────────
+
+def _seed_tech_risk_project(base):
+    """A project whose latest report carries recon data with an outdated tech and a
+    vulnerable JS dependency, so build_technology_risk produces items."""
+    import json
+
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://acme.com')
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    report = {'scan_id': sid, 'phases': {'recon': {'status': 'Success', 'data': {
+        'technologies': [{'name': 'PHP', 'version': '5.6', 'category': 'Language'}],
+        'dependencies': {'libraries': [
+            {'name': 'jquery', 'library': 'jquery', 'version': '1.7.0',
+             'vulnerabilities': [{'cve': 'CVE-X', 'severity': 'high'}]}]}}}}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    return 'acme.com'
+
+
+def test_technology_risk_view_scores_items(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_tech_risk_project(str(tmp_path))
+    d = wa._technology_risk_view(slug)
+    assert 'error' not in d
+    assert d['summary']['items'] >= 2
+    kinds = {i['kind'] for i in d['items']}
+    assert {'technology', 'dependency'} <= kinds
+
+
+def test_technology_risk_view_no_project_is_empty():
+    assert wa._technology_risk_view(None)['items'] == []
+
+
+def test_technology_risk_view_unknown_project_errors():
+    assert 'error' in wa._technology_risk_view('definitely-not-a-project-xyz')
+
+
+def test_dashboard_exposes_technology_risk():
+    html = wa._DASHBOARD
+    assert 'showTechnologyRisk()' in html and '/technology-risk' in html
+
+
+def test_technology_risk_endpoint_with_testclient(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_tech_risk_project(str(tmp_path))
+    client = TestClient(wa.app)
+    r = client.get('/technology-risk', params={'project': slug})
+    assert r.status_code == 200
+    assert r.json()['summary']['items'] >= 2
+
+
 # ── Related Assets web parity (infra-chain tail) ──────────────────────────────
 
 def _seed_related_project(base):

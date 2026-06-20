@@ -542,6 +542,26 @@ def _accuracy_view(project: Optional[str] = None) -> dict:
         return {'by_type': {}, 'items': [], 'summary': {}, 'error': str(e)}
 
 
+def _technology_risk_view(project: Optional[str] = None) -> dict:
+    """Technology-risk posture (outdated tech + vulnerable deps) for one project.
+
+    Report-based (like accuracy) — resolves the project from the report base and
+    delegates to ``tech_risk.load_technology_risk``. A display view (EPIC 15): it does
+    not alter the authoritative risk verdict. Empty/unknown project yields an empty
+    view."""
+    if not project:
+        return {'summary': {}, 'items': []}
+    try:
+        from core.tech_risk import load_technology_risk
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        if proj is None:
+            return {'summary': {}, 'items': [],
+                    'error': f'project not found: {project}'}
+        return load_technology_risk(proj)
+    except Exception as e:
+        return {'summary': {}, 'items': [], 'error': str(e)}
+
+
 def _related_assets_view(project: Optional[str] = None) -> dict:
     """Co-hosted external domains sharing the project's IP (infra-chain tail).
 
@@ -714,6 +734,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showRelatedAssets()">Related Assets</button>
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
       <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
+      <button class="btn sec" onclick="showTechnologyRisk()">Technology Risk</button>
     </div>
   </div>
 
@@ -1166,6 +1187,22 @@ async function showAccuracy(){
   }catch(ex){log('Accuracy failed: '+ex.message,'er');}
 }
 
+async function showTechnologyRisk(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Technology risk: no projects','data'); return;}
+    const r=await fetch('/technology-risk?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Technology risk ['+proj+']: score '+(s.score||0)+' ('+(s.band||'clean')
+        +') · '+(s.items||0)+' items · vuln deps '+(s.vulnerable_dependencies||0),'data');
+    (d.items||[]).slice(0,10).forEach(i=>{
+      log('  '+(i.score||0)+' ['+(i.band||'')+'] '+(i.kind||'')+' '+(i.name||'')+' '
+          +(i.version||'')+' — '+(i.reason||''),'info');
+    });
+  }catch(ex){log('Technology risk failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -1434,6 +1471,10 @@ if _FASTAPI_OK:
     @app.get('/accuracy')
     async def accuracy(project: Optional[str] = None):
         return JSONResponse(_accuracy_view(project))
+
+    @app.get('/technology-risk')
+    async def technology_risk(project: Optional[str] = None):
+        return JSONResponse(_technology_risk_view(project))
 
     @app.get('/report')
     async def report(file: str):

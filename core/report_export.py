@@ -80,6 +80,12 @@ _ACCURACY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('source', 'Source'), ('evidence', 'Evidence'),
 )
 
+_TECHNOLOGY_RISK_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('score', 'Score'), ('band', 'Band'), ('kind', 'Kind'),
+    ('name', 'Name'), ('version', 'Version'), ('category', 'Category'),
+    ('reason', 'Reason'), ('evidence', 'Evidence'),
+)
+
 _EVIDENCE_INTEGRITY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('scan_id', 'Scan'), ('status', 'Status'), ('ok', 'OK'),
     ('checked', 'Checked'), ('missing_count', 'Missing'),
@@ -220,6 +226,20 @@ def attack_paths_csv(paths: Optional[List[Dict]]) -> str:
             continue
         flat.append({**p, 'targets': '; '.join(str(t) for t in (p.get('targets') or []))})
     return _rows_to_csv(flat, _ATTACK_PATHS_COLUMNS)
+
+
+def technology_risk_csv(items: Optional[List[Dict]]) -> str:
+    """CSV of technology-risk items (``tech_risk.build_technology_risk`` items).
+
+    The ``evidence`` list is flattened to a single readable cell so the export stays a
+    flat table, in score order (same as the report card and the web /technology-risk
+    view)."""
+    flat: List[Dict] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        flat.append({**it, 'evidence': '; '.join(str(e) for e in (it.get('evidence') or []))})
+    return _rows_to_csv(flat, _TECHNOLOGY_RISK_COLUMNS)
 
 
 def accuracy_csv(items: Optional[List[Dict]]) -> str:

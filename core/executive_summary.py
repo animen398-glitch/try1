@@ -285,6 +285,21 @@ def _asset_exposure(report: Dict) -> Dict:
             'top_exposure': _int(s.get('top_exposure'))}
 
 
+def _technology_risk(report: Dict) -> Dict:
+    """Technology Risk rollup for the display **metric** (EPIC 15).
+
+    Reads the posture the technology-risk engine already stamped
+    (``report['technology_risk']``): outdated/EOL technologies and vulnerable JS
+    dependencies. Deliberately NOT a score addend — vulnerable deps/CVEs are already
+    counted in the verdict through their findings (EPIC 3); this is the "which detected
+    technology deserves attention" view, a metric/chip only. Zero when the engine
+    didn't run (older reports)."""
+    s = (report.get('technology_risk') or {}).get('summary') or {}
+    return {'tech_risk_score': _int(s.get('score')),
+            'outdated_technologies': _int(s.get('outdated_technologies')),
+            'vulnerable_dependencies': _int(s.get('vulnerable_dependencies'))}
+
+
 def _scan_accuracy(report: Dict) -> Dict:
     """Scan Accuracy rollup for the display **metric** (MODULE 1).
 
@@ -531,6 +546,10 @@ def headline(summary: Dict) -> Dict:
     if exposed_assets:
         # High-exposure assets (likelihood axis) — most reachable/attackable (display).
         add(_plural(exposed_assets, 'exposed asset'), 'medium')
+    outdated_technologies = _int(m.get('outdated_technologies'))
+    if outdated_technologies:
+        # Outdated/EOL technologies (EPIC 15) — maintenance-risk posture (display).
+        add(_plural(outdated_technologies, 'outdated component'), 'medium')
     attack_paths = _int(m.get('attack_paths'))
     if attack_paths:
         # Lateral attack paths over shared infra (EPIC 11) — high when one reaches a
@@ -658,6 +677,8 @@ def build_summary(report: Dict) -> Dict:
     paths = _attack_paths(report)
     # Scan Accuracy (MODULE 1) — average detection confidence (display metric only).
     accuracy = _scan_accuracy(report)
+    # Technology Risk (EPIC 15) — outdated tech + vulnerable deps (display metric only).
+    tech_risk = _technology_risk(report)
 
     # Explainable risk model: the raw score is the sum of named, weighted signal
     # contributions. Leaked secrets / leaking source maps / open GraphQL / weak
@@ -700,6 +721,9 @@ def build_summary(report: Dict) -> Dict:
         'top_attack_path': paths['top_attack_path'],
         'scan_accuracy_avg': accuracy['scan_accuracy_avg'],
         'low_confidence_entities': accuracy['low_confidence_entities'],
+        'tech_risk_score': tech_risk['tech_risk_score'],
+        'outdated_technologies': tech_risk['outdated_technologies'],
+        'vulnerable_dependencies': tech_risk['vulnerable_dependencies'],
         'non_ok_pages': non_ok, 'pages': pages,
         'cms': recon.get('cms') or [],
         'risk_100': risk_100,

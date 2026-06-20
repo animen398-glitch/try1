@@ -534,6 +534,40 @@ def test_render_exposure_card_shows_top_assets():
     assert "<script" not in html.lower()
 
 
+def test_render_technology_risk_card_shows_top_items():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "technology_risk": {
+                  "summary": {"score": 65, "band": "high", "items": 1,
+                              "vulnerable_dependencies": 1},
+                  "top": [{"kind": "dependency", "name": "jquery",
+                           "version": "1.7.0", "score": 40, "band": "medium",
+                           "reason": "1 known vulnerable advisory/advisories; "
+                                     "worst=high"}]}}
+    html = r._render_html(report)
+    assert "Technology Risk" in html
+    assert "jquery" in html and "1.7.0" in html
+    assert "<script" not in html.lower()
+
+
+def test_build_technology_risk_populates_report():
+    r = CollectionRunner()
+    report = {"phases": {"recon": {"data": {
+        "technologies": [{"name": "PHP", "version": "5.6", "category": "Language"}],
+        "dependencies": {}}}}}
+    r._build_technology_risk(report)
+    assert report["technology_risk"]["summary"]["items"] == 1
+    assert report["technology_risk"]["top"][0]["name"] == "PHP"
+
+
+def test_build_technology_risk_skips_when_no_items():
+    r = CollectionRunner()
+    report = {"phases": {"recon": {"data": {"technologies": [], "dependencies": {}}}}}
+    r._build_technology_risk(report)
+    assert "technology_risk" not in report
+
+
 def test_render_accuracy_card_shows_confidence_and_low():
     r = CollectionRunner()
     report = {"url": "https://x", "domain": "x", "started_at": "",

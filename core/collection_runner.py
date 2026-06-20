@@ -453,6 +453,10 @@ class CollectionRunner:
         # findings / assets / infra / API / secrets) — derived from the report +
         # stores; flags the lowest-confidence detections to verify.
         self._build_accuracy(report, project)
+        # Technology Risk Scoring (EPIC 15): display-only posture over detected
+        # technologies and JS dependencies. It does not add scanners or alter the
+        # authoritative risk score.
+        self._build_technology_risk(report)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -1542,6 +1546,27 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — accuracy must not fail a scan
             self._log(f'  Scan accuracy failed: {e}')
 
+    def _build_technology_risk(self, report: Dict) -> None:
+        """Derive technology-risk posture (EPIC 15, best-effort).
+
+        Read-only over the report's recon data; stored compactly for report,
+        executive metrics, and exports. A failure must never sink a scan.
+        """
+        try:
+            from core.tech_risk import build_technology_risk
+            data = build_technology_risk(report)
+            summary = data.get('summary') or {}
+            if not summary.get('items'):
+                return
+            report['technology_risk'] = {
+                'summary': summary,
+                'top': (data.get('items') or [])[:10],
+            }
+            self._log(f"  Technology risk: score {summary.get('score', 0)}, "
+                      f"{summary.get('items', 0)} item(s)")
+        except Exception as e:  # noqa: BLE001 — tech risk must not fail a scan
+            self._log(f'  Technology risk failed: {e}')
+
     @classmethod
     def _render_accuracy_card(cls, adata: Dict) -> str:
         """Offline HTML for the Scan Accuracy card: average confidence per entity
@@ -1574,6 +1599,33 @@ class CollectionRunner:
                      f'<table style="font-size:12px;">{low_rows}</table>'
                      if low_rows else '')
         return head + type_table + low_table
+
+    @classmethod
+    def _render_technology_risk_card(cls, tdata: Dict) -> str:
+        """Offline HTML for Technology Risk Scoring: top risky technologies and
+        dependencies, without duplicating raw vulnerability contents."""
+        e = html.escape
+        summary = tdata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Tech risk score: '
+                f'<b>{e(str(summary.get("score", 0)))}</b> '
+                f'({e(str(summary.get("band", "clean")))}) · items: '
+                f'<b>{e(str(summary.get("items", 0)))}</b> · vulnerable deps: '
+                f'<b>{e(str(summary.get("vulnerable_dependencies", 0)))}</b></p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;color:#888;">'
+            f'{e(str(i.get("score", 0)))}</td>'
+            f'<td style="font-weight:bold;">{e(str(i.get("name") or ""))} '
+            f'{e(str(i.get("version") or ""))}</td>'
+            f'<td style="padding:1px 12px;color:#666;">'
+            f'{e(str(i.get("kind") or ""))}</td>'
+            f'<td>{e(str(i.get("reason") or ""))}</td></tr>'
+            for i in tdata.get('top', []))
+        table = (f'<table style="font-size:12px;"><tr>'
+                 f'<td style="padding-right:12px;"><b>Score</b></td>'
+                 f'<td><b>Technology</b></td><td style="padding:0 12px;">'
+                 f'<b>Kind</b></td><td><b>Reason</b></td></tr>{rows}</table>'
+                 if rows else '')
+        return head + table
 
     @classmethod
     def _render_attack_paths_card(cls, pdata: Dict) -> str:
@@ -2309,6 +2361,16 @@ class CollectionRunner:
                 'Attack Paths', self._render_attack_paths_card(pdata),
                 f"top {psum.get('top_score', 0)} · "
                 f"{psum.get('critical_paths', 0)} критичных"))
+
+        # Technology Risk (EPIC 15) — display posture over detected technologies
+        # and JS dependencies (does not alter the authoritative risk verdict).
+        tdata = report.get('technology_risk')
+        if isinstance(tdata, dict) and (tdata.get('summary') or {}).get('items'):
+            tsum = tdata['summary']
+            body_parts.append(card(
+                'Technology Risk', self._render_technology_risk_card(tdata),
+                f"score {tsum.get('score', 0)} ({tsum.get('band', 'clean')}) · "
+                f"vuln deps {tsum.get('vulnerable_dependencies', 0)}"))
 
         # Scan Accuracy (MODULE 1) — unified confidence per entity.
         accdata = report.get('accuracy')
