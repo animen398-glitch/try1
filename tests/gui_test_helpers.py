@@ -12,6 +12,7 @@ from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_assets import AssetsTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_findings import FindingsTabMixin
+from gui.tab_technology_risk import TechnologyRiskTabMixin
 
 
 class _Status:
@@ -76,3 +77,13 @@ class AccuracyHost(_BaseHost, AccuracyTabMixin, DashboardTabMixin):
         self._acc_table_loading = False
         self._acc_filter_pending = False
         self._build_accuracy_tab()
+
+
+class TechnologyRiskHost(_BaseHost, TechnologyRiskTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._tr_loading = False
+        self._tr_loaded = False
+        self._tr_table_loading = False
+        self._tr_filter_pending = False
+        self._build_technology_risk_tab()
