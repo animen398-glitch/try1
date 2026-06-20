@@ -34,6 +34,12 @@ def _alert_config():
     return cfg if isinstance(cfg, dict) and cfg.get('enabled') else None
 
 
+def _github_config():
+    """GitHub Issues config from settings.json (None when absent)."""
+    cfg = load_settings().get('github')
+    return cfg if isinstance(cfg, dict) else None
+
+
 # ── command functions (thin wrappers over core.monitor: take a store) ─────────
 
 def cmd_enable(store: ProjectStore, url: str, interval: str) -> dict:
@@ -105,6 +111,25 @@ def cmd_ci(store: ProjectStore, target: str, base: Path, *, fail_on: str = 'high
             'sarif_out': sarif_written}
 
 
+def cmd_issues(store: ProjectStore, target: str, *, config=None,
+               min_severity=None, findings_store=None, client=None) -> dict:
+    """GitHub Issues sync (EPIC 16 wave 2): open an issue for each not-yet-tracked
+    active finding of the target's project at/above ``min_severity`` (idempotent).
+
+    Thin orchestration: resolve the project, then delegate to
+    ``github_issues.sync_findings`` over the ``FindingsStore``. ``config`` defaults
+    to settings.json ``github``; ``findings_store`` / ``client`` are injectable for
+    tests (no network)."""
+    from core import github_issues
+    from core.findings_store import FindingsStore
+    project = store.get_or_create(target)
+    cfg = dict(config if config is not None else (_github_config() or {}))
+    if min_severity:
+        cfg['min_severity'] = min_severity
+    fstore = findings_store if findings_store is not None else FindingsStore()
+    return github_issues.sync_findings(fstore, project.slug, cfg, client=client)
+
+
 # ── pretty printing ───────────────────────────────────────────────────────────
 
 def _print_event(ev: dict) -> None:
@@ -158,6 +183,13 @@ def main(argv=None):
                       help='Write a SARIF 2.1.0 report of active findings here')
     p_ci.add_argument('--no-scan', action='store_true',
                       help='Skip the scan; gate the two most recent existing scans')
+
+    p_iss = sub.add_parser(
+        'issues', help='Open GitHub issues for active findings (idempotent)')
+    p_iss.add_argument('url')
+    p_iss.add_argument('--min-severity', default=None,
+                       choices=['critical', 'high', 'medium', 'low', 'info'],
+                       help='Override the min severity from settings (default: high)')
 
     opts = parser.parse_args(argv)
 
@@ -216,6 +248,20 @@ def main(argv=None):
         if out['sarif_out']:
             print(f'SARIF written: {out["sarif_out"]}')
         sys.exit(ci_gate.exit_code(gate))
+    elif opts.command == 'issues':
+        out = cmd_issues(store, opts.url, min_severity=opts.min_severity)
+        if out.get('reason'):
+            print(f'GitHub Issues sync skipped: {out["reason"]} '
+                  f'(configure "github" in settings.json).')
+        else:
+            print(f'GitHub Issues: {len(out["created"])} opened, '
+                  f'{out["skipped"]} already tracked, '
+                  f'{len(out["errors"])} error(s).')
+            for c in out['created']:
+                print(f'  #{c.get("number")} {c.get("title", "")} '
+                      f'— {c.get("url", "")}')
+            for e in out['errors']:
+                print(f'  error ({e.get("id")}): {e.get("error")}')
     elif opts.command == 'watch':
         sched = monitor.MonitorScheduler(store, check_interval=opts.every,
                                          on_event=_print_event,

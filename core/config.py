@@ -56,6 +56,10 @@ DEFAULT_SETTINGS = {
     # Alert Center (#9) — opt-in; off until a channel is configured. See
     # core.alerts for the full shape (telegram/discord/email + types filter).
     'alerts': {'enabled': False},
+    # GitHub Issues integration (EPIC 16 wave 2) — opt-in; off until a token/
+    # owner/repo are set. See core.github_issues for the full shape
+    # (token/owner/repo/min_severity/labels). Idempotent finding → issue push.
+    'github': {'enabled': False},
     # Continuous Monitoring (F3) in-app scheduler — opt-in background watcher
     # that runs while the app is open. ``monitor_check_interval`` is seconds
     # between due-checks (the OS-level adapter is monitor_cli.py).

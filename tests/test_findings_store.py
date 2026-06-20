@@ -355,6 +355,44 @@ def test_sync_reopens_fixed_when_seen_again(tmp_path):
     assert s.events(fid)[-1]['type'] == 'REOPENED'
 
 
+# ── GitHub issue mapping (EPIC 16 wave 2) ─────────────────────────────────────
+
+def test_untracked_for_issue_and_record(tmp_path):
+    # The finding → GitHub issue mapping is an ISSUE_CREATED event; a recorded
+    # finding drops out of the untracked set (idempotent push).
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    assert s.untracked_for_issue('proj', [sid]) == [sid]
+    s.record_issue('proj', sid, 42, 'https://github.com/o/r/issues/42')
+    assert s.untracked_for_issue('proj', [sid]) == []
+    ev = s.events(sid)[-1]
+    assert ev['type'] == 'ISSUE_CREATED'
+    import json
+    assert json.loads(ev['note']) == {'number': 42,
+                                       'url': 'https://github.com/o/r/issues/42'}
+
+
+def test_untracked_for_issue_resets_after_reopen(tmp_path):
+    # A fixed finding that reappears (new REOPENED episode) needs a fresh issue:
+    # its old ISSUE_CREATED predates the REOPENED, so it is untracked again.
+    s = _store(tmp_path)
+    f = _finding()
+    sid = _sid('proj', f)
+    s.upsert('proj', f)
+    s.record_issue('proj', sid, 7, 'u', now='2026-01-01T00:00:00')
+    assert s.untracked_for_issue('proj', [sid]) == []
+    s.set_status(sid, 'FIXED', source='auto', event_type='RESOLVED_AUTO')
+    s.set_status(sid, 'OPEN', source='auto', event_type='REOPENED',
+                 now='2026-03-01T00:00:00')
+    assert s.untracked_for_issue('proj', [sid]) == [sid]
+
+
+def test_untracked_for_issue_empty(tmp_path):
+    assert _store(tmp_path).untracked_for_issue('proj', []) == []
+
+
 # ── cross-project isolation (B fix: location-less findings don't collide) ──────
 
 def test_location_less_finding_does_not_collide_across_projects(tmp_path):

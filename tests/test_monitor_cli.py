@@ -127,6 +127,27 @@ def test_cmd_ci_writes_sarif(tmp_path):
     assert json.loads(sarif.read_text(encoding='utf-8'))['version'] == '2.1.0'
 
 
+def test_cmd_issues_creates_via_injected_client(tmp_path):
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    fstore = FindingsStore(tmp_path / 'f.db')
+    f = {'id': fingerprint('vuln', 'sqli', 'https://t.com/a'), 'category': 'vuln',
+         'rule_id': 'sqli', 'title': 'SQLi', 'severity': 'high',
+         'evidence': {'location': 'https://t.com/a'}}
+    fstore.upsert('t.com', f)               # project slug of https://t.com
+    store = ProjectStore(tmp_path)
+
+    class _Client:
+        def create_issue(self, title, body, labels=None):
+            return {'number': 1, 'url': 'https://gh/issues/1'}
+
+    cfg = {'enabled': True, 'token': 't', 'owner': 'o', 'repo': 'r'}
+    out = cli.cmd_issues(store, 'https://t.com', config=cfg,
+                         findings_store=fstore, client=_Client())
+    assert len(out['created']) == 1 and out['created'][0]['number'] == 1
+    assert out['skipped'] == 0
+
+
 def test_main_enable_then_status(tmp_path, capsys):
     base = str(tmp_path)
     cli.main(['--output', base, 'enable', 'https://example.com',

@@ -47,7 +47,7 @@ INACTIVE_STATUSES = frozenset({'FIXED', 'IGNORED', 'FALSE_POSITIVE'})
 SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
-               'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED')
+               'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED', 'ISSUE_CREATED')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -437,6 +437,51 @@ class FindingsStore(SQLiteStore):
         in input order."""
         return self._record_oneshot(finding_ids, 'FINDING_ALERTED',
                                      scan_id=scan_id, now=now)
+
+    def untracked_for_issue(self, project: str,
+                            finding_ids: List[str]) -> List[str]:
+        """Of ``finding_ids``, the ones with no *current* GitHub issue (read-only).
+
+        The ``finding → issue`` mapping is an ``ISSUE_CREATED`` event carrying the
+        issue number/url in ``note`` (no second table). A finding is considered
+        untracked when it has no such event, or its latest one predates its latest
+        ``REOPENED`` — same episode-aware semantics as the one-shot guard: a fixed
+        finding that reappears needs a fresh issue. Returns the pending subset in
+        input order. ``project`` is accepted for symmetry/call-site clarity; the ids
+        are already project-scoped."""
+        ids = list(dict.fromkeys(str(i) for i in (finding_ids or []) if i))
+        if not ids:
+            return []
+        placeholders = ','.join('?' * len(ids))
+        with self._connect() as conn:
+            def latest(et: str) -> Dict[str, str]:
+                rows = conn.execute(
+                    f'SELECT finding_id fid, MAX(at) at FROM finding_events'
+                    f' WHERE type = ? AND finding_id IN ({placeholders})'
+                    f' GROUP BY finding_id', (et, *ids)).fetchall()
+                return {r['fid']: r['at'] for r in rows}
+
+            issued_at, reopen_at = latest('ISSUE_CREATED'), latest('REOPENED')
+        pending: List[str] = []
+        for fid in ids:
+            issued = issued_at.get(fid)
+            reopened = reopen_at.get(fid)
+            tracked = issued is not None and (reopened is None or issued > reopened)
+            if not tracked:
+                pending.append(fid)
+        return pending
+
+    def record_issue(self, project: str, finding_id: str, number: int, url: str, *,
+                     scan_id: Optional[str] = None,
+                     now: Optional[str] = None) -> None:
+        """Persist the ``finding → GitHub issue`` mapping as an ``ISSUE_CREATED``
+        event (``note`` = ``{"number", "url"}``). Recorded only after the issue is
+        actually created, so a failed API call leaves the finding untracked and
+        eligible to retry. No new table — the mapping lives in ``finding_events``."""
+        note = json.dumps({'number': number, 'url': url})
+        with self._connect() as conn:
+            self._log_event(conn, str(finding_id), 'ISSUE_CREATED',
+                            scan_id=scan_id, note=note, at=now or _now())
 
     def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:
         """``finding_id → timestamp of its most recent REOPENED event``.
