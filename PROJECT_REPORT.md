@@ -252,9 +252,10 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 ---
 
 *Сгенерировано в ходе ревью. Детали и история изменений — `PROJECT_STATUS.txt`.*
-> Update 2026-06-20: Epic 14 - Scope & Evidence Foundation is active.
+> Update 2026-06-20: Epic 14 - Scope & Evidence Foundation is CLOSED.
 > Completed: Scope Guard v1, Evidence Manifest v1, Evidence Integrity Hook,
-> Finding Evidence Persistence v1. Approved next order: E14.5 Scope CLI /
-> Project Scope Management; E14.6 Evidence Refs Coverage Expansion; E14.7
-> Report / Export Traceability; E14.8 Scope Guard Coverage Audit; E14.9 Evidence
-> Integrity Integration With Monitor/Export; E14.10 Roadmap / Status Cleanup.
+> Finding Evidence Persistence v1, Scope CLI / Project Scope Management,
+> Evidence Refs Coverage Expansion, Report / Export Traceability, Scope Guard
+> Coverage Audit, Evidence Integrity Integration With Monitor/Export, and
+> roadmap/status cleanup. Final verification: ruff clean; full pytest 1460
+> passed with 1 existing Starlette/httpx warning.

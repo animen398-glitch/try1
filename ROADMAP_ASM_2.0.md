@@ -376,7 +376,10 @@ Wayback/robots/sitemap/favicon-similarity). Каждый — отдельный 
 add scanners and do not work on GUI/design in this epic. Focus on project scope,
 evidence traceability, integrity checks, and backend/reporting surfaces.
 
-### Already Completed
+**Status:** CLOSED on 2026-06-20. Final verification: full ruff clean and full
+pytest green at 1460 passed, 1 existing Starlette/httpx warning.
+
+### Completed Scope
 
 - E14.1 Scope Guard v1 - project-level scope in `Projects/<slug>/metadata.json`,
   safe defaults for new projects, legacy-compatible missing scope, and active
@@ -387,91 +390,38 @@ evidence traceability, integrity checks, and backend/reporting surfaces.
   `evidence_cli.py verify/json`.
 - E14.4 Finding Evidence Persistence v1 - finding `evidence_refs` persist through
   `findings_adapter` into `FindingsStore.evidence` JSON.
+- E14.5 Scope CLI / Project Scope Management - `scope_cli.py` plus
+  `core.scope_management` for show/set/clear of allow/deny domains,
+  `active_scan_enabled`, `passive_only`, and `rate_limit`.
+- E14.6 Evidence Refs Coverage Expansion - category/title/source mappings cover
+  native cookie/header/transport/tech/dependency/graphql/sourcemap findings when
+  existing artifacts prove them.
+- E14.7 Report / Export Traceability - finding evidence refs are visible in
+  report.html and findings CSV as compact artifact path/hash pointers.
+- E14.8 Scope Guard Coverage Audit - `ACTIVE_SCOPE_GUARDED_PHASES` and offline
+  regression tests prove all active opt-in phase callables are skipped under
+  `active_scan_enabled=False` and `passive_only=True`; nuclei is covered before
+  invoking the external runner.
+- E14.9 Evidence Integrity Integration With Monitor/Export - diff reports,
+  monitor summaries/events, and export helpers can surface non-blocking evidence
+  integrity warnings from `audit_scan()`.
+- E14.10 Roadmap / Status Cleanup - roadmap/status/report/kickoff handoff docs
+  aligned after closure.
 
-### Remaining Backlog, Approved Order
+### Compatibility Decisions Kept
 
-#### E14.5 Scope CLI / Project Scope Management
+- Scope remains project-level metadata in `Projects/<slug>/metadata.json`.
+- New projects are safe by default; old projects with missing scope keep legacy
+  active opt-in behavior until a scope is explicitly set.
+- Evidence manifests are scan-local; evidence refs stay flat
+  (`artifact_id`, `path`, `phase`) and never include raw secret values.
+- Integrity failures warn by default and do not block scans, diff, monitor,
+  alerts, or exports.
+- Passive/base collection phases remain unblocked in Scope Guard v1.
 
-**Why:** new projects are safe-by-default (`active_scan_enabled=False`,
-`passive_only=True`), but there is no convenient local surface to enable active
-authorized phases or edit allow/deny rules.
+### Next Work
 
-**Scope:**
-- Add thin CLI, e.g. `scope_cli.py`, over `core.project.ProjectStore` and
-  `Project.get_scope()/set_scope()`.
-- Commands: `show`, `set`, `clear`.
-- Support: `allowed_domains`, wildcard domains, `denied_domains`,
-  `active_scan_enabled`, `passive_only`, `rate_limit`.
-- Keep all logic in `core/`; CLI only parses/prints.
-- No GUI, no scanner changes, no network.
-
-**DoD:** offline tests, `PROJECT_STATUS.txt`, `ruff`, targeted pytest, full
-pytest, local commit.
-
-#### E14.6 Evidence Refs Coverage Expansion
-
-**Why:** refs currently cover the main finding sources, but every finding producer
-should point to a concrete artifact when possible.
-
-**Scope:**
-- Audit all finding producers and source labels: `cookie`, `dependency-audit`,
-  `nuclei`, `osv`, `graphql`, `sourcemap`, `secret`, `secret-audit`, `dns`,
-  `subdomain-active`, analyzer plugins.
-- Extend `core.evidence._SOURCE_ARTIFACTS` and/or producer metadata only where
-  an existing artifact already proves the finding.
-- Do not create new scanners or duplicate artifact files.
-- Keep evidence refs flat: `artifact_id`, `path`, `phase`.
-
-**DoD:** representative producer tests, missing-artifact tests, backward
-compatibility for old reports/findings.
-
-#### E14.7 Report / Export Traceability
-
-**Why:** evidence exists in `report.json` and FindingsStore, but backend reports
-and exports should expose it for audit and handoff.
-
-**Scope:**
-- Backend/reporting only, no GUI redesign.
-- Surface evidence refs in HTML report and CSV/export helpers where findings are
-  already rendered/exported.
-- Include artifact path, phase, and artifact id/hash in compact form.
-- Preserve existing report layout and old report compatibility.
-- Never export raw secret values.
-
-#### E14.8 Scope Guard Coverage Audit
-
-**Why:** Scope Guard v1 gates active opt-in phases, but the project needs a
-regression audit that no active operation escapes the guard.
-
-**Scope:**
-- Review active operations in `CollectionRunner` and adjacent CLIs: external
-  tools, screenshot probes, OSV/NVD, ASN reverse-IP, OpenAPI probes, active
-  subdomain takeover checks.
-- Add tests that `active_scan_enabled=False` / `passive_only=True` prevents
-  active phase callables from being invoked.
-- Passive/base phases remain unblocked unless a later approved plan changes that.
-
-#### E14.9 Evidence Integrity Integration With Monitor/Export
-
-**Why:** integrity checks exist, but monitor/export should be able to warn when a
-scan's evidence is missing or changed.
-
-**Scope:**
-- Add backend integration points only.
-- Before export or monitor diff/report consumption, attach non-blocking integrity
-  status/warning when `evidence_manifest.json` is missing, corrupt, or changed.
-- Do not block scans by default.
-- Do not add new notification channels.
-
-#### E14.10 Roadmap / Status Cleanup
-
-**Why:** Epic 14 is the current backend focus and should be visible to Claude/Codex
-without reading chat history.
-
-**Scope:**
-- Keep `ROADMAP_ASM_2.0.md`, `PROJECT_STATUS.txt`, `PROJECT_REPORT.md`, and
-  `KICKOFF_PROMPT.md` aligned.
-- Do not create parallel roadmap files.
-- Mark completed E14 items and keep the remaining backlog ordered.
+Epic 14 is complete. Choose the next epic/task explicitly before coding; do not
+continue adding scanners or GUI/design work under Epic 14.
 
 ---

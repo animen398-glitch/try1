@@ -68,7 +68,7 @@ Analyzer в платформу ASM/CSM, сместив акцент с поис�
 - `Прогони pytest и покажи только упавшие` — проверка.
 - `Это меняет контракт X — стоп, объясни влияние на обратную совместимость`.
 - `Недостаточно данных по Y — задай уточняющие вопросы вместо догадок`.
-## Current Handoff Prompt - Epic 14
+## Current Handoff Prompt - Post Epic 14
 
 Use this block when continuing in Claude Code from the repository root.
 
@@ -76,40 +76,30 @@ Use this block when continuing in Claude Code from the repository root.
 Context and rules are in AGENTS.md, ROADMAP_ASM_2.0.md, PROJECT_STATUS.txt, and
 PROJECT_REPORT.md. Read them before coding.
 
-Current focus: Epic 14 - Scope & Evidence Foundation.
-
-Goal: improve trust in collected data, safe active operations, and evidence
-traceability. Do NOT add new scanners and do NOT work on GUI/design unless a
-later explicit task says so. Prefer core/ logic with thin CLI/reporting wrappers.
+Epic 14 - Scope & Evidence Foundation is complete and closed.
 
 Completed Epic 14 items:
 - E14.1 Scope Guard v1
 - E14.2 Evidence Manifest v1
 - E14.3 Evidence Integrity Hook / evidence_cli.py
 - E14.4 Finding Evidence Persistence v1
+- E14.5 Scope CLI / Project Scope Management
+- E14.6 Evidence Refs Coverage Expansion
+- E14.7 Report / Export Traceability
+- E14.8 Scope Guard Coverage Audit
+- E14.9 Evidence Integrity Integration With Monitor/Export
+- E14.10 Roadmap / Status Cleanup
 
-Approved next tasks, in order:
-1. E14.5 Scope CLI / Project Scope Management
-   Thin local CLI over Project.get_scope()/set_scope(): show/set/clear,
-   allowed/wildcard/denied domains, active_scan_enabled, passive_only, rate_limit.
-   No GUI, no scanner changes, no network.
+Final verification for Epic 14:
+- ruff clean
+- full pytest green: 1460 passed, 1 existing Starlette/httpx warning
 
-2. E14.6 Evidence Refs Coverage Expansion
-   Expand evidence refs for existing finding producers only when existing
-   artifacts prove the finding. Keep refs flat: artifact_id/path/phase.
-
-3. E14.7 Report / Export Traceability
-   Surface evidence refs in backend report/export outputs. No raw secrets.
-
-4. E14.8 Scope Guard Coverage Audit
-   Add regression tests that active operations cannot bypass Scope Guard.
-
-5. E14.9 Evidence Integrity Integration With Monitor/Export
-   Add non-blocking integrity warnings/status for monitor/export consumers.
-
-6. E14.10 Roadmap / Status Cleanup
-   Keep ROADMAP_ASM_2.0.md, PROJECT_STATUS.txt, PROJECT_REPORT.md,
-   KICKOFF_PROMPT.md aligned.
+Current next step:
+- Do not continue Epic 14 unless the user explicitly reopens it.
+- Ask/confirm the next roadmap epic or concrete task before coding.
+- Keep the Epic 14 decisions intact: project-level scope, safe new-project
+  defaults, legacy-compatible missing scope, flat evidence_refs, scan-local
+  evidence_manifest.json, and non-blocking evidence integrity warnings.
 
 Process:
 - Before coding any task, show a short plan: files, contracts preserved, backward
@@ -119,8 +109,6 @@ Process:
 - Run ruff, targeted pytest, full pytest.
 - Update PROJECT_STATUS.txt.
 - Make a local commit. Do not push/fetch/pull/clone.
-
-Start with E14.5 unless the user explicitly chooses another item.
 ```
 
 ---
