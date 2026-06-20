@@ -1579,6 +1579,22 @@ GUI-вкладка добавлена (`gui/tab_technology_risk.py`, зерка�
 расширение EOL-политик (для CVE есть EPIC 3). EPIC 15 — полная GUI+web+report+CSV
 проводка.
 
+**Infrastructure chain — Phase 2 (co-hosted related assets) — `[ЗАКРЫТ]`.** Bulk был
+сделан в `feea0a6` (derive-view `asn_intel.related_assets`/`load_related_assets` +
+report-карточка + web `/related-assets`). Хвост: surface co-hosted в `asset_graph`
+(решение пользователя: asset_graph, backend+report+web; correlation не трогаем).
+Co-hosted соседи — **внешние (non-owned) узлы** типа `related` (`external:True`) с ребром
+`co_hosted` от owned-IP-узла, **никогда** не в `AssetStore` (уважает решение
+`asn_intel.py:210`). `build_asset_graph(assets, related=None)` + `_add_co_hosted`;
+`load_asset_graph(project, related=None)` — summary держит `nodes`/`edges`=owned,
+внешние в отдельном `related`-счётчике (метрики не инфлейтятся). Проводка:
+`collection_runner._build_asset_graph(related=related_assets_from_report(report))` +
+карточка «со-хостящихся доменов: N»; web `_correlation_view` резолвит проект →
+`load_related_assets` → `load_asset_graph(related=…)`. Criticality/exposure/attack_paths
+не тронуты (зовут `load_asset_graph` без related). Покрыто `test_asset_graph`(+7)/
+`test_collection_runner`(+2)/`test_web_intelligence`(+1). Не делалось: промоут в
+AssetStore, correlation, GUI, влияние на risk.
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +

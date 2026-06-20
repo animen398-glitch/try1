@@ -459,12 +459,17 @@ def _correlation_view(project: Optional[str] = None) -> dict:
         return {'exposure': [], 'asset_findings': {}, 'finding_chains': {},
                 'summary': {}}
     try:
+        from core.asn_intel import load_related_assets
         from core.asset_graph import load_asset_graph
         from core.correlation import load_correlation
         data = load_correlation(project)
         # EPIC 5: asset↔asset relationships + shared-infra exposure clusters
-        # alongside the finding↔asset correlation (the same engine surface).
-        data['asset_graph'] = load_asset_graph(project)
+        # alongside the finding↔asset correlation (the same engine surface). The
+        # infra-chain tail (co-hosted external domains) is surfaced as external
+        # `related` nodes when the opt-in asn_intel phase ran for this project.
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        related = load_related_assets(proj) if proj is not None else None
+        data['asset_graph'] = load_asset_graph(project, related=related)
         return data
     except Exception as e:
         return {'exposure': [], 'summary': {}, 'error': str(e)}
@@ -1069,9 +1074,13 @@ async function showCorrelation(){
     });
     const ag=d.asset_graph||{}; const gs=ag.summary||{};
     log('Asset graph: '+(gs.nodes||0)+' assets · '+(gs.edges||0)+' links · '
-        +(gs.clusters||0)+' shared-infra cluster(s)','data');
+        +(gs.clusters||0)+' shared-infra cluster(s)'
+        +(gs.related?' · '+gs.related+' co-hosted domain(s)':''),'data');
     (ag.shared_infra||[]).slice(0,10).forEach(c=>{
       log('  '+(c.type||'')+' '+(c.node||'')+' ← '+(c.count||0)+' assets','info');
+    });
+    (ag.graph&&ag.graph.nodes||[]).filter(n=>n.external).slice(0,15).forEach(n=>{
+      log('  co-hosted: '+(n.value||''),'info');
     });
   }catch(ex){log('Correlation failed: '+ex.message,'er');}
 }

@@ -504,6 +504,28 @@ def test_render_asset_graph_card_shows_clusters():
     assert "<script" not in html.lower()
 
 
+def test_render_asset_graph_card_shows_co_hosted():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "asset_graph": {
+                  "summary": {"nodes": 9, "edges": 12, "clusters": 1, "related": 4},
+                  "shared_infra": []}}
+    html = r._render_html(report)
+    assert "со-хостящихся доменов" in html and "4" in html
+
+
+def test_render_asset_graph_card_hides_co_hosted_when_zero():
+    r = CollectionRunner()
+    report = {"url": "https://x", "domain": "x", "started_at": "",
+              "finished_at": "", "project_dir": "", "phases": {},
+              "asset_graph": {
+                  "summary": {"nodes": 9, "edges": 12, "clusters": 1, "related": 0},
+                  "shared_infra": []}}
+    html = r._render_html(report)
+    assert "со-хостящихся доменов" not in html
+
+
 def test_render_asset_criticality_card_shows_top_assets():
     r = CollectionRunner()
     report = {"url": "https://x", "domain": "x", "started_at": "",

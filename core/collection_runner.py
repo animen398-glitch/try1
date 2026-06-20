@@ -1343,7 +1343,12 @@ class CollectionRunner:
         + top shared-infra clusters) for the report card + the exposure metric."""
         try:
             from core.asset_graph import load_asset_graph
-            data = load_asset_graph(project.slug)
+            # Last hop of the infra chain: co-hosted external domains (reverse-IP from
+            # the opt-in asn_intel phase) surface as external `related` graph nodes —
+            # never owned assets. Derived straight from the report's asn_intel phase,
+            # so the build order vs _build_related_assets does not matter.
+            related = related_assets_from_report(report)
+            data = load_asset_graph(project.slug, related=related)
             summary = data.get('summary') or {}
             clusters = data.get('shared_infra') or []
             if data.get('error') or not summary.get('nodes'):
@@ -1352,7 +1357,9 @@ class CollectionRunner:
                                      'shared_infra': clusters[:10]}
             self._log(f"  Asset graph: {summary.get('nodes', 0)} активов, "
                       f"{summary.get('edges', 0)} связей, "
-                      f"{summary.get('clusters', 0)} кластер(ов) общей инфры")
+                      f"{summary.get('clusters', 0)} кластер(ов) общей инфры"
+                      + (f", {summary.get('related', 0)} со-хостящихся"
+                         if summary.get('related') else ''))
         except Exception as e:  # noqa: BLE001 — asset graph must not fail a scan
             self._log(f'  Asset graph failed: {e}')
 
@@ -1691,10 +1698,14 @@ class CollectionRunner:
         shared-infrastructure exposure clusters (a node many assets depend on)."""
         e = html.escape
         summary = gdata.get('summary', {})
+        related = summary.get("related", 0)
+        related_html = (f' · со-хостящихся доменов: <b>{e(str(related))}</b>'
+                        if related else '')
         head = (f'<p style="font-size:13px;">Связей между активами: '
                 f'<b>{e(str(summary.get("edges", 0)))}</b> на '
                 f'{e(str(summary.get("nodes", 0)))} активов · кластеров общей '
-                f'инфраструктуры: <b>{e(str(summary.get("clusters", 0)))}</b></p>')
+                f'инфраструктуры: <b>{e(str(summary.get("clusters", 0)))}</b>'
+                f'{related_html}</p>')
         clusters = gdata.get('shared_infra') or []
         rows = ''.join(
             f'<tr><td style="padding:1px 12px 1px 0;">{e(str(r.get("type", "")))}: '

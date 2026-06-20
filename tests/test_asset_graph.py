@@ -87,3 +87,83 @@ def test_load_summary_shape_handles_empty():
     out = ag.build_asset_graph([])
     assert out == {'nodes': [], 'edges': []}
     assert ag.shared_infra([]) == []
+
+
+# ── co-hosted related (infra-chain tail, Phase 2) ──────────────────────────────
+
+def _related(shared_ip='1.2.3.4', hosts=('evil.com', 'other.org')):
+    return {'shared_ip': shared_ip,
+            'related': [{'host': h, 'shared_ip': shared_ip} for h in hosts]}
+
+
+def test_co_hosted_adds_external_nodes_and_edges():
+    g = ag.build_asset_graph(_inventory(), related=_related())
+    # external nodes added with the `external` flag, type `related`.
+    ext = [n for n in g['nodes'] if n.get('external')]
+    assert {n['value'] for n in ext} == {'evil.com', 'other.org'}
+    assert all(n['type'] == 'related' for n in ext)
+    # co_hosted edge anchored on our owned IP node.
+    co = _rels(g, 'co_hosted')
+    assert ('ip:1.2.3.4', 'related:evil.com') in co
+    assert ('ip:1.2.3.4', 'related:other.org') in co
+
+
+def test_co_hosted_skipped_when_ip_not_owned():
+    # shared IP is not an owned `ip` asset → no anchor, nothing added.
+    g = ag.build_asset_graph(_inventory(), related=_related(shared_ip='8.8.8.8'))
+    assert [n for n in g['nodes'] if n.get('external')] == []
+    assert _rels(g, 'co_hosted') == set()
+
+
+def test_co_hosted_dedups_and_skips_own_hosts():
+    # a duplicate host and a host that collides with an owned node are dropped.
+    rel = _related(hosts=('evil.com', 'evil.com', 'a.x.com'))
+    g = ag.build_asset_graph(_inventory(), related=rel)
+    ext = [n for n in g['nodes'] if n.get('external')]
+    assert {n['value'] for n in ext} == {'evil.com'}   # dup + own-host filtered
+
+
+def test_related_none_is_byte_for_byte_unchanged():
+    base = ag.build_asset_graph(_inventory())
+    same = ag.build_asset_graph(_inventory(), related=None)
+    assert base == same
+    assert len(base['nodes']) == 9
+    assert not any(n.get('external') for n in base['nodes'])
+
+
+def test_load_asset_graph_summary_counts_owned_only():
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    AssetStore().sync('x.com', 's1', [
+        Asset('domain', 'x.com', attrs={'ip': '1.2.3.4'}),
+        Asset('ip', '1.2.3.4', attrs={'asn': 'AS1'})])
+    out = ag.load_asset_graph(
+        'x.com', related={'shared_ip': '1.2.3.4',
+                          'related': [{'host': 'evil.com'}]})
+    s = out['summary']
+    assert s['related'] == 1            # external co-hosted surfaced
+    assert s['nodes'] == 2             # owned nodes only (external excluded)
+    # the co_hosted edge is not counted in the owned `edges` total.
+    co = [e for e in out['graph']['edges'] if e['rel'] == 'co_hosted']
+    assert len(co) == 1
+    assert s['edges'] == len(out['graph']['edges']) - 1
+
+
+def test_load_asset_graph_related_none_has_zero_related():
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    AssetStore().sync('y.com', 's1', [Asset('domain', 'y.com')])
+    out = ag.load_asset_graph('y.com')
+    assert out['summary'].get('related', 0) == 0
+
+
+def test_shared_infra_ignores_external_related():
+    # external co-hosted domains are not owned hosts → never in blast-radius clusters.
+    g = ag.build_asset_graph(_inventory(), related=_related())
+    # shared_infra reads the asset rows (owned), not the graph — unchanged.
+    clusters = ag.shared_infra(_inventory())
+    assert all('evil.com' not in c['members'] for c in clusters)
+    # and the graph's external nodes carry no resolves/apex ownership edges.
+    for n in (x for x in g['nodes'] if x.get('external')):
+        assert not any(e['dst'] == n['id'] and e['rel'] != 'co_hosted'
+                       for e in g['edges'])

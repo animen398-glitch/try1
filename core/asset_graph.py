@@ -33,6 +33,7 @@ REL_RESOLVES = 'resolves'    # host → ip
 REL_ANNOUNCES = 'announces'  # ip → asn
 REL_CONTAINS = 'contains'    # netblock → ip
 REL_SERVES = 'serves'        # endpoint → host
+REL_CO_HOSTED = 'co_hosted'  # ip → related (external co-hosted domain)
 
 
 def _within_apex(sub: str, apex: str) -> bool:
@@ -50,12 +51,20 @@ def _by_type(assets: List[Dict]) -> Dict[str, Dict[str, Dict]]:
     return out
 
 
-def build_asset_graph(assets: List[Dict]) -> Dict:
+def build_asset_graph(assets: List[Dict], related: Optional[Dict] = None) -> Dict:
     """Asset-to-asset relationship graph for one project (pure).
 
     ``assets`` are ``AssetStore`` rows. Returns ``{nodes, edges}`` where a node is
     ``{id, type, value, label}`` and an edge is ``{src, dst, rel}`` (both endpoints
-    are inventory assets — an edge is only drawn when both nodes exist)."""
+    are inventory assets — an edge is only drawn when both nodes exist).
+
+    ``related`` (optional) is ``asn_intel.related_assets``' co-hosted view
+    (``{shared_ip, related:[{host}], ...}``) — the last hop of the infra chain. Its
+    hosts are *external* domains sharing our IP; they are added as ``external`` nodes
+    of type ``related`` with a ``co_hosted`` edge from our owned IP node, **never** as
+    owned inventory rows (a co-hosted neighbour is not our asset — the deliberate
+    asn_intel policy). When ``related`` is ``None`` the output is byte-for-byte the
+    owned-only graph."""
     assets = [a for a in (assets or []) if isinstance(a, dict)]
     bt = _by_type(assets)
     domains, subs = bt.get('domain', {}), bt.get('subdomain', {})
@@ -97,7 +106,36 @@ def build_asset_graph(assets: List[Dict]) -> Dict:
         if h in hosts:
             add(epasset.get('id'), hosts[h].get('id'), REL_SERVES)
 
+    _add_co_hosted(related, ips, nodes, add)
+
     return {'nodes': nodes, 'edges': edges}
+
+
+def _add_co_hosted(related: Optional[Dict], ips: Dict[str, Dict],
+                   nodes: List[Dict], add) -> None:
+    """Append external co-hosted domains as ``related`` nodes anchored on our owned IP.
+
+    Only attaches when the shared IP is itself an owned ``ip`` asset (the anchor must
+    exist — same "both endpoints exist" invariant). De-duplicates hosts and skips any
+    that collide with an existing node value (our own hosts are already filtered out
+    by ``related_assets``)."""
+    if not isinstance(related, dict):
+        return
+    shared_ip = str(related.get('shared_ip') or '').strip()
+    ipasset = ips.get(shared_ip)
+    if not shared_ip or not ipasset:
+        return
+    existing = {n.get('value') for n in nodes}
+    seen = set()
+    for entry in related.get('related') or []:
+        host = str((entry or {}).get('host') or '').strip().lower().rstrip('.')
+        if not host or host in seen or host in existing:
+            continue
+        seen.add(host)
+        nid = f'related:{host}'
+        nodes.append({'id': nid, 'type': 'related', 'value': host,
+                      'label': host, 'external': True})
+        add(ipasset.get('id'), nid, REL_CO_HOSTED)
 
 
 def asset_neighbors(graph: Dict, asset_id: str) -> List[Dict]:
@@ -159,25 +197,35 @@ def shared_infra(assets: List[Dict], *, min_members: int = 2) -> List[Dict]:
     return rows
 
 
-def load_asset_graph(project: str) -> Dict:
+def load_asset_graph(project: str, related: Optional[Dict] = None) -> Dict:
     """Build a project's asset graph + exposure clusters (thin store reader).
 
     Reads the project's assets from the Asset Inventory and delegates to the pure
     builders. Offline, read-only; guarded — a store failure degrades to an empty
-    graph rather than crashing the caller (mirrors ``correlation.load_correlation``)."""
+    graph rather than crashing the caller (mirrors ``correlation.load_correlation``).
+
+    ``related`` (optional) is ``asn_intel``'s co-hosted view; when supplied its
+    external domains are surfaced as ``related`` nodes (see :func:`build_asset_graph`).
+    The summary keeps ``nodes``/``edges`` measuring the *owned* topology (external
+    nodes / co-hosted edges are reported separately as ``related``) so existing
+    metrics are unchanged when ``related`` is ``None``."""
     try:
         from core.asset_store import AssetStore
         assets = AssetStore().list_assets(project=project)
-        graph = build_asset_graph(assets)
+        graph = build_asset_graph(assets, related=related)
         clusters = shared_infra(assets)
+        owned_nodes = [n for n in graph['nodes'] if not n.get('external')]
+        owned_edges = [e for e in graph['edges'] if e.get('rel') != REL_CO_HOSTED]
+        related_count = len(graph['nodes']) - len(owned_nodes)
         return {
             'graph': graph,
             'shared_infra': clusters,
             'summary': {
-                'nodes': len(graph['nodes']),
-                'edges': len(graph['edges']),
+                'nodes': len(owned_nodes),
+                'edges': len(owned_edges),
                 'clusters': len(clusters),
                 'largest_cluster': clusters[0]['count'] if clusters else 0,
+                'related': related_count,
             },
         }
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller

@@ -1580,11 +1580,36 @@ criticality). Проводка: `infrastructure.build_infrastructure` — стр
 `test_cloud_classifier`(11: keyword/ASN/CDN/CNAME/unknown/strongest-wins/bad-types),
 `test_infrastructure`(+3: cloud+region в chain/ASN-номер→AWS/unknown без hop),
 `test_asset_adapter`(+4: cloud/region attrs domain/ip/asn, subdomain-cloud-from-CNAME,
-no-cname→no-cloud, identity-инвариант). **Phase 2 (отложено, по подтверждению):**
-promote `asn_intel.neighbors` (reverse-IP co-hosted) в derive-on-read related-assets +
-surface в asset_graph/correlation. **Не делалось** (осознанно): cloud/region в
-risk-score, новые SQLite-таблицы, сетевые cloud-лукапы, промоут co-hosted в активы
-(churn/FP-риск), GUI.
+no-cname→no-cloud, identity-инвариант). **Не делалось** (осознанно): cloud/region в
+risk-score, новые SQLite-таблицы, сетевые cloud-лукапы, GUI.
+
+**Infrastructure chain — Phase 2 (co-hosted related assets) — `[ЗАКРЫТ]`.** Bulk уже
+был сделан в `feea0a6` (не отражён в статусе): derive-view `asn_intel.related_assets`/
+`related_assets_from_report`/`load_related_assets` (co-hosted домены с reverse-IP минус
+свои хосты) + report-карточка «Related Assets» (`report['related_assets']`) + web
+`/related-assets` + кнопка + тесты. **Хвост (этот инкремент)** — surface co-hosted в
+`asset_graph` (решение пользователя: asset_graph, backend+report+web; correlation НЕ
+трогаем). Co-hosted соседи добавляются как **внешние (non-owned) узлы** типа `related`
+(`external:True`) с ребром `co_hosted` от **owned**-IP-узла — **никогда** не пишутся в
+`AssetStore` (уважает явное решение `asn_intel.py:210`: co-hosted ≠ наш актив, промоут
+дал бы ложные ownership/takeover-сигналы). `build_asset_graph(assets, related=None)` +
+`_add_co_hosted` (anchor только если shared_ip — owned `ip`-актив; дедуп + фильтр
+коллизий со своими узлами); `load_asset_graph(project, related=None)` — summary держит
+`nodes`/`edges` = **owned**-топология (внешние узлы/co_hosted-рёбра вынесены в
+отдельный `related`-счётчик → существующие метрики не инфлейтятся). Проводка:
+`collection_runner._build_asset_graph` передаёт `related=related_assets_from_report(report)`
+(читает asn_intel-фазу напрямую → порядок с `_build_related_assets` неважен), карточка
+«Asset Relationships» показывает «со-хостящихся доменов: N»; web `_correlation_view`
+резолвит проект → `load_related_assets` → `load_asset_graph(project, related=…)` +
+JS-консоль печатает co-hosted. **Гарантия:** criticality/exposure/attack_paths/
+`shared_infra` не тронуты — они зовут `load_asset_graph(project)` БЕЗ related (внешние
+узлы не owned-активы → blast-radius owned-активов и `_dependents_map` не меняются;
+co_hosted-ребро идёт от IP к внешнему `dst`, IP как `src` не инфлейтится). Покрыто
+`test_asset_graph`(+7: внешние узлы/ребро/anchor-skip/дедуп/related=None unchanged/
+load-summary owned-only/shared_infra игнорит external), `test_collection_runner`(+2:
+карточка показывает/скрывает co-hosted), `test_web_intelligence`(+1: correlation-view
+surface). **Не делалось** (осознанно): промоут co-hosted в AssetStore, correlation,
+GUI, влияние на risk/criticality/exposure.
 
 **EPIC 15 — Technology Risk Scoring — `[ЗАКРЫТ]`.** Backend+report+web+CSV-фаза
 (GUI отложен — `feedback-internals-first-no-gui`). Чистый **display-слой**

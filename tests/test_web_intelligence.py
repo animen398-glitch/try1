@@ -297,3 +297,38 @@ def test_related_assets_endpoint_with_testclient(tmp_path, monkeypatch):
     r = client.get('/related-assets', params={'project': slug})
     assert r.status_code == 200
     assert r.json()['count'] == 1
+
+
+def _seed_correlation_co_hosted(base):
+    """A project whose report carries an asn_intel phase AND whose AssetStore has an
+    owned IP asset matching the shared IP, so the correlation view's asset_graph
+    surfaces the co-hosted neighbour as an external `related` node."""
+    import json
+
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://acme.com')
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    report = {'scan_id': sid, 'domain': 'acme.com', 'phases': {
+        'asn_intel': {'status': 'Success', 'data': {
+            'ip': '1.2.3.4', 'neighbor_count': 1, 'neighbors': ['stranger.org']}}}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    AssetStore().sync('acme.com', sid, [
+        Asset('domain', 'acme.com', attrs={'ip': '1.2.3.4'}),
+        Asset('ip', '1.2.3.4')])
+    return 'acme.com'
+
+
+def test_correlation_view_surfaces_co_hosted(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_correlation_co_hosted(str(tmp_path))
+    d = wa._correlation_view(slug)
+    ag = d['asset_graph']
+    assert ag['summary'].get('related') == 1
+    ext = [n for n in ag['graph']['nodes'] if n.get('external')]
+    assert [n['value'] for n in ext] == ['stranger.org']
+    co = [e for e in ag['graph']['edges'] if e['rel'] == 'co_hosted']
+    assert co and co[0]['dst'] == 'related:stranger.org'
