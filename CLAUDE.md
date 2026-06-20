@@ -1690,9 +1690,28 @@ Offline-first, opt-in, без новых зависимостей. Покрыт�
 рендер/гейт/build_client/idempotent-sync/min-sev/error-leaves-untracked/non-2xx)
 + `test_findings_store`(+3: record+untracked/reopen-reset/empty) +
 `test_monitor_cli`(+1: cmd_issues через инъектируемый client). Коммит a5a1cdf.
-**Остаток wave 2 (отложен):** A3 compliance-маппинг (OWASP/CWE) отчёт; опц.
-GitHub auto-close при FIXED; GUI/web-поверхности sync. Память
-`project-epic16-integrations-reporting`.
+
+**EPIC 16 — wave 2: OWASP/CWE compliance report (A3) — `[ЗАКРЫТ]`.** Свёртка
+активных находок по **OWASP Top 10 (2021) + CWE** в Markdown-deliverable. Чистый
+offline-derive, без схемы/новых данных, зеркало каталога `finding_knowledge` (один
+источник правды маппинга). `core/compliance.py`: `OWASP_TOP10` (A01…A10, порядок),
+консервативный `_CATEGORY_MAP` (канон-категория → `{owasp, cwe}`: header→A05/CWE-693,
+secret→A07/CWE-798, dependency→A06/CWE-1104, sourcemap→A05/CWE-540, cookie→A05/CWE-614,
+graphql→A05/CWE-200, takeover→A05/CWE-284, transport→A02/CWE-319) + keyword-`_RULE_MAP`,
+уточняющий generic `vuln` (sqli→A03/CWE-89, ssrf→A10/CWE-918, xss→A03/CWE-79, idor→A01,
+path-traversal→A01, rce→A03…); `classify()` + `build_compliance()` (свёртка по всем 10
+категориям, count 0 = clean; неузнанные vuln-подтипы → **unmapped**, а не
+ложно-классифицированы); `load_compliance()` — тонкий ридер по active-находкам
+(текущая поза, триаж исключён). `report_export.compliance_markdown(findings)` —
+таблица Top 10 (статус ✅OK/⚠️findings · CWE · counts · severities) + посекционные
+находки + Unmapped. CLI `monitor_cli compliance <url> [--out PATH]`. Решение:
+**только core+Markdown+CLI** (report.html-карточка/web отложены —
+`feedback-internals-first-no-gui`). Покрыто `test_compliance`(11:
+classify-defaults/rule-override/unmapped/all-10/grouping/non-dict/load),
+`test_report_export`(+3: таблица+секции/all-clean/unmapped), `test_monitor_cli`(+1:
+cmd_compliance пишет отчёт). Коммит e76afd8. **Остаток wave 2 (отложен):** опц.
+GitHub auto-close при FIXED; GUI/web/report-card-поверхности для issues+compliance.
+Память `project-epic16-integrations-reporting`.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

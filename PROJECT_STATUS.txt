@@ -3871,3 +3871,62 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     - Commit: a5a1cdf.
 
 ==============================================================================
+  2026-06-20 - EPIC 16 wave 2: OWASP/CWE compliance mapping report (A3)
+==============================================================================
+
+  CONTEXT:
+    - The reporting half of wave 2: roll the active findings up against the OWASP
+      Top 10 (2021) + CWE, as a compliance deliverable. Same invariants as the
+      rest of EPIC 16: pure / offline derive, no schema change, no new data,
+      mirror the finding_knowledge catalog pattern (one source of truth).
+    - Decision (AskUserQuestion): surfaces = core + Markdown + CLI only (a
+      report.html card / web endpoint deferred, per feedback-internals-first-no-gui).
+    - Source = active findings (current posture; triaged / inactive excluded),
+      consistent with the SARIF export and the GitHub Issues push.
+
+  core/compliance.py (pure mapping + roll-up):
+    - OWASP_TOP10: the 2021 categories in canonical order (id -> name), so the
+      report lists every category, including the clean ones.
+    - _CATEGORY_MAP: a conservative canonical-category -> {owasp, cwe} table
+      (header->A05/CWE-693, secret->A07/CWE-798, dependency->A06/CWE-1104,
+      sourcemap->A05/CWE-540, cookie->A05/CWE-614, graphql->A05/CWE-200,
+      takeover->A05/CWE-284, tech->A05/CWE-200, endpoint->A01/CWE-200,
+      dns->A05/CWE-16, transport->A02/CWE-319).
+    - _RULE_MAP: keyword overrides that refine a generic vuln finding into its real
+      class (sqli->A03/CWE-89, xss->A03/CWE-79, ssrf->A10/CWE-918, rce->A03/CWE-94,
+      idor->A01/CWE-639, path traversal->A01/CWE-22, open redirect->A01/CWE-601,
+      csrf->A01/CWE-352, plain http->A02/CWE-319). First match wins.
+    - classify(category, rule_id, title) -> {owasp, owasp_name, cwe}; an
+      unrecognized vuln stays owasp=None (surfaced as Unmapped, not mis-filed).
+    - build_compliance(findings) -> {by_owasp, unmapped, summary}: every Top-10
+      category with count (0 = clean), severity breakdown, CWE set and the mapped
+      findings; summary = {total_findings, categories_with_findings,
+      worst_severity, unmapped}.
+    - load_compliance(project, store=None): thin reader over active_findings
+      (store injectable for tests).
+
+  DELIVERABLE + CLI:
+    - report_export.compliance_markdown(findings): OWASP Top 10 table (status
+      OK/findings, CWE, counts, severities) + a per-category section for each hit
+      and an Unmapped (review) section. Empty list -> a valid all-clean report.
+    - monitor_cli compliance <url> [--out PATH]: cmd_compliance rolls the project's
+      active findings up and writes / prints the Markdown.
+
+  DEFERRED (rest of wave 2): optional GitHub auto-close on FIXED; GUI / web /
+    report.html-card surfaces for both the issue sync and the compliance report.
+
+  TESTS:
+    - tests/test_compliance.py (11): category defaults, rule-map override,
+      unmapped vuln, owasp name, all-ten-listed, grouping + counts + severities +
+      worst, unmapped surfacing, non-dict tolerance, load_compliance.
+    - tests/test_report_export.py (+3): table + sections, all-clean (10x OK),
+      Unmapped section.
+    - tests/test_monitor_cli.py (+1): cmd_compliance writes the report.
+
+  VERIFICATION:
+    - Targeted pytest (compliance / report_export / monitor_cli) is green; ruff
+      clean on the changed files; CLI smoke prints the all-clean report.
+    - Full pytest is green (EXIT 0).
+    - Commit: e76afd8.
+
+==============================================================================
