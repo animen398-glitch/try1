@@ -4472,3 +4472,33 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     derive-on-read resolver (catalog/assess/available). Plan first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F3 T3.2 - core/osint_catalog.py
+==============================================================================
+
+  STATUS: DONE. Pure/offline declarative catalog + derive-on-read resolver; no
+    new scanner, no network, no risk-score impact (guide/coverage display only).
+
+  IMPLEMENTED (core/osint_catalog.py):
+    - WORKFLOWS: 10 curated workflows (the T3.1 set), each a plain dict
+      {id, name, category, goal, engines[], optional[], produces[], network}.
+    - _ENGINE_PHASE: engine token -> the report phase whose Success means it ran.
+      recon-derived tokens (infrastructure/tech_fingerprint/dependency_audit) ->
+      'recon'; osv/cve_intel -> 'osv'; platform capabilities (monitor/timeline/
+      scan_diff) -> None (always present, never "missing").
+    - catalog() -> deep copy. assess(report) -> each workflow + status
+      (covered/partial/not_run) + ran/missing/optional_ran, from
+      report['phases'][*].status only (same source as exec_summary/scan_diff, I3).
+    - available(detectors=) -> externally-gated engines (bbot/lift/pdf-text/ocr)
+      via features probes; detectors injectable for tests.
+    - summary(report=) -> {total, covered, partial, not_run}.
+
+  TESTS: tests/test_osint_catalog.py (10) - required fields + copy isolation,
+    unique ids, every engine token mapped, covered/partial/not_run, platform-
+    capability always covered, optional_ran, failed-phase ignored, injected
+    detectors, summary counts. 10 passed; ruff clean. No deps/network/.exe.
+
+  NEXT: F3 T3.3 - surfaces: a report card "OSINT Workflow Coverage" in
+    collection_runner + web GET /osint-catalog (parity with other read views).
+    GUI optional/later. Plan first.
+
+==============================================================================

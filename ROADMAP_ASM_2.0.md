@@ -854,6 +854,14 @@ Awesome-AI-OSINT) поверх существующих сущностей — �
   существующие движки; зафиксировать схему каталога. Документ, без кода.
   **[ВЫПОЛНЕНО 2026-06-21]** → результат ниже («T3.1 — Research & Curation (результат)»).
 - T3.2 `core/osint_catalog.py` — декларативный каталог + резолв в существующие фазы.
+  **[ВЫПОЛНЕНО 2026-06-21]** — pure/offline модуль: `WORKFLOWS` (10 курированных
+  воркфлоу по схеме T3.1), `_ENGINE_PHASE` (engine-токен → report-фаза; recon-
+  производные → 'recon', osv/cve_intel → 'osv', monitor/timeline/scan_diff → None =
+  платформенная способность), `catalog()` (deepcopy), `assess(report)`
+  (covered/partial/not_run + ran/missing/optional_ran по `phases[*].status`),
+  `available(detectors=)` (внешне-гейтнутые bbot/lift/pdf-text/ocr через features,
+  инъекция в тестах), `summary(report=)`. Не влияет на risk. Покрыто
+  `tests/test_osint_catalog.py` (10).
 - T3.3 Поверхности (report-карточка / web read-эндпоинт) — паритет с прочими
   derive-вью; GUI опционально (память `feedback-internals-first-no-gui`).
 - T3.4 Тесты offline на каталог/резолв.
