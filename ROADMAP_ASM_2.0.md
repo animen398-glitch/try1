@@ -961,11 +961,79 @@ read-вью). GUI — опционально/позже (память `feedback-
 **Tasks:**
 - T4.1 Аудит-контракт «что приложение делает по сети и когда» (документ): все
   новые действия opt-in, ни одного скрытого вызова; сверка с инвариантами.
+  **[ВЫПОЛНЕНО 2026-06-21]** → результат ниже («T4.1 — Network/Privacy Audit»).
 - T4.2 Проверочные тесты-инварианты (offline): новые фазы выключены при
   `active_scan_enabled=False`/`passive_only=True` (расширение
-  `ACTIVE_SCOPE_GUARDED_PHASES`).
+  `ACTIVE_SCOPE_GUARDED_PHASES`). **[ВЫПОЛНЕНО 2026-06-21]** — `bbot` добавлен в
+  набор `run_flags` теста `test_scope_guard_blocks_all_run_active_phase_callables`
+  (доказано: фаза-callable пропускается при `active_scan_enabled=False` и
+  `passive_only=True`); новый позитивный тест
+  `test_documents_phase_is_local_not_scope_gated` (локальная фаза исполняется при
+  `passive_only=True`, отсутствует в guard-списке). Скрытых активных фаз нет.
 - T4.3 Документирование гарантий в README **только после** реальной реализации
-  (не описывать как сделанное заранее).
+  (не описывать как сделанное заранее). **[ВЫПОЛНЕНО 2026-06-21]** — секция
+  «Приватность и сетевое поведение» (offline-first/no-signup, 3 класса сетевого
+  поведения, safe-by-default, прозрачность через `scope_guard.skipped_active_phases`
+  + features) + bbot/lift в опц.-install блоке. Описано только реально работающее.
+
+---
+
+#### T4.1 — Network / Privacy Audit (результат)
+
+> Аудит реального кода: что и когда ходит в сеть, и доказательство, что каждое
+> новое (EXT-OSINT) действие — opt-in и/или локально. Сверено с
+> `core/collection_runner.py` (`ACTIVE_SCOPE_GUARDED_PHASES`, `_scope_skip_active`,
+> порядок фаз), `core/scope_guard.py` (`active_phase_decision`),
+> `core/bbot_adapter.py`, `core/document_intelligence.py`, `core/osint_catalog.py`.
+
+**A. Таксономия сетевого поведения (3 класса).**
+1. **Базовый fetch цели** (всегда): `recon`, `api`, `capture`, `clone`, `images`,
+   `cookies`, `vulns` — обращаются к **самому таргету** (авторизованное ядро
+   анализа). `default_scope_for_target` для НОВЫХ проектов = `active_scan_enabled
+   =False`, `passive_only=True` → даже базовый профиль не делает активных лишних
+   действий, пока scope не разрешён (safe-by-default).
+2. **Opt-in активные фазы** (доп. сеть сверх таргета / агрессивно): все имеют флаг
+   (off by default) **И** входят в `ACTIVE_SCOPE_GUARDED_PHASES` → `_scope_skip_
+   active` гейтит их через `active_phase_decision` (allow/deny-домены,
+   `active_scan_enabled`, `passive_only`). Сейчас: `security, subdomains,
+   certificate, openapi, historical, dns, emails, employees, ct, asn_intel, osv,
+   bbot, katana, screenshot, nuclei`.
+3. **Локальный/пассивный анализ** (НЕ сеть): `documents` (читает уже захваченные
+   файлы), плюс все derive-on-read (`osint_catalog`, correlation, intelligence,
+   timeline, exec_summary и т.д.). Эти **намеренно НЕ в** `ACTIVE_SCOPE_GUARDED_
+   PHASES` — гейтить локальное чтение незачем.
+
+**B. Аудит EXT-OSINT-добавлений (вывод: всё compliant).**
+
+| Компонент | Сеть? | Opt-in? | Scope-gated? | Вывод |
+|---|---|---|---|---|
+| `bbot` фаза | да (recon-движок) | да (флаг `bbot`) | да (в списке + `_scope_skip_active`) | ✅ соответствует классу 2 |
+| `documents` фаза | нет (локальные файлы) | да (флаг `documents`) | н/п (локально) | ✅ класс 3 |
+| `lift` (внутри documents) | локальный subprocess (по умолч.); удалённый vLLM — только если пользователь сам настроит | да (нужен бинарь + флаг documents) | наследует documents | ✅ по умолчанию локально |
+| `osint_catalog` | нет (derive) | н/п | н/п | ✅ класс 3 |
+
+**C. Гарантии (проверяемые).**
+- **No-signup / offline-first:** ни одного обязательного аккаунта/облака; тяжёлые
+  деп (Playwright/lift/torch/bbot) — опциональны, не в `.exe`; отсутствие → мягкая
+  деградация (доказано тестами F1/F2).
+- **Никаких скрытых вызовов:** каждое сетевое действие сверх базового fetch цели —
+  это **фаза с флагом**, видимая в Collection/`_collection_options`/monitor-опциях.
+- **Прозрачность:** `features.summary()`/health показывает, что доступно/выключено;
+  Scope Guard пишет `report['scope_guard'].skipped_active_phases` (что пропущено и
+  почему).
+- **Safe-by-default:** новый проект = `passive_only` до явного расширения scope.
+
+**D. Найденный пробел (закрывается в T4.2).** `bbot` добавлен в
+`ACTIVE_SCOPE_GUARDED_PHASES`, но регрессионный тест
+`test_scope_guard_blocks_all_run_active_phase_callables` (E14.8) его в наборе
+`run_flags` НЕ проверял → нужно добавить `bbot` (доказать, что его фаза-callable
+реально пропускается при `active_scan_enabled=False`/`passive_only=True`).
+Параллельно — позитивный тест: `documents` (локальная) **исполняется** даже при
+`passive_only=True` (не гейтится, по дизайну класса 3).
+
+**E. Зафиксированные «нет».** Не гейтить локальные/derive-фазы (это не сеть);
+README-гарантии писать только по факту (T4.3), без оверселла; `documents` НЕ
+добавлять в `ACTIVE_SCOPE_GUARDED_PHASES`.
 
 ---
 

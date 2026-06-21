@@ -4537,3 +4537,39 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     opt-in), documentation only.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F4 T4.1-T4.3 - privacy/offline hardening
+==============================================================================
+
+  STATUS: DONE. F4 (and the whole EXT-OSINT epic) COMPLETE.
+
+  T4.1 (audit contract, doc) - ROADMAP "F4 > T4.1 - Network / Privacy Audit".
+    Network behaviour has 3 classes: (1) base target fetch (always; new projects
+    are passive_only/active-off by default); (2) opt-in active phases (extra
+    network) - each has a flag AND is in ACTIVE_SCOPE_GUARDED_PHASES, gated by
+    _scope_skip_active/active_phase_decision; (3) local/passive analysis (no
+    network) - documents + all derive-on-read, deliberately NOT gated. EXT-OSINT
+    audit: bbot = class 2 (flagged + gated); documents = class 3 (local); lift =
+    local subprocess by default; osint_catalog = derive. All compliant. Found gap:
+    bbot was in the guard list but not in the E14.8 runtime coverage test.
+
+  T4.2 (verification tests) - added 'bbot' to run_flags in
+    test_scope_guard_blocks_all_run_active_phase_callables (proves the bbot phase
+    callable is skipped under active_scan_enabled=False AND passive_only=True) +
+    new test_documents_phase_is_local_not_scope_gated (documents runs under
+    passive_only and is absent from ACTIVE_SCOPE_GUARDED_PHASES). 77 passed
+    (collection_runner + scope_guard); ruff clean.
+
+  T4.3 (README guarantees, real-only) - new "Приватность и сетевое поведение"
+    section: offline-first/no-signup, the 3 network classes, safe-by-default,
+    transparency via scope_guard.skipped_active_phases + features.summary(); bbot/
+    lift added to the optional-install block. Documents only what actually works.
+
+  EPIC EXT-OSINT COMPLETE: F1 BBOT external adapter, F2 Document Intelligence,
+    F3 AI-OSINT workflow catalog, F4 privacy/offline hardening. All optional,
+    offline-first, AGPL-clean (no copied code), no heavy deps in .exe, every new
+    network action opt-in + scope-gated; absent tools degrade gracefully. Only
+    optional remainders: GUI tabs for osint_catalog (web parity already shipped).
+
+  NEXT: choose the next epic/task explicitly (EXT-OSINT closed).
+
+==============================================================================

@@ -997,6 +997,7 @@ def test_scope_guard_blocks_all_run_active_phase_callables(tmp_path,
         'ct': 'ct',
         'asn_intel': 'asn_intel',
         'osv': 'osv',
+        'bbot': 'bbot',
         'katana': 'katana',
         'screenshot': 'screenshots',
     }
@@ -1046,6 +1047,25 @@ def test_scope_guard_blocks_all_run_active_phase_callables(tmp_path,
                for phase in expected)
     assert disabled['phases']['recon']['status'] == 'Success'
     assert passive['phases']['recon']['status'] == 'Success'
+
+
+def test_documents_phase_is_local_not_scope_gated(tmp_path, monkeypatch):
+    # EXT-OSINT F4: Document Intelligence reads already-captured files (no network),
+    # so it must NOT be scope-gated — it runs even under passive_only=True, and is
+    # deliberately absent from the active-phase guard list.
+    assert 'documents' not in ACTIVE_SCOPE_GUARDED_PHASES
+
+    project = ProjectStore(tmp_path).get_or_create('https://example.com')
+    project.set_scope({'allowed_domains': ['example.com'],
+                       'active_scan_enabled': True, 'passive_only': True})
+    runner = CollectionRunner(documents=True)
+    _stub_base_run(monkeypatch, runner)
+    result = runner.run('https://example.com', str(tmp_path))
+
+    # the phase ran (no candidates → clean Success), not Skipped by scope guard
+    assert result['phases']['documents']['status'] == 'Success'
+    skipped = {p['phase'] for p in result['scope_guard']['skipped_active_phases']}
+    assert 'documents' not in skipped
 
 
 def test_scope_guard_skips_nuclei_before_external_runner():

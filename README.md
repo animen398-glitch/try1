@@ -50,7 +50,33 @@ pip install "fastapi" "uvicorn[standard]"                          # web-кон�
 #          (https://github.com/projectdiscovery/nuclei). Детект — в System-вкладке.
 # katana — внешний бинарь (projectdiscovery); опц. краулер эндпоинтов в Full Collection.
 # amass  — внешний бинарь (owasp); опц. пассивный источник субдоменов в Subdomain-вкладке.
+# bbot   — внешний движок (blacklanternsecurity, AGPL-3.0); опц. external recon в Full
+#          Collection (https://github.com/blacklanternsecurity/bbot). Запускается как
+#          subprocess (не импортируется/не бандлится).
+# lift   — опц. document intelligence (datalab-to; тяжёлая модель, не бандлится) для фазы
+#          Documents: pip install lift-pdf. Без неё фаза использует лёгкие тиры (pypdf/OCR).
 ```
+
+## Приватность и сетевое поведение
+
+Инструмент **offline-first** и **no-signup**: никаких обязательных аккаунтов или
+облака, тяжёлые зависимости опциональны и не входят в `.exe` (нет — мягкая
+деградация). Сетевые действия делятся на три класса:
+
+- **Базовый запрос к цели** — обращение к самому анализируемому сайту (ядро
+  анализа). Новые проекты создаются **safe-by-default** (`passive_only`, активные
+  действия выключены), пока вы явно не зададите scope.
+- **Опциональные активные фазы** (доп. сеть сверх цели: subdomains, dns, ct,
+  asn_intel, osv, security, **bbot** и др.) — каждая имеет **галочку (по умолчанию
+  выключена)** и проходит через **Scope Guard** (allow/deny-домены,
+  `active_scan_enabled`, `passive_only`). Вне разрешённого scope фаза пропускается.
+- **Локальный/пассивный анализ** (без сети: **Documents**, корреляция, intelligence,
+  timeline, отчёты) — работает по уже собранным данным.
+
+Прозрачность: пропущенные по scope фазы видны в отчёте
+(`scope_guard.skipped_active_phases`), а доступность опциональных инструментов — в
+System-вкладке (`features.summary()`). Никаких скрытых сетевых вызовов: всё сверх
+базового запроса к цели — это видимая фаза с флагом.
 
 ## Запуск
 
