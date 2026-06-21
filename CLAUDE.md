@@ -1254,6 +1254,18 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Document-секреты в attack-surface «Secrets» — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел, что закрыл «Security-audit секреты → breadth»: document-only
+секрет (найден ТОЛЬКО Document Intelligence) был **полностью вне графа атак-
+поверхности** — категория «Secrets» читала api.details + security.secrets, а из
+«Findings» секреты исключены (category='secret', анти-дубль). Фикс: `attack_surface.
+build_surface` добавляет типы из `phases.documents.data.findings` (плейсхолдеры уже
+отброшены продьюсером, тип — из стабильного тайтла `'Leaked secret: <type>'`), дедуп
+против api/audit-типов — мирроринг блока audit_secrets. Document-only ключ теперь в
+breadth/`surface_score`, как api/audit. Pure, без новых зависимостей, без влияния на
+risk-вердикт (surface — отдельная ось). Покрыто `test_attack_surface` (document-типы
+в Secrets + дедуп с api + не-secret findings игнорятся).
+
 **BBOT recon → attack-surface breadth — `[ЗАКРЫТ]`.** Backend-фаза, тот же
 асимметричный пробел, что закрыл «Security-audit endpoints → surface» — но для
 opt-in внешнего recon BBOT. BBOT-хосты/эндпоинты/технологии уже промоутятся в

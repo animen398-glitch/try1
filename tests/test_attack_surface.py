@@ -65,6 +65,22 @@ def test_secrets_include_audit_types():
     assert set(names['Secrets']['items']) == {'AWS Access Key', 'Slack Token'}
 
 
+def test_secrets_include_document_types():
+    # Secrets mined from captured documents (Document Intelligence) join the Secrets
+    # breadth too — a document-only key is otherwise off the graph entirely. Their
+    # type comes from the stable 'Leaked secret: <type>' finding title; merged with
+    # the api types and de-duplicated.
+    report = _report(
+        api={'data': {'details': {'AWS Access Key': ['AKIAIOSFODNN7EXAMPLE']}}},
+        documents={'data': {'findings': [
+            {'category': 'secret', 'title': 'Leaked secret: Stripe Secret Key',
+             'source': 'document', 'location': 'https://ex.com/leak.pdf'},
+            {'category': 'secret', 'title': 'Leaked secret: AWS Access Key'},  # dup
+            {'category': 'vuln', 'title': 'Something else'}]}})               # ignored
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert set(names['Secrets']['items']) == {'AWS Access Key', 'Stripe Secret Key'}
+
+
 def test_secrets_legacy_keys_found_fallback():
     # A legacy report with only a keys_found count (no per-key details) still
     # surfaces a Secrets node — backward compatible.

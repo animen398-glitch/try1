@@ -112,6 +112,22 @@ def build_surface(report: Dict) -> Dict:
             if (t and t not in secret_items
                     and validate(t, str(s['match'])).get('status') != INVALID):
                 secret_items.append(t)
+    # Document Intelligence (opt-in) mines secrets from captured documents/configs;
+    # surface their types too, by the same intent as the audit secrets above — a
+    # document-only key is otherwise off the graph entirely (it is excluded from the
+    # Findings category below to avoid double-counting). These findings were already
+    # placeholder-filtered at production (secret_finding drops invalids), and carry
+    # the type in their stable 'Leaked secret: <type>' title.
+    doc_findings = data('documents').get('findings')
+    if isinstance(doc_findings, list):
+        prefix = 'Leaked secret: '
+        for f in doc_findings:
+            if not (isinstance(f, dict) and f.get('category') == 'secret'):
+                continue
+            title = str(f.get('title') or '')
+            t = title[len(prefix):].strip() if title.startswith(prefix) else ''
+            if t and t not in secret_items:
+                secret_items.append(t)
 
     pages = capture.get('site_map') or []
     page_items = [p.get('url', '') for p in pages if isinstance(p, dict)]
