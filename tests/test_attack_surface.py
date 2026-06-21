@@ -139,6 +139,44 @@ def test_endpoints_merge_katana_and_audit():
     assert set(names['Endpoints']['items']) == {'https://ex.com/a', 'https://ex.com/b'}
 
 
+def test_bbot_widens_breadth_and_dedups():
+    # BBOT (opt-in external recon) hosts / endpoints / technologies join the native
+    # Subdomains / Endpoints / Technologies breadth, de-duplicated against what the
+    # native phases already found — mirroring the asset inventory, so a surface graph
+    # never silently drops assets the Assets tab and Timeline already show.
+    report = _report(
+        recon={'data': {'technologies': [{'name': 'nginx', 'version': '1.18'}]}},
+        subdomains={'data': {'results': [{'subdomain': 'a.ex.com'}]}},
+        katana={'data': {'endpoints': ['https://ex.com/a']}},
+        bbot={'data': {
+            'hosts': ['b.ex.com', 'a.ex.com'],           # a.ex.com dup → merged once
+            'endpoints': [{'url': 'https://ex.com/b'}, {'url': 'https://ex.com/a'}],
+            'technologies': [{'name': 'nginx', 'version': '1.18'},   # dup label
+                             {'name': 'Apache'}]}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert set(names['Subdomains']['items']) == {'a.ex.com', 'b.ex.com'}
+    assert set(names['Endpoints']['items']) == {'https://ex.com/a', 'https://ex.com/b'}
+    assert set(names['Technologies']['items']) == {'nginx 1.18', 'Apache'}
+
+
+def test_bbot_subdomains_apex_and_scope_filtered():
+    # The apex itself, wildcards and out-of-scope names are not subdomains — the
+    # same predicate the asset inventory uses keeps the breadth clean.
+    report = _report(bbot={'data': {'hosts': [
+        'ex.com', '*.ex.com', 'evil.com', 'good.ex.com']}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Subdomains']['items'] == ['good.ex.com']
+
+
+def test_bbot_absent_leaves_surface_unchanged():
+    # No BBOT phase → byte-for-byte the same breadth as before (opt-in; legacy
+    # reports without a bbot phase must not change).
+    report = _report(subdomains={'data': {'results': [{'subdomain': 'a.ex.com'}]}})
+    names = {c['name']: c for c in asf.build_surface(report)['categories']}
+    assert names['Subdomains']['items'] == ['a.ex.com']
+    assert 'bbot' not in {n.lower() for n in names}
+
+
 def test_build_surface_includes_reachable_graphql():
     report = _report(security={'data': {'graphql': [
         {'url': 'https://ex.com/graphql', 'graphql': True, 'introspection': True},

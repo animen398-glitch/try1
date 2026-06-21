@@ -1237,6 +1237,24 @@ overlap сохраняет katana-source; audit-only гейтит GONE на фа
 без новых зависимостей. Покрыто `test_asset_adapter` (audit-endpoint→актив source=security
 / shared с katana сохраняет katana-source), `test_attack_surface` (katana+audit мёрж+дедуп).
 
+**BBOT recon → attack-surface breadth — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел, что закрыл «Security-audit endpoints → surface» — но для
+opt-in внешнего recon BBOT. BBOT-хосты/эндпоинты/технологии уже промоутятся в
+asset-инвентарь (`asset_adapter.derive_assets` из `phases.bbot.data`) и видны в
+Assets-табе + Timeline (asset-события), но `attack_surface.build_surface` их ронял:
+«Subdomains» читала только `subdomains.results`, «Endpoints» — `katana+security`,
+«Technologies» — `recon` → BBOT-only активы молча выпадали из графа атак-поверхности
+и `surface_score`. Фикс: `build_surface` мёржит `bbot.data` hosts→Subdomains,
+endpoints→Endpoints, technologies→Technologies (дедуп против нативных), переиспользуя
+**те же предикаты apex/host** (`asset_adapter._is_concrete_host`/`_host_of`, ленивый
+импорт — SSOT, поэтому граф совпадает с инвентарём; apex/wildcard/out-of-scope хосты
+отфильтрованы как в инвентаре). ips/asns/netblocks BBOT в Infrastructure НЕ вливаются
+(там Domain→ASN→IP-цепочка из recon-geo, host-уровневые BBOT-узлы — отдельная ось,
+как co-hosted). Pure, без новых зависимостей. **Числа surface_score для BBOT-сканов
+выросли сознательно** (граф недосчитывал то, что инвентарь уже считал); легаси-отчёты
+без bbot-фазы — байт-в-байт (gate `if bbot`). Покрыто `test_attack_surface`
+(мёрж+дедуп hosts/endpoints/tech, apex/scope-фильтр, отсутствие bbot=без изменений).
+
 **EPIC 3 — CVE Intelligence (фаза 1: JS-либы) — `[ЗАКРЫТ]`.** Мульти-источниковый
 CVE-движок поверх существующего OSV-пайплайна (расширение, не дубль). Новые модули:
 `core/cve_store.py` (SQLite `data/cve_cache.db`, `SQLiteStore`, user_version=1 —

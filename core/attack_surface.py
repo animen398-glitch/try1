@@ -75,6 +75,7 @@ def build_surface(report: Dict) -> Dict:
     openapi = data('openapi')
     historical = data('historical')
     subdomains = data('subdomains')
+    bbot = data('bbot')
     vulns = phases.get('vulns', {})
     findings = vulns.get('findings', []) if isinstance(vulns, dict) else []
 
@@ -198,6 +199,31 @@ def build_surface(report: Dict) -> Dict:
         u = e.get('url') if isinstance(e, dict) else str(e)
         if u and u not in endpoint_items:
             endpoint_items.append(u)
+
+    # External recon (BBOT, opt-in): the same hosts / endpoints / technologies the
+    # asset inventory already promotes (asset_adapter) also widen the breadth here.
+    # Without this they show in the Assets tab and Timeline but are silently dropped
+    # from the surface graph — the asymmetry the security-audit endpoint merge above
+    # closed for the security phase. Reuse asset_adapter's apex/host predicates so
+    # the surface matches the inventory exactly; merged + de-duplicated into the
+    # native categories (empty when the opt-in BBOT phase did not run → no change).
+    if bbot:
+        from core.asset_adapter import _host_of, _is_concrete_host
+        apex = (report.get('domain') or _host_of(report.get('url', ''))).lower().rstrip('.')
+        for host in bbot.get('hosts') or []:
+            h = str(host).strip().lower().rstrip('.')
+            if _is_concrete_host(h, apex) and h not in sub_items:
+                sub_items.append(h)
+        for ep in bbot.get('endpoints') or []:
+            u = ep.get('url') if isinstance(ep, dict) else ep
+            if u and str(u) not in endpoint_items:
+                endpoint_items.append(str(u))
+        for t in bbot.get('technologies') or []:
+            if not (isinstance(t, dict) and t.get('name')):
+                continue
+            label = f"{t['name']} {t['version']}" if t.get('version') else t['name']
+            if label not in tech_items:
+                tech_items.append(label)
 
     candidates = [
         _category('Technologies', tech_items),
