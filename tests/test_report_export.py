@@ -413,6 +413,33 @@ def test_accuracy_csv_empty_is_header_only():
     assert _parse(rx.accuracy_csv(None))[0][0] == 'Confidence'
 
 
+# ── osint_catalog_csv (EXT-OSINT F3 — workflow coverage) ────────────────────────
+
+def test_osint_catalog_csv_header_and_flattened_engines():
+    workflows = [{
+        'id': 'infrastructure-recon', 'name': 'Infrastructure Recon',
+        'category': 'Digital Infrastructure', 'network': 'active',
+        'status': 'partial', 'goal': 'Map the external infrastructure.',
+        'engines': ['recon', 'subdomains', 'ct'], 'ran': ['recon', 'subdomains'],
+        'missing': ['ct'], 'optional_ran': [], 'produces': ['assets', 'attack_surface'],
+    }]
+    table = _parse(rx.osint_catalog_csv(workflows))
+    assert table[0] == ['Status', 'Workflow', 'Category', 'Network', 'Coverage',
+                        'Goal', 'Engines Ran', 'Engines Missing', 'Optional Ran',
+                        'Produces']
+    row = dict(zip(table[0], table[1]))
+    assert row['Status'] == 'partial' and row['Workflow'] == 'Infrastructure Recon'
+    assert row['Coverage'] == '2/3'
+    assert row['Engines Ran'] == 'recon; subdomains'
+    assert row['Engines Missing'] == 'ct'
+    assert row['Produces'] == 'assets; attack_surface'
+
+
+def test_osint_catalog_csv_empty_is_header_only():
+    assert _parse(rx.osint_catalog_csv([]))[0][0] == 'Status'
+    assert _parse(rx.osint_catalog_csv(None))[0][0] == 'Status'
+
+
 # ── evidence_integrity_csv ───────────────────────────────────────────────────
 
 def test_evidence_integrity_csv_exports_warning_summary():

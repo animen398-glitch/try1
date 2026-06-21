@@ -140,6 +140,9 @@ class HistoryTabMixin:
         elif widget is getattr(self, '_technology_risk_widget', None):
             if not self._tr_loaded and not self._tr_loading:
                 self._refresh_technology_risk()
+        elif widget is getattr(self, '_osint_catalog_widget', None):
+            if not self._osint_loaded and not self._osint_loading:
+                self._refresh_osint_catalog()
         elif widget is getattr(self, '_timeline_widget', None):
             if not self._timeline_loaded and not self._timeline_loading:
                 self._refresh_timeline()

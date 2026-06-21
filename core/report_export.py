@@ -94,6 +94,13 @@ _EVIDENCE_INTEGRITY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('changed_count', 'Changed'), ('warning', 'Warning'), ('scan_dir', 'Scan Dir'),
 )
 
+_OSINT_CATALOG_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('status', 'Status'), ('name', 'Workflow'), ('category', 'Category'),
+    ('network', 'Network'), ('coverage', 'Coverage'), ('goal', 'Goal'),
+    ('ran', 'Engines Ran'), ('missing', 'Engines Missing'),
+    ('optional_ran', 'Optional Ran'), ('produces', 'Produces'),
+)
+
 
 def _fmt(value) -> str:
     """CSV cell text: ``None`` → '', everything else stringified."""
@@ -258,6 +265,29 @@ def accuracy_csv(items: Optional[List[Dict]]) -> str:
                      'source': '; '.join(str(s) for s in (it.get('source') or [])),
                      'evidence': '; '.join(str(e) for e in (it.get('evidence') or []))})
     return _rows_to_csv(flat, _ACCURACY_COLUMNS)
+
+
+def osint_catalog_csv(workflows: Optional[List[Dict]]) -> str:
+    """CSV of OSINT-workflow coverage (``osint_catalog.assess`` rows).
+
+    The engine/produces lists are flattened to single readable cells and a
+    ``coverage`` ratio (ran/total required engines) is derived, so the export
+    stays a flat table — the same rows the GUI OSINT Catalog tab shows."""
+    flat: List[Dict] = []
+    for wf in workflows or []:
+        if not isinstance(wf, dict):
+            continue
+        engines = wf.get('engines') or []
+        ran = wf.get('ran') or []
+        flat.append({
+            **wf,
+            'coverage': f'{len(ran)}/{len(engines)}',
+            'ran': '; '.join(str(e) for e in ran),
+            'missing': '; '.join(str(e) for e in (wf.get('missing') or [])),
+            'optional_ran': '; '.join(str(e) for e in (wf.get('optional_ran') or [])),
+            'produces': '; '.join(str(p) for p in (wf.get('produces') or [])),
+        })
+    return _rows_to_csv(flat, _OSINT_CATALOG_COLUMNS)
 
 
 def evidence_integrity_csv(audits) -> str:

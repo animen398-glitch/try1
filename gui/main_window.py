@@ -23,6 +23,7 @@ from gui.tab_exposure import ExposureTabMixin
 from gui.tab_attack_paths import AttackPathsTabMixin
 from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
+from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_overview import OverviewTabMixin
 from gui.tab_dashboard import DashboardTabMixin
@@ -39,7 +40,8 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  FinalReportTabMixin, FindingsTabMixin, AssetsTabMixin,
                  IntelligenceTabMixin, CriticalityTabMixin, ExposureTabMixin,
                  AttackPathsTabMixin,
-                 AccuracyTabMixin, TechnologyRiskTabMixin, TimelineTabMixin,
+                 AccuracyTabMixin, TechnologyRiskTabMixin, OsintCatalogTabMixin,
+                 TimelineTabMixin,
                  OverviewTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.
 
@@ -110,6 +112,10 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._tr_loaded = False
         self._tr_table_loading = False
         self._tr_filter_pending = False
+        self._osint_loading = False
+        self._osint_loaded = False
+        self._osint_table_loading = False
+        self._osint_filter_pending = False
         self._timeline_loading = False
         self._timeline_loaded = False
         self._timeline_data_loading = False

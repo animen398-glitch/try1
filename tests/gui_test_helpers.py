@@ -12,6 +12,7 @@ from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_assets import AssetsTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_findings import FindingsTabMixin
+from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 
 
@@ -87,3 +88,13 @@ class TechnologyRiskHost(_BaseHost, TechnologyRiskTabMixin, DashboardTabMixin):
         self._tr_table_loading = False
         self._tr_filter_pending = False
         self._build_technology_risk_tab()
+
+
+class OsintCatalogHost(_BaseHost, OsintCatalogTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._osint_loading = False
+        self._osint_loaded = False
+        self._osint_table_loading = False
+        self._osint_filter_pending = False
+        self._build_osint_catalog_tab()
