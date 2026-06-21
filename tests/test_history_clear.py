@@ -46,6 +46,19 @@ def test_history_table_shows_collection_warning_count(qapp):
     assert "evidence: manifest failed" in w.history_table.item(0, 5).toolTip()
 
 
+def test_history_table_accepts_cancelled_collection(qapp):
+    from gui.main_window import MainWindow
+    w = MainWindow()
+
+    rows = [{"id": 1, "target": "https://x.com", "phase": "collection",
+             "status": "cancelled", "started_at": "t", "duration_ms": 5,
+             "metadata": {"warning_count": 0}}]
+    w._on_history_loaded({"rows": rows})
+
+    assert w.history_table.item(0, 3).text() == "cancelled"
+    assert w.history_table.item(0, 5).text() == "0"
+
+
 def test_cleared_view_not_auto_reloaded_on_tab_return(qapp):
     from gui.main_window import MainWindow
     w = MainWindow()

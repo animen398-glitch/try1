@@ -193,6 +193,8 @@ class HistoryTabMixin:
                         item.setForeground(QColor('#d32f2f'))
                     elif status == 'running':
                         item.setForeground(QColor('#0078d4'))
+                    elif status == 'cancelled':
+                        item.setForeground(QColor('#ef6c00'))
                 if col == 5:
                     tip = self._history_warning_tooltip(row)
                     if tip:
