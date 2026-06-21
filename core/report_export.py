@@ -449,6 +449,13 @@ def report_markdown(report: Optional[Dict]) -> str:
                         f"{(' — ' + str(f.get('detail'))) if f.get('detail') else ''}"
                         if isinstance(f, dict) else str(f)))
     _section('Recommendations', summary.get('recommendations'), lambda r: str(r))
+    _section('Warnings', report.get('warnings'),
+             lambda w: (
+                 f"{w.get('stage', 'pipeline')}: "
+                 f"{w.get('message') or w.get('error') or 'warning'}"
+                 f"{(' — ' + str(w.get('error'))) if w.get('error') else ''}"
+                 if isinstance(w, dict) else str(w)
+             ))
 
     return '\n'.join(out).rstrip() + '\n'
 

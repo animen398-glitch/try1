@@ -316,6 +316,21 @@ def test_report_markdown_prefers_executive_summary():
     assert '- takeover candidate' in md
 
 
+def test_report_markdown_renders_warnings_section():
+    report = {
+        'domain': 'acme.com',
+        'executive_summary': {'risk_level': 'Low', 'risk_score': 12},
+        'warnings': [{
+            'stage': 'evidence',
+            'message': 'Evidence manifest could not be written',
+            'error': 'disk full',
+        }],
+    }
+    md = rx.report_markdown(report)
+    assert '## Warnings' in md
+    assert '- evidence: Evidence manifest could not be written — disk full' in md
+
+
 def test_report_markdown_empty_is_minimal_header():
     md = rx.report_markdown({})
     assert md.startswith('# Security Report — target')

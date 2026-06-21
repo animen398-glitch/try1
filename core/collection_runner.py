@@ -1679,6 +1679,30 @@ class CollectionRunner:
                  if rows else '')
         return head + table
 
+    @staticmethod
+    def _render_warnings_card(warnings: list) -> str:
+        """Offline HTML for non-fatal pipeline warnings."""
+        e = html.escape
+        rows = []
+        for w in warnings or []:
+            if not isinstance(w, dict):
+                continue
+            stage = e(str(w.get('stage') or 'pipeline'))
+            msg = e(str(w.get('message') or w.get('error') or 'warning'))
+            err = e(str(w.get('error') or ''))
+            detail = (f'<div style="color:#8a6d3b;font-size:12px;">{err}</div>'
+                      if err else '')
+            rows.append(
+                f'<li style="margin:4px 0;"><b>{stage}</b>: {msg}{detail}</li>')
+        if not rows:
+            return ''
+        return (
+            '<p style="font-size:13px;color:#8a6d3b;margin-top:0;">'
+            'Некритичные этапы завершились с предупреждениями; основной скан сохранён.'
+            '</p><ul style="font-size:13px;margin:6px 0 0 18px;padding:0;">'
+            + ''.join(rows) + '</ul>'
+        )
+
     @classmethod
     def _render_attack_paths_card(cls, pdata: Dict) -> str:
         """Offline HTML for the Attack Paths card: lateral routes (entry host →
@@ -2494,6 +2518,11 @@ class CollectionRunner:
         # Trends — sparklines of the project's metric history (≥2 scans only).
         trends_body = self._render_trends_card(report.get('trends'))
         trends_card = card('Trends', trends_body, 'Success') if trends_body else ''
+        warnings_body = self._render_warnings_card(report.get('warnings') or [])
+        warnings_card = (
+            card('Warnings', warnings_body, f"{len(report.get('warnings') or [])} warning(s)")
+            if warnings_body else ''
+        )
 
         return f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
@@ -2510,6 +2539,7 @@ max-width:860px;margin:24px auto;padding:0 16px;color:#222;">
 {exec_card}
 {surface_card}
 {trends_card}
+{warnings_card}
 {''.join(body_parts)}
 <p style="color:#aaa;font-size:11px;margin-top:24px;">
   Advanced Site Analyzer · Full Collection

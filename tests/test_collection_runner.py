@@ -729,6 +729,29 @@ def test_render_html_contains_phase_sections():
     assert "[Success]" in html and "[Skipped]" in html and "[Error]" in html
 
 
+def test_render_html_shows_pipeline_warnings():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x",
+        "domain": "x",
+        "started_at": "",
+        "finished_at": "",
+        "project_dir": "",
+        "phases": {},
+        "warnings": [{
+            "stage": "findings_sync",
+            "message": "Findings sync failed",
+            "error": "<db down>",
+        }],
+    }
+    html = r._render_html(report)
+    assert "Warnings" in html
+    assert "findings_sync" in html
+    assert "Findings sync failed" in html
+    assert "&lt;db down&gt;" in html
+    assert "<db down>" not in html
+
+
 def test_render_html_includes_security_sections():
     r = CollectionRunner()
     report = {
