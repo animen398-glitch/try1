@@ -9,7 +9,7 @@ optional layer), the path authority (``core.paths.PathManager``), and the
 never-raising subprocess wrapper (``core.external_tools.run_command``). The thin
 ``launcher.py`` UI/CLI is just a front-end over these functions.
 
-Testable / offline: every action that shells out (pip, git, launching the app)
+Testable / offline: every action that shells out (pip, launching the app)
 takes an injectable seam (``run`` / ``spawn``), so tests drive the whole flow
 without installing anything or starting a process.
 """
@@ -160,26 +160,19 @@ def repair(*, run: Optional[Callable] = None) -> Dict:
             'error': res.get('error') or (None if ok else res.get('stderr'))}
 
 
-def _has_git_repo() -> bool:
-    return (_PROJECT_ROOT / '.git').exists()
-
-
-def update(*, run: Optional[Callable] = None, git: bool = True) -> Dict:
+def update(*, run: Optional[Callable] = None, git: bool = False) -> Dict:
     """Update in place — offline-first, no mandatory update server.
 
-    Upgrades the pinned dependencies (``pip install --upgrade -r requirements.txt``)
-    and, when this is a git checkout and ``git`` is enabled, fast-forwards the code
-    (``git pull --ff-only``). Each step is reported; ``status`` is ok only when all
-    attempted steps succeeded."""
+    Upgrades the pinned dependencies (``pip install --upgrade -r requirements.txt``).
+    Remote git operations are intentionally not performed here: project policy
+    forbids ``git pull``/``fetch``/``push``/``clone`` without explicit one-off
+    human approval. The ``git`` argument is accepted for backward compatibility
+    with older callers/tests, but ignored."""
     run = run or _run
     steps: List[Dict] = []
     pip_res = run(_pip('install', '--upgrade', '-r', str(_REQUIREMENTS)))
     steps.append({'step': 'pip-upgrade', 'rc': pip_res.get('rc'),
                   'ok': pip_res.get('rc') == 0})
-    if git and _has_git_repo():
-        git_res = run(['git', 'pull', '--ff-only'])
-        steps.append({'step': 'git-pull', 'rc': git_res.get('rc'),
-                      'ok': git_res.get('rc') == 0})
     ok = all(s['ok'] for s in steps)
     return {'action': 'update', 'status': 'ok' if ok else 'failed', 'steps': steps}
 

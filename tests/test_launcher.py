@@ -94,13 +94,14 @@ def test_repair_runs_requirements_install():
     assert '-r' in calls[0] and any('requirements.txt' in str(p) for p in calls[0])
 
 
-def test_update_pip_upgrade_and_optional_git():
+def test_update_pip_upgrade_only_even_when_git_requested():
     calls = []
     res = launcher.update(run=lambda cmd, **k: calls.append(cmd) or _ok(cmd),
-                          git=False)
+                          git=True)
     assert res['status'] == 'ok'
     assert any('--upgrade' in c for c in calls)
-    assert all(s['step'] != 'git-pull' for s in res['steps'])   # git disabled
+    assert all(s['step'] != 'git-pull' for s in res['steps'])
+    assert not any(c[:2] == ['git', 'pull'] for c in calls)
 
 
 def test_update_reports_failed_step():

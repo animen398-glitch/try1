@@ -824,6 +824,12 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     assert meta['latest_scan']['id'] == result['scan_id']
     assert result['project_scan']['status'] == 'Success'
     assert (project_root / 'history' / f"{result['scan_id']}.json").exists()
+    saved = json.loads((scan_dir / 'report.json').read_text(encoding='utf-8'))
+    assert saved['status'] == 'Success'
+    assert saved['report_json'] == str(scan_dir / 'report.json')
+    assert saved['report_html'] == str(scan_dir / 'report.html')
+    assert saved['report_md'] == str(md)
+    assert saved['project_scan']['id'] == result['scan_id']
 
 
 def _stub_base_run(monkeypatch, runner):

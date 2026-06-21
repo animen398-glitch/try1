@@ -1,6 +1,6 @@
 # Advanced Site Analyzer
 
-Десктопный инструмент (Python 3.11+ / PyQt5) для комплексной разведки и анализа
+Десктопный инструмент (Python 3.11+ / PySide6/qtpy) для комплексной разведки и анализа
 веб-сайтов: пассивная разведка, перечисление субдоменов, перехват динамического
 трафика и API-эндпоинтов, обход paywall, захват и оффлайн-клонирование
 фронтенда, извлечение медиа, анализ дизайн-системы и аудит безопасности cookie —
@@ -14,7 +14,7 @@
 
 ## Возможности
 
-GUI содержит 14 встроенных вкладок (+ внешний плагин Deep Crawl при установленном Scrapy):
+GUI содержит 25 вкладок (встроенные ASM/CSM/Intelligence-поверхности + внешние плагины при наличии):
 
 | Вкладка | Назначение |
 |---|---|
@@ -82,7 +82,7 @@ python launcher.py --components     # список опц. компоненто�
 python launcher.py --install NAME  # установить опц. компонент (pip) или показать
                                    #   инструкцию+URL для внешнего бинарника
 python launcher.py --repair        # переустановить обязательные (pip install -r requirements.txt)
-python launcher.py --update        # offline-обновление (pip --upgrade + git pull --ff-only)
+python launcher.py --update        # локальное обновление зависимостей (pip --upgrade; без git pull)
 python launcher.py --launch        # запустить основное приложение
 ```
 
@@ -91,6 +91,9 @@ python launcher.py --launch        # запустить основное при�
 - **Install Optional Tools** — pip-модули ставятся через pip; внешние Go-бинарники
   (nuclei/katana/amass/subfinder/httpx/ffmpeg) **нельзя** поставить через pip →
   показывается инструкция + домашняя страница (положить на PATH).
+- **Update** — только локальный `pip install --upgrade -r requirements.txt`.
+  Удалённые git-операции (`git pull/fetch/push/clone`) запрещены правилами проекта
+  без явного разового разрешения.
 
 ## Структура проекта
 

@@ -22,10 +22,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core import alerts, ci_gate, monitor
-from core.config import load_settings
+from core.config import DEFAULT_SETTINGS, load_settings
 from core.project import ProjectStore
 
-DEFAULT_BASE = Path.home() / 'SiteAnalyzer'
+DEFAULT_BASE = Path(DEFAULT_SETTINGS['output_dir']).expanduser()
+
+
+def _default_base() -> Path:
+    """Default project base from settings.json, falling back to the shipped default."""
+    return Path(load_settings().get('output_dir') or DEFAULT_BASE).expanduser()
 
 
 def _alert_config():
@@ -178,7 +183,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description='Advanced Site Analyzer — Continuous Monitoring')
     parser.add_argument('--output', default=None,
-                        help='Base output directory (default: ~/SiteAnalyzer)')
+                        help='Base output directory (default: settings.output_dir)')
     sub = parser.add_subparsers(dest='command', required=True)
 
     p_en = sub.add_parser('enable', help='Start monitoring a target')
@@ -230,7 +235,7 @@ def main(argv=None):
     except (AttributeError, ValueError):
         pass
 
-    base = Path(opts.output).expanduser() if opts.output else DEFAULT_BASE
+    base = Path(opts.output).expanduser() if opts.output else _default_base()
     store = ProjectStore(base)
 
     if opts.command == 'enable':

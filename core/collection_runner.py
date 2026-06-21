@@ -485,18 +485,18 @@ class CollectionRunner:
 
         self._attach_evidence_manifest(report, scan_dir)
 
-        # Reports
+        # Reports. Stamp the durable report paths/status before rendering, so the
+        # saved report.json and project metadata expose the same contract callers
+        # see in the returned in-memory report.
         json_path = scan_dir / 'report.json'
-        json_path.write_text(
-            json.dumps(report, indent=2, ensure_ascii=False, default=str),
-            encoding='utf-8',
-        )
         html_path = scan_dir / 'report.html'
-        html_path.write_text(self._render_html(report), encoding='utf-8')
+        md_path = scan_dir / 'report.md'
+        report['report_json'] = str(json_path)
+        report['report_html'] = str(html_path)
+        report['status'] = 'Cancelled' if report.get('cancelled') else 'Success'
 
         # Markdown deliverable (EPIC 16 F2) alongside JSON/HTML — for issues, wikis,
         # PRs and email. Best-effort: a render failure must not sink the scan.
-        md_path = scan_dir / 'report.md'
         try:
             from core.report_export import report_markdown
             md_path.write_text(report_markdown(report), encoding='utf-8')
@@ -504,14 +504,20 @@ class CollectionRunner:
         except Exception as e:  # noqa: BLE001 — markdown is a nice-to-have artifact
             self._log(f'  Markdown report failed: {e}')
 
-        report['report_json'] = str(json_path)
-        report['report_html'] = str(html_path)
-        report['status'] = 'Cancelled' if report.get('cancelled') else 'Success'
+        html_path.write_text(self._render_html(report), encoding='utf-8')
+        json_path.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False, default=str),
+            encoding='utf-8',
+        )
 
         # Index this scan in the project (metadata.json + history snapshot) so
         # the project remembers its verdict/metrics across runs.
         try:
             report['project_scan'] = project.record_scan(scan_dir, report)
+            json_path.write_text(
+                json.dumps(report, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
         except Exception as e:  # noqa: BLE001 — indexing must not fail the scan
             self._log(f'  ! project index failed: {e}')
 

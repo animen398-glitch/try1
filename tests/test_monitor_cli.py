@@ -172,3 +172,13 @@ def test_main_enable_then_status(tmp_path, capsys):
     cli.main(['--output', base, 'status'])
     out = capsys.readouterr().out
     assert 'example.com' in out and 'monthly' in out
+
+
+def test_main_default_output_uses_settings(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, 'load_settings',
+                        lambda: {'output_dir': str(tmp_path)})
+    cli.main(['enable', 'https://settings.example', '--interval', 'daily'])
+    cli.main(['status'])
+    out = capsys.readouterr().out
+    assert 'settings.example' in out
+    assert (tmp_path / 'Projects' / 'settings.example' / 'metadata.json').exists()

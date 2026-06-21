@@ -301,6 +301,21 @@ def test_report_markdown_renders_verdict_and_sections():
     assert '## Recommendations' in md and '- Rotate the AWS key' in md
 
 
+def test_report_markdown_prefers_executive_summary():
+    report = {
+        'domain': 'acme.com',
+        'summary': {'risk_level': 'Clean', 'risk_100': 0},
+        'executive_summary': {
+            'risk_level': 'Critical',
+            'risk_score': 95,
+            'key_findings': ['takeover candidate'],
+        },
+    }
+    md = rx.report_markdown(report)
+    assert 'Risk verdict: **Critical** (95/100)' in md
+    assert '- takeover candidate' in md
+
+
 def test_report_markdown_empty_is_minimal_header():
     md = rx.report_markdown({})
     assert md.startswith('# Security Report — target')

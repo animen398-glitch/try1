@@ -36,7 +36,7 @@ except ImportError:
 from core import alerts, monitor
 from core.api_key_extractor import ApiKeyExtractor
 from core.collection_runner import CollectionRunner
-from core.config import OPERATIONS_DB, REGISTRY_DB, load_settings
+from core.config import DEFAULT_SETTINGS, OPERATIONS_DB, REGISTRY_DB, load_settings
 from core.content_capture import SiteContentCapture
 from core.cookie_auditor import CookieAuditor
 from core.findings_store import STATUSES, FindingsStore
@@ -53,8 +53,14 @@ from utils.image_processor import ImageExtractor
 from utils.operation_registry import OperationRegistry
 from utils.video_processor import VideoDownloader
 
+def _configured_report_base() -> Path:
+    """Reports/output base from settings.json (fallback preserves legacy default)."""
+    fallback = DEFAULT_SETTINGS.get('output_dir') or str(Path.home() / 'SiteAnalyzer')
+    return Path(load_settings().get('output_dir') or fallback).expanduser().resolve()
+
+
 # Reports/output live under here; report serving is restricted to this tree.
-_REPORT_BASE = (Path.home() / 'SiteAnalyzer').resolve()
+_REPORT_BASE = _configured_report_base()
 
 # ── Global state ──────────────────────────────────────────────────────────────
 _log_queue: asyncio.Queue = asyncio.Queue()
@@ -115,7 +121,7 @@ async def _push(msg: str, level: str = 'info', msg_type: str = 'log', data: Opti
 def _out_dir(url: str, suffix: str) -> Path:
     domain = urlparse(url if '://' in url else 'https://' + url).netloc.replace('www.', '') or 'site'
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    return Path.home() / 'SiteAnalyzer' / f'{domain}_{stamp}_{suffix}'
+    return _REPORT_BASE / f'{domain}_{stamp}_{suffix}'
 
 
 def _run_recon(url: str, push: Callable) -> dict:
@@ -244,7 +250,7 @@ def _run_collection(url: str, push: Callable) -> dict:
     runner = CollectionRunner(max_pages=20)
     runner.set_progress_callback(lambda m: push(m))
     _register_cancellable(runner)   # runner.cancel() stops at next phase boundary
-    res = runner.run(url, str(Path.home() / 'SiteAnalyzer'))
+    res = runner.run(url, str(_REPORT_BASE))
     # Compact summary (full per-phase data is on disk in report.json).
     return {
         'status': res.get('status'),
@@ -260,7 +266,7 @@ def _run_scandiff(url: str, push: Callable) -> dict:
     The job framework hands a single URL, so this defaults to the most useful
     comparison — previous scan vs latest — for that project. Needs at least two
     scans; otherwise it reports cleanly rather than failing."""
-    store = ProjectStore(Path.home() / 'SiteAnalyzer')
+    store = ProjectStore(str(_REPORT_BASE))
     project = store.get(project_slug(url))
     if project is None:
         push('Проект не найден — сначала запустите Full Collection')
@@ -648,7 +654,7 @@ def _timeline_view(project: Optional[str] = None) -> dict:
 # and GUI). All bound to the same project store the jobs use.
 
 def _monitor_store() -> ProjectStore:
-    return ProjectStore(Path.home() / 'SiteAnalyzer')
+    return ProjectStore(str(_REPORT_BASE))
 
 
 def _monitor_event_text(ev: dict) -> str:

@@ -1,7 +1,7 @@
 # Advanced Site Analyzer — Отчёт о состоянии проекта
 
-> Снимок на 2026-06-13, обновлён 2026-06-19 (эпик ASM 2.0 F1–F6 + пост-эпик +
-> Advanced Intelligence Framework EPIC 8–13).
+> Снимок на 2026-06-13, обновлён 2026-06-21 (эпик ASM 2.0 F1–F6 + пост-эпик +
+> Advanced Intelligence Framework EPIC 8–16).
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -12,14 +12,14 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **1329 собрано, зелёные** (0 FAILED/ERROR; сетенезависимые, Qt headless) |
+| Тесты | **1563 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
-| Своих модулей / тест-файлов | 102 (core 57 / utils 17 / gui 27 / remote 1) / 96 |
+| Своих модулей / тест-файлов | 100+ модулей / 140+ test-файлов |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build **+ smoke-run собранного .exe (`--self-check`)** |
-| Git | ветка `master`, синхронна с `origin/master`; P1–P12 + ASM 2.0 + Advanced Intelligence (EPIC 8–13) закоммичены и запушены |
+| Git | ветка `master`, локально впереди `origin/master` на 9 коммитов; удалённые действия запрещены без явного разрешения |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
 Весь реализуемый роадмап закрыт (P1–P12 + TIER S/A/B + C1/C2 в безопасных
@@ -35,13 +35,13 @@ display-метрики (риск-вердикт не тронут). Пофичн
 
 ## 2. Что это за проект
 
-Десктопный инструмент (Python 3.11+/PyQt5) для авторизованной разведки и
+Десктопный инструмент (Python 3.11+/PySide6 через qtpy) для авторизованной разведки и
 анализа веб-сайтов: пассивная разведка, субдомены, перехват API-трафика, обход
 paywall, оффлайн-клон фронтенда, извлечение медиа, анализ дизайна, аудиты
 безопасности (cookie, секреты, source-map, уязвимости).
 
 **Точки входа:**
-- `main.py` — GUI (PyQt5), 22 встроенные вкладки + внешний плагин Deep Crawl (итого 23).
+- `main.py` — GUI (PySide6/qfluent через qtpy), self-check: 25 вкладок.
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
 - `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8, + Alert Center #9).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
@@ -85,7 +85,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | email_intel | **Email Intelligence (#13 OSINT)**: сбор e-mail адресов из homepage/robots.txt/sitemap.xml (stdlib re); чистая экстракция/классификация (фильтр шума: ассеты, плейсхолдеры, version-строки) → группировка на домене/внешние + по ролям (security/admin/support/sales/…); фетч отделён от экстракции (инъектируемый) → тесты без сети; питает отчёт (карточка) и Scan Diff (секция emails) |
 | employee_intel | **Employee Intelligence (#13 OSINT)**: имена сотрудников со страниц team/about/leadership из структурных источников (JSON-LD `Person` + личные `mailto`, role-фильтр через email_intel); по парам имя↔адрес выводит корпоративный формат e-mail ({first}.{last}, {f}{last}, …) и достраивает вероятные адреса (помечены `inferred`, без догадок без on-domain-доказательств); фетч отделён от чистого roster (инъектируемый) → тесты без сети; питает отчёт (карточка) и Scan Diff (секция employees) |
 | ct_history | **Certificate Transparency History (#13 OSINT)**: история сертификатов домена из crt.sh (то, что subdomain-сканер выбрасывает — временна́я/issuer-метадата): центры сертификации (CA), окна валидности, первое/последнее появление в логах, недавние (≤90 дн.) и wildcard-сертификаты, активные/истёкшие; сетевой fetch отделён от чистого `analyze` (с инъектируемым `now`) → тесты без сети и детерминированы по времени; информационный (в риск-движок не идёт), питает отчёт (карточка) и Scan Diff (секция ct — новый сертификат по crt.sh id) |
-| findings_status | **Findings Management (#14)**: триаж-статусы находок (open/in_progress/fixed/ignored) с устойчивым fingerprint (severity+source+нормализ. title, маскирует волатильные счётчики) и хранением в проекте (`findings.json`); чистые `apply` (мердж скана: новое→open, статус/заметка сохраняются, исчезнувшее помечается present=False), `set_status`, `decorate`, `summarize`; collection_runner синхронит статусы каждый скан ПЕРЕД exec-summary; fixed/ignored **исключаются из риск-движка** (триаж false-positive снижает балл); питает отчёт (карточка). Оффлайн, stdlib only |
+| findings_store / findings_adapter / findings_sla | **Findings Management (ASM F1)**: SQLite `data/findings.db`, стабильный fingerprint + project-scoped id, lifecycle OPEN/IN_PROGRESS/FIXED/IGNORED/FALSE_POSITIVE, события `finding_events`, SLA derive-on-read, GUI/Web triage. Заменяет legacy `findings_status.py`/`findings.json`; inactive findings исключаются из risk. |
 | asset_store / asset_adapter | **Asset Inventory**: персистентный реестр активов (domain/subdomain/ip/asn/netblock/endpoint/technology), аналог Findings, но для активов. `asset_adapter` — pure derive из report (identity sha1(type␟norm), endpoint через normalize_location, технология=имя без версии); `asset_store` — SQLite `data/assets.db`, scoped-id ключ, lifecycle ACTIVE⇄GONE→REAPPEARED со scope-guard по фазе-источнику, `projects()`/`project_events()`. Проводка: `_sync_assets`, вкладка «Assets» (read-only), web `GET /assets`, Timeline (asset-события), `assets_csv`. Оффлайн, stdlib+sqlite |
 | collection_runner | «Full Collection» — все фазы в один скан проекта Projects/<slug>/scans/<id>/; опц. фазы: screenshot/nuclei/katana/**subdomains**/LLM |
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
@@ -108,7 +108,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 `file_compression`, `image_processor`, `video_processor`, `site_extractor`,
 `task_manager`, `cloudflare_tools`.
 
-### gui/ — PyQt5 (mixin-архитектура)
+### gui/ — PySide6/qfluent через qtpy (mixin-архитектура)
 `main_window` — тонкий контейнер (~75 строк); каркас — mixin'ы `task_runner`
 (единый раннер QThread), `window_chrome`, `window_helpers`; `workers`,
 `plugin_manager` (реестр вкладок + авто-дискавери внешних), `ui_components`,
@@ -206,13 +206,11 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
   сертификатов из crt.sh — CA/сроки/первое-последнее появление/недавние+
   wildcard; опц. фаза collection «CT-история», карточка, Scan Diff секция ct).
   **Бандл #13 (DNS + Email + Employee + CT) закрыт.**
-- **#14 Findings Management — [ГОТОВО]** (`core/findings_status.py`): триаж-
-  статусы OPEN/IN_PROGRESS/FIXED/IGNORED с устойчивым fingerprint, хранение в
-  `Projects/<slug>/findings.json`, авто-синк статусов на каждом скане, карточка
-  в отчёте. FIXED/IGNORED исключаются из риск-движка (build_summary
-  status-aware при наличии статусов; иначе поведение не меняется). Оффлайн.
-  GUI-вкладка для ручного триажа — возможное расширение (статусы сейчас через
-  Project API).
+- **#14 / ASM F1 Findings Management — [ГОТОВО]** (`core/findings_store.py`,
+  `core/findings_adapter.py`, `core/findings_sla.py`): SQLite lifecycle-стор,
+  cross-scan dedup, auto-FIX со scope guard, sticky IGNORED/FALSE_POSITIVE,
+  GUI-вкладка Findings и web endpoints. Legacy `findings_status.py` /
+  `findings.json` удалены и заменены этим стором.
 
 Осознанно вне скоупа (нарушают инварианты по своей природе):
 - **C2 «живая» сетевая secret-валидация** (отправка ключа провайдеру) — dual-use/приватность.

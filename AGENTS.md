@@ -7,7 +7,7 @@
 
 ## 1. Что это за проект
 
-**Advanced Site Analyzer** — десктопный инструмент (Python 3.11+ / PyQt5) для
+**Advanced Site Analyzer** — десктопный инструмент (Python 3.11+ / PySide6 через qtpy) для
 авторизованного анализа веб-сайтов: recon, перечисление субдоменов, перехват
 динамического трафика и API, аудит безопасности (секреты, source maps,
 cookie, GraphQL), захват и оффлайн-клонирование фронтенда, извлечение медиа.
@@ -29,7 +29,7 @@ cookie, GraphQL), захват и оффлайн-клонирование фро
 ## 2. Технологии
 
 - Python 3.11+
-- PyQt5 (GUI), многопоточность через QThread/QObject Signals-Slots
+- PySide6/qtpy + PySide6-Fluent-Widgets (GUI), многопоточность через QThread/QObject Signals-Slots
 - SQLite (реестры операций, индекс эндпоинтов, метаданные проектов)
 - Playwright (опц. — динамический анализ)
 - FastAPI + uvicorn (опц. — LAN web-консоль)
@@ -105,7 +105,7 @@ gui/                    # ТОНКИЙ UI-слой (mixin-паттерн)
 remote/web_app.py       # FastAPI LAN-консоль (паритет с GUI через реестр JOBS)
 plugins/                # внешние вкладки-плагины (контракт в plugins/README.md)
 plugins/analyzers/      # analyzer-плагины: run(results)->findings (вливаются в risk score)
-tests/                  # pytest-набор (~916 тестов, offline/headless)
+tests/                  # pytest-набор (~1563 теста, offline/headless)
 build.spec              # PyInstaller
 ```
 
@@ -263,7 +263,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 
 **Базовая зрелость:** платформа-анализатор + Full Collection + risk-движок +
 Scan Diff + проекты (`Projects/<домен>/`) + ASM 2.0 (F1–F6) + Asset Inventory.
-Тесты: 1506 collected (offline/headless; web-live skip без httpx).
+Тесты: 1563 collected/pass (offline/headless; web-live skip без httpx).
 
 **Сделано до эпика (legacy #1–#13):** OSINT-бандл #13 (dns_intel, email_intel,
 employee_intel, ct_history) и др. #14 (JSON `findings_status.py`) был **заменён**
@@ -1303,14 +1303,16 @@ Relationships»; web `_correlation_view` +`asset_graph` (+ console-вывод к
 (Install/Repair/Update/Launch), offline-first, **без обязательного update-сервера**.
 Аудит: Launcher'а не было, но `core/features.py` (OPTIONAL_FEATURES/summary()/missing();
 pip-модуль `find_spec` vs PATH-бинарник `which`) и `PathManager` уже есть. Решения
-пользователя: **engine+UI** (pure core + тонкий UI), offline update (pip --upgrade,
-опц git pull), внешние бинарники → инструкции (не качаем). Новый `core/launcher.py`
+пользователя: **engine+UI** (pure core + тонкий UI), локальный update зависимостей
+(pip --upgrade; без remote git), внешние бинарники → инструкции (не качаем).
+Новый `core/launcher.py`
 (pure, subprocess инъектируется): `REQUIRED={qtpy,PySide6,requests,beautifulsoup4}`
 (lxml опц.); `health_check` (REQUIRED + **переиспользует** `features.summary()` для
 OPTIONAL + `PathManager.get_temp_path` write-probe — **PathManager не дублирован**);
 `installable_components` (pip vs manual); `install_optional` (pip-модуль / инструкция+
-URL для бинарника); `repair` (pip install -r requirements.txt); `update` (pip --upgrade
-+ git pull --ff-only если `.git`); `launch_app` (subprocess). Тонкий `launcher.py` (root):
+URL для бинарника); `repair` (pip install -r requirements.txt); `update`
+(pip --upgrade -r requirements.txt; `git pull/fetch/push/clone` запрещены правилами
+без явного разового разрешения); `launch_app` (subprocess). Тонкий `launcher.py` (root):
 `run_cli(argv)` (`--health/--components/--install/--repair/--update/--launch`, exit-коды) +
 Qt-окно `LauncherWindow` (Module 5: 5 кнопок; fast синхронно, Repair в QThread;
 переиспользует `gui.ui_components`). **Переиспользовано:** features, PathManager,

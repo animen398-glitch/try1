@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 # Headless Qt + importable project root, before any Qt import. QT_API pins the
-# qtpy binding (PyQt5 today; flip to "pyside6" for the variant-B migration).
+# committed qtpy binding (variant B: PySide6).
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_API", "pyside6")
 _ROOT = Path(__file__).resolve().parent.parent

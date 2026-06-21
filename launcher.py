@@ -11,7 +11,7 @@ Usage::
     python launcher.py --components    # list optional components + how to install
     python launcher.py --install NAME  # install one optional component
     python launcher.py --repair        # reinstall required deps
-    python launcher.py --update        # offline update (pip upgrade + git pull)
+    python launcher.py --update        # local dependency update (pip upgrade only)
     python launcher.py --launch        # start the main application
 """
 

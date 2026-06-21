@@ -403,12 +403,14 @@ def findings_sarif(findings: Optional[List[Dict]], *,
 def report_markdown(report: Optional[Dict]) -> str:
     """Markdown deliverable from a scan ``report`` dict (pure, offline).
 
-    Renders the executive summary already in ``report['summary']`` (verdict +
-    headline chips + key findings + score breakdown + recommendations) — the same
-    narrative as report.html, as portable Markdown. Empty/old reports degrade to a
-    minimal header rather than raising."""
+    Renders the executive summary already in ``report['executive_summary']``
+    (verdict + headline chips + key findings + score breakdown + recommendations)
+    with ``report['summary']`` kept as a legacy fallback. Empty/old reports
+    degrade to a minimal header rather than raising."""
     report = report if isinstance(report, dict) else {}
-    summary = report.get('summary') if isinstance(report.get('summary'), dict) else {}
+    summary = report.get('executive_summary')
+    if not isinstance(summary, dict):
+        summary = report.get('summary') if isinstance(report.get('summary'), dict) else {}
 
     target = report.get('domain') or report.get('url') or 'target'
     out: List[str] = [f'# Security Report — {target}', '']

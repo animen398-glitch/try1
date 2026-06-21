@@ -1,10 +1,9 @@
 """gui/theme.py — single source of truth for the application's visual theme (F6).
 
-Variant A of the GUI redesign: a PyQt5 *restyle*, not a binding migration. The
-whole app is themed at once via the Fusion style + a ``QPalette`` (plus a tiny
-supplemental QSS for what the palette doesn't reach, e.g. tooltips), applied once
-on the ``QApplication`` — so no per-tab stylesheet sweep is needed and there is
-**no new runtime dependency** (pure PyQt5), keeping the ``.exe`` unchanged.
+The current GUI runs on PySide6 through qtpy/qfluent. The whole app is themed at
+once via the Fusion style + a ``QPalette`` (plus a tiny supplemental QSS for what
+the palette doesn't reach, e.g. tooltips), applied once on the ``QApplication`` —
+so no per-tab stylesheet sweep is needed.
 
 Opt-in: ``settings['gui_theme']`` defaults to ``'system'``, which leaves the
 current look untouched (Fusion's standard palette). Only ``'dark'`` overrides the

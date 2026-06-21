@@ -18,7 +18,7 @@ def test_job_registry_covers_gui_features():
 
 def test_scandiff_job_needs_existing_project(monkeypatch, tmp_path):
     # No project on disk → the job reports cleanly instead of failing.
-    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(wa, "_REPORT_BASE", (tmp_path / "SiteAnalyzer").resolve())
     msgs = []
     out = wa._run_scandiff("https://nope.example.com", msgs.append)
     assert out["status"] == "No project"
@@ -26,7 +26,7 @@ def test_scandiff_job_needs_existing_project(monkeypatch, tmp_path):
 
 def test_scandiff_job_needs_two_scans(monkeypatch, tmp_path):
     from core.project import ProjectStore
-    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(wa, "_REPORT_BASE", (tmp_path / "SiteAnalyzer").resolve())
     # One scan only → not enough to diff.
     p = ProjectStore(tmp_path / "SiteAnalyzer").get_or_create("https://x.com")
     p.record_scan(p.start_scan("20260613_010000"),
@@ -40,7 +40,7 @@ def test_scandiff_job_diffs_last_two_scans(monkeypatch, tmp_path):
     import json
 
     from core.project import ProjectStore
-    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(wa, "_REPORT_BASE", (tmp_path / "SiteAnalyzer").resolve())
     store = ProjectStore(tmp_path / "SiteAnalyzer")
     p = store.get_or_create("https://x.com")
     for sid, lvl in (("20260613_010000", "Low"), ("20260613_020000", "High")):
@@ -114,6 +114,13 @@ def test_out_dir_naming():
     p = wa._out_dir("https://www.example.com/path", "capture")
     assert p.name.endswith("_capture")
     assert "example.com" in p.name
+
+
+def test_out_dir_uses_report_base(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, "_REPORT_BASE", tmp_path.resolve())
+    p = wa._out_dir("https://www.example.com/path", "capture")
+    assert p.parent == tmp_path.resolve()
+    assert p.name.endswith("_capture")
 
 
 def test_get_local_ip_returns_str():
@@ -214,8 +221,8 @@ def test_monitor_endpoints_with_testclient(monkeypatch, tmp_path):
         pytest.skip("fastapi not importable in web_app")
     from fastapi.testclient import TestClient
 
-    # Point the monitor store at a tmp home so the test is isolated.
-    monkeypatch.setattr(wa.Path, "home", staticmethod(lambda: tmp_path))
+    # Point the monitor store at a tmp report base so the test is isolated.
+    monkeypatch.setattr(wa, "_REPORT_BASE", tmp_path.resolve())
     client = TestClient(wa.app)
 
     # Empty to start.
