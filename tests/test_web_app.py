@@ -141,6 +141,44 @@ def test_dashboard_has_history_and_report():
     assert "showData()" in html and "/data" in html
 
 
+def test_collection_job_summary_includes_warnings(monkeypatch, tmp_path):
+    class FakeRunner:
+        def __init__(self, max_pages):
+            self.max_pages = max_pages
+
+        def set_progress_callback(self, callback):
+            self.callback = callback
+
+        def run(self, url, output_base):
+            return {
+                "status": "Success",
+                "project_dir": str(tmp_path / "scan"),
+                "report_html": str(tmp_path / "scan" / "report.html"),
+                "warnings": [{
+                    "stage": "evidence",
+                    "message": "Evidence manifest failed",
+                    "error": "disk full",
+                }],
+                "phases": {"recon": {"status": "Success"}},
+            }
+
+        def cancel(self):
+            pass
+
+    monkeypatch.setattr(wa, "CollectionRunner", FakeRunner)
+    monkeypatch.setattr(wa, "_REPORT_BASE", tmp_path)
+
+    out = wa._run_collection("https://x.com", lambda msg: None)
+
+    assert out["status"] == "Success"
+    assert out["warnings"] == [{
+        "stage": "evidence",
+        "message": "Evidence manifest failed",
+        "error": "disk full",
+    }]
+    assert out["phases"] == {"recon": "Success"}
+
+
 # ── Cancellation (P-backlog: stop a running web-console job) ─────────────────
 
 class _FakeCancellable:

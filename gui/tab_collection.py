@@ -27,6 +27,16 @@ from gui.workers import _CollectionWorker, _MonitorWorker
 class FinalReportTabMixin:
     """Builds and drives the Final Report & Collection tab."""
 
+    @staticmethod
+    def _format_collection_warning(warning: object) -> str:
+        if not isinstance(warning, dict):
+            return str(warning)
+        stage = warning.get('stage') or 'pipeline'
+        message = warning.get('message') or warning.get('error') or 'warning'
+        error = warning.get('error')
+        return (f"{stage}: {message} — {error}" if error
+                else f"{stage}: {message}")
+
     def _build_collection_tab(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -404,6 +414,17 @@ class FinalReportTabMixin:
             self.collect_log.append_info(
                 f"Скан #{scan_meta.get('id', result.get('scan_id', ''))}")
         self.collect_log.append_info(f"Директория: {result.get('project_dir', '')}")
+
+        warnings = result.get('warnings') or []
+        if warnings:
+            self.collect_log.append_warning(
+                f"Некритичные предупреждения: {len(warnings)}")
+            for item in warnings[:5]:
+                self.collect_log.append_warning(
+                    f"  {self._format_collection_warning(item)}")
+            if len(warnings) > 5:
+                self.collect_log.append_warning(
+                    f"  ... ещё {len(warnings) - 5}; полный список в report.json/report.html")
 
         # Executive summary — risk verdict + top recommendation up front.
         summary = result.get('executive_summary') or {}

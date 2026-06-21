@@ -256,6 +256,7 @@ def _run_collection(url: str, push: Callable) -> dict:
         'status': res.get('status'),
         'project_dir': res.get('project_dir'),
         'report_html': res.get('report_html'),
+        'warnings': res.get('warnings') or [],
         'phases': {k: v.get('status') for k, v in res.get('phases', {}).items()},
     }
 
