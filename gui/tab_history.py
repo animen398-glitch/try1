@@ -22,7 +22,30 @@ from utils.operation_registry import OperationRegistry
 class HistoryTabMixin:
     """Builds and drives the Operation History tab."""
 
-    HISTORY_COLUMNS = ["ID", "Target", "Phase", "Status", "Started At", "Duration (ms)"]
+    HISTORY_COLUMNS = [
+        "ID", "Target", "Phase", "Status", "Started At", "Warnings", "Duration (ms)",
+    ]
+
+    @staticmethod
+    def _history_warning_count(row: dict) -> int:
+        metadata = row.get('metadata') if isinstance(row.get('metadata'), dict) else {}
+        try:
+            return int(metadata.get('warning_count') or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _history_warning_tooltip(row: dict) -> str:
+        metadata = row.get('metadata') if isinstance(row.get('metadata'), dict) else {}
+        lines = []
+        for item in metadata.get('warning_summary') or []:
+            if not isinstance(item, dict):
+                continue
+            stage = item.get('stage') or 'pipeline'
+            message = item.get('message') or item.get('error') or 'warning'
+            error = item.get('error')
+            lines.append(f"{stage}: {message}" + (f" ({error})" if error else ""))
+        return "\n".join(lines)
 
     def _build_history_tab(self) -> QWidget:
         w = QWidget()
@@ -155,11 +178,12 @@ class HistoryTabMixin:
                 row.get('phase'),
                 row.get('status'),
                 row.get('started_at'),
+                self._history_warning_count(row),
                 row.get('duration_ms'),
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem('' if val is None else str(val))
-                if col in (0, 5):
+                if col in (0, 5, 6):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 if col == 3:  # Status colouring
                     status = (row.get('status') or '').lower()
@@ -169,6 +193,11 @@ class HistoryTabMixin:
                         item.setForeground(QColor('#d32f2f'))
                     elif status == 'running':
                         item.setForeground(QColor('#0078d4'))
+                if col == 5:
+                    tip = self._history_warning_tooltip(row)
+                    if tip:
+                        item.setToolTip(tip)
+                        item.setForeground(QColor('#ef6c00'))
                 self.history_table.setItem(r, col, item)
 
         self.history_count.setText(f"Записей: {len(rows)}")

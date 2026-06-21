@@ -20,6 +20,32 @@ def test_clear_history_view_resets_table_only(qapp):
     assert "БД не затронута" in w.history_count.text()
 
 
+def test_history_table_shows_collection_warning_count(qapp):
+    from gui.main_window import MainWindow
+    w = MainWindow()
+
+    rows = [{
+        "id": 1,
+        "target": "https://x.com",
+        "phase": "collection",
+        "status": "success",
+        "started_at": "t",
+        "duration_ms": 5,
+        "metadata": {
+            "warning_count": 2,
+            "warning_summary": [
+                {"stage": "evidence", "message": "manifest failed"},
+                {"stage": "findings_sync", "message": "sync failed"},
+            ],
+        },
+    }]
+
+    w._on_history_loaded({"rows": rows})
+
+    assert w.history_table.item(0, 5).text() == "2"
+    assert "evidence: manifest failed" in w.history_table.item(0, 5).toolTip()
+
+
 def test_cleared_view_not_auto_reloaded_on_tab_return(qapp):
     from gui.main_window import MainWindow
     w = MainWindow()
