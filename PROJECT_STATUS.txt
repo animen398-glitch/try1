@@ -3959,3 +3959,49 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
       remains.
 
 ==============================================================================
+  2026-06-21 - PLANNING: EPIC EXT-OSINT (External Recon & Document Intelligence)
+==============================================================================
+
+  STATUS: PLANNING ONLY - no code written. This entry records that a new
+    strategic roadmap block was added; nothing below is implemented yet.
+
+  WHAT:
+    - New epic "EPIC EXT-OSINT - External Recon & Document Intelligence
+      Expansion" added to ROADMAP_ASM_2.0.md (after EPIC 14). Goal: grow the
+      tool from web-only ASM/CSM toward a broader OSINT/ASM platform while
+      keeping offline-first, optional-deps and no-heavy-deps-in-.exe invariants.
+
+  FEATURES (planned, not built):
+    - F1 BBOT External Adapter - BBOT (AGPL-3.0) used ONLY as an optional
+      external tool via subprocess + its JSON/NDJSON output. No BBOT code copied,
+      not a required dependency, not bundled in .exe, no aggressive presets by
+      default. Planned modules: features.has_bbot(), core/bbot_adapter.py;
+      output normalised into AssetStore/FindingsStore via existing adapters.
+    - F2 Document Intelligence - extract structured data from PDF/images/docs.
+      Heavy torch/vLLM/HF models NOT bundled; lift (datalab-to/lift) only as an
+      optional provider with graceful degradation. Planned modules:
+      core/document_intelligence.py (core), core/document_providers/lift_adapter.
+    - F3 AI OSINT Workflow Catalog - offline derive-on-read catalog of OSINT
+      workflows (ideas from Awesome-AI-OSINT) over existing engines. Planned:
+      core/osint_catalog.py.
+    - F4 Privacy-first / Offline-first Hardening - turn the fcksignups.com
+      product idea (no-signup / offline-first / transparency) into verifiable
+      guarantees on top of Scope Guard (EPIC 14) and features.summary().
+
+  HARD CONSTRAINTS RECORDED:
+    - No AGPL code copied; subprocess + output parsing only.
+    - Nothing becomes a required dependency; base requirements do not grow;
+      heavy deps stay out of the .exe.
+    - No mandatory network; all new network/active actions are opt-in and pass
+      through Scope Guard. Every new input must feed the EXISTING data lifecycle
+      (project metadata / AssetStore / FindingsStore / Timeline / Overview /
+      report.* / operations.db / warnings) - no second data model.
+    - UI stays thin; logic in core/; graceful degradation when a tool is absent.
+    - All tests offline/headless; external binaries/models/network stubbed.
+    - README is NOT to describe any of this as done until actually implemented.
+
+  NEXT:
+    - Per-feature plan -> approval -> implementation, one task at a time, starting
+      with F1 T1.1 (BBOT research & contract, documentation only).
+
+==============================================================================

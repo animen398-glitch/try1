@@ -249,6 +249,30 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 
 ---
 
+## Запланированные модули (НЕ реализованы)
+
+> Раздел отделён намеренно: ниже — **план**, а не существующий код. Эти модули
+> ещё не написаны. Полный план — `ROADMAP_ASM_2.0.md` → **EPIC EXT-OSINT**.
+
+**EPIC EXT-OSINT — External Recon & Document Intelligence Expansion** (планирование):
+
+- `core/bbot_adapter.py` *(planned)* — внешний опциональный BBOT-адаптер через
+  subprocess + JSON/NDJSON (BBOT под AGPL-3.0 — код НЕ копируется, не
+  обязательная зависимость, не бандлится в `.exe`). Вывод нормализуется в
+  AssetStore/FindingsStore. Детект — `features.has_bbot()` *(planned)*.
+- `core/document_intelligence.py` *(planned)* — ядро document intelligence
+  (offline-first контракт «документ → структурированные поля → DTO»).
+- `core/document_providers/lift_adapter` *(planned)* — опциональный провайдер
+  (datalab-to/lift); тяжёлые `torch`/`vLLM`/HF-модели не бандлятся, мягкая
+  деградация при отсутствии.
+- `core/osint_catalog.py` *(planned)* — offline derive-on-read каталог AI-OSINT
+  воркфлоу (идеи из Awesome-AI-OSINT) поверх существующих движков.
+
+Реализация — строго по цепочке Epic → Feature → Task, по одной задаче, после
+утверждения плана конкретной фичи. README обновляется только по факту.
+
+---
+
 *Сгенерировано в ходе ревью. Детали и история изменений — `PROJECT_STATUS.txt`.*
 > Update 2026-06-20: Epic 14 - Scope & Evidence Foundation is CLOSED.
 > Completed: Scope Guard v1, Evidence Manifest v1, Evidence Integrity Hook,
