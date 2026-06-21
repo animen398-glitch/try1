@@ -364,6 +364,25 @@ def _sarif_help(finding: Dict) -> str:
     return '\n\n'.join(parts)
 
 
+def _sarif_tags(finding: Dict) -> List[str]:
+    """Rule tags: the canonical category plus the CWE taxonomy and OWASP class the
+    compliance mapping derives (one SSOT — ``core.compliance.classify``). CWEs use
+    the ``external/cwe/cwe-NNN`` convention GitHub code scanning recognizes for
+    filtering/grouping, so the SARIF carries the same taxonomy the compliance report
+    shows."""
+    from core.compliance import classify
+    cat = str(finding.get('category') or '').strip()
+    cls = classify(cat, finding.get('rule_id', ''), finding.get('title', ''))
+    tags = [t for t in [cat] if t]
+    for cwe in cls.get('cwe') or []:
+        num = str(cwe).lower().replace('cwe-', '').strip()
+        if num:
+            tags.append(f'external/cwe/cwe-{num}')
+    if cls.get('owasp'):
+        tags.append(f"OWASP:{cls['owasp']}")
+    return tags
+
+
 def findings_sarif(findings: Optional[List[Dict]], *,
                    tool_version: str = '') -> str:
     """SARIF 2.1.0 JSON for a findings list (``FindingsStore`` rows).
@@ -371,9 +390,11 @@ def findings_sarif(findings: Optional[List[Dict]], *,
     Each finding becomes a SARIF result; distinct (category/rule_id) pairs become
     reportingDescriptors (rules) with description/impact/remediation pulled from the
     finding_knowledge catalog (same enrichment as ``findings_csv``). ``severity``
-    maps to the SARIF level + the numeric security-severity GitHub reads;
-    ``evidence.location`` is emitted as the result's physicalLocation URI when
-    present. Pure stdlib json; an empty list yields a valid empty run."""
+    maps to the SARIF level + the numeric security-severity GitHub reads; the rule
+    tags carry the CWE taxonomy (``external/cwe/cwe-NNN``) and OWASP class from the
+    compliance SSOT; ``evidence.location`` is emitted as the result's
+    physicalLocation URI when present. Pure stdlib json; an empty list yields a
+    valid empty run."""
     from core.finding_knowledge import annotate
     rows = annotate(list(findings or []))
 
@@ -392,7 +413,7 @@ def findings_sarif(findings: Optional[List[Dict]], *,
                 'help': {'text': _sarif_help(f)},
                 'defaultConfiguration': {'level': level},
                 'properties': {
-                    'tags': [t for t in [str(f.get('category') or '')] if t],
+                    'tags': _sarif_tags(f),
                     'security-severity': _SARIF_SECURITY_SEVERITY.get(sev, '1.0'),
                 },
             }

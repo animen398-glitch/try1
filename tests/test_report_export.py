@@ -274,6 +274,26 @@ def test_sarif_dedups_rules_and_carries_severity_property():
     assert results[0]['properties']['severity'] == 'low'
 
 
+def test_sarif_rule_tags_carry_cwe_and_owasp_taxonomy():
+    # The rule tags carry the CWE taxonomy (external/cwe/cwe-NNN, GitHub code
+    # scanning's convention) and OWASP class from the compliance SSOT, so the SARIF
+    # matches the compliance report. A secret → A07 / CWE-798; a CVE finding → A06.
+    findings = [
+        {'category': 'secret', 'rule_id': 'aws-key', 'severity': 'critical',
+         'title': 'Leaked secret: AWS', 'status': 'OPEN', 'evidence': {}},
+        {'category': 'vuln', 'rule_id': 'cve-2020-11022', 'severity': 'high',
+         'title': 'jQuery vulnerable', 'status': 'OPEN', 'evidence': {}},
+    ]
+    rules = {r['id']: r for r in
+             _sarif(findings)['runs'][0]['tool']['driver']['rules']}
+    sec_tags = rules['aws-key']['properties']['tags']
+    assert 'secret' in sec_tags
+    assert 'external/cwe/cwe-798' in sec_tags
+    assert 'OWASP:A07:2021' in sec_tags
+    cve_tags = rules['cve-2020-11022']['properties']['tags']
+    assert 'external/cwe/cwe-1395' in cve_tags and 'OWASP:A06:2021' in cve_tags
+
+
 def test_sarif_none_is_valid_empty_run():
     doc = _sarif(None)
     assert doc['runs'][0]['results'] == []

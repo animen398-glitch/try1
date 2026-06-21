@@ -1254,6 +1254,18 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**SARIF rule-теги несут CWE/OWASP-таксономию — `[ЗАКРЫТ]`.** Backend-фаза. SARIF-
+экспорт (`findings_sarif`, EPIC 16) клал в `rule.properties.tags` только
+`[category]` + security-severity, **роняя CWE-таксономию**, которую compliance уже
+вычисляет. GitHub code-scanning распознаёт `external/cwe/cwe-NNN` для группировки/
+фильтрации — без них SARIF не нёс класс находки, хотя compliance-отчёт нёс. Фикс:
+`_sarif_tags(finding)` через единый SSOT `compliance.classify` добавляет к категории
+CWE-теги (`external/cwe/cwe-NNN`, конвенция GitHub) + OWASP-класс (`OWASP:A06:2021`) →
+SARIF и compliance-отчёт несут одну таксономию. Pure stdlib, без новых зависимостей,
+без второй системы маппинга. CVE-находки автоматом получают `cwe-1395`/A06 (от только
+что добавленного правила). Покрыто `test_report_export` (secret→cwe-798/A07,
+CVE→cwe-1395/A06).
+
 **CVE-находки → OWASP A06 в compliance — `[ЗАКРЫТ]`.** Backend-фаза, баг-фикс.
 CVE-находка канонизируется `findings_adapter` в `category='vuln'`/`rule_id='cve-…'`,
 но `compliance.classify` не имела для неё правила → `owasp=None` → попадала в
