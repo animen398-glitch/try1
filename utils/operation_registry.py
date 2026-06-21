@@ -47,7 +47,8 @@ class OperationRegistry(SQLiteStore):
                    (target, phase, status, started_at, output_dir, metadata)
                    VALUES (?, ?, 'running', ?, ?, ?)""",
                 (target, phase, datetime.now().isoformat(), output_dir,
-                 json.dumps(metadata) if metadata is not None else None),
+                 json.dumps(metadata, ensure_ascii=False, default=str)
+                 if metadata is not None else None),
             )
             return cur.lastrowid
 
@@ -81,7 +82,7 @@ class OperationRegistry(SQLiteStore):
                            metadata = ?
                        WHERE id = ?""",
                     (status, finished.isoformat(), duration_ms, error,
-                     json.dumps(metadata), operation_id),
+                     json.dumps(metadata, ensure_ascii=False, default=str), operation_id),
                 )
 
     def get(self, operation_id: int) -> Optional[Dict[str, Any]]:
