@@ -4217,3 +4217,57 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     contract (lift provider, offline-first fallback), documentation only.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F2 T2.1 - Document Intelligence contract (DOC)
+==============================================================================
+
+  STATUS: DONE (documentation only - no code, no deps). The Document
+    Intelligence contract is recorded in ROADMAP_ASM_2.0.md under
+    "EPIC EXT-OSINT > F2 > T2.1 - Research & Contract (результат)".
+
+  SOURCES (lift docs only, not source): GitHub datalab-to/lift + HF model card.
+    Cross-checked against our SSOT: secret_scanner.scan_text/RULES,
+    secret_validator.validate/INVALID, findings_adapter, finding_fingerprint,
+    features, and the EPIC 14 evidence layer (manifest + evidence_refs).
+
+  KEY FACTS: lift (pip install lift-pdf) extracts schema-constrained JSON from
+    PDFs/images via a 9B vision model (vLLM or HF/torch backend, GPU
+    recommended). Code Apache-2.0; MODEL under modified OpenRAIL-M (free for
+    research/personal/startups <$5M). Offline once weights are cached.
+
+  CONTRACT HIGHLIGHTS:
+    - lift is HEAVY -> never bundled, never required, model not auto-downloaded;
+      it is an optional top-tier provider with graceful degradation.
+    - Provider tiers (read-time selection, degrade downward):
+      0 stdlib (always: text formats -> text; any file -> metadata+sha256),
+      1 pdf-text (optional light, e.g. pypdf), 2 ocr (optional, e.g. pytesseract),
+      3 lift (optional heavy, schema JSON). Tier 0 always yields something.
+    - Lifecycle fit (no new data model): secrets in document text go through the
+      SSOT secret_scanner.scan_text + secret_validator (the _secret_finding path)
+      -> category='secret', source='document'; lift's sensitive structured fields
+      -> secret/vuln findings. Document binds to a finding via evidence_refs
+      (EPIC 14 artifact), NOT a new asset type. Emails/PII-as-asset and
+      document-metadata-as-finding deferred.
+    - Source = documents already captured in the scan workspace / evidence
+      manifest (+ optional user path); the phase downloads nothing by default
+      (offline-first).
+    - Planned modules (NOT built): core/document_intelligence.py (pure orchestrator,
+      never-raise), core/document_providers/ (single interface; heavy imports
+      isolated + lazy in lift_adapter), features.has_pdf_text/has_ocr/has_lift.
+    - Wiring (like BBOT/security): one opt-in 'documents' phase folding findings
+      into vulns + report card + monitor parity; web runs the base pipeline.
+
+  OPEN QUESTIONS (resolve in T2.3/T2.5, do NOT invent): exact lift output field
+    names for our schema; which light PDF-text lib (pypdf vs pdfminer) and whether
+    OCR is in phase 1; the candidate-document enumerator (extensions/size/count
+    limits) over the evidence manifest; the default lift "secrets/sensitive data"
+    JSON schema.
+
+  FIXED "NO" LIST (mirrors F1): no new asset types in phase 1, no new SQLite
+    tables, no torch/vLLM/model bundling in .exe, no required dependency, no
+    mandatory network.
+
+  NEXT: F2 T2.2 (features.has_pdf_text/has_ocr/has_lift detection) - thin
+    additive optional-tool detection, like has_bbot. Implementation after plan
+    approval.
+
+==============================================================================
