@@ -314,6 +314,20 @@ class CollectionRunner:
         return {'status': 'Skipped', 'reason': reason, 'scope_guard': entry}
 
     def run(self, url: str, output_base: str) -> Dict:
+        self._active_operation = (None, None)
+        self._active_report = None
+        try:
+            return self._run_impl(url, output_base)
+        except Exception as e:
+            registry, op_id = getattr(self, '_active_operation', (None, None))
+            report = getattr(self, '_active_report', None) or {}
+            self._finish_operation(registry, op_id, report, error=str(e))
+            raise
+        finally:
+            self._active_operation = (None, None)
+            self._active_report = None
+
+    def _run_impl(self, url: str, output_base: str) -> Dict:
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
         self._cancel.clear()
@@ -346,6 +360,8 @@ class CollectionRunner:
         self._log(f'Проект: {project.root}')
         self._log(f'Скан:   {scan_dir}')
         op_registry, op_id = self._start_operation(url, scan_dir, stamp)
+        self._active_operation = (op_registry, op_id)
+        self._active_report = report
 
         # 1. Recon
         if not self._cancelled(report):
@@ -583,6 +599,7 @@ class CollectionRunner:
             self._warn(report, 'project_index', 'Project metadata index could not be updated', e)
 
         self._finish_operation(op_registry, op_id, report)
+        self._active_operation = (None, None)
         self._log(f'Отчёт: {html_path}')
         return report
 

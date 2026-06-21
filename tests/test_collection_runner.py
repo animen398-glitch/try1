@@ -889,6 +889,26 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     assert op['metadata']['phases']['recon'] == 'Success'
 
 
+def test_run_marks_operation_failed_on_unexpected_exception(tmp_path, monkeypatch):
+    r = CollectionRunner()
+
+    def boom(url, out_dir):
+        raise RuntimeError('recon exploded')
+
+    monkeypatch.setattr(r, '_phase_recon', boom)
+
+    import pytest
+    with pytest.raises(RuntimeError, match='recon exploded'):
+        r.run('https://example.com', str(tmp_path))
+
+    from utils.operation_registry import OperationRegistry
+    ops = OperationRegistry().history(phase='collection')
+    assert len(ops) == 1
+    assert ops[0]['status'] == 'failed'
+    assert ops[0]['error'] == 'recon exploded'
+    assert ops[0]['metadata']['scan_id']
+
+
 def _stub_base_run(monkeypatch, runner):
     """Offline stubs for the always-on collection phases."""
     monkeypatch.setattr(runner, '_phase_recon',
