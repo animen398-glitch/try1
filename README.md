@@ -28,9 +28,9 @@ GUI содержит 25 вкладок (встроенные ASM/CSM/Intelligenc
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map + GraphQL-discovery (probe /graphql* + introspection) + **оффлайн-валидация формата** найденных ключей (структурная проверка без сети — отсев плейсхолдеров, подтверждение vendor-формата/JWT/Basic) |
-| Final Report & Collection | «Run Full Collection» — прогон всех модулей в один скан проекта (`Projects/<домен>/scans/<timestamp>/`) + HTML/JSON-отчёт (Executive Summary с вердиктом риска и рекомендациями + интерактивный граф атак-поверхности (offline, клик по узлу через CSS `:target`) + визуальная карта сайта по HTTP-статусам + опц. мульти-страничные скриншоты ключевых страниц (home/login/admin/dashboard) через Playwright + опц. внешние nuclei/katana + опц. AI-резюме через локальный Ollama) + Scan Diff двух сканов проекта |
+| Final Report & Collection | «Run Full Collection» — прогон всех модулей в один скан проекта (`Projects/<домен>/scans/<timestamp>/`) + HTML/JSON/Markdown-отчёт (Executive Summary, интерактивный граф атак-поверхности, карта сайта, trends, Warnings по best-effort этапам; опц. Playwright/nuclei/katana/Ollama) + Scan Diff двух сканов проекта; каждый запуск журналируется в `operations.db` |
 | Dashboard | Сводка реестра (субдомены / IP / медиа / API / **takeover-кандидаты** / **source maps**) с дедупом эндпоинтов и drill-down + Security Overview (вердикт риска + **0–100** / Attack Surface Score / секреты / findings из последнего Full Collection) |
-| История операций | Журнал операций пайплайна (SQLite) |
+| История операций | Журнал операций пайплайна (SQLite): Full Collection/alerts/etc., статус, длительность, warning-count и подсказка по warning-этапам |
 | System | Очередь задач, экспорт данных, системные логи |
 
 ## Установка

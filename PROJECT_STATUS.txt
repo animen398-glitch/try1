@@ -3930,3 +3930,32 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     - Commit: e76afd8.
 
 ==============================================================================
+  2026-06-21 - Full Collection operational warning lifecycle + History journal
+==============================================================================
+
+  CONTEXT:
+    - Follow-up hardening after audit: best-effort pipeline failures were too easy
+      to miss. They are now captured once and surfaced across reports, metadata,
+      dashboards, web console and operations history.
+
+  IMPLEMENTED:
+    - collection_runner records non-fatal warning objects in report['warnings'];
+      report.html/report.md render a Warnings section/card.
+    - Project metadata/history snapshots persist warning_count + compact
+      warning_summary; portfolio/company roll-ups aggregate warning_count and
+      Overview/web surfaces display it.
+    - Full Collection runs are journaled in operations.db as phase='collection'
+      with scan_id, phase statuses, risk, report paths and warning summary.
+      Unexpected exceptions close the operation as failed instead of leaving a
+      stale running row.
+    - GUI History and web History show warning counts/stages; cancelled operations
+      are highlighted distinctly.
+    - OperationRegistry metadata serialization now uses ensure_ascii=False +
+      default=str and finish(metadata=...) can replace final metadata.
+
+  VERIFICATION:
+    - Full validation is green: ruff, compileall, main.py --self-check and full
+      pytest. Only the pre-existing Starlette/httpx TestClient deprecation warning
+      remains.
+
+==============================================================================
