@@ -695,6 +695,16 @@ assets подбираются `asset_adapter.derive_assets` тонким guarded
   Лаунчер их пока не предлагает ставить (выбор lib финализируется в T2.3 → install-
   guidance позже); детект-only. Покрыто `tests/test_features.py`.
 - T2.3 `core/document_intelligence.py` — ядро + провайдер-интерфейс + offline-fallback.
+  **[ВЫПОЛНЕНО 2026-06-21]** — pure/offline/never-raise оркестратор: `file_metadata`
+  (имя/ext/размер/sha256/mtime, tier-0 всегда), `extract_text` (лестница тиров:
+  stdlib для текстовых форматов + HTML-strip; pdf-text/ocr — ленивый импорт, гейт
+  `has_pdf_text`/`has_ocr`, мягкая деградация `unavailable`/`unsupported`),
+  `secret_findings_from_text` (через **SSOT** `secret_scanner.scan_text` + отбраковка
+  плейсхолдеров по `validation.status==INVALID`; находка `category='secret'`,
+  `source='document'`, маска вместо plaintext — форма как `_secret_finding`),
+  `analyze_document`/`analyze_documents` (метаданные+текст+находки, батч+summary).
+  Тяжёлый lift (тир 3) — отдельно в T2.4 (не импортируется здесь). Покрыто
+  `tests/test_document_intelligence.py` (12).
 - T2.4 `document_providers/lift_adapter` (planned, опц.) — изоляция тяжёлых импортов.
 - T2.5 Проводка opt-in фазы + нормализация в lifecycle + карточка отчёта.
 - T2.6 Тесты offline — провайдер застаблен; проверка деградации без модели/деп.

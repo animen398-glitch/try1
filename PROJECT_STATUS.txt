@@ -4302,3 +4302,41 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F2 T2.3 - core/document_intelligence.py
+==============================================================================
+
+  STATUS: DONE. Pure, offline-first, never-raise orchestrator over the provider
+    tier ladder; mirrors the bbot_adapter/external_tools seam style. No new data
+    model, no new asset type, no network.
+
+  IMPLEMENTED (core/document_intelligence.py):
+    - file_metadata(path): name/ext/size/sha256/mtime (tier 0, always; streams
+      the hash; degrades to an 'error' on an unreadable file).
+    - extract_text(path): provider tier ladder -> {text, provider, status}.
+      stdlib decodes text formats (txt/json/xml/csv/html...; HTML tags stripped);
+      PDF uses a lazy light parser (pypdf/pdfminer/fitz) gated on has_pdf_text;
+      images use lazy OCR gated on has_ocr. Missing optional provider -> status
+      'unavailable'; unknown type -> 'unsupported'. Never raises.
+    - secret_findings_from_text(text, location): runs the SSOT
+      secret_scanner.scan_text, drops placeholders via the attached
+      validation.status==INVALID, and builds the same finding shape as the api/
+      security secret folders (category='secret', source='document', masked
+      discriminator - no plaintext ever enters the finding).
+    - analyze_document / analyze_documents: metadata + text + findings, with a
+      batch summary {documents, with_text, findings}. location overridable so the
+      caller (T2.5) can pass the artifact URL.
+
+  DESIGN: tier 3 (lift, heavy schema->JSON) is NOT here - it lands in T2.4 as a
+    separate provider so torch/vLLM never import into this module/process. PDF/OCR
+    providers are lazy-imported and guarded, so tier 0 always works offline.
+
+  TESTS: tests/test_document_intelligence.py (12) - metadata (+ missing-file
+    degrade), stdlib text + HTML strip, pdf/ocr unavailable degrade, unsupported
+    type, secret detect+mask + placeholder drop, analyze_document with secret +
+    missing-file, batch summary. 12 passed; ruff clean. No deps/network/.exe.
+
+  NEXT: F2 T2.4 (core/document_providers/lift_adapter) - subprocess lift_extract
+    + schema, parse JSON -> our shapes, isolated/lazy so heavy deps never load in
+    our process. Plan first.
+
+==============================================================================
