@@ -207,6 +207,29 @@ def available(*, detectors: Optional[Dict] = None) -> Dict[str, bool]:
     return {name: bool(fn()) for name, fn in probes.items()}
 
 
+def load_catalog(project) -> Dict:
+    """Workflow coverage for a project's latest scan (thin report-based reader).
+
+    ``project`` is a :class:`core.project.Project` (report-based, like
+    ``tech_risk.load_technology_risk`` — coverage needs the scan's phase statuses).
+    Loads the latest scan's ``report.json`` and returns ``{summary, workflows,
+    available}``. Offline, read-only, guarded — a missing report degrades to the
+    bare catalog rather than crashing the caller."""
+    try:
+        if project is None:
+            return {'summary': summary(), 'workflows': [], 'available': available()}
+        latest = project.latest_scan()
+        scan_id = latest.get('id') if isinstance(latest, dict) else None
+        report = project.load_scan_report(scan_id) if scan_id else None
+        if not isinstance(report, dict):
+            return {'summary': summary(), 'workflows': [], 'available': available()}
+        return {'summary': summary(report), 'workflows': assess(report),
+                'available': available()}
+    except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
+        return {'summary': summary(), 'workflows': [], 'available': available(),
+                'error': str(e)}
+
+
 def summary(report: Optional[Dict] = None) -> Dict:
     """Roll-up counts for the catalog. With a ``report``, counts coverage
     (covered/partial/not_run); without one, just the catalog size."""

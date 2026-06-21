@@ -586,6 +586,26 @@ def _accuracy_view(project: Optional[str] = None) -> dict:
         return {'by_type': {}, 'items': [], 'summary': {}, 'error': str(e)}
 
 
+def _osint_catalog_view(project: Optional[str] = None) -> dict:
+    """OSINT workflow coverage for one project's latest scan (EXT-OSINT F3).
+
+    Report-based (like accuracy/technology-risk) — resolves the project and
+    delegates to ``osint_catalog.load_catalog``. A display/guide view: it never
+    affects the risk score. Empty/unknown project yields the bare catalog."""
+    from core.osint_catalog import available, load_catalog, summary
+    if not project:
+        return {'summary': summary(), 'workflows': [], 'available': available()}
+    try:
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        if proj is None:
+            return {'summary': summary(), 'workflows': [], 'available': available(),
+                    'error': f'project not found: {project}'}
+        return load_catalog(proj)
+    except Exception as e:
+        return {'summary': summary(), 'workflows': [], 'available': available(),
+                'error': str(e)}
+
+
 def _technology_risk_view(project: Optional[str] = None) -> dict:
     """Technology-risk posture (outdated tech + vulnerable deps) for one project.
 
@@ -779,6 +799,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
       <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
       <button class="btn sec" onclick="showTechnologyRisk()">Technology Risk</button>
+      <button class="btn sec" onclick="showOsintCatalog()">OSINT Catalog</button>
     </div>
   </div>
 
@@ -1259,6 +1280,22 @@ async function showTechnologyRisk(){
   }catch(ex){log('Technology risk failed: '+ex.message,'er');}
 }
 
+async function showOsintCatalog(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('OSINT catalog: no projects','data'); return;}
+    const r=await fetch('/osint-catalog?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('OSINT coverage ['+proj+']: '+(s.covered||0)+' covered · '
+        +(s.partial||0)+' partial · '+(s.not_run||0)+' not run (of '
+        +(s.total||0)+')','data');
+    (d.workflows||[]).forEach(w=>{
+      log('  ['+(w.status||'')+'] '+(w.name||'')+' — '+(w.category||''),'info');
+    });
+  }catch(ex){log('OSINT catalog failed: '+ex.message,'er');}
+}
+
 loadJobs();
 sse();
 log('Web console ready. Accessible on your local network.','ok');
@@ -1541,6 +1578,10 @@ if _FASTAPI_OK:
     @app.get('/technology-risk')
     async def technology_risk(project: Optional[str] = None):
         return JSONResponse(_technology_risk_view(project))
+
+    @app.get('/osint-catalog')
+    async def osint_catalog(project: Optional[str] = None):
+        return JSONResponse(_osint_catalog_view(project))
 
     @app.get('/report')
     async def report(file: str):

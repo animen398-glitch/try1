@@ -1250,3 +1250,28 @@ def test_render_documents_card_counts():
     body = CollectionRunner._render_documents_card(data)
     assert 'Documents scanned' in body and 'Findings' in body
     assert CollectionRunner._render_documents_card('nope') == ''
+
+
+# ── EXT-OSINT F3 T3.3: OSINT workflow coverage surface ────────────────────────
+
+def test_build_osint_catalog_sets_coverage():
+    report = {'phases': {'recon': {'status': 'Success'},
+                         'subdomains': {'status': 'Success'},
+                         'ct': {'status': 'Success'},
+                         'asn_intel': {'status': 'Success'}}}
+    CollectionRunner()._build_osint_catalog(report)
+    cat = report['osint_catalog']
+    assert cat['summary']['total'] >= 10
+    assert any(w['id'] == 'infrastructure-recon' and w['status'] == 'covered'
+               for w in cat['workflows'])
+
+
+def test_render_osint_catalog_card():
+    from core import osint_catalog as oc
+    report = {'phases': {'recon': {'status': 'Success'}}}
+    data = {'summary': oc.summary(report), 'workflows': oc.assess(report)}
+    body = CollectionRunner._render_osint_catalog_card(data)
+    assert 'workflow coverage' in body.lower()
+    assert 'Infrastructure Recon' in body
+    assert CollectionRunner._render_osint_catalog_card('nope') == ''
+    assert CollectionRunner._render_osint_catalog_card({'workflows': []}) == ''

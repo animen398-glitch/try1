@@ -83,6 +83,35 @@ def test_available_uses_injected_detectors():
     assert avail == {'bbot': True, 'lift': False, 'pdf-text': True, 'ocr': False}
 
 
+class _FakeProject:
+    def __init__(self, report):
+        self._report = report
+
+    def latest_scan(self):
+        return {'id': 's1'} if self._report is not None else None
+
+    def load_scan_report(self, scan_id):
+        return self._report
+
+
+def test_load_catalog_reads_latest_report():
+    report = {'phases': {'recon': {'status': 'Success'},
+                         'subdomains': {'status': 'Success'},
+                         'ct': {'status': 'Success'},
+                         'asn_intel': {'status': 'Success'}}}
+    out = oc.load_catalog(_FakeProject(report))
+    assert out['summary']['total'] == len(oc.WORKFLOWS)
+    assert any(w['id'] == 'infrastructure-recon' and w['status'] == 'covered'
+               for w in out['workflows'])
+    assert set(out['available']) == {'bbot', 'lift', 'pdf-text', 'ocr'}
+
+
+def test_load_catalog_none_and_missing_report_degrade():
+    bare = oc.load_catalog(None)
+    assert bare['workflows'] == [] and bare['summary']['total'] == len(oc.WORKFLOWS)
+    assert oc.load_catalog(_FakeProject(None))['workflows'] == []
+
+
 def test_summary_counts():
     report = {'phases': {'recon': {'status': 'Success'},
                          'subdomains': {'status': 'Success'},

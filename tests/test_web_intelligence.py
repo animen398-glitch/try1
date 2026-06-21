@@ -164,6 +164,48 @@ def test_accuracy_view_no_project_is_empty():
     assert wa._accuracy_view(None)['items'] == []
 
 
+# ── OSINT Workflow Catalog web parity (EXT-OSINT F3) ──────────────────────────
+
+def test_osint_catalog_view_scores_coverage(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_accuracy_project(str(tmp_path))   # has a recon phase
+    d = wa._osint_catalog_view(slug)
+    assert 'error' not in d
+    assert d['summary']['total'] >= 10
+    assert d['workflows'] and 'available' in d
+    # the continuous-monitoring workflow is always covered (platform capability)
+    assert any(w['id'] == 'continuous-monitoring' and w['status'] == 'covered'
+               for w in d['workflows'])
+
+
+def test_osint_catalog_view_no_project_is_bare():
+    d = wa._osint_catalog_view(None)
+    assert d['workflows'] == [] and d['summary']['total'] >= 10
+
+
+def test_osint_catalog_view_unknown_project_errors():
+    assert 'error' in wa._osint_catalog_view('definitely-not-a-project-xyz')
+
+
+def test_dashboard_exposes_osint_catalog():
+    html = wa._DASHBOARD
+    assert 'showOsintCatalog()' in html and '/osint-catalog' in html
+
+
+def test_osint_catalog_endpoint_with_testclient(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_accuracy_project(str(tmp_path))
+    client = TestClient(wa.app)
+    r = client.get('/osint-catalog', params={'project': slug})
+    assert r.status_code == 200
+    assert r.json()['summary']['total'] >= 10
+
+
 def test_accuracy_view_unknown_project_errors():
     assert 'error' in wa._accuracy_view('definitely-not-a-project-xyz')
 

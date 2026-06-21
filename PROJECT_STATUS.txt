@@ -4502,3 +4502,38 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     GUI optional/later. Plan first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F3 T3.3 - OSINT catalog surfaces (report + web)
+==============================================================================
+
+  STATUS: DONE. The OSINT Workflow Coverage view is surfaced in the report and
+    the web console, parity with the other derive-on-read views. Display/guide
+    only; the risk verdict is untouched. GUI deferred (internals-first).
+
+  IMPLEMENTED:
+    - core/osint_catalog.py: load_catalog(project) - thin report-based reader
+      (mirrors tech_risk.load_technology_risk): loads the latest scan report ->
+      {summary, workflows, available}; guarded, bare catalog on missing report.
+    - core/collection_runner.py: _build_osint_catalog(report) ->
+      report['osint_catalog'] (summary + assessed workflows), called in the derive
+      section after _build_technology_risk; _render_osint_catalog_card +
+      "OSINT Workflow Coverage" card in _render_html (covered/partial/not_run,
+      colour-coded).
+    - remote/web_app.py: _osint_catalog_view + GET /osint-catalog +
+      "OSINT Catalog" console button + showOsintCatalog() (auto-picks the first
+      project, prints coverage), parity with accuracy/technology-risk.
+
+  TESTS: test_osint_catalog.py (+2: load_catalog reads latest report / None+missing
+    degrade), test_collection_runner.py (+2: build sets coverage / card renders),
+    test_web_intelligence.py (+4: view scores coverage / no-project bare /
+    unknown errors / dashboard button + testclient endpoint). 115 passed across
+    the affected suites; ruff clean. Risk verdict untouched. No deps/.exe impact.
+
+  F3 (AI OSINT Workflow Catalog) functionally COMPLETE: T3.1 contract, T3.2
+    module, T3.3 report+web surfaces. T3.4 (offline tests) satisfied alongside.
+    GUI tab is the only optional remainder (deferred, internals-first).
+
+  NEXT: EXT-OSINT F4 (Privacy-first / Offline-first Hardening) - starts with T4.1
+    audit contract (what the app does over the network and when; all new actions
+    opt-in), documentation only.
+
+==============================================================================

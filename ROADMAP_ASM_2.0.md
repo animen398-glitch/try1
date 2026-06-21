@@ -864,6 +864,14 @@ Awesome-AI-OSINT) поверх существующих сущностей — �
   `tests/test_osint_catalog.py` (10).
 - T3.3 Поверхности (report-карточка / web read-эндпоинт) — паритет с прочими
   derive-вью; GUI опционально (память `feedback-internals-first-no-gui`).
+  **[ВЫПОЛНЕНО 2026-06-21]** — `osint_catalog.load_catalog(project)` (тонкий report-
+  based ридер, зеркало `tech_risk.load_technology_risk`); `collection_runner.
+  _build_osint_catalog` → `report['osint_catalog']` (summary+workflows) + карточка
+  «OSINT Workflow Coverage» (`_render_osint_catalog_card`, covered/partial/not_run
+  с цветом); web `_osint_catalog_view` + `GET /osint-catalog` + кнопка «OSINT
+  Catalog»/`showOsintCatalog()` в консоли (паритет с accuracy/technology-risk).
+  Не влияет на risk. GUI отложен. Покрыто `test_osint_catalog`(+2)/
+  `test_collection_runner`(+2)/`test_web_intelligence`(+4).
 - T3.4 Тесты offline на каталог/резолв.
 
 ---

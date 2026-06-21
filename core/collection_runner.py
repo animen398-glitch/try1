@@ -563,6 +563,10 @@ class CollectionRunner:
         # technologies and JS dependencies. It does not add scanners or alter the
         # authoritative risk score.
         self._build_technology_risk(report)
+        # OSINT Workflow Coverage (EXT-OSINT F3): which curated recon workflows this
+        # scan exercised — a derive-on-read guide over report['phases']; never
+        # affects the risk score.
+        self._build_osint_catalog(report)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -1841,6 +1845,49 @@ class CollectionRunner:
             self._log(f'  Technology risk failed: {e}')
             self._warn(report, 'technology_risk', 'Technology risk derivation failed', e)
 
+    def _build_osint_catalog(self, report: Dict) -> None:
+        """Derive OSINT workflow coverage (EXT-OSINT F3, best-effort).
+
+        Read-only over ``report['phases']`` — which curated recon workflows this
+        scan exercised. Display/guide only; the risk verdict is untouched. A
+        failure must never sink a scan."""
+        try:
+            from core.osint_catalog import assess, summary
+            report['osint_catalog'] = {
+                'summary': summary(report),
+                'workflows': assess(report),
+            }
+        except Exception as e:  # noqa: BLE001 — coverage must not fail a scan
+            self._log(f'  OSINT catalog failed: {e}')
+            self._warn(report, 'osint_catalog', 'OSINT catalog derivation failed', e)
+
+    @staticmethod
+    def _render_osint_catalog_card(data: Dict) -> str:
+        """Offline HTML for the OSINT Workflow Coverage card: each curated workflow
+        and whether this scan covered it (covered / partial / not run)."""
+        e = html.escape
+        if not isinstance(data, dict):
+            return ''
+        workflows = data.get('workflows') or []
+        if not workflows:
+            return ''
+        s = data.get('summary') or {}
+        colors = {'covered': '#2e7d32', 'partial': '#ef6c00', 'not_run': '#999'}
+        labels = {'covered': 'covered', 'partial': 'partial', 'not_run': 'not run'}
+        intro = (f'<p style="font-size:13px;">Recon workflow coverage this scan: '
+                 f'<b>{e(str(s.get("covered", 0)))}</b> covered, '
+                 f'{e(str(s.get("partial", 0)))} partial, '
+                 f'{e(str(s.get("not_run", 0)))} not run '
+                 f'(of {e(str(s.get("total", 0)))}).</p>')
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(str(wf.get("name", "")))}</td>'
+            f'<td style="color:#888;padding-right:12px;">'
+            f'{e(str(wf.get("category", "")))}</td>'
+            f'<td style="color:{colors.get(wf.get("status"), "#888")};">'
+            f'{e(labels.get(wf.get("status"), str(wf.get("status", ""))))}</td></tr>'
+            for wf in workflows)
+        return intro + f'<table style="font-size:12px;">{rows}</table>'
+
     @classmethod
     def _render_accuracy_card(cls, adata: Dict) -> str:
         """Offline HTML for the Scan Accuracy card: average confidence per entity
@@ -2754,6 +2801,14 @@ class CollectionRunner:
                 'Scan Accuracy', self._render_accuracy_card(accdata),
                 f"avg {accsum.get('avg_confidence', 0)}% · "
                 f"{accsum.get('entities', 0)} сущн."))
+
+        # OSINT Workflow Coverage (EXT-OSINT F3) — which recon workflows ran.
+        oscat = report.get('osint_catalog')
+        if isinstance(oscat, dict) and oscat.get('workflows'):
+            ossum = oscat.get('summary') or {}
+            body_parts.append(card(
+                'OSINT Workflow Coverage', self._render_osint_catalog_card(oscat),
+                f"{ossum.get('covered', 0)}/{ossum.get('total', 0)} covered"))
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')
