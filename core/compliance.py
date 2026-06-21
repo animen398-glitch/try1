@@ -70,6 +70,12 @@ _RULE_MAP = (
     ('open redirect', {'owasp': 'A01:2021', 'cwe': ['CWE-601']}),
     ('csrf', {'owasp': 'A01:2021', 'cwe': ['CWE-352']}),
     ('plain http', {'owasp': 'A02:2021', 'cwe': ['CWE-319']}),
+    # A CVE-identified finding (findings_adapter canonicalizes these to
+    # category='vuln', rule_id='cve-…') is the textbook A06 "Vulnerable and
+    # Outdated Components" case. Kept LAST so a CVE that is *also* a recognized
+    # class (e.g. an XSS CVE) still maps to its specific class above; only an
+    # otherwise-unclassified CVE falls here instead of "unmapped".
+    ('cve-', {'owasp': 'A06:2021', 'cwe': ['CWE-1395']}),
 )
 
 _SEVERITY_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, 'info': 0}

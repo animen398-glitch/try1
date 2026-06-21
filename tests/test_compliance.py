@@ -34,6 +34,16 @@ def test_classify_unrecognized_vuln_is_unmapped():
     assert c['owasp'] is None and c['cwe'] == []
 
 
+def test_classify_cve_maps_to_a06():
+    # A CVE finding (canonicalized to category='vuln', rule_id='cve-…') is the
+    # textbook A06 Vulnerable & Outdated Components case — not "unmapped".
+    c = compliance.classify('vuln', 'cve-2020-11022', 'jQuery 1.7.0 vulnerable')
+    assert c['owasp'] == 'A06:2021' and 'CWE-1395' in c['cwe']
+    # A CVE that is also a recognized class keeps its specific class (rule order).
+    xss = compliance.classify('vuln', 'cve-2021-0001', 'Stored XSS in editor')
+    assert xss['owasp'] == 'A03:2021'
+
+
 def test_classify_owasp_name_resolved():
     assert compliance.classify('header')['owasp_name'] == 'Security Misconfiguration'
 

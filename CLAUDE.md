@@ -1254,6 +1254,17 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**CVE-находки → OWASP A06 в compliance — `[ЗАКРЫТ]`.** Backend-фаза, баг-фикс.
+CVE-находка канонизируется `findings_adapter` в `category='vuln'`/`rule_id='cve-…'`,
+но `compliance.classify` не имела для неё правила → `owasp=None` → попадала в
+**unmapped**, хотя CVE — учебниковый случай **A06:2021 Vulnerable and Outdated
+Components**. Фикс: правило `('cve-', A06/CWE-1395)` в конце `_RULE_MAP` (порядок
+важен: специфичный класс — XSS-CVE → A03 — выигрывает выше; неклассифицированный
+CVE падает в A06, а не в unmapped). `cve-` матчит и канонический `rule_id`, и
+ссылку «CVE-XXXX» в тайтле. Чистый derive, mapping — единый SSOT (как
+finding_knowledge). Покрыто `test_compliance` (cve→A06+CWE-1395; XSS-CVE сохраняет
+A03; «weird»/«Mystery» по-прежнему unmapped).
+
 **Document-секреты в attack-surface «Secrets» — `[ЗАКРЫТ]`.** Backend-фаза, тот же
 асимметричный пробел, что закрыл «Security-audit секреты → breadth»: document-only
 секрет (найден ТОЛЬКО Document Intelligence) был **полностью вне графа атак-
