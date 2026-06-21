@@ -46,6 +46,19 @@ def _int0(value) -> int:
         return 0
 
 
+def _warning_summary(value) -> List[Dict]:
+    return [w for w in (value or []) if isinstance(w, dict)]
+
+
+def _warning_stages(summary: List[Dict]) -> str:
+    stages = []
+    for item in summary:
+        stage = str(item.get('stage') or 'pipeline')
+        if stage not in stages:
+            stages.append(stage)
+    return ', '.join(stages[:3])
+
+
 def build_portfolio(projects_meta: List[Dict],
                     active_findings: Optional[Dict[str, int]] = None) -> Dict:
     """Fold per-project metadata into an executive portfolio (pure).
@@ -69,6 +82,7 @@ def build_portfolio(projects_meta: List[Dict],
         # numeric risk_score — never fabricate a baseline of 0).
         risk_delta = None
         cur = _num(latest.get('risk_score'))
+        warning_summary = _warning_summary(latest.get('warning_summary'))
         if len(scans) >= 2:
             prev = _num(scans[-2].get('risk_score'))
             if cur is not None and prev is not None:
@@ -90,6 +104,8 @@ def build_portfolio(projects_meta: List[Dict],
             'graphql': _int0(latest.get('graphql')),
             'graphql_introspection': _int0(latest.get('graphql_introspection')),
             'warning_count': _int0(latest.get('warning_count')),
+            'warning_summary': warning_summary,
+            'warning_stages': _warning_stages(warning_summary),
             'active_findings': _int0(active_findings.get(slug)),
             'scan_count': _int0(meta.get('scan_count')),
             'updated_at': meta.get('updated_at') or '',

@@ -85,11 +85,17 @@ def test_record_scan_persists_warning_count(tmp_path):
     ]))
 
     assert entry['warning_count'] == 2
+    assert entry['warning_summary'] == [
+        {'stage': 'evidence', 'message': 'manifest failed'},
+        {'stage': 'findings_sync', 'message': 'sync failed'},
+    ]
     meta = p.load_metadata()
     assert meta['latest_scan']['warning_count'] == 2
+    assert meta['latest_scan']['warning_summary'][0]['stage'] == 'evidence'
     hist = json.loads((p.root / 'history' / '20260613_120000.json')
                       .read_text(encoding='utf-8'))
     assert hist['warning_count'] == 2
+    assert hist['warning_summary'][1]['stage'] == 'findings_sync'
 
 
 def test_record_scan_persists_exposure_breakdown(tmp_path):

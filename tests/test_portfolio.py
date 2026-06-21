@@ -20,13 +20,14 @@ def _meta(slug, *, scans, url='https://x', updated_at='2026-01-01'):
 
 def _scan(rid, *, risk='Low', score=2, surface=5, secrets=0, high=0, medium=0,
           source_map_leaks=0, weak_cookies=0, graphql=0,
-          graphql_introspection=0, warning_count=0):
+          graphql_introspection=0, warning_count=0, warning_summary=None):
     return {'id': rid, 'risk_level': risk, 'risk_score': score,
             'attack_surface_score': surface, 'secrets': secrets,
             'high': high, 'medium': medium,
             'source_map_leaks': source_map_leaks, 'weak_cookies': weak_cookies,
             'graphql': graphql, 'graphql_introspection': graphql_introspection,
-            'warning_count': warning_count}
+            'warning_count': warning_count,
+            'warning_summary': warning_summary or []}
 
 
 # ── build_portfolio ──────────────────────────────────────────────────────────
@@ -41,7 +42,10 @@ def test_empty_portfolio():
 def test_row_pulls_latest_scan_metrics():
     meta = _meta('a.com', scans=[_scan('s1', risk='High', score=12,
                                        secrets=1, high=2, medium=3, surface=22,
-                                       warning_count=4)])
+                                       warning_count=4, warning_summary=[
+                                           {'stage': 'evidence', 'message': 'bad'},
+                                           {'stage': 'findings_sync', 'message': 'bad'},
+                                       ])])
     row = portfolio.build_portfolio([meta])['rows'][0]
     assert row['slug'] == 'a.com'
     assert row['risk_level'] == 'High'
@@ -49,6 +53,8 @@ def test_row_pulls_latest_scan_metrics():
     assert (row['secrets'], row['high'], row['medium']) == (1, 2, 3)
     assert row['attack_surface'] == 22
     assert row['warning_count'] == 4
+    assert row['warning_summary'][0]['stage'] == 'evidence'
+    assert row['warning_stages'] == 'evidence, findings_sync'
     assert row['scan_count'] == 1
 
 

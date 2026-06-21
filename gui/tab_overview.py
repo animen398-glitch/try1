@@ -70,6 +70,18 @@ class OverviewTabMixin:
         ('attack_surface', ('Attack Surface', '#0078d4')),
     ]
 
+    @staticmethod
+    def _warning_tooltip(summary: list) -> str:
+        lines = []
+        for item in summary or []:
+            if not isinstance(item, dict):
+                continue
+            stage = item.get('stage') or 'pipeline'
+            message = item.get('message') or item.get('error') or 'warning'
+            error = item.get('error')
+            lines.append(f"{stage}: {message}" + (f" ({error})" if error else ""))
+        return "\n".join(lines)
+
     def _build_overview_tab(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -328,6 +340,10 @@ class OverviewTabMixin:
                         item.setForeground(QColor(rc))
                 elif col == 3 and delta is not None and delta != 0:
                     item.setForeground(QColor('#c62828' if delta > 0 else '#2e7d32'))
+                elif col == 8:
+                    tip = self._warning_tooltip(row.get('warning_summary') or [])
+                    if tip:
+                        item.setToolTip(tip)
                 if col in range(2, 11):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.overview_table.setItem(r, col, item)

@@ -1082,6 +1082,7 @@ async function showOverview(){
       log('  '+p.slug+' — '+(p.risk_level||'—')
           +' ('+(p.risk_score==null?'?':p.risk_score)+')'+d2
           +' · warnings: '+(p.warning_count||0)
+          +(p.warning_stages?' ['+p.warning_stages+']':'')
           +' · findings: '+(p.active_findings||0),'info');
     });
   }catch(ex){log('Overview failed: '+ex.message,'er');}

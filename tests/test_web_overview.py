@@ -47,6 +47,8 @@ def test_overview_summary_reads_portfolio(tmp_path):
     assert row['slug'] == 'x.com' and row['risk_level'] == 'High'
     assert row['risk_delta'] == 50
     assert row['warning_count'] == 1
+    assert row['warning_stages'] == 'evidence'
+    assert row['warning_summary'][0]['message'] == 'manifest failed'
     assert d['totals']['warning_count'] == 1
 
 
@@ -61,6 +63,7 @@ def test_dashboard_exposes_overview():
     html = wa._DASHBOARD
     assert 'showOverview()' in html and '/overview' in html
     assert 'warnings: ' in html
+    assert 'warning_stages' in html
 
 
 # ── live endpoint ────────────────────────────────────────────────────────────────

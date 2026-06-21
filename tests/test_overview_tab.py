@@ -108,6 +108,7 @@ def test_populate_table_and_totals(qapp, tmp_path):
     assert w.overview_table.item(0, 1).text() == 'High'      # risk level cell
     assert w.overview_table.item(0, 3).text() == '+50'       # delta cell
     assert w.overview_table.item(0, 8).text() == '1'         # warnings cell
+    assert 'evidence: manifest failed' in w.overview_table.item(0, 8).toolTip()
     assert w.overview_totals['projects'].text() == '1'
     assert w.overview_totals['secrets'].text() == '1'
     assert w.overview_totals['warning_count'].text() == '1'

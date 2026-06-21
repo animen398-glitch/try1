@@ -96,6 +96,25 @@ class Project:
         return scan_dir
 
     @staticmethod
+    def _warning_summary(warnings: List[object], limit: int = 10) -> List[Dict]:
+        """Compact, JSON-friendly warning hints for metadata/history views."""
+        out: List[Dict] = []
+        for item in warnings[:limit]:
+            if isinstance(item, dict):
+                stage = item.get('stage') or 'pipeline'
+                message = item.get('message') or item.get('error') or 'warning'
+                row = {
+                    'stage': str(stage)[:80],
+                    'message': str(message)[:200],
+                }
+                if item.get('error'):
+                    row['error'] = str(item.get('error'))[:200]
+            else:
+                row = {'stage': 'pipeline', 'message': str(item)[:200]}
+            out.append(row)
+        return out
+
+    @staticmethod
     def _scan_entry(scan_dir: Path, report: Dict) -> Dict:
         """Flatten a finished collection ``report`` into an index entry."""
         scan_id = Path(scan_dir).name
@@ -126,6 +145,7 @@ class Project:
             'graphql': metrics.get('graphql'),
             'graphql_introspection': metrics.get('graphql_introspection'),
             'warning_count': len(warnings),
+            'warning_summary': Project._warning_summary(warnings),
             'report_html': report.get('report_html'),
             'report_json': report.get('report_json'),
         }
