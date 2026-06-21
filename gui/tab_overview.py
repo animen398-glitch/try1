@@ -50,7 +50,7 @@ class OverviewTabMixin:
 
     # Company roll-up table (F-C3) — one row per company over its projects.
     OVERVIEW_COMPANY_COLUMNS = ["Компания", "Проектов", "Риск", "Score",
-                                "Secrets", "High", "Medium", "Findings",
+                                "Secrets", "High", "Medium", "Warnings", "Findings",
                                 "Активы"]
 
     # (totals key -> card caption) for the estate roll-up.
@@ -421,6 +421,7 @@ class OverviewTabMixin:
                 row.get('secrets', 0),
                 row.get('high', 0),
                 row.get('medium', 0),
+                row.get('warning_count', 0),
                 row.get('active_findings', 0),
                 row.get('asset_total', 0),
             ]
@@ -430,7 +431,7 @@ class OverviewTabMixin:
                     rc = theme.risk_color(level)
                     if rc:
                         item.setForeground(QColor(rc))
-                if col in range(1, 9):
+                if col in range(1, 10):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.overview_companies_table.setItem(r, col, item)
 

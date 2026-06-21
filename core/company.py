@@ -221,7 +221,8 @@ def build_company_rollup(projects_meta: List[Dict],
                 'project_count': 0, 'project_slugs': [],
                 'risk_level': None, 'risk_score': None, 'risk_delta': None,
                 'attack_surface': None, 'secrets': 0, 'high': 0, 'medium': 0,
-                'active_findings': 0, 'assets': {}, 'asset_total': 0,
+                'warning_count': 0, 'active_findings': 0,
+                'assets': {}, 'asset_total': 0,
                 'updated_at': '',
             }
         g['project_count'] += 1
@@ -235,7 +236,7 @@ def build_company_rollup(projects_meta: List[Dict],
         g['risk_score'] = _max_opt(g['risk_score'], r.get('risk_score'))
         g['attack_surface'] = _max_opt(g['attack_surface'], r.get('attack_surface'))
         g['risk_delta'] = _sum_opt(g['risk_delta'], r.get('risk_delta'))
-        for key in ('secrets', 'high', 'medium', 'active_findings'):
+        for key in ('secrets', 'high', 'medium', 'warning_count', 'active_findings'):
             g[key] += _int0(r.get(key))
         for atype, count in (assets_by_project.get(r.get('slug')) or {}).items():
             g['assets'][atype] = g['assets'].get(atype, 0) + _int0(count)
@@ -263,6 +264,7 @@ def build_company_rollup(projects_meta: List[Dict],
         'secrets': sum(g['secrets'] for g in out),
         'high': sum(g['high'] for g in out),
         'medium': sum(g['medium'] for g in out),
+        'warning_count': sum(g['warning_count'] for g in out),
         'active_findings': sum(g['active_findings'] for g in out),
         'assets': sum(g['asset_total'] for g in out),
     }

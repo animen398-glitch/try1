@@ -20,6 +20,8 @@ def _seed(base):
         scan_dir = project.start_scan(sid)
         report = {
             'scan_id': sid, 'finished_at': sid,
+            'warnings': ([{'stage': 'evidence', 'message': 'manifest failed'}]
+                         if score >= 50 else []),
             'executive_summary': {
                 'risk_level': 'High' if score >= 50 else 'Low',
                 'risk_score': score,
@@ -43,7 +45,9 @@ def test_company_view_rolls_up(tmp_path):
     by_slug = {r['slug']: r for r in d['rows']}
     assert by_slug['acme_corp']['project_count'] == 1
     assert by_slug['acme_corp']['risk_level'] == 'High'
+    assert by_slug['acme_corp']['warning_count'] == 1
     assert d['totals']['companies'] == 1
+    assert d['totals']['warning_count'] == 1
 
 
 def test_company_view_empty(tmp_path):

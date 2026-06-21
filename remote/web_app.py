@@ -1075,11 +1075,13 @@ async function showOverview(){
     const t=d.totals||{};
     log('Overview: '+(t.projects||0)+' projects · worst risk: '
         +(t.worst_risk_level||'—')+' · secrets: '+(t.secrets||0)
+        +' · warnings: '+(t.warning_count||0)
         +' · active findings: '+(t.active_findings||0),'data');
     (d.rows||[]).slice(0,20).forEach(p=>{
       const d2=(p.risk_delta==null)?'':(p.risk_delta>0?' ▲':(p.risk_delta<0?' ▼':''));
       log('  '+p.slug+' — '+(p.risk_level||'—')
           +' ('+(p.risk_score==null?'?':p.risk_score)+')'+d2
+          +' · warnings: '+(p.warning_count||0)
           +' · findings: '+(p.active_findings||0),'info');
     });
   }catch(ex){log('Overview failed: '+ex.message,'er');}
@@ -1090,10 +1092,12 @@ async function showCompanies(){
     const t=d.totals||{};
     log('Companies: '+(t.companies||0)+' over '+(t.projects||0)+' projects · '
         +'worst risk: '+(t.worst_risk_level||'—')+' · secrets: '+(t.secrets||0)
+        +' · warnings: '+(t.warning_count||0)
         +' · assets: '+(t.assets||0),'data');
     (d.rows||[]).slice(0,20).forEach(c=>{
       log('  '+(c.name||c.slug)+' — '+(c.project_count||0)+' proj · '
           +(c.risk_level||'—')+' · findings: '+(c.active_findings||0)
+          +' · warnings: '+(c.warning_count||0)
           +' · assets: '+(c.asset_total||0),'info');
     });
   }catch(ex){log('Companies failed: '+ex.message,'er');}

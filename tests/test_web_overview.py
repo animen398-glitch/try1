@@ -21,6 +21,8 @@ def _seed(base):
         scan_dir = project.start_scan(sid)
         report = {
             'scan_id': sid, 'finished_at': sid,
+            'warnings': ([{'stage': 'evidence', 'message': 'manifest failed'}]
+                         if score >= 50 else []),
             'executive_summary': {
                 'risk_level': 'High' if score >= 50 else 'Low',
                 'risk_score': score,
@@ -44,6 +46,8 @@ def test_overview_summary_reads_portfolio(tmp_path):
     row = d['rows'][0]
     assert row['slug'] == 'x.com' and row['risk_level'] == 'High'
     assert row['risk_delta'] == 50
+    assert row['warning_count'] == 1
+    assert d['totals']['warning_count'] == 1
 
 
 def test_overview_summary_empty(tmp_path):
@@ -56,6 +60,7 @@ def test_overview_summary_empty(tmp_path):
 def test_dashboard_exposes_overview():
     html = wa._DASHBOARD
     assert 'showOverview()' in html and '/overview' in html
+    assert 'warnings: ' in html
 
 
 # ── live endpoint ────────────────────────────────────────────────────────────────
@@ -74,4 +79,5 @@ def test_overview_endpoint_with_testclient(tmp_path, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body['totals']['projects'] == 1
+    assert body['totals']['warning_count'] == 1
     assert body['rows'][0]['slug'] == 'x.com'

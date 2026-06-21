@@ -190,12 +190,13 @@ def test_populate_companies_and_assign_combo(qapp, tmp_path):
     CompanyRegistry().create('Acme Corp')
     rows = [{'slug': 'acme_corp', 'name': 'Acme Corp', 'project_count': 2,
              'risk_level': 'High', 'risk_score': 70, 'secrets': 3, 'high': 1,
-             'medium': 0, 'active_findings': 5, 'asset_total': 12,
+             'medium': 0, 'warning_count': 4, 'active_findings': 5, 'asset_total': 12,
              'project_slugs': ['a.com', 'b.com']}]
     w._populate_overview_companies(rows)
     assert w.overview_companies_table.rowCount() == 1
     assert w.overview_companies_table.item(0, 0).text() == 'Acme Corp'
     assert w.overview_companies_table.item(0, 1).text() == '2'
+    assert w.overview_companies_table.item(0, 7).text() == '4'
     w._populate_assign_combo(rows)
     items = [w.overview_assign_company.itemText(i)
              for i in range(w.overview_assign_company.count())]
@@ -210,7 +211,7 @@ def test_company_filter_hides_other_projects(qapp, tmp_path):
     ])
     rows = [{'slug': 'acme_corp', 'name': 'Acme', 'project_count': 1,
              'risk_level': 'High', 'risk_score': 70, 'secrets': 0, 'high': 0,
-             'medium': 0, 'active_findings': 0, 'asset_total': 0,
+             'medium': 0, 'warning_count': 0, 'active_findings': 0, 'asset_total': 0,
              'project_slugs': ['a.com']}]
     w._overview_companies = rows
     w._populate_overview_companies(rows)

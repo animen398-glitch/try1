@@ -169,8 +169,10 @@ def test_rollup_aggregates_worst_risk_and_sums():
     reg = CompanyRegistry()
     reg.create("Acme Corp")
     metas = [
-        _meta('acme.com', 'acme_corp', 'Medium', 40, secrets=1, high=2),
-        _meta('api.acme.io', 'acme_corp', 'Critical', 90, secrets=3, high=1),
+        _meta('acme.com', 'acme_corp', 'Medium', 40, secrets=1, high=2,
+              warning_count=1),
+        _meta('api.acme.io', 'acme_corp', 'Critical', 90, secrets=3, high=1,
+              warning_count=2),
     ]
     assets = {'acme.com': {'subdomain': 5, 'ip': 2},
               'api.acme.io': {'subdomain': 3}}
@@ -181,11 +183,13 @@ def test_rollup_aggregates_worst_risk_and_sums():
     assert row['risk_level'] == 'Critical'            # worst level
     assert row['risk_score'] == 90                    # worst (max) score
     assert row['secrets'] == 4 and row['high'] == 3   # summed
+    assert row['warning_count'] == 3
     assert row['active_findings'] == 4
     assert row['assets'] == {'subdomain': 8, 'ip': 2}  # per-type summed
     assert row['asset_total'] == 10
     assert out['totals']['companies'] == 1
     assert out['totals']['worst_risk_level'] == 'Critical'
+    assert out['totals']['warning_count'] == 3
     assert out['totals']['assets'] == 10
 
 
