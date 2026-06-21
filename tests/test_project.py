@@ -51,11 +51,13 @@ def test_get_or_create_is_idempotent_and_keeps_scans(tmp_path):
 
 # ── scan indexing ───────────────────────────────────────────────────────────
 
-def _report(url='https://example.com', level='High', score=12, metrics=None):
+def _report(url='https://example.com', level='High', score=12, metrics=None,
+            warnings=None):
     return {
         'url': url, 'status': 'Success',
         'started_at': '2026-06-13T12:00:00', 'finished_at': '2026-06-13T12:01:00',
         'report_html': '/x/report.html', 'report_json': '/x/report.json',
+        'warnings': warnings or [],
         'executive_summary': {'risk_level': level, 'risk_score': score,
                               'metrics': metrics or {'secrets': 1, 'high': 2,
                                                      'medium': 3,
@@ -72,6 +74,22 @@ def test_record_scan_updates_metadata_and_history(tmp_path):
     assert entry['dir'] == 'scans/20260613_120000'
     assert entry['risk_level'] == 'High'
     assert entry['attack_surface_score'] == 16
+
+
+def test_record_scan_persists_warning_count(tmp_path):
+    p = ProjectStore(tmp_path).get_or_create('https://example.com')
+    scan_dir = p.start_scan('20260613_120000')
+    entry = p.record_scan(scan_dir, _report(warnings=[
+        {'stage': 'evidence', 'message': 'manifest failed'},
+        {'stage': 'findings_sync', 'message': 'sync failed'},
+    ]))
+
+    assert entry['warning_count'] == 2
+    meta = p.load_metadata()
+    assert meta['latest_scan']['warning_count'] == 2
+    hist = json.loads((p.root / 'history' / '20260613_120000.json')
+                      .read_text(encoding='utf-8'))
+    assert hist['warning_count'] == 2
 
 
 def test_record_scan_persists_exposure_breakdown(tmp_path):

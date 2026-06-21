@@ -26,6 +26,8 @@ def _seed_project(base, slug_url='https://x.com', *, scores=(10, 60)):
         scan_dir = project.start_scan(sid)
         report = {
             'scan_id': sid, 'finished_at': sid,
+            'warnings': ([{'stage': 'evidence', 'message': 'manifest failed'}]
+                         if score >= 50 else []),
             'executive_summary': {
                 'risk_level': 'High' if score >= 50 else 'Low',
                 'risk_score': score, 'risk_100': score,
@@ -74,6 +76,7 @@ def test_query_overview_reads_portfolio(tmp_path):
     assert row['slug'] == 'x.com'
     assert row['risk_level'] == 'High'
     assert row['risk_delta'] == 50          # 60 − 10
+    assert row['warning_count'] == 1
 
 
 def test_query_overview_series(tmp_path):
@@ -104,8 +107,10 @@ def test_populate_table_and_totals(qapp, tmp_path):
     assert w.overview_table.item(0, 0).text() == 'x.com'
     assert w.overview_table.item(0, 1).text() == 'High'      # risk level cell
     assert w.overview_table.item(0, 3).text() == '+50'       # delta cell
+    assert w.overview_table.item(0, 8).text() == '1'         # warnings cell
     assert w.overview_totals['projects'].text() == '1'
     assert w.overview_totals['secrets'].text() == '1'
+    assert w.overview_totals['warning_count'].text() == '1'
     assert 'High' in w.overview_risk_label.text()
 
 

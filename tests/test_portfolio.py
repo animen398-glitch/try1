@@ -19,12 +19,14 @@ def _meta(slug, *, scans, url='https://x', updated_at='2026-01-01'):
 
 
 def _scan(rid, *, risk='Low', score=2, surface=5, secrets=0, high=0, medium=0,
-          source_map_leaks=0, weak_cookies=0, graphql=0, graphql_introspection=0):
+          source_map_leaks=0, weak_cookies=0, graphql=0,
+          graphql_introspection=0, warning_count=0):
     return {'id': rid, 'risk_level': risk, 'risk_score': score,
             'attack_surface_score': surface, 'secrets': secrets,
             'high': high, 'medium': medium,
             'source_map_leaks': source_map_leaks, 'weak_cookies': weak_cookies,
-            'graphql': graphql, 'graphql_introspection': graphql_introspection}
+            'graphql': graphql, 'graphql_introspection': graphql_introspection,
+            'warning_count': warning_count}
 
 
 # ── build_portfolio ──────────────────────────────────────────────────────────
@@ -38,13 +40,15 @@ def test_empty_portfolio():
 
 def test_row_pulls_latest_scan_metrics():
     meta = _meta('a.com', scans=[_scan('s1', risk='High', score=12,
-                                       secrets=1, high=2, medium=3, surface=22)])
+                                       secrets=1, high=2, medium=3, surface=22,
+                                       warning_count=4)])
     row = portfolio.build_portfolio([meta])['rows'][0]
     assert row['slug'] == 'a.com'
     assert row['risk_level'] == 'High'
     assert row['risk_score'] == 12
     assert (row['secrets'], row['high'], row['medium']) == (1, 2, 3)
     assert row['attack_surface'] == 22
+    assert row['warning_count'] == 4
     assert row['scan_count'] == 1
 
 
@@ -90,9 +94,9 @@ def test_rows_sorted_worst_risk_first():
 def test_totals_worst_level_and_sums():
     metas = [
         _meta('a', scans=[_scan('s', risk='Medium', score=5,
-                                secrets=1, high=0, medium=2)]),
+                                secrets=1, high=0, medium=2, warning_count=1)]),
         _meta('b', scans=[_scan('s', risk='Critical', score=30,
-                                secrets=2, high=3, medium=1)]),
+                                secrets=2, high=3, medium=1, warning_count=3)]),
     ]
     totals = portfolio.build_portfolio(metas)['totals']
     assert totals['projects'] == 2
@@ -101,6 +105,7 @@ def test_totals_worst_level_and_sums():
     assert totals['secrets'] == 3
     assert totals['high'] == 3
     assert totals['medium'] == 3
+    assert totals['warning_count'] == 4
 
 
 def test_handles_never_scanned_project():

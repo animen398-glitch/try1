@@ -101,6 +101,7 @@ class Project:
         scan_id = Path(scan_dir).name
         es = report.get('executive_summary') or {}
         metrics = es.get('metrics', {}) if isinstance(es, dict) else {}
+        warnings = report.get('warnings') if isinstance(report.get('warnings'), list) else []
         status = report.get('status') or (
             'Cancelled' if report.get('cancelled') else 'Success')
         return {
@@ -124,6 +125,7 @@ class Project:
             'weak_cookies': metrics.get('weak_cookies'),
             'graphql': metrics.get('graphql'),
             'graphql_introspection': metrics.get('graphql_introspection'),
+            'warning_count': len(warnings),
             'report_html': report.get('report_html'),
             'report_json': report.get('report_json'),
         }

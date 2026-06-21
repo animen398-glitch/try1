@@ -442,6 +442,7 @@ def test_portfolio_csv_from_full_dict():
     portfolio = {'rows': [{'slug': 'x.com', 'url': 'https://x', 'risk_level': 'High',
                            'risk_score': 12, 'risk_delta': 50, 'attack_surface': 11,
                            'secrets': 1, 'high': 2, 'medium': 1,
+                           'warning_count': 3,
                            'active_findings': 0, 'scan_count': 2,
                            'updated_at': '2026-06-14'}]}
     table = _parse(rx.portfolio_csv(portfolio))
@@ -450,6 +451,7 @@ def test_portfolio_csv_from_full_dict():
     assert row[0] == 'x.com'
     assert row[table[0].index('Score')] == '12'
     assert row[table[0].index('Delta')] == '50'
+    assert row[table[0].index('Warnings')] == '3'
 
 
 def test_portfolio_csv_accepts_bare_row_list():

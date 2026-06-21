@@ -27,6 +27,7 @@ _PORTFOLIO_COLUMNS: Sequence[Tuple[str, str]] = (
     ('risk_score', 'Score'), ('risk_delta', 'Delta'),
     ('attack_surface', 'Attack Surface'), ('secrets', 'Secrets'),
     ('high', 'High'), ('medium', 'Medium'),
+    ('warning_count', 'Warnings'),
     ('active_findings', 'Active Findings'), ('scan_count', 'Scans'),
     ('updated_at', 'Updated'),
 )

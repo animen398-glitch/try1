@@ -45,7 +45,7 @@ class OverviewTabMixin:
     """Builds and drives the Executive Overview tab."""
 
     OVERVIEW_COLUMNS = ["Проект", "Риск", "Score", "Δ", "Surface",
-                        "Secrets", "High", "Medium", "Findings", "Сканов",
+                        "Secrets", "High", "Medium", "Warnings", "Findings", "Сканов",
                         "Обновлён"]
 
     # Company roll-up table (F-C3) — one row per company over its projects.
@@ -59,6 +59,7 @@ class OverviewTabMixin:
         ('secrets',         'Секреты'),
         ('high',            'High'),
         ('medium',          'Medium'),
+        ('warning_count',   'Warnings'),
         ('active_findings', 'Активные находки'),
     ]
 
@@ -314,6 +315,7 @@ class OverviewTabMixin:
                 row.get('secrets', 0),
                 row.get('high', 0),
                 row.get('medium', 0),
+                row.get('warning_count', 0),
                 row.get('active_findings', 0),
                 row.get('scan_count', 0),
                 (row.get('updated_at') or '')[:19].replace('T', ' '),
@@ -326,7 +328,7 @@ class OverviewTabMixin:
                         item.setForeground(QColor(rc))
                 elif col == 3 and delta is not None and delta != 0:
                     item.setForeground(QColor('#c62828' if delta > 0 else '#2e7d32'))
-                if col in range(2, 10):
+                if col in range(2, 11):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.overview_table.setItem(r, col, item)
 
