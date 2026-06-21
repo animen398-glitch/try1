@@ -73,6 +73,16 @@ def has_httpx() -> bool:
     return _has_binary('httpx')
 
 
+def has_bbot() -> bool:
+    """blacklanternsecurity/bbot — external recon/ASM enrichment engine (optional).
+
+    Detected by its CLI on PATH (like the other external tools), never imported:
+    BBOT is AGPL-3.0, so it is used only as a separate external tool via
+    subprocess + its JSON output, never as a bundled or required dependency
+    (EPIC EXT-OSINT F1). Absent → the BBOT phase degrades to a skip."""
+    return _has_binary('bbot')
+
+
 def has_ollama() -> bool:
     """A local Ollama answering on localhost (optional LLM narrative).
 
@@ -98,6 +108,7 @@ OPTIONAL_FEATURES = {
     'amass':      ('Amass subdomain enum (external)',          has_amass),
     'subfinder':  ('Subfinder passive subdomain enum (external)', has_subfinder),
     'httpx':      ('Httpx HTTP prober — live hosts (external)', has_httpx),
+    'bbot':       ('BBOT external recon/ASM enrichment (external)', has_bbot),
 }
 
 

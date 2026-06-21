@@ -13,8 +13,19 @@ def test_summary_has_all_features():
 
 def test_detectors_return_bool():
     for fn in (features.has_playwright, features.has_ytdlp, features.has_ffmpeg,
-               features.has_fastapi, features.has_lxml):
+               features.has_fastapi, features.has_lxml, features.has_bbot):
         assert isinstance(fn(), bool)
+
+
+def test_bbot_registered_as_optional_external():
+    # BBOT (AGPL) is an optional, external tool — present in the feature registry
+    # and classified as a manual (non-pip) component in the launcher.
+    assert 'bbot' in features.OPTIONAL_FEATURES
+    assert features.OPTIONAL_FEATURES['bbot'][1] is features.has_bbot
+    from core import launcher
+    comp = launcher.installable_components()
+    assert comp['bbot']['method'] == 'manual'
+    assert 'github.com/blacklanternsecurity/bbot' in comp['bbot']['url']
 
 
 def test_missing_is_subset_of_features():

@@ -517,7 +517,12 @@ continue adding scanners or GUI/design work under Epic 14.
   **только по документации**; зафиксировать контракт «событие BBOT → наш
   Asset/Finding»; выбрать безопасные пассивные presets; согласовать scope-маппинг.
   Документ, без кода. → результат ниже («T1.1 — Research & Contract (результат)»).
-- T1.2 `features.has_bbot()` + детект версии/доступности (мягко).
+- T1.2 `features.has_bbot()` + детект версии/доступности (мягко). **[ВЫПОЛНЕНО
+  2026-06-21]** — `core/features.py` += `has_bbot()` (PATH-детект бинаря, паттерн
+  `has_nuclei`; никогда не импортируем — AGPL) + регистрация в `OPTIONAL_FEATURES`
+  (виден в health/`features.summary()`); `core/launcher.py` += `bbot` в
+  `_BINARY_HELP` → классифицируется как `manual` (внешний инструмент, не
+  pip-зависимость). Покрыто `tests/test_features.py`.
 - T1.3 `core/bbot_adapter.py` — запуск + парсинг NDJSON → нормализованные DTO
   (дедуп через существующие fingerprint/identity, без новой identity-схемы).
 - T1.4 Проводка opt-in фазы в CollectionRunner + Scope Guard + карточка отчёта.

@@ -49,6 +49,9 @@ _BINARY_HELP: Dict[str, str] = {
     'amass': 'https://github.com/owasp-amass/amass',
     'subfinder': 'https://github.com/projectdiscovery/subfinder',
     'httpx': 'https://github.com/projectdiscovery/httpx',
+    # BBOT is AGPL-3.0 — installed separately as an external tool, never a managed
+    # pip dependency of this app (EPIC EXT-OSINT F1).
+    'bbot': 'https://github.com/blacklanternsecurity/bbot',
 }
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent

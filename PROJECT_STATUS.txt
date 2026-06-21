@@ -4059,3 +4059,31 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     approval.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F1 T1.2 - has_bbot() detection
+==============================================================================
+
+  STATUS: DONE. First code of the epic - additive optional-tool detection,
+    following the established external-binary pattern (has_nuclei/has_subfinder).
+
+  IMPLEMENTED:
+    - core/features.py: has_bbot() = _has_binary('bbot') (PATH check, never
+      imported - BBOT is AGPL-3.0, used only as a separate external tool).
+      Registered in OPTIONAL_FEATURES so it shows up in features.summary() /
+      missing() and the launcher health snapshot automatically.
+    - core/launcher.py: 'bbot' added to _BINARY_HELP (GitHub URL) so
+      installable_components()/install_optional() classify it as 'manual'
+      (external tool, NOT a managed pip dependency / not bundled in .exe).
+
+  TESTS:
+    - tests/test_features.py: has_bbot in the bool-detector check; new
+      test_bbot_registered_as_optional_external (registry + manual classification
+      + URL). 29 passed in the features+launcher subset; ruff clean.
+
+  NOTES: no requirements change, no network, no .exe bloat. Detection only -
+    nothing runs BBOT yet (that is T1.3 bbot_adapter).
+
+  NEXT: F1 T1.3 (core/bbot_adapter.py) - subprocess run + NDJSON parse ->
+    normalized Asset/Finding DTOs, per the T1.1 contract; confirm the open
+    questions against real saved output. Implementation after plan approval.
+
+==============================================================================
