@@ -687,7 +687,13 @@ assets подбираются `asset_adapter.derive_assets` тонким guarded
   минимальный offline-fallback (без AI) и расширенный провайдер (с моделью);
   контракт «извлечённое поле → Finding/Asset». Документ, без кода. **[ВЫПОЛНЕНО
   2026-06-21]** → результат ниже («T2.1 — Research & Contract (результат)»).
-- T2.2 `features` детект провайдеров + summary в health.
+- T2.2 `features` детект провайдеров + summary в health. **[ВЫПОЛНЕНО
+  2026-06-21]** — `core/features.py` += `has_pdf_text()` (любой лёгкий PDF-парсер:
+  pypdf/pdfminer/fitz), `has_ocr()` (pytesseract-модуль + бинарь tesseract),
+  `has_lift()` (CLI `lift_extract` на PATH — subprocess, модель не импортируем) +
+  регистрация трёх тиров в `OPTIONAL_FEATURES` (видны в `features.summary()`/health).
+  Лаунчер их пока не предлагает ставить (выбор lib финализируется в T2.3 → install-
+  guidance позже); детект-only. Покрыто `tests/test_features.py`.
 - T2.3 `core/document_intelligence.py` — ядро + провайдер-интерфейс + offline-fallback.
 - T2.4 `document_providers/lift_adapter` (planned, опц.) — изоляция тяжёлых импортов.
 - T2.5 Проводка opt-in фазы + нормализация в lifecycle + карточка отчёта.

@@ -4271,3 +4271,34 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     approval.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F2 T2.2 - document-intel provider detection
+==============================================================================
+
+  STATUS: DONE. Thin additive optional-tool detection for the three Document
+    Intelligence provider tiers, following the has_bbot pattern.
+
+  IMPLEMENTED (core/features.py):
+    - has_pdf_text(): True if any common pure-Python PDF parser is importable
+      (pypdf | pdfminer | fitz) - the adapter (T2.3) uses whichever is present,
+      so the "which lib" choice stays open.
+    - has_ocr(): pytesseract module AND the tesseract binary on PATH.
+    - has_lift(): the documented lift_extract CLI on PATH. Detected as a binary,
+      not a module - the adapter will subprocess it, so torch/vLLM never load in
+      our process and the 9B model is never bundled.
+    - All three registered in OPTIONAL_FEATURES -> appear in features.summary()/
+      missing() and the launcher health snapshot automatically.
+
+  LAUNCHER: intentionally not added to _PIP_INSTALL/_BINARY_HELP yet, so
+    installable_components() omits them (no premature install guidance before the
+    lib choice is finalized in T2.3). Detection only - nothing runs yet.
+
+  TESTS: tests/test_features.py - the three detectors in the bool-detector check
+    + test_document_intel_providers_registered. 30 passed (features+launcher);
+    ruff clean. No deps/network/.exe impact.
+
+  NEXT: F2 T2.3 (core/document_intelligence.py) - pure never-raise orchestrator +
+    provider interface + the stdlib tier-0 fallback (metadata/sha256 + text for
+    text formats), wiring extracted text through the SSOT secret_scanner. Plan
+    first.
+
+==============================================================================

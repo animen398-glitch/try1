@@ -13,8 +13,18 @@ def test_summary_has_all_features():
 
 def test_detectors_return_bool():
     for fn in (features.has_playwright, features.has_ytdlp, features.has_ffmpeg,
-               features.has_fastapi, features.has_lxml, features.has_bbot):
+               features.has_fastapi, features.has_lxml, features.has_bbot,
+               features.has_pdf_text, features.has_ocr, features.has_lift):
         assert isinstance(fn(), bool)
+
+
+def test_document_intel_providers_registered():
+    # The Document Intelligence provider tiers (EXT-OSINT F2) are optional
+    # features so health/summary shows what is available.
+    for name, fn in (('pdf-text', features.has_pdf_text),
+                     ('ocr', features.has_ocr), ('lift', features.has_lift)):
+        assert name in features.OPTIONAL_FEATURES
+        assert features.OPTIONAL_FEATURES[name][1] is fn
 
 
 def test_bbot_registered_as_optional_external():

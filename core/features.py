@@ -83,6 +83,31 @@ def has_bbot() -> bool:
     return _has_binary('bbot')
 
 
+def has_pdf_text() -> bool:
+    """A PDF text-extraction library (optional, lightweight) — any common
+    pure-Python parser. The document-intelligence offline fallback uses whichever
+    is present to pull text from PDFs (EXT-OSINT F2); absent → PDFs degrade to
+    metadata only."""
+    return (_has_module('pypdf') or _has_module('pdfminer')
+            or _has_module('fitz'))
+
+
+def has_ocr() -> bool:
+    """Local OCR for image documents (optional) — the pytesseract wrapper plus the
+    tesseract binary on PATH. Used to extract text from images (EXT-OSINT F2);
+    absent → image documents degrade to metadata only."""
+    return _has_module('pytesseract') and _has_binary('tesseract')
+
+
+def has_lift() -> bool:
+    """datalab-to/lift — schema-constrained document→JSON extraction via a heavy
+    9B vision model (optional). Detected by its ``lift_extract`` CLI on PATH and
+    run as a subprocess, never imported — so torch/vLLM never load in our process
+    and the model is never bundled (EXT-OSINT F2). Absent → the document phase
+    uses the lighter tiers (pdf-text / OCR / stdlib metadata)."""
+    return _has_binary('lift_extract')
+
+
 def has_ollama() -> bool:
     """A local Ollama answering on localhost (optional LLM narrative).
 
@@ -109,6 +134,9 @@ OPTIONAL_FEATURES = {
     'subfinder':  ('Subfinder passive subdomain enum (external)', has_subfinder),
     'httpx':      ('Httpx HTTP prober — live hosts (external)', has_httpx),
     'bbot':       ('BBOT external recon/ASM enrichment (external)', has_bbot),
+    'pdf-text':   ('PDF text extraction (document intel)',          has_pdf_text),
+    'ocr':        ('Image OCR — document intel (external)',         has_ocr),
+    'lift':       ('lift document→JSON extraction (external)',      has_lift),
 }
 
 
