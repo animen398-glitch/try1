@@ -546,6 +546,15 @@ continue adding scanners or GUI/design work under Epic 14.
   report.html. Покрыто `test_collection_runner`(+4)/`test_asset_adapter`(+3).
   Monitor/web/GUI-паритет — T1.5.
 - T1.5 Monitor/web-паритет (read-поверхности уже общие через assets/findings).
+  **[ВЫПОЛНЕНО 2026-06-21]** — monitor-паритет: `monitor._build_run_fn` += `bbot=
+  opts.get('bbot', False)` (как osv/asn/security — в `default_monitor_options` не
+  добавляем, дефолт off); GUI-чекбокс «BBOT (внешний recon)» в Collection (FlowLayout
+  opt-row, тултип про AGPL/внешний процесс/пассив/мягкую деградацию) + `'bbot'` в
+  `_collection_options` (тот же словарь питает Full Collection и monitor-enable).
+  Web-консоль намеренно гоняет базовый пайплайн (opt-in off), как osv/asn → web-
+  правок нет. Read-поверхности (Findings/Assets/Timeline/Overview/web) получают
+  BBOT-данные автоматом через общий lifecycle. Покрыто `test_monitor`(+2)/
+  `test_monitor_gui`(+1); self-check 25 вкладок зелёный.
 - T1.6 Тесты offline — фикстуры с сохранённым NDJSON, инъекция runner; проверка
   мягкой деградации при отсутствии бинаря и при выходе вне scope.
 

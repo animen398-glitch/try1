@@ -95,14 +95,31 @@ def test_build_run_fn_maps_options_to_runner(monkeypatch):
     monkeypatch.setattr('core.collection_runner.CollectionRunner', FakeRunner)
     rf = monitor._build_run_fn('/base', {'nuclei': True, 'subdomains': False,
                                          'osv': True, 'security': True,
+                                         'bbot': True,
                                          'profile': 'firefox_windows'})
     out = rf('https://x.com')
     assert out['base'] == '/base'
     assert captured['nuclei'] is True and captured['subdomains'] is False
     assert captured['osv'] is True            # opt-in OSV correlation maps through
     assert captured['security'] is True       # opt-in security audit maps through
+    assert captured['bbot'] is True           # opt-in BBOT recon maps through
     assert captured['profile'] == 'firefox_windows'
     assert captured['certificate'] is True        # default preserved on merge
+
+
+def test_build_run_fn_bbot_defaults_off(monkeypatch):
+    captured = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, url, base):
+            return {'status': 'Success'}
+
+    monkeypatch.setattr('core.collection_runner.CollectionRunner', FakeRunner)
+    monitor._build_run_fn('/base', {})('https://x.com')
+    assert captured['bbot'] is False              # off unless explicitly selected
 
 
 def test_format_event_kinds():

@@ -4183,3 +4183,37 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     the base pipeline (opt-in off), like osv/asn. Plan first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F1 T1.5 - monitor + GUI parity
+==============================================================================
+
+  STATUS: DONE. The opt-in BBOT phase is now selectable from the GUI and runs
+    under in-app/OS monitoring with the user's chosen options. Same pattern as
+    osv/asn/security.
+
+  IMPLEMENTED:
+    - core/monitor.py: _build_run_fn maps bbot=opts.get('bbot', False) onto
+      CollectionRunner (not added to default_monitor_options - stays off unless
+      explicitly selected, like osv/asn/security).
+    - gui/tab_collection.py: "BBOT (внешний recon)" checkbox in the FlowLayout
+      opt-in row (tooltip: external AGPL subprocess, safe passive preset, strict
+      scope, graceful skip when absent) + 'bbot' added to _collection_options
+      (the one dict feeding both Full Collection and monitor-enable).
+
+  WEB: intentionally unchanged - the web console runs the base pipeline with all
+    opt-in phases off (same decision as osv/asn). Read surfaces (Findings/Assets/
+    Timeline/Overview + their web routes) pick up BBOT data automatically through
+    the shared lifecycle, so no per-phase web wiring is needed.
+
+  TESTS: test_monitor.py (+2: bbot maps through, defaults off), test_monitor_gui
+    (+1: _collection_options reflects the checkbox). Targeted suites green (43
+    passed); ruff clean; headless self-check OK (25 tabs).
+
+  F1 (BBOT External Adapter) COMPLETE: T1.1 contract, T1.2 detection, T1.3
+    adapter, T1.4 phase wiring + asset/finding fold + report card, T1.5 monitor +
+    GUI parity. BBOT is a fully optional, AGPL-clean external tool feeding the
+    existing data lifecycle; absent binary => graceful skip; no deps/.exe impact.
+
+  NEXT: EXT-OSINT F2 (Document Intelligence) - starts with T2.1 research &
+    contract (lift provider, offline-first fallback), documentation only.
+
+==============================================================================

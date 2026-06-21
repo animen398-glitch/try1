@@ -123,9 +123,11 @@ def test_collection_options_reflects_checkboxes(qapp, tmp_path):
     w.collect_subdomains.setChecked(True)
     w.collect_dns.setChecked(True)
     w.collect_certificate.setChecked(False)
+    w.collect_bbot.setChecked(True)
     opts = w._collection_options()
     assert opts['subdomains'] is True and opts['dns'] is True
     assert opts['certificate'] is False
+    assert opts['bbot'] is True                    # opt-in BBOT reflected
     assert 'profile' in opts and 'max_pages' in opts
 
 

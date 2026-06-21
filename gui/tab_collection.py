@@ -208,6 +208,19 @@ class FinalReportTabMixin:
             "attack-surface. Доп. сетевые запросы: загрузка JS + зондирование "
             "типовых GraphQL-путей.")
         opt_row.addWidget(self.collect_security)
+
+        # Opt-in external recon via BBOT — an external ASM/recon engine run as a
+        # subprocess (never imported; AGPL-3.0). Enriches the asset inventory and
+        # folds its findings; degrades to a skip when the binary is absent.
+        self.collect_bbot = QCheckBox("BBOT (внешний recon)")
+        self.collect_bbot.setToolTip(
+            "Внешний ASM/recon-движок BBOT (запускается как отдельный процесс, "
+            "не импортируется; лицензия AGPL-3.0). Обогащает инвентарь активов "
+            "(субдомены/IP/ASN/netblock/эндпоинты/технологии) и вливает свои "
+            "находки в общий жизненный цикл. Безопасный пассивный пресет со "
+            "строгим scope; доп. сетевые запросы. Если бинарь не найден на PATH — "
+            "фаза мягко пропускается.")
+        opt_row.addWidget(self.collect_bbot)
         g.addLayout(opt_row)
 
         btn_row = QHBoxLayout()
@@ -337,6 +350,7 @@ class FinalReportTabMixin:
             'asn_intel': self.collect_asn_intel.isChecked(),
             'osv': self.collect_osv.isChecked(),
             'security': self.collect_security.isChecked(),
+            'bbot': self.collect_bbot.isChecked(),
         }
 
     def _run_collection(self):
