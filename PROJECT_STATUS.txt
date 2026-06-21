@@ -4005,3 +4005,57 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
       with F1 T1.1 (BBOT research & contract, documentation only).
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F1 T1.1 - BBOT Research & Contract (DOC ONLY)
+==============================================================================
+
+  STATUS: DONE (documentation only - no code, no deps). The BBOT-event ->
+    our-Asset/Finding contract is recorded in ROADMAP_ASM_2.0.md under
+    "EPIC EXT-OSINT > F1 > T1.1 - Research & Contract (результат)".
+
+  SOURCES (BBOT official docs only, NOT source code - AGPL):
+    - scanning/output (NDJSON via -om json; event top-level fields)
+    - scanning/events (full event-type list; VULNERABILITY has severity,
+      FINDING is less-confirmed)
+    - scanning/presets (-p preset, -rf passive restrict, --strict-scope, -lp)
+    Contract cross-checked against our real DTOs: core/findings_adapter.py,
+    core/asset_adapter.py, core/finding_fingerprint.py, and the external-tool
+    normalization pattern in core/external_tools.py (nuclei/katana).
+
+  CONTRACT HIGHLIGHTS:
+    - Invocation: NDJSON on stdout (-om json), parsed line-by-line like
+      parse_nuclei_jsonl. Safe default = passive + --strict-scope + --silent;
+      no aggressive presets/brute-force by default; opt-in only.
+    - Event->entity map (phase 1, feeds existing lifecycle only):
+      DNS_NAME->domain/subdomain, IP_ADDRESS->ip, IP_RANGE->netblock, ASN->asn,
+      URL/URL_UNVERIFIED->endpoint, TECHNOLOGY->technology, VULNERABILITY->vuln
+      finding (severity from data), FINDING->vuln finding (info).
+      OPEN_*_PORT/PROTOCOL/WAF enrich attrs (no new asset type).
+      EMAIL/SOCIAL/USERNAME/REPO/BUCKET/etc. NOT ingested in phase 1.
+    - Severity: CRITICAL/HIGH/MEDIUM/LOW already known to normalize_severity;
+      FINDING -> info. No new table.
+    - Identity/dedup reused as-is: BBOT findings emitted as raw dicts
+      {severity,title,detail,source:'bbot',location?} flow through
+      findings_adapter.from_raw; a CVE in the text auto-merges with nuclei/OSV.
+      BBOT assets carry attrs.source='bbot'; AssetStore gates GONE per-source
+      (F-A2) so a skipped BBOT phase never flaps assets.
+    - Scope: run only if Scope Guard allows; scope_distance==0 -> owned (stored);
+      scope_distance>=1 (affiliate) -> external context, NOT promoted to store
+      (mirrors the co-hosted decision in asn_intel.py).
+    - Integration: one opt-in 'bbot' phase in CollectionRunner (pattern of
+      _phase_osv/_phase_asn); findings folded into vulns, assets picked up by a
+      thin guarded extractor in asset_adapter.derive_assets.
+
+  OPEN QUESTIONS (to confirm in T1.3 against real saved output.json - do NOT
+    invent): exact data subfields of VULNERABILITY/FINDING (description/url/
+    host/severity); the flag to suppress the first-run interactive dep prompt;
+    data shape (string vs dict) of TECHNOLOGY/ASN/IP_RANGE; precise
+    scope_distance/tags -> owned/affiliate rule.
+
+  FIXED "NO" LIST: no new asset types in phase 1, no new SQLite tables, no
+    aggressive presets by default, no required dependency / no .exe bundling,
+    OSINT entities (email/social/repo/bucket) deferred.
+
+  NEXT: F1 T1.2 (features.has_bbot() detection) - implementation, after plan
+    approval.
+
+==============================================================================

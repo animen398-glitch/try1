@@ -513,9 +513,10 @@ continue adding scanners or GUI/design work under Epic 14.
   чекбокс в Collection. Scope Guard гейтит активный запуск.
 
 **Tasks:**
-- T1.1 Research & Contract — изучить BBOT CLI/JSON-вывод **только по документации**;
-  зафиксировать контракт «событие BBOT → наш Asset/Finding»; выбрать безопасные
-  пассивные presets; согласовать scope-маппинг. Документ, без кода.
+- T1.1 Research & Contract — **[ВЫПОЛНЕНО 2026-06-21]** изучить BBOT CLI/JSON-вывод
+  **только по документации**; зафиксировать контракт «событие BBOT → наш
+  Asset/Finding»; выбрать безопасные пассивные presets; согласовать scope-маппинг.
+  Документ, без кода. → результат ниже («T1.1 — Research & Contract (результат)»).
 - T1.2 `features.has_bbot()` + детект версии/доступности (мягко).
 - T1.3 `core/bbot_adapter.py` — запуск + парсинг NDJSON → нормализованные DTO
   (дедуп через существующие fingerprint/identity, без новой identity-схемы).
@@ -523,6 +524,108 @@ continue adding scanners or GUI/design work under Epic 14.
 - T1.5 Monitor/web-паритет (read-поверхности уже общие через assets/findings).
 - T1.6 Тесты offline — фикстуры с сохранённым NDJSON, инъекция runner; проверка
   мягкой деградации при отсутствии бинаря и при выходе вне scope.
+
+---
+
+#### T1.1 — Research & Contract (результат)
+
+> Источник фактов — **только официальная документация BBOT** (не исходники):
+> [Output](https://www.blacklanternsecurity.com/bbot/Stable/scanning/output/),
+> [Events](https://www.blacklanternsecurity.com/bbot/Stable/scanning/events/),
+> [Presets](https://www.blacklanternsecurity.com/bbot/Stable/scanning/presets/).
+> Контракт сверен с реальными DTO нашего кода (`core/findings_adapter.py`,
+> `core/asset_adapter.py`, `core/finding_fingerprint.py`) и с паттерном
+> нормализации внешнего инструмента (`core/external_tools.py` — nuclei/katana).
+> **AGPL-чистота:** ни строки кода BBOT не копируется; интеграция = запуск бинаря
+> + парсинг машинного вывода в наши модели.
+
+**A. Как запускаем (invocation contract).**
+- BBOT выдаёт **NDJSON** (один JSON-объект на строку) в stdout через `-om json` —
+  парсится построчно ровно как `parse_nuclei_jsonl`/`parse_katana_lines`
+  (никаких temp-файлов; читаем stdout через `external_tools.run_command`).
+- **Дефолт — безопасный пассив:** пресет + рестрикт по флагу `passive`
+  (`-rf passive`) + строгий scope (`--strict-scope`), `--silent`. Иллюстративно:
+  `bbot -t <target> -p subdomain-enum -rf passive --strict-scope -om json --silent`.
+  Никаких агрессивных пресетов/брутфорса по умолчанию. Расширенные пресеты — только
+  явный opt-in пользователя.
+- Точные флаги (подавление интерактивного dep-промпта на первом запуске, имя
+  пресета) **подтвердить в T1.3** прогоном реального бинаря; адаптер не должен
+  зависеть от конкретного пресета (пресет — конфиг, не контракт).
+- Даже пассивный BBOT делает DNS/API-запросы (сеть) → фаза **opt-in** и гейтится
+  Scope Guard (EPIC 14): вне `active_scan_enabled`/scope — фаза пропускается.
+
+**B. Структура события (по докам).** Поля верхнего уровня:
+`type`, `id` (= тип + SHA1 от data), `data` (строка для простых типов вроде
+`DNS_NAME`/`IP_ADDRESS`; dict для сложных), `host`, `scope_distance`
+(0 = in-scope), `scope_description` (in-scope/affiliate/distance-N), `tags`,
+`module`, `resolved_hosts`, `parent`, `scan`, `timestamp`.
+
+**C. Маппинг тип события → наша сущность** (ингестим только то, что питает
+существующий lifecycle; никаких новых типов активов/моделей в фазе 1):
+
+| BBOT event | Наша сущность | Тип/категория | Примечание |
+|---|---|---|---|
+| `DNS_NAME` (== apex цели) | Asset | `domain` | сам таргет |
+| `DNS_NAME` (`*.apex`, in-scope) | Asset | `subdomain` | как cert/CT-имена (F-A1) |
+| `IP_ADDRESS` | Asset | `ip` | `host`/`data` |
+| `IP_RANGE` | Asset | `netblock` | `kind='range'` |
+| `ASN` | Asset | `asn` | |
+| `URL` | Asset | `endpoint` | `normalize_location` |
+| `URL_UNVERIFIED` | Asset | `endpoint` | пометить attr `unverified` (ниже доверие) |
+| `TECHNOLOGY` | Asset | `technology` | имя=identity, версия=attr |
+| `VULNERABILITY` | Finding | `vuln` | severity из data (см. D) |
+| `FINDING` | Finding | `vuln` | менее подтверждено → severity `info` |
+| `OPEN_TCP_PORT`/`OPEN_UDP_PORT`/`PROTOCOL`/`WAF` | (attr) | — | обогащают attrs IP/endpoint, **не** новый тип |
+| `EMAIL_ADDRESS`/`SOCIAL`/`USERNAME`/`ORG_STUB`/`CODE_REPOSITORY`/`AZURE_TENANT`/`MOBILE_APP`/`STORAGE_BUCKET`/`HASHED_PASSWORD`/`GEOLOCATION` | — | — | **НЕ ингестим в фазе 1** (нет соответствующего типа актива/находки; кандидаты в F3 AI-OSINT каталог / будущие типы) |
+
+**D. Severity.** BBOT `VULNERABILITY` несёт `CRITICAL/HIGH/MEDIUM/LOW`; `FINDING`
+severity не несёт. Наш `findings_adapter.normalize_severity` уже знает эти слова
+→ `critical/high/medium/low`; `FINDING` → `info`. Отдельная таблица не нужна.
+
+**E. Идентичность и дедуп (переиспользуем, без новой схемы).** BBOT-находки
+эмитятся как «сырые» dict'ы `{severity, title, detail, source:'bbot', location?}` →
+проходят `findings_adapter.from_raw` **без изменений**:
+- если в тексте есть `CVE-####-…` → `extract_cve` канонизирует identity
+  (`category='vuln'`, `rule_id=cve`) → одна и та же CVE от BBOT+nuclei+OSV
+  **схлопывается автоматически** (DefectDojo-дедуп уже работает);
+- иначе `category='vuln'`, `rule_id` = slug заголовка, `location` нормализуется.
+- Маленькая аддитивная правка в T1.4: `_SOURCE_CATEGORY['bbot']='vuln'` (явность;
+  поведение и так корректно через fallback).
+
+BBOT-активы получают `attrs['source']='bbot'`; AssetStore гейтит GONE **по source**
+(F-A2) → `source_in_scope('bbot')=phase_ok('bbot')`, поэтому пропуск BBOT-фазы не
+флапает активы GONE. Identity активов — существующая `asset_fingerprint(type,value)`
+(ноль churn при пересечении с recon/subdomains: `_dedup` first-wins).
+
+**F. Scope-маппинг (privacy/безопасность, связка с F4).**
+- Запуск фазы вообще — только если Scope Guard разрешает активные действия и
+  таргет в allow-scope; `--strict-scope` не даёт BBOT уходить за периметр.
+- `scope_distance == 0` (in-scope) → актив **owned** → в AssetStore/FindingsStore.
+- `scope_distance >= 1` (affiliate/distance-N) → **внешний контекст**, в стор НЕ
+  промоутим (зеркало решения по co-hosted в `asn_intel.py`: не наш актив →
+  ложные ownership/takeover-сигналы недопустимы). Опционально — как `related`
+  узлы в `asset_graph` (паттерн co-hosted), но это **за рамками фазы 1**.
+
+**G. Интеграция (одна фаза, один lifecycle).** Фаза `bbot` в `CollectionRunner`
+(паттерн `_phase_osv`/`_phase_asn`): `bbot_adapter` нормализует stdout →
+`report['phases']['bbot']['data'] = {assets:[...], findings:[...]}` в НАШИХ формах;
+findings фолдятся в `vulns['findings']` (как `_phase_dns`) → F1-sync + risk;
+assets подбираются `asset_adapter.derive_assets` тонким guarded-экстрактором
+(как `katana`/`security`). Read-поверхности (Timeline/Overview/web) включаются
+автоматически. Карточка отчёта «External Recon (BBOT)».
+
+**H. Открытые вопросы → подтвердить в T1.3 (на реальном выводе, не выдумывать).**
+1. Точные подполя `data` у `VULNERABILITY`/`FINDING` (имена `description`/`url`/
+   `host`/`severity`) — доки их не специфицируют; адаптер читает **защитно**
+   (any-of, мягкая деградация), точные имена фиксируем по сохранённому `output.json`.
+2. Точный флаг подавления интерактивного dep-промпта первого запуска.
+3. Формат `data` у `TECHNOLOGY`/`ASN`/`IP_RANGE` (строка vs dict) — нормализовать
+   к нашему `value`/`attrs`.
+4. Сопоставление BBOT `scope_distance`/`tags` с нашим owned/affiliate-решением.
+
+**I. Зафиксированные «нет» (anti-scope-creep).** Без новых типов активов в фазе 1;
+без новых SQLite-таблиц; без агрессивных пресетов по умолчанию; без обязательной
+зависимости/бандла в `.exe`; OSINT-сущности (email/social/repo/bucket) — не сейчас.
 
 ---
 
