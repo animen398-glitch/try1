@@ -81,6 +81,7 @@ ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
     'ct',
     'asn_intel',
     'osv',
+    'bbot',
     'katana',
     'screenshot',
     'nuclei',
@@ -104,7 +105,8 @@ class CollectionRunner:
                  historical: bool = False, dns: bool = False,
                  emails: bool = False, employees: bool = False,
                  ct: bool = False, asn_intel: bool = False,
-                 osv: bool = False, security: bool = False):
+                 osv: bool = False, security: bool = False,
+                 bbot: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -159,6 +161,12 @@ class CollectionRunner:
         # surface graph. Off by default (extra network: fetches JS + probes
         # conventional GraphQL paths).
         self.security = security
+        # Opt-in external recon via BBOT — an external ASM/recon engine run as a
+        # subprocess (never imported; AGPL-3.0). Enriches the asset inventory
+        # (subdomains/ips/asns/netblocks/endpoints/technologies) and folds its
+        # findings into the vuln phase. Off by default (extra network + external
+        # tool); degrades to a skip when the binary is absent. (EXT-OSINT F1.)
+        self.bbot = bbot
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -181,7 +189,8 @@ class CollectionRunner:
                   ct: Optional[bool] = None,
                   asn_intel: Optional[bool] = None,
                   osv: Optional[bool] = None,
-                  security: Optional[bool] = None):
+                  security: Optional[bool] = None,
+                  bbot: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -220,6 +229,8 @@ class CollectionRunner:
             self.osv = osv
         if security is not None:
             self.security = security
+        if bbot is not None:
+            self.bbot = bbot
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -467,6 +478,13 @@ class CollectionRunner:
         if self.osv and not self._cancelled(report):
             skipped = self._scope_skip_active(report, 'osv', url)
             report['phases']['osv'] = skipped or self._phase_osv(report, scan_dir)
+        # 7l. External recon (BBOT, opt-in, external AGPL tool) → enrich the asset
+        # inventory (subdomains/ips/asns/netblocks/endpoints/technologies) and fold
+        # its findings into the vuln phase. Run as a subprocess; never imported.
+        if self.bbot and not self._cancelled(report):
+            skipped = self._scope_skip_active(report, 'bbot', url)
+            report['phases']['bbot'] = skipped or self._phase_bbot(
+                url, scan_dir, report)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             skipped = self._scope_skip_active(report, 'katana', url)
@@ -1260,6 +1278,59 @@ class CollectionRunner:
             self._log(f'  CVE correlation failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_bbot(self, url: str, project_dir: Path, report: Dict) -> Dict:
+        """External recon via BBOT (opt-in, external AGPL tool). BBOT is never
+        imported — it is run as a subprocess and its NDJSON output is normalised
+        by ``bbot_adapter`` into our shapes. Its assets enrich the inventory
+        (subdomains/ips/asns/netblocks/endpoints/technologies, picked up by
+        ``asset_adapter.derive_assets`` from ``phases.bbot.data``) and its
+        findings fold into the vuln phase (lifecycle / SLA / triage + risk via
+        severity — the same pattern as the security audit). Writes bbot/bbot.json.
+        Guarded; degrades to a skip when the binary is absent and never sinks the
+        scan."""
+        self._log('[+] External recon (BBOT)…')
+        try:
+            from urllib.parse import urlparse
+
+            from core.bbot_adapter import BBOTRunner
+            runner = BBOTRunner()
+            runner.set_progress_callback(self.progress_callback)
+            if not runner.available():
+                self._log('  BBOT — пропущено (бинарь не найден на PATH)')
+                return {'status': 'Unavailable', 'reason': 'bbot not installed'}
+            target = (urlparse(url).netloc.split(':')[0]
+                      or report.get('domain') or url)
+            result = runner.run(target)
+            if result.get('status') != 'Success':
+                self._log(f"  BBOT — {result.get('status')}: "
+                          f"{result.get('error', '')}")
+                return {'status': result.get('status', 'Error'),
+                        'error': result.get('error')}
+            data = result['data']
+            out = project_dir / 'bbot'
+            out.mkdir(exist_ok=True)
+            (out / 'bbot.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+            # Fold BBOT findings into the vuln phase (raw dicts source='bbot' →
+            # findings_adapter handles identity + CVE merge). Assets are derived
+            # from phases.bbot.data by asset_adapter at sync time.
+            added = data.get('findings') or []
+            vulns = report['phases'].get('vulns')
+            if added and isinstance(vulns, dict):
+                findings = vulns.get('findings', []) + added
+                vulns['findings'] = findings
+                vulns['summary'] = VulnScanner.summarize(findings)
+            st = data.get('stats', {})
+            self._log(f"  BBOT: {st.get('in_scope', 0)} in-scope событий, "
+                      f"находок +{len(added)}")
+            return {'status': 'Success', 'data': data,
+                    'truncated': result.get('truncated', False)}
+        except Exception as e:
+            self._log(f'  BBOT failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _dedup_vuln_findings(self, report: Dict) -> None:
         """Collapse the vuln phase's findings that share an identity (same CVE
         across scanners) into one + recompute the phase summary. Best-effort: a
@@ -1328,6 +1399,10 @@ class CollectionRunner:
                     # subdomain-takeover findings come from the opt-in subdomain
                     # phase — a skipped enumeration must not auto-FIX them.
                     return phase_ok('subdomains')
+                if s == 'bbot':
+                    # external-recon findings come from the opt-in BBOT phase — a
+                    # skipped run must not auto-FIX them (EXT-OSINT F1).
+                    return phase_ok('bbot')
                 return phase_ok('vulns')
 
             store = FindingsStore()
@@ -1946,6 +2021,35 @@ class CollectionRunner:
         return delta + table
 
     @staticmethod
+    def _render_bbot_card(data: Dict) -> str:
+        """Offline HTML for the External Recon (BBOT) card: in-scope event counts
+        and what BBOT contributed (assets fold into the inventory; findings into
+        the vuln lifecycle)."""
+        e = html.escape
+        if not isinstance(data, dict):
+            return ''
+        stats = data.get('stats') or {}
+        rows_src = [
+            ('In-scope events', stats.get('in_scope', 0)),
+            ('Affiliates skipped', stats.get('affiliates_skipped', 0)),
+            ('Hosts', len(data.get('hosts') or [])),
+            ('IPs', len(data.get('ips') or [])),
+            ('ASNs', len(data.get('asns') or [])),
+            ('Netblocks', len(data.get('netblocks') or [])),
+            ('Endpoints', len(data.get('endpoints') or [])),
+            ('Technologies', len(data.get('technologies') or [])),
+            ('Findings', len(data.get('findings') or [])),
+        ]
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(label)}</td>'
+            f'<td style="color:#666;">{e(str(count))}</td></tr>'
+            for label, count in rows_src if count)
+        intro = ('<p style="font-size:13px;">External recon (BBOT) — assets fold '
+                 'into the inventory; findings into the vuln lifecycle.</p>')
+        table = (f'<table style="font-size:12px;">{rows}</table>' if rows else '')
+        return intro + table
+
+    @staticmethod
     def _render_trends_card(trends: list) -> str:
         """Offline HTML for the Trends card: sparklines of the project's metric
         history over its scans (F5). Reuses the offline-SVG ``sparkline`` (the
@@ -2155,6 +2259,15 @@ class CollectionRunner:
             body_parts.append(card(
                 'ASN Intelligence', render_asn_intel(asn_phase.get('data')),
                 asn_phase.get('status', '—'),
+            ))
+
+        # External recon (BBOT, opt-in) — in-scope event counts + contribution.
+        bbot_phase = phases.get('bbot')
+        if isinstance(bbot_phase, dict) and bbot_phase.get('status') == 'Success':
+            body_parts.append(card(
+                'External Recon (BBOT)', self._render_bbot_card(
+                    bbot_phase.get('data')),
+                bbot_phase.get('status', '—'),
             ))
 
         # Related Assets (infra-chain tail) — co-hosted external domains on our IP.

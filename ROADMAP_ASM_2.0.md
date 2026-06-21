@@ -534,6 +534,17 @@ continue adding scanners or GUI/design work under Epic 14.
   `findings_adapter.from_raw` без правок (CVE авто-мёрджится). Покрыто
   `tests/test_bbot_adapter.py` (11). Фолд в lifecycle/derive_assets — T1.4.
 - T1.4 Проводка opt-in фазы в CollectionRunner + Scope Guard + карточка отчёта.
+  **[ВЫПОЛНЕНО 2026-06-21]** — флаг `bbot` в `CollectionRunner.__init__`/`configure`,
+  фаза 7l `_phase_bbot` (запуск `BBOTRunner`, артефакт `bbot/bbot.json`, фолд
+  findings в vulns как `_phase_security`; severity → 3-бакетная шкала VulnScanner,
+  как nuclei/OSV), `bbot` в `ACTIVE_SCOPE_GUARDED_PHASES` (гейт Scope Guard) и в
+  auto-FIX scope-guard `_sync_findings` (`source='bbot'→phase_ok('bbot')`); BBOT-
+  экстрактор в `asset_adapter.derive_assets` (типизирует hosts/ips/asns/netblocks/
+  endpoints/technologies с `source='bbot'`, апекс-фильтр как cert/CT, last → native
+  wins on overlap; per-source GONE-гейтинг через существующий `source_in_scope`,
+  правок `asset_store` не потребовалось); карточка «External Recon (BBOT)» в
+  report.html. Покрыто `test_collection_runner`(+4)/`test_asset_adapter`(+3).
+  Monitor/web/GUI-паритет — T1.5.
 - T1.5 Monitor/web-паритет (read-поверхности уже общие через assets/findings).
 - T1.6 Тесты offline — фикстуры с сохранённым NDJSON, инъекция runner; проверка
   мягкой деградации при отсутствии бинаря и при выходе вне scope.

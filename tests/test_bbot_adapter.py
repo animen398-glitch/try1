@@ -66,10 +66,12 @@ def test_parse_findings_severity_tiers():
     findings = bbot_adapter.parse_bbot_jsonl(_SAMPLE)["findings"]
     vuln = next(f for f in findings if "SQL injection" in f["title"])
     finding = next(f for f in findings if "Interesting header" in f["title"])
-    assert vuln["severity"] == "high" and vuln["source"] == "bbot"
+    # vuln-phase scale is VulnScanner's 3 buckets (High/Medium/Info), so a folded
+    # BBOT finding counts in summarize/risk like nuclei/OSV do.
+    assert vuln["severity"] == "High" and vuln["source"] == "bbot"
     assert vuln["location"] == "https://www.evilcorp.com/search"
-    # a FINDING is the less-confirmed tier → info regardless of any severity
-    assert finding["severity"] == "info"
+    # a FINDING is the less-confirmed tier → Info regardless of any severity
+    assert finding["severity"] == "Info"
 
 
 def test_parse_finding_flows_through_findings_adapter():
@@ -81,8 +83,12 @@ def test_parse_finding_flows_through_findings_adapter():
               data={"description": "Outdated lib CVE-2021-44228",
                     "severity": "CRITICAL"},
               host="x.evilcorp.com", scope_distance=0))["findings"][0]
+    # CRITICAL collapses to the vuln scale's 'High' (same as a critical nuclei/OSV
+    # finding — the 3-level contract); from_raw keeps the raw label, normalizing
+    # to lowercase only at to_store() time.
     f = findings_adapter.from_raw(raw)
-    assert f.severity == "critical"
+    assert f.severity == "High"
+    assert f.to_store()["severity"] == "high"
     assert f.category == "vuln" and f.rule_id == "cve-2021-44228"
 
 

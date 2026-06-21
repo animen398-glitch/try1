@@ -4136,3 +4136,50 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     per-source GONE gating); report card + monitor parity. Plan first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F1 T1.4 - wire opt-in BBOT phase
+==============================================================================
+
+  STATUS: DONE. The BBOT adapter is now reachable as an opt-in collection phase
+    feeding the existing lifecycle. Pattern of _phase_osv/_phase_security/
+    _phase_dns; no new data model, no asset_store change.
+
+  IMPLEMENTED (core/collection_runner.py):
+    - bbot flag in __init__/configure (off by default); 'bbot' added to
+      ACTIVE_SCOPE_GUARDED_PHASES so the phase is gated by Scope Guard.
+    - run() phase 7l (after osv): _scope_skip_active('bbot') then _phase_bbot.
+    - _phase_bbot(url, scan_dir, report): resolves the target host, runs
+      BBOTRunner (degrades to Unavailable when the binary is absent), writes
+      bbot/bbot.json, folds data['findings'] into the vuln phase + re-summarizes
+      (raw dicts source='bbot' -> findings_adapter handles identity/CVE merge).
+      Severity is mapped in the adapter to VulnScanner's 3 buckets (High/Medium/
+      Info), matching how nuclei/OSV fold, so a BBOT finding counts in
+      summarize/risk. Guarded - never sinks the scan.
+    - _sync_findings auto-FIX scope-guard: source 'bbot' -> phase_ok('bbot')
+      (a skipped BBOT run must not auto-FIX its findings).
+    - report card "External Recon (BBOT)" (_render_bbot_card) in _render_html.
+
+  IMPLEMENTED (core/asset_adapter.py):
+    - derive_assets gained a BBOT extractor reading phases.bbot.data and
+      promoting hosts/ips/asns/netblocks/endpoints/technologies as typed assets
+      with attrs.source='bbot'. Hostnames reuse the cert/CT apex predicate
+      (_is_concrete_host); the apex itself is left to recon's domain asset.
+      Added LAST so native phases win identity on overlap (_dedup first-wins),
+      keeping their richer attrs + source. Per-source GONE gating already works
+      via the existing source_in_scope in _sync_assets (asset_store unchanged -
+      _gone_in_scope prefers source over type, F-A2).
+
+  SEVERITY NOTE: the vuln phase is a 3-level scale (High/Medium/Info); BBOT
+    CRITICAL/HIGH collapse to High, LOW to Info - identical to nuclei/OSV. The
+    store normalizes to lowercase at to_store() time as usual.
+
+  TESTS: test_collection_runner.py (+4: default-off, _phase_bbot folds+artifact,
+    unavailable degrades, card counts), test_asset_adapter.py (+3: typed assets
+    +source, apex/out-of-scope filter, native-wins-on-overlap), test_bbot_adapter
+    severity tests updated to the 3-bucket scale. Full suite green (exit 0, 0
+    FAILED; only the pre-existing Starlette/httpx warning); ruff clean.
+
+  NEXT: F1 T1.5 - monitor parity (monitor._build_run_fn bbot=opts.get('bbot')) +
+    GUI Collection checkbox + _collection_options; web console intentionally runs
+    the base pipeline (opt-in off), like osv/asn. Plan first.
+
+==============================================================================

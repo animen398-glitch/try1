@@ -129,6 +129,58 @@ def test_endpoint_shared_by_katana_and_audit_keeps_katana_source():
     assert attrs['source'] == 'katana'
 
 
+# ── EXT-OSINT F1: BBOT external-recon assets ──────────────────────────────────
+
+def _bbot_report(**bbot_data):
+    return {'url': 'https://example.com', 'domain': 'example.com',
+            'phases': {'bbot': {'status': 'Success', 'data': bbot_data}}}
+
+
+def test_bbot_assets_become_typed_assets():
+    r = _bbot_report(
+        hosts=['api.example.com'], ips=['9.9.9.9'], asns=['AS1'],
+        netblocks=['9.9.9.0/24'],
+        endpoints=[{'url': 'https://example.com/x'},
+                   {'url': 'https://example.com/y', 'unverified': True}],
+        technologies=[{'name': 'Nginx', 'version': '1.27'}])
+    assets = aa.derive_assets(r)
+    bt = _by_type(assets)
+    assert bt['subdomain'] == ['api.example.com']
+    assert bt['ip'] == ['9.9.9.9']
+    assert bt['asn'] == ['as1']
+    assert bt['netblock'] == ['9.9.9.0/24']
+    assert any('/x' in e for e in bt['endpoint'])
+    assert 'nginx' in bt['technology']
+    # every BBOT-derived asset carries source='bbot' for per-source GONE gating
+    sub = _attrs_for(assets, 'subdomain', 'api.example.com')
+    assert sub['source'] == 'bbot'
+    ep_y = _attrs_for(assets, 'endpoint',
+                      aa._normalize_value('endpoint', 'https://example.com/y'))
+    assert ep_y['unverified'] is True
+    tech = _attrs_for(assets, 'technology', 'nginx')
+    assert tech['version'] == '1.27'
+
+
+def test_bbot_hosts_filtered_by_apex():
+    # The apex itself is owned by recon's domain asset (not re-emitted) and an
+    # out-of-scope host is dropped — only concrete in-apex subdomains promote.
+    r = _bbot_report(hosts=['example.com', 'shop.example.com', 'evil.net',
+                            '*.example.com'])
+    bt = _by_type(aa.derive_assets(r))
+    assert bt.get('subdomain') == ['shop.example.com']
+    assert 'evil.net' not in str(bt)
+
+
+def test_bbot_overlap_keeps_native_source():
+    # A subdomain found by both the active probe and BBOT keeps the probe's
+    # source (derive is first-wins), so its GONE gating stays on the native phase.
+    r = _report()
+    r['phases']['bbot'] = {'status': 'Success', 'data': {
+        'hosts': ['api.example.com']}}
+    attrs = _attrs_for(aa.derive_assets(r), 'subdomain', 'api.example.com')
+    assert attrs['source'] == 'subdomains'
+
+
 # ── F-A1: richer attrs (TLS / probe / provider) folded from existing report ───
 
 def _attrs_for(assets, atype, value):

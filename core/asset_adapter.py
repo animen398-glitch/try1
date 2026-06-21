@@ -265,6 +265,43 @@ def derive_assets(report: Dict) -> List[Asset]:
         if u:
             out.append(Asset('endpoint', str(u), attrs={'source': 'security'}))
 
+    # External recon (BBOT, opt-in). The bbot_adapter already normalised the
+    # NDJSON into typed buckets at phases.bbot.data; promote them here so they
+    # join the inventory like any other source. Added LAST so native phases win
+    # identity on overlap (_dedup is first-wins) — a subdomain found by both the
+    # active probe and BBOT keeps its richer probe attrs + source. BBOT-only
+    # assets carry source='bbot', so the store gates their GONE on the 'bbot'
+    # phase (per-source, F-A2). Hostnames reuse the same apex predicate as
+    # cert/CT names; the apex itself is owned by recon's domain asset (skipped
+    # here to avoid a redundant duplicate).
+    bbot = _phase(report, 'bbot')
+    for host in bbot.get('hosts') or []:
+        h = str(host).strip().lower().rstrip('.')
+        if _is_concrete_host(h, apex):
+            out.append(Asset('subdomain', h, attrs={'source': 'bbot'}))
+    for ip in bbot.get('ips') or []:
+        if ip:
+            out.append(Asset('ip', str(ip), attrs={'source': 'bbot'}))
+    for asn in bbot.get('asns') or []:
+        if asn:
+            out.append(Asset('asn', str(asn), attrs={'source': 'bbot'}))
+    for nb in bbot.get('netblocks') or []:
+        if nb:
+            out.append(Asset('netblock', str(nb),
+                             attrs={'source': 'bbot', 'kind': 'bbot'}))
+    for ep in bbot.get('endpoints') or []:
+        u = ep.get('url') if isinstance(ep, dict) else ep
+        if u:
+            attrs = {'source': 'bbot'}
+            if isinstance(ep, dict) and ep.get('unverified'):
+                attrs['unverified'] = True
+            out.append(Asset('endpoint', str(u), attrs=attrs))
+    for t in bbot.get('technologies') or []:
+        if isinstance(t, dict) and t.get('name'):
+            attrs = {'source': 'bbot'}
+            attrs.update(_present(version=t.get('version')))
+            out.append(Asset('technology', t['name'], attrs=attrs))
+
     return _dedup(out)
 
 

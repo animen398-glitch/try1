@@ -36,9 +36,23 @@ from typing import Callable, Dict, List, Optional
 
 from core.external_tools import run_command
 from core.features import has_bbot
-from core.findings_adapter import normalize_severity
+from core.vuln_scanner import SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM
 
 BBOT_HOMEPAGE = 'https://github.com/blacklanternsecurity/bbot'
+
+# BBOT severity (CRITICAL/HIGH/MEDIUM/LOW) → the vuln scanner's 3-bucket scale,
+# matching how external_tools folds nuclei and osv_correlation folds OSV (so a
+# BBOT finding counts in VulnScanner.summarize and the risk engine like every
+# other vuln-phase finding; Critical collapses into High, Low into Info).
+_BBOT_SEVERITY = {
+    'critical': SEVERITY_HIGH, 'high': SEVERITY_HIGH,
+    'medium': SEVERITY_MEDIUM,
+    'low': SEVERITY_INFO, 'info': SEVERITY_INFO,
+}
+
+
+def _map_severity(sev) -> str:
+    return _BBOT_SEVERITY.get(str(sev or '').strip().lower(), SEVERITY_INFO)
 
 # Safe default: a passive subdomain-enum preset. The preset is *config*, not a
 # contract — it is injectable, so confirming/adjusting it later is a one-line
@@ -116,9 +130,10 @@ def _finding(obj: Dict, *, is_vuln: bool) -> Optional[Dict]:
     """Normalise a VULNERABILITY/FINDING event to our raw-finding shape.
 
     The result flows unchanged through ``findings_adapter.from_raw`` (a CVE in the
-    text auto-merges with nuclei/OSV). ``severity`` comes from the event for a
-    VULNERABILITY (BBOT scale = CRITICAL/HIGH/MEDIUM/LOW) and is ``info`` for a
-    FINDING (less-confirmed). Returns ``None`` if there is nothing to describe."""
+    text auto-merges with nuclei/OSV). ``severity`` is mapped to the vuln
+    scanner's 3-bucket scale: a VULNERABILITY's BBOT severity
+    (CRITICAL/HIGH→High, MEDIUM→Medium, LOW→Info) and a FINDING (less-confirmed)
+    is always Info. Returns ``None`` if there is nothing to describe."""
     data = obj.get('data')
     host = str(obj.get('host') or '').strip()
     module = str(obj.get('module') or '').strip()
@@ -136,7 +151,7 @@ def _finding(obj: Dict, *, is_vuln: bool) -> Optional[Dict]:
         or ('BBOT vulnerability' if is_vuln else 'BBOT finding')
     if not (description or host):
         return None
-    severity = normalize_severity(sev) if is_vuln else 'info'
+    severity = _map_severity(sev) if is_vuln else SEVERITY_INFO
     detail = ' · '.join(p for p in (
         description if description and description != title else '',
         f'host: {host}' if host else '',

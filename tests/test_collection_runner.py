@@ -1137,3 +1137,73 @@ def test_render_html_escapes_values():
     html = r._render_html(report)
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# ── EXT-OSINT F1 T1.4: BBOT phase wiring ──────────────────────────────────────
+
+def test_bbot_default_off():
+    assert CollectionRunner().bbot is False
+    assert CollectionRunner(bbot=True).bbot is True
+
+
+_BBOT_DATA = {
+    'hosts': ['api.x.com'], 'ips': ['1.2.3.4'], 'asns': ['AS1'],
+    'netblocks': ['1.2.3.0/24'], 'endpoints': [{'url': 'https://x.com/a'}],
+    'technologies': [{'name': 'nginx'}],
+    'findings': [{'severity': 'High', 'title': 'SQLi in /s',
+                  'detail': 'x', 'source': 'bbot',
+                  'location': 'https://x.com/s'}],
+    'stats': {'events': 7, 'in_scope': 7, 'affiliates_skipped': 1, 'ignored': 0},
+}
+
+
+def _fake_bbot(monkeypatch, *, available=True, data=None):
+    import core.bbot_adapter as ba
+
+    class _Fake:
+        def __init__(self, *a, **k):
+            pass
+
+        def set_progress_callback(self, cb):
+            pass
+
+        def available(self):
+            return available
+
+        def run(self, target):
+            assert available, "run() must not be called when unavailable"
+            return {'status': 'Success', 'target': target, 'truncated': False,
+                    'data': data if data is not None else _BBOT_DATA}
+
+    monkeypatch.setattr(ba, 'BBOTRunner', _Fake)
+
+
+def test_phase_bbot_folds_findings_and_writes_artifact(tmp_path, monkeypatch):
+    _fake_bbot(monkeypatch)
+    r = CollectionRunner(bbot=True)
+    report = {'domain': 'x.com',
+              'phases': {'vulns': {'status': 'Success', 'findings': [],
+                                   'summary': {}}}}
+    phase = r._phase_bbot('https://x.com', tmp_path, report)
+
+    assert phase['status'] == 'Success'
+    assert (tmp_path / 'bbot' / 'bbot.json').exists()
+    # findings fold into the vuln phase (raw source='bbot') + summary recomputed
+    folded = report['phases']['vulns']['findings']
+    assert any(f.get('source') == 'bbot' for f in folded)
+    assert report['phases']['vulns']['summary']['high'] >= 1
+
+
+def test_phase_bbot_unavailable_degrades(tmp_path, monkeypatch):
+    _fake_bbot(monkeypatch, available=False)
+    phase = CollectionRunner(bbot=True)._phase_bbot(
+        'https://x.com', tmp_path, {'domain': 'x.com', 'phases': {}})
+    assert phase['status'] == 'Unavailable'
+    assert not (tmp_path / 'bbot').exists()
+
+
+def test_render_bbot_card_counts():
+    body = CollectionRunner._render_bbot_card(_BBOT_DATA)
+    assert 'In-scope events' in body
+    assert 'Findings' in body
+    assert CollectionRunner._render_bbot_card('not a dict') == ''
