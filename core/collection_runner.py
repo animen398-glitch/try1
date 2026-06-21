@@ -234,6 +234,19 @@ class CollectionRunner:
         if self.progress_callback:
             self.progress_callback(msg)
 
+    @staticmethod
+    def _warn(report: Dict, stage: str, message: str, error: Optional[Exception] = None) -> None:
+        """Attach a non-fatal pipeline warning to the report.
+
+        Best-effort stages intentionally do not fail a scan, but they should stay
+        visible to downstream readers. The shape is compact and JSON-friendly so
+        report.json, Markdown/HTML renderers and future exports can consume it.
+        """
+        item = {'stage': stage, 'message': message}
+        if error is not None:
+            item['error'] = str(error)
+        report.setdefault('warnings', []).append(item)
+
     def _cancelled(self, report: Dict) -> bool:
         if self._cancel.is_set():
             report['cancelled'] = True
@@ -480,6 +493,7 @@ class CollectionRunner:
             report['trends_summary'] = _trends.trend_summary(report['trends'])
         except Exception as ex:  # noqa: BLE001 — trends are best-effort
             self._log(f'  ! trend series failed: {ex}')
+            self._warn(report, 'trends', 'Trend series could not be built', ex)
             report['trends'] = []
             report['trends_summary'] = {}
 
@@ -503,6 +517,7 @@ class CollectionRunner:
             report['report_md'] = str(md_path)
         except Exception as e:  # noqa: BLE001 — markdown is a nice-to-have artifact
             self._log(f'  Markdown report failed: {e}')
+            self._warn(report, 'markdown', 'Markdown report could not be written', e)
 
         html_path.write_text(self._render_html(report), encoding='utf-8')
         json_path.write_text(
@@ -520,6 +535,7 @@ class CollectionRunner:
             )
         except Exception as e:  # noqa: BLE001 — indexing must not fail the scan
             self._log(f'  ! project index failed: {e}')
+            self._warn(report, 'project_index', 'Project metadata index could not be updated', e)
 
         self._log(f'Отчёт: {html_path}')
         return report
@@ -541,6 +557,7 @@ class CollectionRunner:
                       f"finding refs {refs_attached}")
         except Exception as e:  # noqa: BLE001 - evidence is best-effort
             report['evidence'] = {'error': str(e)}
+            self._warn(report, 'evidence', 'Evidence manifest could not be written', e)
             self._log(f'  Evidence manifest failed: {e}')
 
     def _phase_recon(self, url: str, project_dir: Path) -> Dict:
@@ -1198,6 +1215,7 @@ class CollectionRunner:
                           f'(объединено по идентичности/CVE)')
         except Exception as e:  # noqa: BLE001 — dedup must not fail a scan
             self._log(f'  Findings dedup failed: {e}')
+            self._warn(report, 'findings_dedup', 'Finding deduplication failed', e)
 
     def _sync_findings(self, report: Dict, project, scan_id: str) -> None:
         """Persist this scan's findings + run the F1 lifecycle, then stamp each
@@ -1279,6 +1297,7 @@ class CollectionRunner:
                       f"auto-fixed {len(result['resolved'])})")
         except Exception as e:  # noqa: BLE001 — findings sync must not fail a scan
             self._log(f'  Findings sync failed: {e}')
+            self._warn(report, 'findings_sync', 'Findings lifecycle sync failed', e)
 
     def _sync_assets(self, report: Dict, project, scan_id: str) -> None:
         """Persist this scan's assets + run their lifecycle (Asset Inventory).
@@ -1327,6 +1346,7 @@ class CollectionRunner:
                       f"ушло {len(result['gone'])})")
         except Exception as e:  # noqa: BLE001 — asset sync must not fail a scan
             self._log(f'  Asset sync failed: {e}')
+            self._warn(report, 'asset_sync', 'Asset lifecycle sync failed', e)
 
     def _build_correlation(self, report: Dict, project) -> None:
         """Derive cross-entity correlation for the report (F-K2, best-effort).
@@ -1351,6 +1371,7 @@ class CollectionRunner:
                       f"exposed: {summary.get('exposed_assets', 0)}")
         except Exception as e:  # noqa: BLE001 — correlation must not fail a scan
             self._log(f'  Correlation failed: {e}')
+            self._warn(report, 'correlation', 'Finding-to-asset correlation failed', e)
 
     def _build_asset_graph(self, report: Dict, project) -> None:
         """Derive the asset relationship graph + exposure clusters (EPIC 5,
@@ -1378,6 +1399,7 @@ class CollectionRunner:
                          if summary.get('related') else ''))
         except Exception as e:  # noqa: BLE001 — asset graph must not fail a scan
             self._log(f'  Asset graph failed: {e}')
+            self._warn(report, 'asset_graph', 'Asset graph derivation failed', e)
 
     def _build_related_assets(self, report: Dict) -> None:
         """Derive the co-hosted Related Assets view (infra-chain tail, best-effort):
@@ -1393,6 +1415,7 @@ class CollectionRunner:
                       f"на {view.get('shared_ip') or '—'}")
         except Exception as e:  # noqa: BLE001 — related assets must not fail a scan
             self._log(f'  Related assets failed: {e}')
+            self._warn(report, 'related_assets', 'Related assets derivation failed', e)
 
     @classmethod
     def _render_related_assets_card(cls, rdata: Dict) -> str:
@@ -1431,6 +1454,7 @@ class CollectionRunner:
                       f"{summary.get('high_criticality', 0)} критичных")
         except Exception as e:  # noqa: BLE001 — criticality must not fail a scan
             self._log(f'  Asset criticality failed: {e}')
+            self._warn(report, 'asset_criticality', 'Asset criticality derivation failed', e)
 
     @classmethod
     def _render_asset_criticality_card(cls, cdata: Dict) -> str:
@@ -1475,6 +1499,7 @@ class CollectionRunner:
                       f"{summary.get('exposed_assets', 0)} высокой экспозиции")
         except Exception as e:  # noqa: BLE001 — exposure must not fail a scan
             self._log(f'  Asset exposure failed: {e}')
+            self._warn(report, 'asset_exposure', 'Asset exposure derivation failed', e)
 
     @classmethod
     def _render_exposure_card(cls, xdata: Dict) -> str:
@@ -1518,6 +1543,7 @@ class CollectionRunner:
                       f"{summary.get('high_confidence', 0)} высокой уверенности")
         except Exception as e:  # noqa: BLE001 — intelligence must not fail a scan
             self._log(f'  Intelligence failed: {e}')
+            self._warn(report, 'intelligence', 'Core intelligence derivation failed', e)
 
     def _build_attack_paths(self, report: Dict, project) -> None:
         """Derive lateral Attack Paths (EPIC 11, best-effort): entry → pivot →
@@ -1537,6 +1563,7 @@ class CollectionRunner:
                       f"{summary.get('critical_paths', 0)} критичных")
         except Exception as e:  # noqa: BLE001 — attack paths must not fail a scan
             self._log(f'  Attack paths failed: {e}')
+            self._warn(report, 'attack_paths', 'Attack path derivation failed', e)
 
     def _build_accuracy(self, report: Dict, project) -> None:
         """Score the scan's detection accuracy (MODULE 1, best-effort): a unified
@@ -1568,6 +1595,7 @@ class CollectionRunner:
                       f"{summary.get('high_confidence', 0)} высокой уверенности")
         except Exception as e:  # noqa: BLE001 — accuracy must not fail a scan
             self._log(f'  Scan accuracy failed: {e}')
+            self._warn(report, 'accuracy', 'Scan accuracy derivation failed', e)
 
     def _build_technology_risk(self, report: Dict) -> None:
         """Derive technology-risk posture (EPIC 15, best-effort).
@@ -1589,6 +1617,7 @@ class CollectionRunner:
                       f"{summary.get('items', 0)} item(s)")
         except Exception as e:  # noqa: BLE001 — tech risk must not fail a scan
             self._log(f'  Technology risk failed: {e}')
+            self._warn(report, 'technology_risk', 'Technology risk derivation failed', e)
 
     @classmethod
     def _render_accuracy_card(cls, adata: Dict) -> str:

@@ -188,6 +188,10 @@ def format_event(ev: Dict) -> str:
         suffix = f' · {reason}' if reason else ''
         return (f'[monitor] {slug}: {ev.get("alerts", 0)} {label}, '
                 f'{ev.get("sent", 0)} sent{suffix}')
+    if kind == 'alert_error':
+        akind = ev.get('alert_kind')
+        label = f'alert ({akind})' if akind else 'alert'
+        return f'[monitor] {slug}: {label} error: {ev.get("error", "")}'
     return f'[monitor] {slug}: {kind}'
 
 
@@ -356,12 +360,17 @@ def run_project(project, run_fn: Callable[[str], Dict],
 def _dispatch_alerts(slug: str, diff: Dict, alert_config: Dict, emit) -> Dict:
     """Send alerts for a diff (lazy import keeps monitor's network surface
     opt-in: core.alerts is only pulled in when alerts are actually configured)."""
-    from core import alerts
-    summary = alerts.notify(alert_config, slug, diff)
-    if summary.get('alerts'):
-        emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
-             reason=summary.get('reason'))
-    return summary
+    try:
+        from core import alerts
+        summary = alerts.notify(alert_config, slug, diff)
+        if summary.get('alerts'):
+            emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
+                 reason=summary.get('reason'), alert_kind='diff')
+        return summary
+    except Exception as e:   # noqa: BLE001 — alerting must never sink a monitor run
+        emit('alert_error', alert_kind='diff', error=str(e))
+        return {'alerts': 0, 'sent': 0, 'reason': 'diff alert failed',
+                'error': str(e)}
 
 
 def _dispatch_finding_based_alerts(project, slug: str, alert_config: Dict, emit, *,
@@ -381,8 +390,10 @@ def _dispatch_finding_based_alerts(project, slug: str, alert_config: Dict, emit,
             emit('alerts', alerts=summary['alerts'], sent=summary.get('sent', 0),
                  reason=summary.get('reason'), alert_kind=kind)
         return summary
-    except Exception:   # noqa: BLE001 — alerting must never sink a monitor run
-        return None
+    except Exception as e:   # noqa: BLE001 — alerting must never sink a monitor run
+        emit('alert_error', alert_kind=kind, error=str(e))
+        return {'alerts': 0, 'sent': 0, 'reason': f'{kind} alert failed',
+                'error': str(e)}
 
 
 def _advance_schedule(project, scan_id: Optional[str], now: datetime,

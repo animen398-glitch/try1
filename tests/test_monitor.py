@@ -269,6 +269,27 @@ def test_run_project_attaches_evidence_integrity_warning(tmp_path):
     assert any(e['type'] == 'evidence_integrity' for e in events)
 
 
+def test_finding_alert_failure_is_reported(tmp_path):
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    events = []
+
+    def collect(store, slug):
+        raise RuntimeError('store down')
+
+    def emit(kind, **kw):
+        events.append({'type': kind, 'slug': 'x.com', **kw})
+
+    out = monitor._dispatch_finding_based_alerts(
+        project, 'x.com', {'enabled': True}, emit,
+        collect=collect, notify=lambda cfg, slug, ev: {}, kind='sla')
+
+    assert out['error'] == 'store down'
+    assert out['reason'] == 'sla alert failed'
+    assert events == [{'type': 'alert_error', 'slug': 'x.com',
+                       'alert_kind': 'sla', 'error': 'store down'}]
+    assert 'store down' in monitor.format_event(events[0])
+
+
 def test_run_project_records_last_status_ok_then_failed(tmp_path):
     project = ProjectStore(tmp_path).get_or_create('https://x.com')
     project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))

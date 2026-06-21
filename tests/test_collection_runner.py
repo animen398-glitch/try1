@@ -27,6 +27,25 @@ def test_cancel_sets_event():
     assert report["cancelled"] is True
 
 
+def test_best_effort_failure_records_report_warning(monkeypatch):
+    import core.findings_adapter as adapter
+
+    def boom(findings):
+        raise RuntimeError("dedup broke")
+
+    monkeypatch.setattr(adapter, "dedup_findings", boom)
+    report = {"phases": {"vulns": {"findings": [{"title": "x"}],
+                                   "summary": {}}}}
+
+    CollectionRunner()._dedup_vuln_findings(report)
+
+    assert report["warnings"] == [{
+        "stage": "findings_dedup",
+        "message": "Finding deduplication failed",
+        "error": "dedup broke",
+    }]
+
+
 def test_default_collection_has_subdomains_off():
     assert CollectionRunner().subdomains is False
 
