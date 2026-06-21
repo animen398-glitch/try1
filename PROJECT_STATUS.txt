@@ -4087,3 +4087,52 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     questions against real saved output. Implementation after plan approval.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F1 T1.3 - core/bbot_adapter.py
+==============================================================================
+
+  STATUS: DONE. Pure NDJSON parser + thin subprocess runner, mirroring the
+    external_tools.py nuclei/katana pattern. AGPL-clean: BBOT is never imported,
+    only run as a subprocess and its JSON output normalised into our shapes.
+
+  IMPLEMENTED (core/bbot_adapter.py):
+    - parse_bbot_jsonl(text): pure. Buckets in-scope events into
+      hosts/ips/asns/netblocks/endpoints/technologies/findings + stats.
+      Defensive data reading (str | dict | host fallback), case-insensitive
+      dedup of scalar hosts/ips/asns/netblocks, malformed-line tolerance.
+      Scope filter: scope_distance 0/missing = in-scope kept; >=1 affiliate
+      counted + skipped (not an owned asset - mirrors asn_intel co-hosted).
+      Endpoints carry an 'unverified' flag for URL_UNVERIFIED. Findings:
+      VULNERABILITY keeps its BBOT severity (CRITICAL/HIGH/MEDIUM/LOW via
+      findings_adapter.normalize_severity), FINDING -> info; emitted as raw
+      dicts {severity,title,detail?,location?,source:'bbot'} that flow UNCHANGED
+      through findings_adapter.from_raw (a CVE in the text auto-merges with
+      nuclei/OSV).
+    - build_command(target, preset, passive, extra_args): safe default
+      -p subdomain-enum -rf passive --strict-scope -om json --silent. The
+      first-run interactive dep-prompt flag is deliberately NOT guessed (T1.1
+      open Q#2) - injected via extra_args once confirmed against the real binary.
+    - BBOTRunner: never raises; injectable runner (subprocess seam) + detector
+      (availability) so it is fully unit-tested offline with canned NDJSON.
+      run() -> {status: Unavailable|Error|Success, target, data?, truncated?,
+      error?}.
+
+  DESIGN NOTE: the adapter outputs a flat JSON-serialisable intermediate for
+    report['phases']['bbot']['data']. Apex classification of hostnames (domain
+    vs subdomain) and the fold into AssetStore/FindingsStore live in the
+    consumer (T1.4 asset_adapter + collection_runner), which already owns the
+    target apex - so this module stays apex-agnostic and pure (no duplicated
+    apex logic).
+
+  TESTS: tests/test_bbot_adapter.py (11) - buckets+scope, stats, severity tiers,
+    flows-through-findings_adapter (incl. CVE canonicalization), malformed/
+    missing tolerance, dict/host scalar fallback, build_command safe-passive +
+    active/extra-args, runner unavailable/success/error. 45 passed across
+    bbot+features+findings_adapter+external_tools; ruff clean. No deps/network/
+    .exe impact.
+
+  NEXT: F1 T1.4 - wire an opt-in 'bbot' phase into CollectionRunner (pattern of
+    _phase_osv/_phase_asn) gated by Scope Guard: fold findings into vulns and add
+    a guarded bbot extractor to asset_adapter.derive_assets (source='bbot',
+    per-source GONE gating); report card + monitor parity. Plan first.
+
+==============================================================================

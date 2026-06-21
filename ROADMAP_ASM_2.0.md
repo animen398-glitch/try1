@@ -525,6 +525,14 @@ continue adding scanners or GUI/design work under Epic 14.
   pip-зависимость). Покрыто `tests/test_features.py`.
 - T1.3 `core/bbot_adapter.py` — запуск + парсинг NDJSON → нормализованные DTO
   (дедуп через существующие fingerprint/identity, без новой identity-схемы).
+  **[ВЫПОЛНЕНО 2026-06-21]** — pure `parse_bbot_jsonl` (бакетит in-scope события в
+  hosts/ips/asns/netblocks/endpoints/technologies/findings; защитное чтение `data`,
+  scope-фильтр, severity-тиры VULNERABILITY/FINDING) + `build_command` (безопасный
+  пассив: `-rf passive --strict-scope -om json --silent`, без guessed-флагов) +
+  `BBOTRunner` (never-raise, инъектируемые `runner`/`detector` → оффлайн-тесты).
+  Findings эмитятся «сырыми» dict'ами `source='bbot'` → проходят
+  `findings_adapter.from_raw` без правок (CVE авто-мёрджится). Покрыто
+  `tests/test_bbot_adapter.py` (11). Фолд в lifecycle/derive_assets — T1.4.
 - T1.4 Проводка opt-in фазы в CollectionRunner + Scope Guard + карточка отчёта.
 - T1.5 Monitor/web-паритет (read-поверхности уже общие через assets/findings).
 - T1.6 Тесты offline — фикстуры с сохранённым NDJSON, инъекция runner; проверка
