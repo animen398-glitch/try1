@@ -275,13 +275,19 @@ def _secret_sources(finding: Dict) -> set:
 
 
 def _is_audit_only_secret(finding: Dict) -> bool:
-    """True when a secret finding was produced only by the deep-JS audit and so has
-    no Scan Diff representation: it carries ``secret-audit`` but not the api-phase
-    ``secret`` source (whose secrets the diff's ``new_secret`` already covers)."""
+    """True when a secret finding has no Scan Diff representation, so the diff-based
+    ``new_secret`` channel can never alert on it.
+
+    The diff's ``secrets`` section reads only the api phase (``source='secret'``), so
+    any secret produced by a *different* source has no diff event: the deep-JS audit
+    (``secret-audit``) and Document Intelligence (``source='document'``) both qualify,
+    as would any future non-api secret producer. A secret carrying the api ``secret``
+    source (alone or merged) is diff-covered and excluded here to avoid a double
+    alert."""
     if finding.get('category') != 'secret':
         return False
     sources = _secret_sources(finding)
-    return 'secret-audit' in sources and 'secret' not in sources
+    return bool(sources) and 'secret' not in sources
 
 
 def _secret_type(finding: Dict) -> str:
@@ -294,10 +300,11 @@ def _secret_type(finding: Dict) -> str:
 
 
 def collect_secret_alerts(store, project: str) -> List[Dict]:
-    """New audit-only-secret alert events for a project (one-shot, deduped via ``store``).
+    """New non-diff-secret alert events for a project (one-shot, deduped via ``store``).
 
-    A secret found only by the deep-JS SecurityAuditor never appears in a Scan Diff
-    (the diff's secret section reads only the api phase), so the diff-based
+    A secret found only by a non-api producer — the deep-JS SecurityAuditor
+    (``secret-audit``) or Document Intelligence (``document``) — never appears in a
+    Scan Diff (the diff's secret section reads only the api phase), so the diff-based
     ``new_secret`` channel misses it. Detected here from the persisted findings: the
     active secret findings with no api-phase source (see ``_is_audit_only_secret``),
     narrowed to those not yet alerted for their current open episode

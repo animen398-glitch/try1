@@ -283,6 +283,20 @@ def test_collect_secret_alerts_skips_diff_covered_api_secret(tmp_path):
     assert alerts.collect_secret_alerts(s2, 'proj') == []
 
 
+def test_collect_secret_alerts_document_only_secret(tmp_path):
+    # A secret found only by Document Intelligence (source 'document') has no Scan
+    # Diff representation either (the diff's secrets section reads only the api
+    # phase), so the finding-based channel must alert it — same gap as 'secret-audit'.
+    s = _secret_store(tmp_path / 'doc.db',
+                      _secret_finding_dict(source='document',
+                                           location='https://x.com/leak.pdf'))
+    out = alerts.collect_secret_alerts(s, 'proj')
+    assert len(out) == 1
+    assert out[0]['type'] == 'new_secret' and 'AWS Access Key' in out[0]['title']
+    # One-shot: a second run yields nothing new.
+    assert alerts.collect_secret_alerts(s, 'proj') == []
+
+
 def test_collect_secret_alerts_tiers_generic(tmp_path):
     # A generic/opaque key tiers down to new_secret_generic (medium), like the diff.
     s = _secret_store(tmp_path / 'g.db', _secret_finding_dict(stype='Generic API Key'))

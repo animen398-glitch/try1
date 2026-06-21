@@ -1237,6 +1237,23 @@ overlap сохраняет katana-source; audit-only гейтит GONE на фа
 без новых зависимостей. Покрыто `test_asset_adapter` (audit-endpoint→актив source=security
 / shared с katana сохраняет katana-source), `test_attack_surface` (katana+audit мёрж+дедуп).
 
+**Document-Intelligence секреты в alert-канал (хвост secret-convergence) — `[ЗАКРЫТ]`.**
+Backend-фаза, баг-фикс. Document Intelligence (opt-in, F2) эмитит секреты как
+первоклассные F1-находки (`category='secret'`, `source='document'`), но они не
+алертились **никаким** каналом: diff-канал `new_secret` читает секции `secrets`
+только из api-фазы (`source='secret'`), а finding-based `_is_audit_only_secret`
+узнавал **лишь** `'secret-audit'` (deep-JS аудит). Документ-only секрет → находка
+есть, риск считается, но **алерта нет** — тот же пробел, что F-S6 закрыл для
+secret-audit, переоткрытый позже добавленной document-фазой. Фикс: `_is_audit_only_
+secret` обобщён с «несёт secret-audit» на «секрет-находка БЕЗ api-источника
+`secret`» (`bool(sources) and 'secret' not in sources`) — дифф покрывает **только**
+api-секреты, поэтому любой иной продьюсер (secret-audit / document / будущие) не
+diff-covered и корректно идёт в one-shot finding-канал. api-секреты (одни или
+merged с api) по-прежнему исключены (нет двойного алерта). `collect_secret_alerts`/
+`record_secret_alerts`/monitor-проводка не тронуты — generic-предикат пускает
+document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
+api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
+
 **BBOT recon → attack-surface breadth — `[ЗАКРЫТ]`.** Backend-фаза, тот же
 асимметричный пробел, что закрыл «Security-audit endpoints → surface» — но для
 opt-in внешнего recon BBOT. BBOT-хосты/эндпоинты/технологии уже промоутятся в
