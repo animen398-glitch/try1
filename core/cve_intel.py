@@ -90,6 +90,8 @@ def _enrich(vuln: Dict, store: CVEStore, nvd_get: Callable,
             record['severity'] = detail['severity']   # NVD severity is authoritative
         if detail.get('summary') and not record.get('summary'):
             record['summary'] = detail['summary']
+        if detail.get('cwe'):
+            record['cwe'] = detail['cwe']   # authoritative per-CVE weakness id(s)
         record['source'] = 'osv+nvd'
     return record
 
@@ -126,7 +128,7 @@ def to_findings(name: str, version: str, vulns: List[Dict]) -> List[Dict]:
 
     Same producer tag (``dependency-audit``) and CVE ``discriminator`` as the OSV
     path, so F1 / the cross-scanner CVE dedup / risk treat them unchanged; the
-    detail now carries the CVSS score and published date for display."""
+    detail now carries the CVSS score, published date and CWE(s) for display."""
     findings: List[Dict] = []
     for v in vulns:
         cves = v.get('cve') or []
@@ -137,6 +139,8 @@ def to_findings(name: str, version: str, vulns: List[Dict]) -> List[Dict]:
             bits.append(f"CVSS {v['cvss']}")
         if v.get('published'):
             bits.append(str(v['published']))
+        if v.get('cwe'):
+            bits.append(', '.join(v['cwe']))
         meta = f" [{' · '.join(bits)}]" if bits else ''
         summary = v.get('summary') or 'Известная уязвимость.'
         suffix = f' ({label})' if label else ''

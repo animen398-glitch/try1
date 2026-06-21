@@ -19,9 +19,14 @@ scoring system.
 """
 
 import json
-from typing import Callable, Dict, Optional
+import re
+from typing import Callable, Dict, List, Optional
 
 from core.osv_correlation import _bucket_from_label, _bucket_from_score
+
+# A real CWE identifier (CWE-79, …); NVD also emits placeholders like
+# "NVD-CWE-noinfo" / "NVD-CWE-Other" which carry no weakness and are skipped.
+_CWE_RE = re.compile(r'^CWE-\d+$')
 from utils.browser_utils import SessionBuilder
 from utils.http_retry import urlopen_text
 
@@ -81,13 +86,29 @@ def _best_cvss(metrics: Dict) -> tuple:
     return None, ''
 
 
+def _extract_cwes(cve: Dict) -> List[str]:
+    """The CWE id(s) NVD attributes to a CVE (``weaknesses[].description[].value``),
+    de-duplicated and order-preserved. Placeholders (``NVD-CWE-noinfo``/``-Other``)
+    are skipped — only concrete ``CWE-NNN`` ids are kept."""
+    out: List[str] = []
+    for w in cve.get('weaknesses') or []:
+        if not isinstance(w, dict):
+            continue
+        for d in w.get('description') or []:
+            val = str(d.get('value') or '').strip() if isinstance(d, dict) else ''
+            if _CWE_RE.match(val) and val not in out:
+                out.append(val)
+    return out
+
+
 def _parse_nvd(text: str, cve_id: str) -> Optional[Dict]:
-    """NVD ``/cves/2.0`` response → ``{cvss, severity, published, summary, source}``
-    for ``cve_id``, or ``None`` when absent/malformed.
+    """NVD ``/cves/2.0`` response → ``{cvss, severity, published, summary, cwe,
+    source}`` for ``cve_id``, or ``None`` when absent/malformed.
 
     ``severity`` is the 3-bucket vocabulary (High/Medium/Info) via the shared OSV
     mapping — preferring the CVSS severity label, falling back to the numeric
-    score; ``cvss`` keeps the exact numeric base score for display."""
+    score; ``cvss`` keeps the exact numeric base score for display; ``cwe`` is the
+    authoritative per-CVE weakness id(s) NVD attributes (empty list when none)."""
     try:
         doc = json.loads(text)
     except (ValueError, TypeError):
@@ -110,7 +131,8 @@ def _parse_nvd(text: str, cve_id: str) -> Optional[Dict]:
                 break
         published = str(cve.get('published') or '')[:10]   # date part only
         return {'cvss': score, 'severity': severity, 'published': published,
-                'summary': summary.strip()[:300], 'source': 'nvd'}
+                'summary': summary.strip()[:300], 'cwe': _extract_cwes(cve),
+                'source': 'nvd'}
     return None
 
 

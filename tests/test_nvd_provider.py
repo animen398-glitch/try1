@@ -11,15 +11,19 @@ from core import nvd_provider as nvd
 
 
 def _resp(cve_id='CVE-2020-11022', *, score=6.1, severity='MEDIUM',
-          metric='cvssMetricV31', published='2020-04-29T20:15Z', desc='jQuery XSS'):
-    return json.dumps({'vulnerabilities': [{'cve': {
+          metric='cvssMetricV31', published='2020-04-29T20:15Z', desc='jQuery XSS',
+          weaknesses=None):
+    cve = {
         'id': cve_id,
         'published': published,
         'descriptions': [{'lang': 'es', 'value': 'otra'},
                          {'lang': 'en', 'value': desc}],
         'metrics': {metric: [{'cvssData': {'baseScore': score,
                                            'baseSeverity': severity}}]},
-    }}]})
+    }
+    if weaknesses is not None:
+        cve['weaknesses'] = weaknesses
+    return json.dumps({'vulnerabilities': [{'cve': cve}]})
 
 
 def test_enrich_parses_cvss_v31_summary_and_date():
@@ -27,6 +31,23 @@ def test_enrich_parses_cvss_v31_summary_and_date():
     assert d['cvss'] == 6.1 and d['severity'] == 'Medium'
     assert d['published'] == '2020-04-29'      # date part only
     assert d['summary'] == 'jQuery XSS' and d['source'] == 'nvd'
+
+
+def test_enrich_extracts_cwe_and_skips_placeholders():
+    # NVD weaknesses → concrete CWE ids; placeholders (NVD-CWE-noinfo) are skipped,
+    # and duplicates across primary/secondary entries are de-duplicated.
+    weaknesses = [
+        {'type': 'Primary', 'description': [{'lang': 'en', 'value': 'CWE-79'}]},
+        {'type': 'Secondary', 'description': [{'lang': 'en', 'value': 'CWE-79'}]},
+        {'type': 'Secondary', 'description': [{'lang': 'en', 'value': 'NVD-CWE-noinfo'}]},
+    ]
+    d = nvd.enrich('CVE-2020-11022', get=lambda url: _resp(weaknesses=weaknesses))
+    assert d['cwe'] == ['CWE-79']
+
+
+def test_enrich_cwe_empty_when_absent():
+    d = nvd.enrich('CVE-2020-11022', get=lambda url: _resp())
+    assert d['cwe'] == []
 
 
 def test_enrich_high_severity_bucket():

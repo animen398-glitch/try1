@@ -1254,6 +1254,19 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**NVD CWE извлекается и сёрфится в CVE-находке — `[ЗАКРЫТ]`.** Backend-фаза,
+fetched-but-lost. `nvd_provider._parse_nvd` тащил CVSS/severity/published/summary,
+но **ронял `weaknesses` (CWE)** — авторитетный per-CVE класс слабости (CWE-79/89…),
+который NVD-ответ уже несёт. Фикс: `_extract_cwes(cve)` (из `weaknesses[].
+description[].value`, фильтр `^CWE-\d+$` — плейсхолдеры `NVD-CWE-noinfo`/`-Other`
+скипаются, дедуп) → `cwe` в parse-результат → `_enrich` мёржит в CVE-record →
+`to_findings` добавляет CWE в `detail` рядом с CVSS/датой (тот же surface-паттерн).
+CWE теперь виден в Findings-UI/report-карточке/CSV. Pure, инъектируемый seam,
+без новых зависимостей. (Точный per-CVE CWE в SARIF/compliance-таксономию —
+естественный follow-up; generic `cwe-1395`/A06 уже корректен для компонента.)
+Покрыто `test_nvd_provider` (CWE+дедуп+плейсхолдеры/пусто), `test_cve_intel`
+(CWE в detail).
+
 **GitHub-issue body несёт CWE/OWASP-класс — `[ЗАКРЫТ]`.** Backend-фаза, третий
 (и последний) потребитель таксономии после SARIF/compliance. `github_issues.
 issue_body` нёс Severity/Category/Location, но **ронял OWASP/CWE** — хотя его же

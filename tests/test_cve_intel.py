@@ -90,6 +90,13 @@ def test_to_findings_carries_cvss_and_date():
     assert f['title'].startswith('Уязвимая библиотека: jQuery 1.11.0')
 
 
+def test_to_findings_carries_cwe_in_detail():
+    recs = [{'id': 'CVE-2020-11022', 'cve': ['CVE-2020-11022'], 'severity': 'Medium',
+             'cvss': 6.1, 'cwe': ['CWE-79'], 'summary': 'jQuery XSS'}]
+    f = cve_intel.to_findings('jQuery', '1.11.0', recs)[0]
+    assert 'CWE-79' in f['detail']
+
+
 def test_summarize_dedups_by_cve_and_counts_severity():
     correlated = {
         'jquery': [{'cve': ['CVE-1'], 'severity': 'High'},
