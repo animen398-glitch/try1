@@ -294,6 +294,22 @@ def test_sarif_rule_tags_carry_cwe_and_owasp_taxonomy():
     assert 'external/cwe/cwe-1395' in cve_tags and 'OWASP:A06:2021' in cve_tags
 
 
+def test_sarif_tags_prefer_explicit_finding_cwe():
+    # A finding carrying an explicit CWE in evidence (e.g. NVD's per-CVE weakness)
+    # surfaces that precise tag alongside the generic category-mapping one.
+    findings = [
+        {'category': 'vuln', 'rule_id': 'cve-2020-11022', 'severity': 'high',
+         'title': 'jQuery vulnerable', 'status': 'OPEN',
+         'evidence': {'cwe': ['CWE-79']}},
+    ]
+    rules = {r['id']: r for r in
+             _sarif(findings)['runs'][0]['tool']['driver']['rules']}
+    tags = rules['cve-2020-11022']['properties']['tags']
+    assert 'external/cwe/cwe-79' in tags          # explicit NVD weakness
+    assert 'external/cwe/cwe-1395' in tags         # generic component default too
+    assert tags.count('external/cwe/cwe-79') == 1  # de-duplicated
+
+
 def test_sarif_none_is_valid_empty_run():
     doc = _sarif(None)
     assert doc['runs'][0]['results'] == []

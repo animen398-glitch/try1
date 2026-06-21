@@ -168,6 +168,11 @@ class Finding:
     impact: str = ''
     remediation: str = ''
     evidence_refs: List[Dict[str, str]] = field(default_factory=list)
+    # Authoritative weakness id(s) a producer attributes to the finding (e.g. the
+    # per-CVE CWE NVD returns). Non-identity, optional — persisted in evidence so
+    # surfaces (SARIF tags) can carry the precise CWE instead of only the generic
+    # category default.
+    cwe: List[str] = field(default_factory=list)
 
     @property
     def id(self) -> str:
@@ -182,6 +187,8 @@ class Finding:
                     'remediation': self.remediation}
         if self.evidence_refs:
             evidence['evidence_refs'] = self.evidence_refs
+        if self.cwe:
+            evidence['cwe'] = self.cwe
         # Keep the cross-scanner reference list only when several tools agree.
         if len(self.sources) > 1:
             evidence['sources'] = self.sources
@@ -196,6 +203,22 @@ def _knowledge(raw: Dict) -> Dict[str, str]:
     """Producer-supplied description/impact/remediation (optional, F-O2)."""
     return {k: str(raw.get(k) or '') for k in ('description', 'impact',
                                                'remediation')}
+
+
+_CWE_RE = re.compile(r'^CWE-\d+$', re.IGNORECASE)
+
+
+def _cwe_list(raw: Dict) -> List[str]:
+    """Producer-supplied weakness id(s), normalized to ``CWE-NNN`` and de-duped.
+    Tolerant of a single string or a list; non-CWE junk is dropped."""
+    val = raw.get('cwe')
+    items = val if isinstance(val, (list, tuple)) else [val]
+    out: List[str] = []
+    for item in items:
+        s = str(item or '').strip().upper()
+        if _CWE_RE.match(s) and s not in out:
+            out.append(s)
+    return out
 
 
 def _evidence_refs(raw: Dict) -> List[Dict[str, str]]:
@@ -248,6 +271,7 @@ def from_raw(raw: Dict) -> Finding:
             detail=str(raw.get('detail', '')),
             sources=_sources_of(raw),
             evidence_refs=_evidence_refs(raw),
+            cwe=_cwe_list(raw),
             **_knowledge(raw),
         )
     category = _category(raw)
@@ -262,6 +286,7 @@ def from_raw(raw: Dict) -> Finding:
         detail=str(raw.get('detail', '')),
         sources=_sources_of(raw),
         evidence_refs=_evidence_refs(raw),
+        cwe=_cwe_list(raw),
         **_knowledge(raw),
     )
 

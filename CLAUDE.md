@@ -1254,6 +1254,22 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
+Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
+только в `detail`-строке находки (human-display), машинные поверхности (SARIF)
+не могли его взять структурно. Проведён структурный `cwe`-канал через модель
+находки (опц., обратносовместимо): `Finding.cwe` (dataclass) + `_cwe_list(raw)`
+(нормализация в `CWE-NNN`, дедуп, фильтр junk) в обеих ветках `from_raw` +
+`to_store` кладёт `cwe` в evidence; `cve_intel.to_findings` отдаёт структурный
+`cwe` рядом с detail; `report_export._sarif_tags` читает explicit `evidence.cwe` и
+эмитит точный тег (`external/cwe/cwe-79`) **рядом** с generic category-маппингом
+(`cwe-1395`), дедуп — теги аддитивны, точность строго лучше. compliance/issue-body
+оставлены на category-уровне (cwe-1395/A06 корректен для уязвимого компонента;
+SARIF — главный машинный потребитель CWE для GitHub code-scanning). Покрыто
+`test_findings_adapter` (cwe в evidence+нормализация+отсутствие), `test_cve_intel`
+(структурный cwe), `test_report_export` (explicit+generic тег+дедуп). Цепочка
+NVD→find→store→SARIF замкнута.
+
 **NVD CWE извлекается и сёрфится в CVE-находке — `[ЗАКРЫТ]`.** Backend-фаза,
 fetched-but-lost. `nvd_provider._parse_nvd` тащил CVSS/severity/published/summary,
 но **ронял `weaknesses` (CWE)** — авторитетный per-CVE класс слабости (CWE-79/89…),

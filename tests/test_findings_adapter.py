@@ -58,6 +58,22 @@ def test_knowledge_fields_absent_by_default():
     assert not any(k in ev for k in ('description', 'impact', 'remediation'))
 
 
+def test_cwe_carried_into_evidence_and_normalized():
+    # A producer's explicit CWE(s) persist in evidence, normalized to CWE-NNN and
+    # de-duplicated; non-CWE junk is dropped.
+    f = fa.from_raw({'title': 'x', 'severity': 'high', 'source': 'nuclei',
+                     'cwe': ['cwe-79', 'CWE-79', 'NVD-CWE-noinfo', '']})
+    assert f.cwe == ['CWE-79']
+    assert f.to_store()['evidence']['cwe'] == ['CWE-79']
+    # A single string is tolerated too.
+    assert fa.from_raw({'title': 'x', 'cwe': 'CWE-89'}).cwe == ['CWE-89']
+
+
+def test_cwe_absent_by_default():
+    ev = fa.from_raw({'title': 'x', 'severity': 'low'}).to_store()['evidence']
+    assert 'cwe' not in ev
+
+
 # ── rule_id stability (the identity property) ────────────────────────────────
 
 def test_evidence_refs_carried_into_store_evidence_safely():

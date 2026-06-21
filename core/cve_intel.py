@@ -144,13 +144,16 @@ def to_findings(name: str, version: str, vulns: List[Dict]) -> List[Dict]:
         meta = f" [{' · '.join(bits)}]" if bits else ''
         summary = v.get('summary') or 'Известная уязвимость.'
         suffix = f' ({label})' if label else ''
-        findings.append({
+        finding = {
             'severity': v.get('severity', 'Medium'),
             'title': f'Уязвимая библиотека: {name} {version}{suffix}',
             'detail': f"{v.get('id', '')}{meta}: {summary}".strip().strip(':').strip(),
             'source': _SOURCE,
             'discriminator': ident,
-        })
+        }
+        if v.get('cwe'):
+            finding['cwe'] = v['cwe']   # authoritative per-CVE weakness (NVD)
+        findings.append(finding)
     return findings
 
 

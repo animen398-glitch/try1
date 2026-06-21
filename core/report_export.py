@@ -374,10 +374,15 @@ def _sarif_tags(finding: Dict) -> List[str]:
     cat = str(finding.get('category') or '').strip()
     cls = classify(cat, finding.get('rule_id', ''), finding.get('title', ''))
     tags = [t for t in [cat] if t]
-    for cwe in cls.get('cwe') or []:
+    # The producer's explicit per-finding CWE (e.g. NVD's authoritative weakness for
+    # a CVE) is more precise than the category default — surface both, de-duplicated.
+    ev = finding.get('evidence') if isinstance(finding.get('evidence'), dict) else {}
+    explicit = ev.get('cwe') if isinstance(ev.get('cwe'), list) else []
+    for cwe in list(explicit) + list(cls.get('cwe') or []):
         num = str(cwe).lower().replace('cwe-', '').strip()
-        if num:
-            tags.append(f'external/cwe/cwe-{num}')
+        tag = f'external/cwe/cwe-{num}'
+        if num and tag not in tags:
+            tags.append(tag)
     if cls.get('owasp'):
         tags.append(f"OWASP:{cls['owasp']}")
     return tags
