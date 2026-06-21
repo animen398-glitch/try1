@@ -852,10 +852,82 @@ Awesome-AI-OSINT) поверх существующих сущностей — �
 **Tasks:**
 - T3.1 Research & Curation — отобрать из Awesome-AI-OSINT воркфлоу, ложащиеся на
   существующие движки; зафиксировать схему каталога. Документ, без кода.
+  **[ВЫПОЛНЕНО 2026-06-21]** → результат ниже («T3.1 — Research & Curation (результат)»).
 - T3.2 `core/osint_catalog.py` — декларативный каталог + резолв в существующие фазы.
 - T3.3 Поверхности (report-карточка / web read-эндпоинт) — паритет с прочими
   derive-вью; GUI опционально (память `feedback-internals-first-no-gui`).
 - T3.4 Тесты offline на каталог/резолв.
+
+---
+
+#### T3.1 — Research & Curation (результат)
+
+> Источник идей — таксономия **Awesome-AI-OSINT** (ubikron, GitHub); это
+> **каталог идей, не зависимость** (никакого кода не копируем/не тянем). Воркфлоу
+> отобраны по принципу: **включаем только то, что уже бэкается реальным движком в
+> нашем коде** (без новых сканеров, без обязательной сети). Каталог — чистый
+> derive-on-read (как `finding_knowledge`/`compliance`).
+
+**A. Что это и зачем.** Не сканер, а **декларативный каталог recon-воркфлоу**:
+«какие связки разведки имеют смысл и какими нашими движками они закрываются».
+Ценность в продукте — гайд/покрытие: при наличии `report` каталог аннотирует
+каждый воркфлоу статусом (какие его фазы реально отработали в скане → covered/
+partial/not-run) и доступностью движков. Ничего не запускает сам.
+
+**B. Маппинг таксономии Awesome-AI-OSINT → наши движки** (берём только покрытое):
+
+| Категория (Awesome-AI-OSINT) | Берём? | Наши движки/фазы |
+|---|---|---|
+| Digital Infrastructure (IP/subdomain/hosted infra) | ✅ | recon, subdomains, ct, asn_intel, infrastructure, bbot |
+| Human-Centric (email / contact / people) | ✅ (частично) | emails, employees, dns (email-auth) |
+| Information Monitoring (threat/change tracking) | ✅ | monitor, timeline, scan_diff, osv, cve_intel |
+| Integrated Platforms (CLI/frameworks) | ✅ (как enrichment) | bbot, documents |
+| Visual Intelligence (reverse-image/face/geoloc/GEOINT) | ❌ | нет движка; вне продукта (тяжёлый AI/сеть) |
+| Ethnicity/face analysis, dark-web monitoring | ❌ | вне scope/этики; нет движка |
+
+**C. Курированный набор воркфлоу (фаза 1, все бэкаются реальными движками):**
+1. **Infrastructure Recon** → `recon, subdomains, ct, asn_intel, infrastructure`
+   (+опц. `bbot`); даёт активы domain/subdomain/ip/asn/netblock + attack-surface.
+2. **Subdomain & Takeover Surface** → `subdomains` (active), `ct`, `dns`.
+3. **Email & People Surface** → `emails, employees, dns` (SPF/DMARC).
+4. **Technology & Dependency Risk** → `recon` (tech_fingerprint), `dependency_audit`,
+   `osv`, `cve_intel`.
+5. **Web Exposure Audit** → `security` (source maps/GraphQL), `cookies`,
+   `api` (secrets), `documents`.
+6. **Historical & Archive Recon** → `historical`, `ct`.
+7. **CVE / Threat Correlation** → `osv`, `cve_intel`, `dependency_audit`.
+8. **Continuous Monitoring & Change Tracking** → `monitor`, `timeline`, `scan_diff`.
+9. **External Recon Enrichment (BBOT)** → `bbot`.
+10. **Document Intelligence** → `documents`.
+
+**D. Схема записи каталога (контракт `core/osint_catalog.py`, T3.2).** Чистые dict'ы:
+```
+WORKFLOW = {
+  'id': 'infrastructure-recon',          # стабильный slug
+  'name': 'Infrastructure Recon',
+  'category': 'Digital Infrastructure',  # из таксономии Awesome-AI-OSINT
+  'goal': '…',                           # что выясняем
+  'engines': ['recon','subdomains','ct','asn_intel'],   # ОБЯЗАТЕЛЬНЫЕ наши фазы/движки
+  'optional': ['bbot'],                  # усиливающие, не обязательные
+  'produces': ['assets','attack_surface'],  # что появляется в lifecycle
+  'network': 'passive' | 'active',       # honest-флаг (active = нужен Scope Guard/opt-in)
+}
+```
+Резолвер (derive-on-read): `catalog()` → список воркфлоу; `assess(report)` →
+на каждый воркфлоу `{status: covered|partial|not_run, ran:[…], missing:[…]}` по
+`report['phases'][engine].status=='Success'`; `available(features)` — какие движки
+существуют (через `features.summary()` для опц. внешних: bbot/lift). Источник
+статуса фаз — тот же `report['phases']`, что читают exec_summary/scan_diff (I3).
+
+**E. Поверхности (T3.3).** report-карточка «OSINT Workflow Coverage» (что покрыто/
+частично/не запущено в этом скане) + web `GET /osint-catalog` (паритет с прочими
+read-вью). GUI — опционально/позже (память `feedback-internals-first-no-gui`).
+Каталог НЕ влияет на risk-score (чистый guide/coverage — display).
+
+**F. Зафиксированные «нет».** Каталог ничего не сканирует и не ходит в сеть сам;
+не вводит новых движков/сканеров; не копирует код/данные из Awesome-AI-OSINT
+(только идеи таксономии); Visual/face/geoloc/dark-web — вне scope (нет движка,
+тяжёлый AI/этич. ограничения); не влияет на risk-вердикт.
 
 ---
 

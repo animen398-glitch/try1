@@ -4428,3 +4428,47 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     documentation only.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F3 T3.1 - OSINT workflow catalog research (DOC)
+==============================================================================
+
+  STATUS: DONE (documentation only - no code, no deps). The OSINT Workflow
+    Catalog contract is recorded in ROADMAP_ASM_2.0.md under
+    "EPIC EXT-OSINT > F3 > T3.1 - Research & Curation (результат)".
+
+  SOURCE: the Awesome-AI-OSINT taxonomy (ubikron, GitHub) - an IDEAS catalog, not
+    a dependency. Nothing copied/fetched. Curation rule: include a workflow only
+    if a REAL engine already in our code backs it (no new scanners, no mandatory
+    network). The catalog is pure derive-on-read (like finding_knowledge/compliance).
+
+  MAPPING (taxonomy -> our engines; kept only what is covered):
+    - Digital Infrastructure -> recon/subdomains/ct/asn_intel/infrastructure/bbot.
+    - Human-Centric -> emails/employees/dns(email-auth).
+    - Information Monitoring -> monitor/timeline/scan_diff/osv/cve_intel.
+    - Integrated Platforms (enrichment) -> bbot/documents.
+    - DROPPED (no engine / out of scope): Visual Intelligence (reverse-image/
+      face/geoloc/GEOINT), ethnicity/face analysis, dark-web monitoring.
+
+  CURATED WORKFLOWS (phase 1, all engine-backed): infrastructure-recon,
+    subdomain-takeover-surface, email-people-surface, technology-dependency-risk,
+    web-exposure-audit, historical-archive-recon, cve-threat-correlation,
+    continuous-monitoring, external-recon-bbot, document-intelligence.
+
+  CATALOG ENTRY SCHEMA (contract for core/osint_catalog.py, T3.2): plain dicts
+    {id, name, category, goal, engines[], optional[], produces[], network}. The
+    resolver is derive-on-read: catalog() lists workflows; assess(report) tags each
+    {status: covered|partial|not_run, ran, missing} from report['phases'][engine].
+    status (same source exec_summary/scan_diff read, I3); available(features) marks
+    which engines exist (features.summary() for optional bbot/lift).
+
+  SURFACES (T3.3): a report card "OSINT Workflow Coverage" + web GET /osint-catalog
+    (parity with the other read views). GUI optional/later. The catalog NEVER
+    affects the risk score (pure guide/coverage display).
+
+  FIXED "NO": the catalog scans nothing and makes no network call itself; adds no
+    new engine/scanner; copies no code/data from Awesome-AI-OSINT (taxonomy ideas
+    only); Visual/face/geoloc/dark-web out of scope; risk verdict untouched.
+
+  NEXT: F3 T3.2 (core/osint_catalog.py) - the declarative catalog + the
+    derive-on-read resolver (catalog/assess/available). Plan first.
+
+==============================================================================
