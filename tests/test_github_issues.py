@@ -48,6 +48,9 @@ def test_issue_title_and_body_use_catalog():
     assert f"finding:{f['id']}" in body           # mapping breadcrumb
     # finding_knowledge resolves a remediation section for a known category.
     assert 'Remediation' in body
+    # OWASP/CWE class from the compliance SSOT (sqli → A03 / CWE-89).
+    assert '**OWASP:** A03:2021' in body
+    assert '**CWE:** CWE-89' in body
 
 
 def test_issue_labels_add_severity():

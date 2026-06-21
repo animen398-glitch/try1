@@ -1254,6 +1254,18 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**GitHub-issue body несёт CWE/OWASP-класс — `[ЗАКРЫТ]`.** Backend-фаза, третий
+(и последний) потребитель таксономии после SARIF/compliance. `github_issues.
+issue_body` нёс Severity/Category/Location, но **ронял OWASP/CWE** — хотя его же
+docstring обещал «same enrichment as the SARIF export» (который теперь таксономию
+несёт). Триажер в трекере не видел класс находки. Фикс: meta-строка body обогащена
+`**OWASP:**`/`**CWE:**` через тот же SSOT `compliance.classify` (как SARIF-теги).
+Метки issue не трогал (severity-only — избегаем label-проливерации; CWE как label
+плодил бы десятки значений). Pure, без новых зависимостей. Покрыто
+`test_github_issues` (sqli-находка → A03/CWE-89 в body). **Все три EPIC-16
+deliverable (SARIF / compliance / GitHub Issues) несут одну таксономию из единого
+`compliance.classify`.**
+
 **SARIF rule-теги несут CWE/OWASP-таксономию — `[ЗАКРЫТ]`.** Backend-фаза. SARIF-
 экспорт (`findings_sarif`, EPIC 16) клал в `rule.properties.tags` только
 `[category]` + security-severity, **роняя CWE-таксономию**, которую compliance уже

@@ -76,11 +76,15 @@ def issue_title(finding: Dict) -> str:
 
 def issue_body(finding: Dict) -> str:
     """Markdown issue body from a finding (description/impact/remediation pulled
-    from the finding_knowledge catalog — same enrichment as the SARIF/CSV export).
-    Pure; safe on a finding that lacks catalog text (sections are omitted)."""
+    from the finding_knowledge catalog, OWASP/CWE class from the compliance SSOT —
+    same enrichment as the SARIF/CSV export). Pure; safe on a finding that lacks
+    catalog text (sections are omitted)."""
+    from core.compliance import classify
     from core.finding_knowledge import describe
     info = describe(finding.get('category', ''), finding.get('rule_id', ''),
                     finding.get('title', ''), finding.get('evidence'))
+    cls = classify(finding.get('category', ''), finding.get('rule_id', ''),
+                   finding.get('title', ''))
     ev = finding.get('evidence') if isinstance(finding.get('evidence'), dict) else {}
     location = str(ev.get('location') or '').strip()
 
@@ -88,6 +92,12 @@ def issue_body(finding: Dict) -> str:
     meta = [f"**Severity:** {finding.get('severity') or 'info'}"]
     if finding.get('category'):
         meta.append(f"**Category:** {finding['category']}")
+    # Standard classification from the compliance SSOT (same taxonomy the SARIF
+    # export carries), so a triager sees the OWASP/CWE class right in the body.
+    if cls.get('owasp'):
+        meta.append(f"**OWASP:** {cls['owasp']}")
+    if cls.get('cwe'):
+        meta.append(f"**CWE:** {', '.join(cls['cwe'])}")
     if location:
         meta.append(f"**Location:** {location}")
     if finding.get('first_seen_at'):
