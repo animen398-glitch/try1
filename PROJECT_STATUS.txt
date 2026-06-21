@@ -4340,3 +4340,41 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     our process. Plan first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F2 T2.4 - lift provider adapter
+==============================================================================
+
+  STATUS: DONE. The heavy lift provider is wired as an isolated subprocess
+    adapter; lift is NEVER imported (torch/vLLM never load here, model never
+    bundled). Mirrors the external_tools/bbot_adapter seam.
+
+  IMPLEMENTED:
+    - core/document_providers/__init__.py (package).
+    - core/document_providers/lift_adapter.py:
+      * DEFAULT_SCHEMA - our extraction contract (secrets[] + sensitive_data[]);
+        we own the schema, so we own lift's output shape.
+      * build_command -> lift_extract <input> <out_dir> --schema <schema>.
+      * parse_output(payload, location): secrets[] -> masked secret findings via
+        the shared document_intelligence.secret_finding (placeholders dropped);
+        sensitive_data[] -> generic category='vuln' findings (severity mapped to
+        the 3-bucket scale). Defensive - garbage payload yields fewer findings.
+      * LiftRunner: never-raise; injectable runner (subprocess) + detector
+        (availability) for offline tests. extract() -> {status: Unavailable|Error|
+        Success, provider:'lift', findings, error?}.
+      * PRIVACY: lift runs into a TemporaryDirectory deleted after parsing, so the
+        plaintext it may emit is never persisted; findings carry only masks.
+    - core/document_intelligence.py: factored secret_finding(ktype, value,
+      location, *, validation=None) - the single constructor reused by the text
+      path and lift (no third copy of the masked-finding build).
+
+  TESTS: tests/test_lift_adapter.py (9) - available delegates, command shape,
+    parse secrets+sensitive (+placeholder/garbage tolerance), unavailable degrade,
+    success via output dir, stdout fallback, error path, temp-dir cleanup. 21
+    passed (lift + document_intelligence); ruff clean. No deps/network/.exe;
+    lift_adapter imports only stdlib + our modules at module level.
+
+  NEXT: F2 T2.5 - wire an opt-in 'documents' phase into CollectionRunner
+    (enumerate candidate docs from the evidence manifest / scan workspace, run
+    document_intelligence + optional lift, fold findings into vulns, report card)
+    + monitor/GUI parity. Plan first.
+
+==============================================================================

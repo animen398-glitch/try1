@@ -33,7 +33,7 @@ from typing import Dict, List, Optional
 from core.features import has_ocr, has_pdf_text
 from core.finding_fingerprint import mask_value, secret_discriminator
 from core.secret_scanner import scan_text
-from core.secret_validator import INVALID
+from core.secret_validator import INVALID, validate
 
 # Text-like formats tier 0 can decode directly (lower-cased extensions).
 TEXT_EXTENSIONS = {
@@ -157,30 +157,46 @@ def extract_text(path) -> Dict:
         return {'text': '', 'provider': 'none', 'status': 'error', 'error': str(e)}
 
 
+def secret_finding(ktype, value, location, *,
+                   validation: Optional[Dict] = None) -> Optional[Dict]:
+    """One masked secret finding dict, or ``None`` for a clear placeholder.
+
+    The single constructor for document-sourced secret findings (reused by the
+    text path and the lift provider), so the finding shape stays identical to the
+    api/security secret folders: ``category='secret'``, ``source='document'``, a
+    non-leaking ``discriminator`` (vendor + masked prefix + length) and a masked
+    detail — no plaintext ever enters the finding. Pass ``validation`` to reuse a
+    structural check already done (e.g. ``scan_text``); otherwise it is computed."""
+    value = str(value or '')
+    if not value:
+        return None
+    status = (validation if isinstance(validation, dict)
+              else validate(str(ktype), value)).get('status')
+    if status == INVALID:
+        return None   # placeholder / example value — not a real secret
+    ktype = str(ktype)
+    return {
+        'severity': 'High',
+        'title': f'Leaked secret: {ktype}',
+        'detail': f'{location} — exposed {ktype} ({mask_value(value)}).',
+        'source': 'document', 'category': 'secret', 'location': str(location),
+        'discriminator': secret_discriminator(ktype, value),
+    }
+
+
 def secret_findings_from_text(text: str, location: str) -> List[Dict]:
     """Raw secret finding dicts for credentials in ``text`` (SSOT-based).
 
     Runs the single secret rule set (``secret_scanner.scan_text``), drops clear
     placeholders/false-positives via the structural validator already attached to
-    each hit, and builds the same finding shape as the api/security secret folders
-    (``category='secret'``, ``source='document'``, masked discriminator — no
-    plaintext ever enters the finding). De-dup across documents happens later by
-    fingerprint."""
+    each hit, and builds findings via :func:`secret_finding`. De-dup across
+    documents happens later by fingerprint."""
     out: List[Dict] = []
     for hit in scan_text(text or '', source=location):
-        validation = hit.get('validation') or {}
-        if validation.get('status') == INVALID:
-            continue   # placeholder / example value — not a real secret
-        ktype, value = hit.get('type', ''), hit.get('match', '')
-        if not value:
-            continue
-        out.append({
-            'severity': 'High',
-            'title': f'Leaked secret: {ktype}',
-            'detail': f'{location} — exposed {ktype} ({mask_value(str(value))}).',
-            'source': 'document', 'category': 'secret', 'location': str(location),
-            'discriminator': secret_discriminator(str(ktype), str(value)),
-        })
+        f = secret_finding(hit.get('type', ''), hit.get('match', ''), location,
+                           validation=hit.get('validation'))
+        if f:
+            out.append(f)
     return out
 
 

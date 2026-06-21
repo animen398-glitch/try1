@@ -706,6 +706,16 @@ assets подбираются `asset_adapter.derive_assets` тонким guarded
   Тяжёлый lift (тир 3) — отдельно в T2.4 (не импортируется здесь). Покрыто
   `tests/test_document_intelligence.py` (12).
 - T2.4 `document_providers/lift_adapter` (planned, опц.) — изоляция тяжёлых импортов.
+  **[ВЫПОЛНЕНО 2026-06-21]** — пакет `core/document_providers/` + `lift_adapter.py`:
+  lift запускается ТОЛЬКО как subprocess `lift_extract` (никогда не импортируется →
+  torch/vLLM не грузятся, модель не бандлится); `DEFAULT_SCHEMA` (наш контракт
+  вывода: secrets[]/sensitive_data[]); `parse_output` нормализует → secret-находки
+  (через общий `document_intelligence.secret_finding`, плейсхолдеры отброшены) +
+  generic `vuln` «Sensitive data in document»; `LiftRunner` (never-raise,
+  инъектируемые runner/detector). **Privacy:** lift пишет в TemporaryDirectory,
+  удаляемую после парсинга → plaintext не персистится, в находках только маска.
+  Покрыто `tests/test_lift_adapter.py` (9). Конструктор secret-находки вынесен в
+  общий `secret_finding` (без третьей копии).
 - T2.5 Проводка opt-in фазы + нормализация в lifecycle + карточка отчёта.
 - T2.6 Тесты offline — провайдер застаблен; проверка деградации без модели/деп.
 
