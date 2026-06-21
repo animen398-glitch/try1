@@ -221,6 +221,18 @@ class FinalReportTabMixin:
             "строгим scope; доп. сетевые запросы. Если бинарь не найден на PATH — "
             "фаза мягко пропускается.")
         opt_row.addWidget(self.collect_bbot)
+
+        # Opt-in Document Intelligence — mine captured documents (PDF/images/config
+        # files) for secrets + sensitive data; local/passive, uses optional lift
+        # if installed. Degrades gracefully when nothing is captured / no provider.
+        self.collect_documents = QCheckBox("Документы (secrets/PII)")
+        self.collect_documents.setToolTip(
+            "Document Intelligence: анализ уже захваченных документов "
+            "(PDF/изображения/конфиги под capture/clone/images) на секреты и "
+            "чувствительные данные. Локально/пассивно (без новых сетевых "
+            "запросов); опционально использует внешний lift, если он установлен. "
+            "Значения маскируются; находки идут в общий жизненный цикл.")
+        opt_row.addWidget(self.collect_documents)
         g.addLayout(opt_row)
 
         btn_row = QHBoxLayout()
@@ -351,6 +363,7 @@ class FinalReportTabMixin:
             'osv': self.collect_osv.isChecked(),
             'security': self.collect_security.isChecked(),
             'bbot': self.collect_bbot.isChecked(),
+            'documents': self.collect_documents.isChecked(),
         }
 
     def _run_collection(self):

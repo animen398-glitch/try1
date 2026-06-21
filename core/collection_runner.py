@@ -106,7 +106,7 @@ class CollectionRunner:
                  emails: bool = False, employees: bool = False,
                  ct: bool = False, asn_intel: bool = False,
                  osv: bool = False, security: bool = False,
-                 bbot: bool = False):
+                 bbot: bool = False, documents: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -167,6 +167,11 @@ class CollectionRunner:
         # findings into the vuln phase. Off by default (extra network + external
         # tool); degrades to a skip when the binary is absent. (EXT-OSINT F1.)
         self.bbot = bbot
+        # Opt-in Document Intelligence — mine documents already captured in the
+        # scan (PDF/images/config files under capture/clone/images) for secrets +
+        # sensitive data, via core.document_intelligence (+ optional lift if
+        # installed). Local/passive (no new network); off by default. (EXT-OSINT F2.)
+        self.documents = documents
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -190,7 +195,8 @@ class CollectionRunner:
                   asn_intel: Optional[bool] = None,
                   osv: Optional[bool] = None,
                   security: Optional[bool] = None,
-                  bbot: Optional[bool] = None):
+                  bbot: Optional[bool] = None,
+                  documents: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -231,6 +237,8 @@ class CollectionRunner:
             self.security = security
         if bbot is not None:
             self.bbot = bbot
+        if documents is not None:
+            self.documents = documents
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -485,6 +493,12 @@ class CollectionRunner:
             skipped = self._scope_skip_active(report, 'bbot', url)
             report['phases']['bbot'] = skipped or self._phase_bbot(
                 url, scan_dir, report)
+        # 7m. Document Intelligence (opt-in) → mine documents already captured in
+        # this scan (PDF/images/config files) for secrets + sensitive data; folds
+        # findings into the vuln phase. Local/passive (reads files only) → not
+        # scope-gated; the capture/clone that produced them already were.
+        if self.documents and not self._cancelled(report):
+            report['phases']['documents'] = self._phase_documents(scan_dir, report)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             skipped = self._scope_skip_active(report, 'katana', url)
@@ -1331,6 +1345,72 @@ class CollectionRunner:
             self._log(f'  BBOT failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_documents(self, project_dir: Path, report: Dict) -> Dict:
+        """Document Intelligence (opt-in): mine documents already captured in this
+        scan for secrets + sensitive data, folding the findings into the vuln
+        phase (lifecycle / SLA / triage + risk via severity, like the other
+        secret folders). Candidates are document/config files under
+        capture/clone/images (markup + our own artifacts excluded). The heavy
+        ``lift`` provider is used additionally only when it is installed (a
+        deliberate opt-in install); otherwise the lighter tiers run. Writes
+        documents/documents.json (masked — no plaintext). Guarded; never sinks the
+        scan."""
+        self._log('[+] Document intelligence…')
+        try:
+            from core import document_intelligence as di
+            roots = [project_dir / 'capture', project_dir / 'clone',
+                     project_dir / 'images']
+            candidates = di.iter_candidate_documents(roots)
+            if not candidates:
+                self._log('  Документы — кандидатов не найдено')
+                return {'status': 'Success',
+                        'data': {'documents': [], 'findings': [],
+                                 'summary': {'documents': 0, 'with_text': 0,
+                                             'findings': 0}}}
+            data = di.analyze_documents(candidates)
+
+            # Heavy tier (lift): only if installed; PDFs/images only (its forte).
+            lift_findings: List[Dict] = []
+            try:
+                from core.document_providers.lift_adapter import LiftRunner
+                lift = LiftRunner()
+                if lift.available():
+                    for p in candidates:
+                        ext = Path(p).suffix.lower()
+                        if ext in di.PDF_EXTENSIONS or ext in di.IMAGE_EXTENSIONS:
+                            res = lift.extract(p)
+                            if res.get('status') == 'Success':
+                                lift_findings.extend(res.get('findings') or [])
+            except Exception as e:   # noqa: BLE001 — lift is best-effort
+                self._warn(report, 'documents_lift',
+                           'lift document extraction failed', e)
+
+            findings = (data.get('findings') or []) + lift_findings
+            data['findings'] = findings
+            data['summary']['findings'] = len(findings)
+            data['summary']['lift_findings'] = len(lift_findings)
+
+            out = project_dir / 'documents'
+            out.mkdir(exist_ok=True)
+            (out / 'documents.json').write_text(
+                json.dumps(data, indent=2, ensure_ascii=False, default=str),
+                encoding='utf-8',
+            )
+
+            vulns = report['phases'].get('vulns')
+            if findings and isinstance(vulns, dict):
+                merged = vulns.get('findings', []) + findings
+                vulns['findings'] = merged
+                vulns['summary'] = VulnScanner.summarize(merged)
+
+            s = data['summary']
+            self._log(f"  Документы: {s['documents']} просканировано "
+                      f"({s['with_text']} с текстом), находок +{len(findings)}")
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  Document intelligence failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _dedup_vuln_findings(self, report: Dict) -> None:
         """Collapse the vuln phase's findings that share an identity (same CVE
         across scanners) into one + recompute the phase summary. Best-effort: a
@@ -1403,6 +1483,10 @@ class CollectionRunner:
                     # external-recon findings come from the opt-in BBOT phase — a
                     # skipped run must not auto-FIX them (EXT-OSINT F1).
                     return phase_ok('bbot')
+                if s == 'document':
+                    # document-intel findings come from the opt-in documents phase
+                    # — a skipped run must not auto-FIX them (EXT-OSINT F2).
+                    return phase_ok('documents')
                 return phase_ok('vulns')
 
             store = FindingsStore()
@@ -2050,6 +2134,31 @@ class CollectionRunner:
         return intro + table
 
     @staticmethod
+    def _render_documents_card(data: Dict) -> str:
+        """Offline HTML for the Document Intelligence card: how many documents
+        were mined and what they yielded (findings fold into the vuln lifecycle;
+        no plaintext is stored)."""
+        e = html.escape
+        if not isinstance(data, dict):
+            return ''
+        s = data.get('summary') or {}
+        rows_src = [
+            ('Documents scanned', s.get('documents', 0)),
+            ('With extracted text', s.get('with_text', 0)),
+            ('Findings', s.get('findings', 0)),
+            ('lift findings', s.get('lift_findings', 0)),
+        ]
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(label)}</td>'
+            f'<td style="color:#666;">{e(str(count))}</td></tr>'
+            for label, count in rows_src if count)
+        intro = ('<p style="font-size:13px;">Document Intelligence — secrets / '
+                 'sensitive data mined from captured documents (findings fold into '
+                 'the vuln lifecycle; values are masked).</p>')
+        table = (f'<table style="font-size:12px;">{rows}</table>' if rows else '')
+        return intro + table
+
+    @staticmethod
     def _render_trends_card(trends: list) -> str:
         """Offline HTML for the Trends card: sparklines of the project's metric
         history over its scans (F5). Reuses the offline-SVG ``sparkline`` (the
@@ -2268,6 +2377,15 @@ class CollectionRunner:
                 'External Recon (BBOT)', self._render_bbot_card(
                     bbot_phase.get('data')),
                 bbot_phase.get('status', '—'),
+            ))
+
+        # Document Intelligence (opt-in) — secrets/sensitive data from documents.
+        doc_phase = phases.get('documents')
+        if isinstance(doc_phase, dict) and doc_phase.get('status') == 'Success':
+            body_parts.append(card(
+                'Document Intelligence', self._render_documents_card(
+                    doc_phase.get('data')),
+                doc_phase.get('status', '—'),
             ))
 
         # Related Assets (infra-chain tail) — co-hosted external domains on our IP.

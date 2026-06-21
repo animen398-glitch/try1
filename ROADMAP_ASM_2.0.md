@@ -717,7 +717,21 @@ assets подбираются `asset_adapter.derive_assets` тонким guarded
   Покрыто `tests/test_lift_adapter.py` (9). Конструктор secret-находки вынесен в
   общий `secret_finding` (без третьей копии).
 - T2.5 Проводка opt-in фазы + нормализация в lifecycle + карточка отчёта.
+  **[ВЫПОЛНЕНО 2026-06-21]** — флаг `documents` в `CollectionRunner.__init__`/
+  `configure`; фаза 7m `_phase_documents` (перечислялка `iter_candidate_documents`
+  по capture/clone/images, исключая markup/наши артефакты; `analyze_documents`
+  тиры 0-2 + `lift` если установлен — только PDF/изображения; фолд находок в vulns;
+  артефакт `documents/documents.json`, маскированный); **локально/пассивно → НЕ
+  scope-gated** (capture/clone уже были); auto-FIX scope-guard `source='document'→
+  phase_ok('documents')`; карточка «Document Intelligence»; monitor-паритет
+  (`_build_run_fn` += `documents`); GUI-чекбокс «Документы (secrets/PII)» +
+  `_collection_options`. Web — базовый пайплайн (как osv/bbot). Покрыто
+  `test_collection_runner`(+4)/`test_monitor`(+1)/`test_monitor_gui`(+1).
 - T2.6 Тесты offline — провайдер застаблен; проверка деградации без модели/деп.
+  **[ВЫПОЛНЕНО 2026-06-21]** — `test_document_intelligence`(15: метаданные/
+  extract-тиры/деградация/секреты+маска/плейсхолдеры/батч/перечислялка),
+  `test_lift_adapter`(9: инъекция subprocess/парсинг/temp-cleanup/деградация),
+  плюс phase/monitor/GUI-тесты T2.5. Все offline/headless; self-check 25 вкладок.
 
 ---
 

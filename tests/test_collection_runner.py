@@ -1207,3 +1207,46 @@ def test_render_bbot_card_counts():
     assert 'In-scope events' in body
     assert 'Findings' in body
     assert CollectionRunner._render_bbot_card('not a dict') == ''
+
+
+# ── EXT-OSINT F2 T2.5: Document Intelligence phase wiring ─────────────────────
+
+def test_documents_default_off():
+    assert CollectionRunner().documents is False
+    assert CollectionRunner(documents=True).documents is True
+
+
+def test_phase_documents_folds_findings_and_writes_artifact(tmp_path):
+    # A captured config file with a real AWS key under capture/ becomes a folded
+    # secret finding; the document phase mines it (no lift installed → tier 0).
+    cap = tmp_path / 'capture'
+    cap.mkdir()
+    (cap / 'config.env').write_text('AWS=AKIAIOSFODNN7EXAMPLE\n', encoding='utf-8')
+    r = CollectionRunner(documents=True)
+    report = {'phases': {'vulns': {'status': 'Success', 'findings': [],
+                                   'summary': {}}}}
+    phase = r._phase_documents(tmp_path, report)
+
+    assert phase['status'] == 'Success'
+    assert (tmp_path / 'documents' / 'documents.json').exists()
+    folded = report['phases']['vulns']['findings']
+    secret = [f for f in folded if f.get('source') == 'document']
+    assert len(secret) == 1 and secret[0]['category'] == 'secret'
+    assert 'AKIAIOSFODNN7EXAMPLE' not in str(folded)          # masked, no plaintext
+    assert report['phases']['vulns']['summary']['high'] >= 1
+
+
+def test_phase_documents_no_candidates_is_clean(tmp_path):
+    phase = CollectionRunner(documents=True)._phase_documents(
+        tmp_path, {'phases': {}})
+    assert phase['status'] == 'Success'
+    assert phase['data']['summary']['documents'] == 0
+    assert not (tmp_path / 'documents').exists()             # nothing written
+
+
+def test_render_documents_card_counts():
+    data = {'summary': {'documents': 3, 'with_text': 2, 'findings': 1,
+                        'lift_findings': 0}}
+    body = CollectionRunner._render_documents_card(data)
+    assert 'Documents scanned' in body and 'Findings' in body
+    assert CollectionRunner._render_documents_card('nope') == ''

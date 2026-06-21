@@ -45,6 +45,15 @@ IMAGE_EXTENSIONS = {
     '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp',
 }
 
+# What the 'documents' phase treats as a candidate document to mine. PDFs +
+# images + plain config/text/document formats. Deliberately EXCLUDES
+# .html/.htm/.json/.xml (markup + our own scan artifacts, already covered by the
+# api/security phases) so the phase targets genuine documents, not web text.
+DOCUMENT_SCAN_EXTENSIONS = PDF_EXTENSIONS | IMAGE_EXTENSIONS | {
+    '.txt', '.md', '.markdown', '.csv', '.tsv', '.log', '.env', '.ini',
+    '.cfg', '.conf', '.yaml', '.yml', '.properties',
+}
+
 # Read caps — keep a hostile/huge document from eating memory (pure-stdlib tier).
 _MAX_TEXT_BYTES = 5 * 1024 * 1024      # decode at most 5 MB of a text file
 _HASH_CHUNK = 1024 * 1024
@@ -226,6 +235,39 @@ def analyze_document(path, *, location: Optional[str] = None,
         return {'path': str(path), 'location': loc, 'metadata': {},
                 'provider': 'none', 'text_status': 'error', 'text_chars': 0,
                 'findings': [], 'status': 'error', 'error': str(e)}
+
+
+def iter_candidate_documents(roots, *, limit: int = 300,
+                             max_size: int = 20 * 1024 * 1024) -> List[str]:
+    """Walk ``roots`` and collect candidate document files to mine.
+
+    Only files whose extension is in :data:`DOCUMENT_SCAN_EXTENSIONS`, under the
+    per-file ``max_size`` cap, de-duplicated by real path, capped at ``limit``.
+    Tolerant of missing/non-directory roots. Pure/offline."""
+    out: List[str] = []
+    seen: set = set()
+    for root in roots or []:
+        root = str(root) if root else ''
+        if not root or not os.path.isdir(root):
+            continue
+        for dirpath, _dirs, files in os.walk(root):
+            for name in sorted(files):
+                if os.path.splitext(name)[1].lower() not in DOCUMENT_SCAN_EXTENSIONS:
+                    continue
+                p = os.path.join(dirpath, name)
+                try:
+                    if os.path.getsize(p) > max_size:
+                        continue
+                except OSError:
+                    continue
+                rp = os.path.realpath(p)
+                if rp in seen:
+                    continue
+                seen.add(rp)
+                out.append(p)
+                if len(out) >= limit:
+                    return out
+    return out
 
 
 def analyze_documents(paths, *, locations: Optional[Dict] = None) -> Dict:

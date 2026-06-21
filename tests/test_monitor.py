@@ -107,6 +107,23 @@ def test_build_run_fn_maps_options_to_runner(monkeypatch):
     assert captured['certificate'] is True        # default preserved on merge
 
 
+def test_build_run_fn_documents_maps_through(monkeypatch):
+    captured = {}
+
+    class FakeRunner:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, url, base):
+            return {'status': 'Success'}
+
+    monkeypatch.setattr('core.collection_runner.CollectionRunner', FakeRunner)
+    monitor._build_run_fn('/base', {'documents': True})('https://x.com')
+    assert captured['documents'] is True
+    monitor._build_run_fn('/base', {})('https://x.com')
+    assert captured['documents'] is False             # off unless selected
+
+
 def test_build_run_fn_bbot_defaults_off(monkeypatch):
     captured = {}
 

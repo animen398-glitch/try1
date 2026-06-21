@@ -4378,3 +4378,53 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
     + monitor/GUI parity. Plan first.
 
 ==============================================================================
+  2026-06-21 - EPIC EXT-OSINT / F2 T2.5 + T2.6 - wire documents phase + tests
+==============================================================================
+
+  STATUS: DONE. The opt-in Document Intelligence phase feeds the existing
+    lifecycle, with monitor + GUI parity. F2 (Document Intelligence) COMPLETE.
+
+  IMPLEMENTED:
+    - core/document_intelligence.py: iter_candidate_documents(roots) +
+      DOCUMENT_SCAN_EXTENSIONS (PDF/images/config-text; EXCLUDES html/json/xml so
+      it targets real documents, not our own artifacts or web markup the api/
+      security phases already cover). Caps size + count, dedups by realpath.
+    - core/collection_runner.py: documents flag (off by default) in __init__/
+      configure; run() phase 7m _phase_documents. The phase enumerates documents
+      under capture/clone/images, runs analyze_documents (tiers 0-2) + lift
+      (PDF/images only, IF installed - a deliberate heavy opt-in), folds findings
+      into the vuln phase, writes a masked documents/documents.json, and renders a
+      "Document Intelligence" report card. LOCAL/PASSIVE (reads files only) -> NOT
+      scope-gated (the capture/clone that produced the files already were).
+      _sync_findings auto-FIX guard: source 'document' -> phase_ok('documents').
+    - core/monitor.py: _build_run_fn maps documents=opts.get('documents', False).
+    - gui/tab_collection.py: "Документы (secrets/PII)" checkbox + 'documents' in
+      _collection_options.
+    - Web: unchanged (base pipeline, like osv/bbot). No asset_adapter change
+      (phase 1 emits no document asset type).
+
+  DESIGN NOTES:
+    - Source = already-captured target files (capture/clone/images), so the phase
+      does NO new network (offline/passive). A user-supplied documents path is
+      deferred (no consumer/GUI yet).
+    - lift is used only when its binary is installed; absent -> tiers 0-2. Avoids
+      a second flag while keeping lift a deliberate opt-in (you installed it).
+    - Findings are masked (secret_finding); the documents.json artifact carries no
+      plaintext; lift itself runs into a temp dir deleted after parsing.
+
+  TESTS (T2.6): test_document_intelligence.py (15, +iter/limit/missing-root),
+    test_lift_adapter.py (9), test_collection_runner.py (+4: default-off, fold+
+    artifact, no-candidates clean, card), test_monitor.py (+1), test_monitor_gui
+    (+1). 136 passed across the affected suites; ruff clean; headless self-check
+    OK (25 tabs). Full suite run pending confirmation.
+
+  F2 (Document Intelligence) COMPLETE: T2.1 contract, T2.2 detection, T2.3 core
+    orchestrator, T2.4 lift provider, T2.5 phase wiring + monitor/GUI parity, T2.6
+    offline tests. Optional, offline-first, no heavy deps in .exe; absent
+    providers degrade gracefully.
+
+  NEXT: EXT-OSINT F3 (AI OSINT Workflow Catalog) - starts with T3.1 research &
+    curation (select Awesome-AI-OSINT workflows that map onto existing engines),
+    documentation only.
+
+==============================================================================

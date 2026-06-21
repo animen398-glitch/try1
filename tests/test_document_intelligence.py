@@ -5,6 +5,8 @@ provider tiers (pdf-text/ocr) are verified via their graceful-degradation path
 without installing heavy deps.
 """
 
+import os
+
 from core import document_intelligence as di
 
 # A real-shaped AWS key (validates) and a placeholder generic key (rejected).
@@ -100,6 +102,28 @@ def test_analyze_document_missing_file_degrades(tmp_path):
     # metadata records the OS error but analysis still returns cleanly (no text)
     assert doc["text_chars"] == 0 and doc["findings"] == []
     assert doc["status"] == "ok"
+
+
+def test_iter_candidate_documents_filters_and_caps(tmp_path):
+    (tmp_path / "a.pdf").write_bytes(b"%PDF")
+    (tmp_path / "creds.env").write_text("X=1", encoding="utf-8")
+    (tmp_path / "page.html").write_text("<p>x</p>", encoding="utf-8")  # excluded
+    (tmp_path / "report.json").write_text("{}", encoding="utf-8")      # excluded
+    sub = tmp_path / "nested"
+    sub.mkdir()
+    (sub / "img.png").write_bytes(b"\x89PNG")
+    found = {os.path.basename(p) for p in di.iter_candidate_documents([tmp_path])}
+    assert found == {"a.pdf", "creds.env", "img.png"}   # html/json excluded
+
+
+def test_iter_candidate_documents_tolerates_missing_root(tmp_path):
+    assert di.iter_candidate_documents([tmp_path / "nope", None]) == []
+
+
+def test_iter_candidate_documents_respects_limit(tmp_path):
+    for i in range(5):
+        (tmp_path / f"f{i}.txt").write_text("x", encoding="utf-8")
+    assert len(di.iter_candidate_documents([tmp_path], limit=3)) == 3
 
 
 def test_analyze_documents_batch_summary(tmp_path):

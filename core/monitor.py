@@ -231,6 +231,7 @@ def _build_run_fn(base: str, options: Optional[Dict] = None) -> Callable[[str], 
             osv=opts.get('osv', False),
             security=opts.get('security', False),
             bbot=opts.get('bbot', False),
+            documents=opts.get('documents', False),
         )
         return runner.run(url, base)
 
