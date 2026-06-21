@@ -52,7 +52,8 @@ class OperationRegistry(SQLiteStore):
             return cur.lastrowid
 
     def finish(self, operation_id: int, status: str = 'success',
-               error: Optional[str] = None) -> None:
+               error: Optional[str] = None,
+               metadata: Optional[Dict[str, Any]] = None) -> None:
         """Закрыть операцию, рассчитать длительность по started_at."""
         with self._connect() as conn:
             row = conn.execute(
@@ -66,12 +67,22 @@ class OperationRegistry(SQLiteStore):
             started = datetime.fromisoformat(row['started_at'])
             duration_ms = int((finished - started).total_seconds() * 1000)
 
-            conn.execute(
-                """UPDATE operations
-                   SET status = ?, finished_at = ?, duration_ms = ?, error = ?
-                   WHERE id = ?""",
-                (status, finished.isoformat(), duration_ms, error, operation_id),
-            )
+            if metadata is None:
+                conn.execute(
+                    """UPDATE operations
+                       SET status = ?, finished_at = ?, duration_ms = ?, error = ?
+                       WHERE id = ?""",
+                    (status, finished.isoformat(), duration_ms, error, operation_id),
+                )
+            else:
+                conn.execute(
+                    """UPDATE operations
+                       SET status = ?, finished_at = ?, duration_ms = ?, error = ?,
+                           metadata = ?
+                       WHERE id = ?""",
+                    (status, finished.isoformat(), duration_ms, error,
+                     json.dumps(metadata), operation_id),
+                )
 
     def get(self, operation_id: int) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:

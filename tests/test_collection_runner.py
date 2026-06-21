@@ -845,6 +845,10 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
                                            'summary': {'high': 0, 'medium': 0,
                                                        'info': 0, 'risk_score': 0},
                                            'findings': []})
+    monkeypatch.setattr(
+        r, '_attach_evidence_manifest',
+        lambda report, d: r._warn(report, 'evidence', 'manifest failed'),
+    )
 
     result = r.run('https://example.com', str(tmp_path))
 
@@ -872,6 +876,17 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     assert saved['report_html'] == str(scan_dir / 'report.html')
     assert saved['report_md'] == str(md)
     assert saved['project_scan']['id'] == result['scan_id']
+
+    from utils.operation_registry import OperationRegistry
+    ops = OperationRegistry().history(phase='collection')
+    assert len(ops) == 1
+    op = ops[0]
+    assert op['target'] == 'https://example.com'
+    assert op['status'] == 'success'
+    assert op['metadata']['scan_id'] == result['scan_id']
+    assert op['metadata']['warning_count'] == 1
+    assert op['metadata']['warning_summary'][0]['stage'] == 'evidence'
+    assert op['metadata']['phases']['recon'] == 'Success'
 
 
 def _stub_base_run(monkeypatch, runner):

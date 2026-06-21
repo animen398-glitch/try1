@@ -56,7 +56,7 @@ from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
 from core.openapi_discovery import discover as discover_openapi
 from core.openapi_discovery import render_html as render_openapi
 from core.llm_summary import generate_narrative as generate_llm_narrative
-from core.project import ProjectStore, project_slug
+from core.project import Project, ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
 from core.scope_guard import active_phase_decision
@@ -247,6 +247,50 @@ class CollectionRunner:
             item['error'] = str(error)
         report.setdefault('warnings', []).append(item)
 
+    @staticmethod
+    def _operation_metadata(report: Dict) -> Dict:
+        """Compact operation-journal metadata for a completed collection scan."""
+        phases = report.get('phases') if isinstance(report.get('phases'), dict) else {}
+        summary = report.get('executive_summary') or {}
+        project_scan = report.get('project_scan') if isinstance(report.get('project_scan'), dict) else {}
+        return {
+            'scan_id': report.get('scan_id'),
+            'project': report.get('domain'),
+            'project_scan_id': project_scan.get('id'),
+            'status': report.get('status'),
+            'risk_level': summary.get('risk_level') if isinstance(summary, dict) else None,
+            'risk_score': summary.get('risk_score') if isinstance(summary, dict) else None,
+            'warning_count': len(report.get('warnings') or []),
+            'warning_summary': Project._warning_summary(report.get('warnings') or []),
+            'phases': {k: v.get('status') for k, v in phases.items()
+                       if isinstance(v, dict)},
+            'report_html': report.get('report_html'),
+            'report_json': report.get('report_json'),
+        }
+
+    @staticmethod
+    def _start_operation(target: str, scan_dir: Path, scan_id: str) -> tuple:
+        try:
+            from utils.operation_registry import OperationRegistry
+            registry = OperationRegistry()
+            op_id = registry.start(target, 'collection', str(scan_dir),
+                                   {'scan_id': scan_id})
+            return registry, op_id
+        except Exception:
+            return None, None
+
+    @staticmethod
+    def _finish_operation(registry, op_id, report: Dict, error: Optional[str] = None) -> None:
+        if registry is None or op_id is None:
+            return
+        try:
+            status = 'cancelled' if report.get('cancelled') else (
+                'failed' if error else 'success')
+            registry.finish(op_id, status=status, error=error,
+                            metadata=CollectionRunner._operation_metadata(report))
+        except Exception:
+            pass
+
     def _cancelled(self, report: Dict) -> bool:
         if self._cancel.is_set():
             report['cancelled'] = True
@@ -301,6 +345,7 @@ class CollectionRunner:
 
         self._log(f'Проект: {project.root}')
         self._log(f'Скан:   {scan_dir}')
+        op_registry, op_id = self._start_operation(url, scan_dir, stamp)
 
         # 1. Recon
         if not self._cancelled(report):
@@ -537,6 +582,7 @@ class CollectionRunner:
             self._log(f'  ! project index failed: {e}')
             self._warn(report, 'project_index', 'Project metadata index could not be updated', e)
 
+        self._finish_operation(op_registry, op_id, report)
         self._log(f'Отчёт: {html_path}')
         return report
 
