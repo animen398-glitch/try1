@@ -1023,7 +1023,10 @@ async function showHistory(){
     const r=await fetch('/history'); const rows=await r.json();
     log('History: '+rows.length+' operation(s)','data');
     rows.slice(0,20).forEach(o=>{
-      log('#'+o.id+' '+o.phase+' ['+o.status+'] '+(o.target||''),
+      const m=o.metadata||{};
+      const stages=(m.warning_summary||[]).slice(0,3).map(w=>w.stage||'pipeline').join(',');
+      const warn=(m.warning_count||0)?' · warnings: '+m.warning_count+(stages?' ['+stages+']':''):'';
+      log('#'+o.id+' '+o.phase+' ['+o.status+'] '+(o.target||'')+warn,
           o.status==='failed'?'er':(o.status==='success'?'ok':'info'));
     });
   }catch(ex){log('History failed: '+ex.message,'er');}

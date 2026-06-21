@@ -139,6 +139,7 @@ def test_dashboard_has_history_and_report():
     assert "showHistory()" in html and "/history" in html
     assert "/report?file=" in html
     assert "showData()" in html and "/data" in html
+    assert "warning_summary" in html and "warnings: " in html
 
 
 def test_collection_job_summary_includes_warnings(monkeypatch, tmp_path):
