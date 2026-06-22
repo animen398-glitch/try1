@@ -428,11 +428,17 @@ continue adding scanners or GUI/design work under Epic 14.
 
 ## EPIC EXT-OSINT — External Recon & Document Intelligence Expansion
 
-> **Статус: ПЛАНИРОВАНИЕ (код не писан).** Это стратегический план следующего
-> горизонта, а НЕ реализованный эпик. Ничего из перечисленного ниже ещё не
-> существует в коде. Реализация — строго по цепочке Epic → Feature → Task →
-> Implementation → Testing → Review, по одной задаче, после утверждения плана
-> конкретной фичи.
+> **Статус: BASELINE РЕАЛИЗОВАН (F1–F4, 2026-06-21).** Эпик был спланирован здесь,
+> а затем доведён до рабочего baseline. Модули **существуют** и проведены через
+> общий lifecycle: `core/bbot_adapter.py`, `core/document_intelligence.py`,
+> `core/document_providers/lift_adapter.py`, `core/osint_catalog.py` (см. отметки
+> `[ВЫПОЛНЕНО 2026-06-21]` в задачах ниже). Историю задач НЕ переписываем — она
+> остаётся как лог реализации. **Остаток — точечные расширения baseline, НЕ
+> новый слой и НЕ переписывание.** Следующий горизонт (business-risk слой поверх
+> уже готовых attack-paths/exposure/criticality/OSINT) вынесен в отдельный
+> **EPIC NEXT** (в конце файла, статус ПЛАНИРОВАНИЕ — код не писан). Любое
+> расширение — строго по цепочке Epic → Feature → Task → Implementation →
+> Testing → Review, по одной задаче, после утверждения.
 
 ### Зачем (цель эпика)
 
@@ -502,9 +508,9 @@ continue adding scanners or GUI/design work under Epic 14.
 **Запрещено:** копировать код BBOT; делать его обязательной зависимостью;
 бандлить в `.exe`; запускать агрессивные presets по умолчанию.
 
-**Где живёт (планируемые модули — НЕ существуют):**
+**Где живёт (baseline РЕАЛИЗОВАН — см. задачи ниже):**
 - `core/features.py` += `has_bbot()` (детект бинаря на PATH, паттерн `has_nuclei`).
-- `core/bbot_adapter.py` (planned) — тонкий subprocess-обёртка поверх
+- `core/bbot_adapter.py` **[BASELINE РЕАЛИЗОВАН]** — тонкий subprocess-обёртка поверх
   `external_tools.run_command`: запускает выбранный безопасный preset, читает
   NDJSON-вывод, нормализует события BBOT → наши `Asset`/`Finding`-DTO. Никогда
   не падает (мягкая деградация), инъектируемый runner для тестов.
@@ -671,11 +677,11 @@ assets подбираются `asset_adapter.derive_assets` тонким guarded
 **Запрещено:** бандлить `torch`/`vLLM`/HF-модели в `.exe`; делать lift
 обязательной зависимостью; обещать, что lift/Gemini уже интегрированы.
 
-**Где живёт (планируемые модули — НЕ существуют):**
-- `core/document_intelligence.py` (planned) — **ядро**: offline-first контракт
+**Где живёт (baseline РЕАЛИЗОВАН — см. задачи ниже):**
+- `core/document_intelligence.py` **[BASELINE РЕАЛИЗОВАН]** — **ядро**: offline-first контракт
   «документ → структурированные поля → наши DTO»; провайдер выбирается на чтении,
   при отсутствии — мягкая деградация (stdlib-минимум: метаданные/текст без AI).
-- `core/document_providers/` (planned) — опциональные провайдеры за единым
+- `core/document_providers/` **[BASELINE РЕАЛИЗОВАН]** — опциональные провайдеры за единым
   интерфейсом: `lift_adapter` (datalab-to/lift, опц. зависимость/внешний адаптер),
   возможные локальные OCR. Тяжёлый провайдер активен только если установлен.
 - `core/features.py` += детект провайдеров (по модулю/бинарю), summary().
@@ -705,7 +711,7 @@ assets подбираются `asset_adapter.derive_assets` тонким guarded
   `analyze_document`/`analyze_documents` (метаданные+текст+находки, батч+summary).
   Тяжёлый lift (тир 3) — отдельно в T2.4 (не импортируется здесь). Покрыто
   `tests/test_document_intelligence.py` (12).
-- T2.4 `document_providers/lift_adapter` (planned, опц.) — изоляция тяжёлых импортов.
+- T2.4 `document_providers/lift_adapter` (опц.) — изоляция тяжёлых импортов.
   **[ВЫПОЛНЕНО 2026-06-21]** — пакет `core/document_providers/` + `lift_adapter.py`:
   lift запускается ТОЛЬКО как subprocess `lift_extract` (никогда не импортируется →
   torch/vLLM не грузятся, модель не бандлится); `DEFAULT_SCHEMA` (наш контракт
@@ -843,8 +849,8 @@ Intelligence — это не один движок, а лестница «что
 Awesome-AI-OSINT) поверх существующих сущностей — «какие связки разведки имеет
 смысл прогонять», без новых сканеров и без обязательной сети.
 
-**Где живёт (планируемые модули — НЕ существуют):**
-- `core/osint_catalog.py` (planned) — чистый derive-on-read каталог
+**Где живёт (baseline РЕАЛИЗОВАН — см. задачи ниже):**
+- `core/osint_catalog.py` **[BASELINE РЕАЛИЗОВАН]** — чистый derive-on-read каталог
   воркфлоу/схем (как `finding_knowledge`/`compliance`): декларативное описание
   шагов поверх уже существующих движков (recon/dns/email/employee/ct/asn),
   без копирования внешнего кода. Никаких новых сетевых вызовов сам по себе.
@@ -1054,6 +1060,153 @@ README-гарантии писать только по факту (T4.3), без
 - `core/external_tools.py` — `run_command` (never-raise subprocess) для BBOT.
 - `core/findings_adapter.py` + `findings_store.py` — нормализация/lifecycle находок.
 - `core/asset_adapter.py` + `asset_store.py` — нормализация/lifecycle активов.
+
+---
+
+## EPIC NEXT — Attack Path & Business Risk Intelligence Platform
+
+> **Статус: ПЛАНИРОВАНИЕ.** **Implementation: NOT STARTED для NEXT-слоя.**
+> Это стратегический план следующего горизонта, НЕ реализованный эпик. Ничего из
+> NEXT-слоя ещё не написано. Реализация — строго по цепочке Epic → Feature → Task →
+> Implementation → Testing → Review, по одной задаче, после утверждения плана
+> конкретной фичи (см. CLAUDE.md §6).
+>
+> **Важно (baseline, на котором строим — уже есть, НЕ переписываем):** attack-paths
+> (EPIC 11, `intelligence.build_attack_paths` + diff/monitoring EPIC 13),
+> exposure (likelihood-ось), asset criticality (EPIC 9), priority (EPIC 7/10),
+> scan accuracy, technology risk (EPIC 15), compliance OWASP/CWE (EPIC 16),
+> EXT-OSINT (BBOT/Document Intelligence/OSINT-каталог). NEXT добавляет **бизнес-
+> риск-слой ПОВЕРХ** них, переиспользуя те же движки и сторы.
+
+### Зачем (цель эпика)
+
+Сдвиг приоритизации с **severity-driven** на **business-risk-driven**: «что чинить
+первым» учитывает не только техническую серьёзность, но и бизнес-важность актива,
+чувствительность данных и контекст угроз; attack-paths становятся детерминированными
+маршрутами «внешняя точка → критичный актив»; для топ-находок/путей заводятся
+remediation-задачи; мониторинг ловит **семантический drift** (значимое изменение
+позы), а не только появление актора; compliance расширяется до auditor-friendly
+маппинга сверх OWASP/CWE; cloud/container/IaC-конфиги дают активы/находки **без
+cloud-API** на первом этапе.
+
+### Definition of Done
+
+- Пользователь может задать **бизнес-контекст** активов (criticality, data sensitivity).
+- Приоритет находок учитывает severity, confidence, exposure, business criticality,
+  data sensitivity и threat context.
+- Система строит **deterministic attack paths** от внешней точки до критичного актива.
+- Для top findings/paths создаются **remediation tasks**.
+- Monitoring умеет **semantic drift / change events**.
+- Compliance умеет **auditor-friendly mapping** beyond OWASP/CWE.
+- Cloud/container/IaC configs дают assets/findings **без cloud API** на первом этапе.
+- Все поверхности: **core → report → GUI/web/export**, без дублирования модели.
+- Все тесты **offline/headless**.
+
+### Инварианты NEXT (поверх общих из CLAUDE.md §4–§5)
+
+- **Никакой второй модели данных.** Бизнес-контекст = аддитивные `attrs`/ключи в
+  `metadata.json` (паттерн Company-tier F-C1) и derive-on-read; запрещено заводить
+  второй `AssetStore`/`FindingsStore`/`Timeline`.
+- **Business risk — display/derive слой** (как priority/exposure/criticality):
+  `_risk_level`/`risk_100` НЕ трогаем без отдельного явного согласования.
+- **Cloud/IaC фаза 1 — БЕЗ cloud API.** Только парсинг локальных IaC/конфиг-файлов;
+  любое сетевое — opt-in + Scope Guard. Тяжёлые парсеры — feature-gate + мягкая
+  деградация.
+- **Только authorized, evidence-based validation.** Никакого exploitation, brute
+  force, auto-login, payload execution.
+- **AGPL/GPL-чистота** сохраняется (как EXT-OSINT).
+
+---
+
+### F0 — Platform Trust Hardening
+
+**Цель:** сначала укрепить фундамент, чтобы следующий слой не разъехался.
+
+- **T0.1 SQLite migration framework.** Сейчас `findings_store`/`asset_store`/
+  `cve_store` версионируются каждый по-своему (`SCHEMA_VERSION`/`user_version`,
+  свои `_migrate_*`). Свести к единому паттерну: общий хелпер версии/миграций
+  (`utils/sqlite_store.py`), idempotent migrations, upgrade-path тесты (v_old→v_new
+  на временной БД), **без слома существующих БД** и контрактов сторов.
+- **T0.2 Contract-тесты ключей.** Зафиксировать back-compat `report.json`/
+  `metadata.json`/findings/assets/timeline ключей регресс-тестом перед тем, как
+  NEXT-фичи начнут их расширять (страховка инварианта §4.7).
+
+### F1 — Business Context Model (asset criticality + data sensitivity)
+
+**Цель:** пользователь задаёт бизнес-контекст активов.
+**Где живёт:** аддитивный ключ в `metadata.json` проекта / `Asset.attrs`
+(паттерн Company-tier membership F-C1), **без новой таблицы**.
+**Tasks:** enum-модель (business tier + data class) в `core/`; set/get-примитивы;
+GUI/web ввод (по образцу Company-assign); derive в `asset_criticality`
+(business-вес как дополнительный фактор, не замена type-веса).
+
+### F2 — Business-Aware Prioritization
+
+**Цель:** priority учитывает severity + confidence + exposure + business criticality
++ data sensitivity + threat context.
+**Где живёт:** расширение `intelligence.priority`/`build_intelligence` (как EPIC 10
+вплёл criticality-band) — **аддитивные опц. аргументы**, поведение без контекста
+байт-в-байт. Threat context фаза 1 = статический tier/derive; live-фиды (KEV/EPSS)
+— opt-in feature-gate, отдельный Task.
+
+### F3 — Deterministic Attack Paths (external → critical asset)
+
+**Цель:** маршрут от внешней точки входа до критичного актива.
+**Где живёт:** углубление `intelligence.build_attack_paths` (EPIC 11). Сейчас —
+derive по shared-infra кластерам; NEXT — детерминированный multi-hop путь по рёбрам
+`asset_graph` (external entry → pivot → critical target), ранжирование с учётом
+business criticality (F1). Display/derive, мониторинг автоматом (EPIC 13 уже диффит
+attack-paths).
+
+### F4 — Remediation Tasks
+
+**Цель:** для top findings/paths создаются remediation-задачи (status/owner/due).
+**Где живёт:** lifecycle поверх существующей `finding_events` (паттерн
+`github_issues` ISSUE_CREATED маркер / SLA one-shot) — **без новой таблицы**.
+core → report-карточка → GUI/web/export/CLI (паттерн issues/compliance).
+
+### F5 — Semantic Drift Monitoring
+
+**Цель:** monitoring ловит значимое изменение позы, а не только появление актора.
+**Где живёт:** поверх `scan_diff`/`diff_events`/`timeline` — новый класс событий
+«drift» (значимое смещение exposure/criticality/attack-path band между сканами),
+alertable через существующий Alert Center. Derive, web-паритет автоматом.
+
+### F6 — Auditor-Friendly Compliance
+
+**Цель:** маппинг beyond OWASP/CWE (PCI-DSS / ISO 27001 / NIST CSF / SOC2).
+**Где живёт:** расширение `core/compliance.py` (один SSOT `classify` →
+доп. фреймворк-маппинг); auditor-friendly export через уже готовые
+Markdown/CSV/SARIF-поверхности. Без новой системы маппинга.
+
+### F7 — Cloud / Container / IaC Config Ingestion (фаза 1, без cloud API)
+
+**Цель:** локальные IaC/конфиги (Terraform / CloudFormation / k8s manifests /
+Dockerfile / docker-compose) → активы/находки.
+**Где живёт:** opt-in фаза в `CollectionRunner` (паттерн `_phase_*`), парсинг
+**локальных файлов** (нет cloud-API в фазе 1; любое будущее API — Scope Guard +
+отдельный Task); нормализация через существующие `asset_adapter`/`findings_adapter`.
+Тяжёлые парсеры — feature-gate + мягкая деградация (паттерн document_providers).
+
+### Точки интеграции (существующие — переиспользовать, НЕ дублировать)
+
+- `core/intelligence.py` — priority / criticality / exposure / attack_paths.
+- `core/correlation.py` + `core/asset_graph.py` — отношения активов/инфры.
+- `core/compliance.py` — единый SSOT маппинга (F6).
+- `core/findings_store.py` (`finding_events`) — remediation/issue/one-shot маркеры (F4).
+- `core/scan_diff.py` + `core/timeline.py` + `core/alerts.py` — drift-события (F5).
+- `core/scope_guard` (EPIC 14) — гейт любых активных/сетевых действий (F7).
+- `core/asset_adapter.py` + `asset_store.py` + `metadata.json` — business-context attrs (F1, паттерн Company-tier).
+- `remote/web_app.py` — read-поверхности (паритет с GUI).
+
+### Зафиксированные «нет»
+
+- Не дублировать модель данных (второй AssetStore/FindingsStore/Timeline — запрещено).
+- Не вводить cloud-API в фазе 1 F7.
+- Не добавлять exploitation / brute force / auto-login / payload execution.
+- Не менять risk-вердикт (`_risk_level`/`risk_100`) без отдельного согласования.
+- Не копировать AGPL/GPL-код.
+- README не описывать как готовое до факта реализации.
 - `core/collection_runner.py` — проводка opt-in фаз (паттерн `_phase_osv/_phase_asn`).
 - `core/monitor.py` (`_build_run_fn`) — monitor-паритет.
 - `core/scope_management` / Scope Guard (EPIC 14) — гейт активных действий.
