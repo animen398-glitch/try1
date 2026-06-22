@@ -80,13 +80,55 @@ _RULE_MAP = (
 
 _SEVERITY_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, 'info': 0}
 
+# Auditor-friendly framework crosswalk (EPIC NEXT F6). Beyond OWASP/CWE, an
+# auditor wants the finding mapped to the control frameworks they certify against.
+# This is a *derive over the OWASP class* — one SSOT, no second classification
+# system: each OWASP Top-10 2021 category maps to a representative control in PCI
+# DSS v4.0, ISO/IEC 27001:2022 (Annex A), NIST CSF 2.0 and SOC 2 (Trust Services
+# Criteria). Representative references for triage/coverage — not a substitute for a
+# formal audit.
+AUDITOR_FRAMEWORKS = ('pci_dss', 'iso_27001', 'nist_csf', 'soc2')
+FRAMEWORK_LABELS = {
+    'pci_dss': 'PCI DSS v4.0', 'iso_27001': 'ISO/IEC 27001:2022',
+    'nist_csf': 'NIST CSF 2.0', 'soc2': 'SOC 2 (TSC)',
+}
+_OWASP_FRAMEWORKS: Dict[str, Dict[str, str]] = {
+    'A01:2021': {'pci_dss': '7.2', 'iso_27001': 'A.5.15', 'nist_csf': 'PR.AA',
+                 'soc2': 'CC6.1'},
+    'A02:2021': {'pci_dss': '3.5, 4.2', 'iso_27001': 'A.8.24', 'nist_csf': 'PR.DS',
+                 'soc2': 'CC6.7'},
+    'A03:2021': {'pci_dss': '6.2.4', 'iso_27001': 'A.8.28', 'nist_csf': 'PR.PS',
+                 'soc2': 'CC8.1'},
+    'A04:2021': {'pci_dss': '6.2', 'iso_27001': 'A.8.25', 'nist_csf': 'PR.PS',
+                 'soc2': 'CC8.1'},
+    'A05:2021': {'pci_dss': '2.2', 'iso_27001': 'A.8.9', 'nist_csf': 'PR.PS',
+                 'soc2': 'CC7.1'},
+    'A06:2021': {'pci_dss': '6.3.3', 'iso_27001': 'A.8.8', 'nist_csf': 'ID.RA',
+                 'soc2': 'CC7.1'},
+    'A07:2021': {'pci_dss': '8.3', 'iso_27001': 'A.5.17', 'nist_csf': 'PR.AA',
+                 'soc2': 'CC6.1'},
+    'A08:2021': {'pci_dss': '6.4.3', 'iso_27001': 'A.8.32', 'nist_csf': 'PR.DS',
+                 'soc2': 'CC8.1'},
+    'A09:2021': {'pci_dss': '10.2', 'iso_27001': 'A.8.15', 'nist_csf': 'DE.CM',
+                 'soc2': 'CC7.2'},
+    'A10:2021': {'pci_dss': '6.2.4', 'iso_27001': 'A.8.23', 'nist_csf': 'PR.IR',
+                 'soc2': 'CC6.6'},
+}
+
+
+def frameworks_for(owasp: Optional[str]) -> Dict[str, str]:
+    """Auditor-framework controls for an OWASP category id (``{}`` if unmapped)."""
+    return dict(_OWASP_FRAMEWORKS.get(owasp or '', {}))
+
 
 def classify(category: str, rule_id: str = '', title: str = '') -> Dict:
-    """Resolve ``{owasp, owasp_name, cwe}`` for a finding (pure).
+    """Resolve ``{owasp, owasp_name, cwe, frameworks}`` for a finding (pure).
 
     A keyword rule match (sqli / ssrf / …) wins over the category default; an
     unmapped finding returns ``owasp=None`` (so the caller can surface it
-    separately rather than mis-classify it)."""
+    separately rather than mis-classify it). ``frameworks`` is the auditor
+    crosswalk (PCI/ISO/NIST/SOC2) derived from the OWASP class — empty for an
+    unmapped finding (F6)."""
     cat = str(category or '').strip().lower()
     base = dict(_CATEGORY_MAP.get(cat, {'owasp': None, 'cwe': []}))
     hay = f'{str(rule_id or "").lower()} {str(title or "").lower()}'
@@ -96,7 +138,7 @@ def classify(category: str, rule_id: str = '', title: str = '') -> Dict:
             break
     owasp = base.get('owasp')
     return {'owasp': owasp, 'owasp_name': _OWASP_NAMES.get(owasp, ''),
-            'cwe': list(base.get('cwe') or [])}
+            'cwe': list(base.get('cwe') or []), 'frameworks': frameworks_for(owasp)}
 
 
 def build_compliance(findings: Optional[List[Dict]]) -> Dict:
@@ -142,6 +184,7 @@ def build_compliance(findings: Optional[List[Dict]]) -> Dict:
     for oid, _ in OWASP_TOP10:
         b = buckets[oid]
         b['cwe'] = sorted(b['cwe'])
+        b['frameworks'] = frameworks_for(oid)   # F6: auditor crosswalk per category
         by_owasp.append(b)
 
     total = sum(b['count'] for b in by_owasp) + len(unmapped)

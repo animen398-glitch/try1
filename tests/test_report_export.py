@@ -292,6 +292,9 @@ def test_sarif_rule_tags_carry_cwe_and_owasp_taxonomy():
     assert 'OWASP:A07:2021' in sec_tags
     cve_tags = rules['cve-2020-11022']['properties']['tags']
     assert 'external/cwe/cwe-1395' in cve_tags and 'OWASP:A06:2021' in cve_tags
+    # F6: the auditor-framework crosswalk rides along (A07 secret controls).
+    assert 'PCI-DSS:8.3' in sec_tags and 'ISO-27001:A.5.17' in sec_tags
+    assert 'NIST-CSF:PR.AA' in sec_tags and 'SOC2:CC6.1' in sec_tags
 
 
 def test_sarif_tags_prefer_explicit_finding_cwe():
@@ -407,6 +410,18 @@ def test_compliance_markdown_unmapped_section():
     md = rx.compliance_markdown([{'id': 'm', 'category': 'vuln', 'rule_id': 'x',
                                   'title': 'Mystery', 'severity': 'low'}])
     assert '## Unmapped (review)' in md and 'Mystery' in md
+
+
+def test_compliance_markdown_framework_crosswalk():
+    # F6: a category with findings appears in the auditor crosswalk table with its
+    # PCI/ISO/NIST/SOC2 controls; an all-clean report has no crosswalk.
+    md = rx.compliance_markdown([{'id': 'q', 'category': 'vuln', 'rule_id': 'sqli',
+                                  'title': 'SQL injection', 'severity': 'high'}])
+    assert '## Framework crosswalk' in md
+    assert 'PCI DSS v4.0' in md and 'ISO/IEC 27001:2022' in md
+    assert 'NIST CSF 2.0' in md and 'SOC 2 (TSC)' in md
+    assert '6.2.4' in md and 'A.8.28' in md            # A03 controls
+    assert '## Framework crosswalk' not in rx.compliance_markdown([])
 
 
 # ── technology_risk_csv (EPIC 15 — technology-risk items) ───────────────────────

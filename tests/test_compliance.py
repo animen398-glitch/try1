@@ -96,3 +96,28 @@ def test_load_compliance_uses_active_findings():
     data = compliance.load_compliance('p', store=_Store())
     assert data['summary']['total_findings'] == 1
     assert next(b for b in data['by_owasp'] if b['id'] == 'A07:2021')['count'] == 1
+
+
+# ── auditor-framework crosswalk (F6) ──────────────────────────────────────────
+
+def test_classify_carries_framework_crosswalk():
+    # A03 Injection → its representative PCI/ISO/NIST/SOC2 controls.
+    cls = compliance.classify('vuln', 'sqli', 'SQL injection')
+    fw = cls['frameworks']
+    assert fw == {'pci_dss': '6.2.4', 'iso_27001': 'A.8.28',
+                  'nist_csf': 'PR.PS', 'soc2': 'CC8.1'}
+    # every Top-10 category has a full crosswalk (all four frameworks)
+    for oid, _ in compliance.OWASP_TOP10:
+        assert set(compliance.frameworks_for(oid)) == set(compliance.AUDITOR_FRAMEWORKS)
+
+
+def test_unmapped_finding_has_no_frameworks():
+    cls = compliance.classify('vuln', 'x', 'Mystery')   # no OWASP class
+    assert cls['owasp'] is None and cls['frameworks'] == {}
+    assert compliance.frameworks_for(None) == {}
+
+
+def test_build_compliance_bucket_carries_frameworks():
+    data = compliance.build_compliance([_f('secret', fid='s')])   # → A07
+    a07 = next(b for b in data['by_owasp'] if b['id'] == 'A07:2021')
+    assert a07['frameworks']['pci_dss'] == '8.3'

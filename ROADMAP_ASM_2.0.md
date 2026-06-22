@@ -1292,9 +1292,24 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 ### F6 — Auditor-Friendly Compliance
 
 **Цель:** маппинг beyond OWASP/CWE (PCI-DSS / ISO 27001 / NIST CSF / SOC2).
-**Где живёт:** расширение `core/compliance.py` (один SSOT `classify` →
-доп. фреймворк-маппинг); auditor-friendly export через уже готовые
-Markdown/CSV/SARIF-поверхности. Без новой системы маппинга.
+**Где живёт:** расширение `core/compliance.py` (один SSOT `classify`).
+
+**[ВЫПОЛНЕНО 2026-06-22]** (derive над OWASP-классом — без второй системы маппинга):
+- **Crosswalk** `core/compliance.py`: `AUDITOR_FRAMEWORKS`+`FRAMEWORK_LABELS` (PCI DSS
+  v4.0 / ISO/IEC 27001:2022 / NIST CSF 2.0 / SOC 2 TSC) + `_OWASP_FRAMEWORKS`
+  (каждая OWASP Top-10 2021 категория → репрезентативный контрол каждого
+  фреймворка) + `frameworks_for(owasp)`. `classify()` += ключ `frameworks` (derive
+  из owasp; unmapped → `{}`; owasp/owasp_name/cwe не тронуты → аддитивно).
+  `build_compliance` кладёт `frameworks` в каждый bucket.
+- **Auditor-поверхности** (готовые экспорты, без новых): `report_export.
+  compliance_markdown` += таблица «Framework crosswalk» (категории с находками →
+  PCI/ISO/NIST/SOC2); `_sarif_tags` += теги `PCI-DSS:…`/`ISO-27001:…`/`NIST-CSF:…`/
+  `SOC2:…` (тот же SSOT → SARIF несёт полную таксономию). `monitor_cli compliance`
+  получает crosswalk автоматом (зовёт `compliance_markdown`).
+- Представительные ссылки для triage/coverage (не замена формального аудита). Pure
+  derive, без схемы/новых данных, risk не тронут. Покрыто `tests/test_compliance.py`
+  (frameworks в classify/bucket / unmapped→пусто / полнота по всем 10) и
+  `tests/test_report_export.py` (crosswalk-таблица + SARIF framework-теги).
 
 ### F7 — Cloud / Container / IaC Config Ingestion (фаза 1, без cloud API)
 

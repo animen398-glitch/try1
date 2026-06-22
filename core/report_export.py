@@ -385,6 +385,12 @@ def _sarif_tags(finding: Dict) -> List[str]:
             tags.append(tag)
     if cls.get('owasp'):
         tags.append(f"OWASP:{cls['owasp']}")
+    # Auditor-framework crosswalk (F6) — same SSOT, so the SARIF carries the full
+    # taxonomy (PCI/ISO/NIST/SOC2) the compliance report shows.
+    _fw_prefix = {'pci_dss': 'PCI-DSS', 'iso_27001': 'ISO-27001',
+                  'nist_csf': 'NIST-CSF', 'soc2': 'SOC2'}
+    for key, ref in (cls.get('frameworks') or {}).items():
+        tags.append(f"{_fw_prefix.get(key, key)}:{ref}")
     return tags
 
 
@@ -552,6 +558,23 @@ def compliance_markdown(findings: Optional[List[Dict]]) -> str:
         out.append(f"| {b['id']} {b['name']} | {status} | {cwe} | "
                    f"{b['count']} | {_severities_cell(b['severities'])} |")
     out.append('')
+
+    # Auditor crosswalk (F6): the categories with findings mapped to the control
+    # frameworks an auditor certifies against (derived from the OWASP class).
+    from core.compliance import AUDITOR_FRAMEWORKS, FRAMEWORK_LABELS
+    crosswalk = [b for b in data['by_owasp'] if b['count'] and b.get('frameworks')]
+    if crosswalk:
+        out.append('## Framework crosswalk')
+        out.append('| OWASP category | '
+                   + ' | '.join(FRAMEWORK_LABELS[f] for f in AUDITOR_FRAMEWORKS)
+                   + ' |')
+        out.append('|---' * (len(AUDITOR_FRAMEWORKS) + 1) + '|')
+        for b in crosswalk:
+            fw = b['frameworks']
+            out.append(f"| {b['id']} {b['name']} | "
+                       + ' | '.join(fw.get(f, '—') for f in AUDITOR_FRAMEWORKS)
+                       + ' |')
+        out.append('')
 
     for b in data['by_owasp']:
         if not b['count']:
