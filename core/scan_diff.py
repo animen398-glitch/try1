@@ -564,6 +564,11 @@ def _dmarc_rank(policy: str) -> int:
     return _DMARC_RANK.get(str(policy).strip().lower(), -1)
 
 
+# SPF all-mechanism enforcement strength: -all (hardfail) > ~all (softfail) >
+# ?all (neutral) > +all (pass-all). A drop in rank between scans is a regression.
+_SPF_QUAL_RANK = {'-': 3, '~': 2, '?': 1, '+': 0}
+
+
 # Attack-path band severity, weakest → strongest; a rise is an escalation.
 _BAND_RANK = {'low': 0, 'medium': 1, 'high': 2}
 
@@ -792,18 +797,27 @@ def diff_events(d: Dict) -> List[Dict]:
             add('security_header_removed', label, 'headers')
 
     # DNS email-auth (SPF/DMARC) regression — anti-spoofing protection that weakened
-    # between scans: a removed SPF/DMARC record, or a DMARC policy downgraded
-    # (reject > quarantine > none). Alertable, like a dropped security header. The
-    # dns section is field-keyed (SPF/DMARC/DKIM/CAA); DMARC holds the policy word,
-    # so a downgrade is rankable (unlike a generic value change, which we skip — a
-    # changed SPF string isn't provably weaker). This is the regression *delta*,
-    # distinct from dns_intel's steady-state "No SPF / No DMARC" findings.
+    # between scans: a removed SPF/DMARC record, a DMARC policy downgrade
+    # (reject > quarantine > none) or an SPF enforcement downgrade (the all-mechanism
+    # qualifier -all > ~all > ?all > +all). Alertable, like a dropped security header.
+    # The dns section is field-keyed (SPF/DMARC/DKIM/CAA); DMARC holds the policy word
+    # and SPF the full record, so both are rankable. A non-rankable SPF change (e.g.
+    # neither side has an ``all`` mechanism) is skipped — not provably weaker. This is
+    # the regression *delta*, distinct from dns_intel's steady-state "No SPF" findings.
     for ch in sections.get('dns', {}).get('changed', []):
         if not isinstance(ch, dict):
             continue
         key, a, b = ch.get('key'), str(ch.get('a', '')), str(ch.get('b', ''))
-        if key == 'SPF' and a != '—' and b == '—':
-            add('dns_email_auth_weakened', 'SPF record removed', 'dns')
+        if key == 'SPF':
+            if a != '—' and b == '—':
+                add('dns_email_auth_weakened', 'SPF record removed', 'dns')
+            elif a != '—' and b != '—':
+                from core.dns_intel import _spf_all_qualifier
+                qa, qb = _spf_all_qualifier(a), _spf_all_qualifier(b)
+                if qa in _SPF_QUAL_RANK and qb in _SPF_QUAL_RANK \
+                        and _SPF_QUAL_RANK[qb] < _SPF_QUAL_RANK[qa]:
+                    add('dns_email_auth_weakened',
+                        f'SPF enforcement weakened ({qa}all → {qb}all)', 'dns')
         elif key == 'DMARC':
             if a != '—' and b == '—':
                 add('dns_email_auth_weakened', 'DMARC record removed', 'dns')

@@ -1254,6 +1254,20 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**SPF-enforcement downgrade → diff-регрессия (хвост #11) — `[ЗАКРЫТ]`.** Backend-фаза,
+закрыт self-flagged follow-up из weak-SPF (#11). `dns_email_auth_weakened` ловил
+removal SPF/DMARC + DMARC policy downgrade, но **смену SPF-строки не судил** («не
+provably weaker»). Теперь судит: квалификатор `all`-механизма orderable
+(`-all > ~all > ?all > +all`), так что `-all → +all` = реальная анти-спуфинг
+регрессия. Фикс: `_SPF_QUAL_RANK` (локальный, как `_dmarc_rank`) + в dns-handler
+`diff_events` для changed SPF (обе стороны не-'—') парсит квалификаторы через
+**функция-локальный** импорт `dns_intel._spf_all_qualifier` (SSOT, без дубля; lazy
+— модуль-загрузка scan_diff остаётся лёгкой; dns_intel lean, не recon-heavy) →
+downgrade эмитит `dns_email_auth_weakened` (high, alertable, как DMARC-downgrade).
+Upgrade (~all→-all) и неранжируемая смена (нет `all` ни у одной стороны) — не
+событие. Покрыто `test_diff_events` (downgrade=high+alertable / strengthen+unrankable
+не событие). SPF-строка в HTML-диффе цела (full string для display).
+
 **Security-headers SSOT — устранён дубликат-дрейф — `[ЗАКРЫТ, debt/latent-bug]`.**
 Backend-фаза. `core/security_headers.py` объявлял себя «single source of truth», но
 `vuln_scanner._EXPECTED_SECURITY_HEADERS` был **отдельным дубль-списком** тех же 6

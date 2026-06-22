@@ -293,6 +293,31 @@ def test_dns_email_auth_improvement_is_not_an_event():
             if e['type'] == 'dns_email_auth_weakened'] == []
 
 
+def test_spf_enforcement_downgrade_is_weakened():
+    # The SPF record stays but its all-mechanism weakens (-all → +all) → a real
+    # anti-spoofing regression, alertable like a DMARC policy downgrade.
+    d = _diff(dns={'added': [], 'removed': [], 'changed': [
+        {'key': 'SPF', 'a': 'v=spf1 include:x -all', 'b': 'v=spf1 include:x +all'},
+    ]})
+    events = [e for e in diff_events(d) if e['type'] == 'dns_email_auth_weakened']
+    assert len(events) == 1 and events[0]['severity'] == 'high'
+    assert '-all' in events[0]['title'] and '+all' in events[0]['title']
+    assert 'dns_email_auth_weakened' in [a['type'] for a in alerts.extract_alerts(d)]
+
+
+def test_spf_enforcement_strengthen_or_unrankable_is_not_an_event():
+    # Strengthening (~all → -all) is no regression; and a change where neither side
+    # has an all-mechanism is not provably weaker → no event.
+    d = _diff(dns={'added': [], 'removed': [], 'changed': [
+        {'key': 'SPF', 'a': 'v=spf1 ~all', 'b': 'v=spf1 -all'},
+    ]})
+    assert [e for e in diff_events(d) if e['type'] == 'dns_email_auth_weakened'] == []
+    d2 = _diff(dns={'added': [], 'removed': [], 'changed': [
+        {'key': 'SPF', 'a': 'v=spf1 include:a', 'b': 'v=spf1 include:b'},
+    ]})
+    assert [e for e in diff_events(d2) if e['type'] == 'dns_email_auth_weakened'] == []
+
+
 def test_new_exposure_cluster_is_timeline_only():
     # A newly-formed shared-infra cluster (Asset Correlation Engine) is a medium
     # structural-discovery note, not alertable (like a new subdomain).
