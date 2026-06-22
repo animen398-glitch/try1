@@ -31,6 +31,11 @@ _SENSITIVE_PATH_PATTERNS = [
     '?id=', '?user=', '?file=',
 ]
 
+# Query-parameter hints: a parameter merely *being present* is weak IDOR/LFI recon
+# (and ?id=/?user=/?file= are near-universal on dynamic sites), not a confirmed
+# issue — so these surface at Info, not Medium like a genuinely sensitive *path*.
+_SENSITIVE_PARAM_HINTS = {'?id=', '?user=', '?file='}
+
 
 class VulnScanner:
     """Analyses recon + dynamic results and returns a list of finding dicts."""
@@ -246,7 +251,8 @@ class VulnScanner:
                 if pat in needle and pat not in seen:
                     seen.add(pat)
                     findings.append({
-                        'severity': SEVERITY_MEDIUM,
+                        'severity': (SEVERITY_INFO if pat in _SENSITIVE_PARAM_HINTS
+                                     else SEVERITY_MEDIUM),
                         'title': f"Sensitive path pattern detected: {pat}",
                         'detail': ep.get('url', '')[-100:],
                     })

@@ -105,6 +105,20 @@ def test_csp_strict_not_flagged():
     assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
 
 
+def test_sensitive_path_vs_param_severity():
+    # A genuinely sensitive path is Medium; a mere query-parameter hint (?id=) —
+    # near-universal, weak IDOR recon — is only Info.
+    def _find(url):
+        findings = VulnScanner().scan(
+            {"url": "https://x"}, {"endpoints": [{"url": url, "path": ""}]})
+        return next(f for f in findings
+                    if f["title"].startswith("Sensitive path pattern"))
+    assert _find("https://x/admin/login")["severity"] == SEVERITY_MEDIUM
+    assert _find("https://x/.env")["severity"] == SEVERITY_MEDIUM
+    assert _find("https://x/p?id=5")["severity"] == SEVERITY_INFO
+    assert _find("https://x/d?file=a.txt")["severity"] == SEVERITY_INFO
+
+
 def test_server_disclosure_severity_depends_on_version():
     # A versioned Server header (targeted-CVE risk) is Medium; a bare product name
     # (near-universal, no version) is only an Info disclosure.

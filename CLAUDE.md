@@ -1254,6 +1254,20 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Query-param «sensitive path» → Info — `[ЗАКРЫТ, accuracy-фикс]`.** Backend-фаза,
+severity-калибровка. `_check_sensitive_paths` рейтил ВСЕ паттерны Medium, включая
+query-param-хинты `?id=`/`?user=`/`?file=` — но наличие параметра само по себе слаб.
+IDOR/LFI-recon (вездесущи на динамике), не подтверждённая проблема → постоянный
+false-Medium на каждом сайте. Фикс: `_SENSITIVE_PARAM_HINTS` → Info; path-паттерны
+(`.env`/`/admin`/`/credentials`…) остаются Medium. Severity НЕ часть fingerprint →
+ноль identity-churn. Снижает risk-инфляцию. Покрыто `test_vuln_scanner`
+(path=Medium / param=Info). **Отложенный follow-up (флаг):** `_check_https` рейтит
+`http://`-URL как High, но если сайт редиректит на HTTPS, это false-High —
+`recon['url']` хранит ВХОДНОЙ url, финальный (post-redirect) не захватывается
+(`urlopen_retry` дропает `geturl()`); фикс требует прокинуть final-url через
+shared http-util → deliberate multi-module, не leaf (триггерится лишь на явный
+`http://`-ввод, т.к. голый домен → https).
+
 **Server-disclosure severity по версии — `[ЗАКРЫТ, accuracy-фикс]`.** Backend-фаза,
 severity-калибровка (под-класс accuracy). `_check_server_disclosure` рейтил ЛЮБОЙ
 `Server`/`X-Powered-By`/`X-Generator` как **Medium**, но реальный риск — **версия**
