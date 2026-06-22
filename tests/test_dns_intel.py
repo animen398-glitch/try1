@@ -54,6 +54,35 @@ def test_analyze_weak_dmarc_is_info():
     assert titles == {'DMARC policy is p=none': 'Info'}
 
 
+def test_analyze_flags_pass_all_spf():
+    # +all (and a bare all) pass every sender → a Medium misconfiguration finding.
+    full = _records(TXT=['v=spf1 include:x +all'], DMARC=['v=DMARC1; p=reject'],
+                    DKIM={'default': ['v=DKIM1']}, CAA=['0 issue "x"'])
+    sev = {f['title']: f['severity'] for f in dns.analyze(full)['findings']}
+    assert sev == {'SPF allows all senders (+all)': 'Medium'}
+    # a bare "all" defaults to +all → same finding
+    full['TXT'] = ['v=spf1 all']
+    titles = {f['title'] for f in dns.analyze(full)['findings']}
+    assert 'SPF allows all senders (+all)' in titles
+
+
+def test_analyze_flags_neutral_spf_is_info():
+    rec = _records(TXT=['v=spf1 ?all'], DMARC=['v=DMARC1; p=reject'],
+                   DKIM={'default': ['v=DKIM1']}, CAA=['0 issue "x"'])
+    sev = {f['title']: f['severity'] for f in dns.analyze(rec)['findings']}
+    assert sev == {'SPF policy is neutral (?all)': 'Info'}
+
+
+def test_spf_all_qualifier_parsing():
+    assert dns._spf_all_qualifier('v=spf1 include:x -all') == '-'
+    assert dns._spf_all_qualifier('v=spf1 ~all') == '~'
+    assert dns._spf_all_qualifier('v=spf1 ?all') == '?'
+    assert dns._spf_all_qualifier('v=spf1 +all') == '+'
+    assert dns._spf_all_qualifier('v=spf1 all') == '+'        # bare all → +
+    assert dns._spf_all_qualifier('v=spf1 include:x') is None  # no all mechanism
+    assert dns._spf_all_qualifier(None) is None
+
+
 # ── fetch_records (injected query) ────────────────────────────────────────────
 
 def test_fetch_records_probes_dmarc_and_dkim_selectors():

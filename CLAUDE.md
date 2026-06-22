@@ -1254,6 +1254,21 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Weak SPF (+all/?all) → находка — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+detected-but-not-promoted паттерн, что #GraphQL (лид с него). `dns_intel.analyze`
+флагует только **отсутствие** SPF, а present-but-weak SPF (квалификатор `all`)
+детектился (полная строка в `email_auth.spf`), но находкой не становился. Фикс:
+`_spf_all_qualifier(spf)` парсит квалификатор `all`-механизма (`-`/`~`/`?`/`+`, bare
+`all`→`+` по RFC 7208); `analyze` эмитит `SPF allows all senders (+all)` (Medium —
+проходят все отправители, SPF бесполезен) и `SPF policy is neutral (?all)` (Info).
+**`~all` (softfail) НЕ флагуется** — это де-факто стандарт (Google/Microsoft), флаг
+был бы шумом и ломал бы established «healthy»-тест. `source='dns'` (scope-guard цел),
+category='dns'→A05/CWE-16 (compliance/knowledge/risk автоматом). SPF-qualifier
+downgrade в dns_email_auth_weakened (diff-регрессия, теперь orderable как DMARC) —
+возможный follow-up; пока покрыто F1 new_finding. Покрыто `test_dns_intel`
+(+all=Medium/bare-all/?all=Info/qualifier-парсинг; healthy ~all и weak-dmarc тесты
+целы).
+
 **GraphQL field-suggestions / query-batching → находки — `[ЗАКРЫТ]`.** Backend-
 фаза, computed-but-lost. `GraphQLDiscovery` детектит 4 экспозиции (introspection,
 reachable, **field suggestions**, **query batching** — последние две независимо от

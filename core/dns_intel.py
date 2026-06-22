@@ -3,7 +3,7 @@ DNS Intelligence — the records a domain publishes and what its email-auth post
 says about it (roadmap #13, OSINT).
 
 Resolves A / AAAA / MX / TXT / NS / CAA plus the derived email-auth records
-(SPF, DMARC, DKIM) and turns the gaps into findings (no SPF, no/weak DMARC,
+(SPF, DMARC, DKIM) and turns the gaps into findings (no/weak SPF, no/weak DMARC,
 missing CAA …) that fold into the unified risk engine.
 
 Why DNS-over-HTTPS: the standard library can resolve A/AAAA (``socket``) but not
@@ -92,6 +92,21 @@ def _spf(records: Dict) -> Optional[str]:
     return None
 
 
+def _spf_all_qualifier(spf: Optional[str]) -> Optional[str]:
+    """The qualifier on the SPF ``all`` mechanism: ``-`` (hardfail / strong),
+    ``~`` (softfail), ``?`` (neutral) or ``+`` (pass-all / weak). ``None`` when the
+    record has no ``all`` mechanism. A bare ``all`` defaults to ``+`` per RFC 7208."""
+    if not spf:
+        return None
+    for tok in str(spf).split():
+        t = tok.strip().lower()
+        if t == 'all':
+            return '+'
+        if len(t) == 4 and t[1:] == 'all' and t[0] in '+-~?':
+            return t[0]
+    return None
+
+
 def _dmarc_policy(records: Dict) -> Optional[str]:
     """The DMARC policy (``none``/``quarantine``/``reject``) or None if absent."""
     for txt in records.get('DMARC', []):
@@ -120,6 +135,19 @@ def analyze(records: Dict) -> Dict:
     if not spf:
         add('Medium', 'No SPF record',
             'Domain publishes no SPF (v=spf1) TXT record — sender spoofing is easier.')
+    else:
+        # A present SPF can still be weak: its ``all`` qualifier decides enforcement.
+        # ``~all`` (softfail) is the widely-accepted standard (Google/Microsoft use
+        # it), so it is not flagged; only the genuinely broken qualifiers are.
+        qual = _spf_all_qualifier(spf)
+        if qual == '+':
+            add('Medium', 'SPF allows all senders (+all)',
+                'SPF ends in +all (or a bare all) — every sender passes SPF, '
+                'defeating its purpose and authorizing spoofed mail.')
+        elif qual == '?':
+            add('Info', 'SPF policy is neutral (?all)',
+                'SPF ends in ?all (neutral) — it makes no assertion about senders '
+                'not listed in the record.')
     if dmarc is None:
         add('Medium', 'No DMARC record',
             'No _dmarc TXT record — recipients have no policy to act on failures.')
