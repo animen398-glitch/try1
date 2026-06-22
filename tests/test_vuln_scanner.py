@@ -105,6 +105,19 @@ def test_csp_strict_not_flagged():
     assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
 
 
+def test_server_disclosure_severity_depends_on_version():
+    # A versioned Server header (targeted-CVE risk) is Medium; a bare product name
+    # (near-universal, no version) is only an Info disclosure.
+    def _server(val):
+        findings = VulnScanner().scan(
+            {"url": "https://x", "server_headers": {"Server": val}}, {})
+        return next(f for f in findings if f["title"].startswith("Server technology"))
+    assert _server("nginx/1.18.0")["severity"] == SEVERITY_MEDIUM
+    assert _server("Apache/2.4.49 (Ubuntu)")["severity"] == SEVERITY_MEDIUM
+    assert _server("nginx")["severity"] == SEVERITY_INFO
+    assert _server("cloudflare")["severity"] == SEVERITY_INFO
+
+
 def test_csp_unsafe_inline_with_nonce_not_flagged():
     # CSP3: 'unsafe-inline' is ignored when a nonce/hash is present, so a modern
     # backward-compatible policy must NOT be reported as weak for unsafe-inline.

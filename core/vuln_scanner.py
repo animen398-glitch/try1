@@ -193,10 +193,14 @@ class VulnScanner:
     def _check_server_disclosure(self, recon: Dict, findings: List[Dict]):
         for k, v in recon.get('server_headers', {}).items():
             if k.lower() in ('server', 'x-powered-by', 'x-generator') and v:
+                # A version number (digits) is the real risk — it enables targeted
+                # CVE lookup → Medium. A bare product name ("nginx", "cloudflare")
+                # only reveals the technology and is near-universal → Info.
+                versioned = any(ch.isdigit() for ch in str(v))
                 findings.append({
-                    'severity': SEVERITY_MEDIUM,
+                    'severity': SEVERITY_MEDIUM if versioned else SEVERITY_INFO,
                     'title': f"Server technology disclosed via {k} header",
-                    'detail': v[:120],
+                    'detail': str(v)[:120],
                 })
 
     def _check_dependencies(self, recon: Dict, findings: List[Dict]):

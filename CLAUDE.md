@@ -1254,6 +1254,14 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Server-disclosure severity по версии — `[ЗАКРЫТ, accuracy-фикс]`.** Backend-фаза,
+severity-калибровка (под-класс accuracy). `_check_server_disclosure` рейтил ЛЮБОЙ
+`Server`/`X-Powered-By`/`X-Generator` как **Medium**, но реальный риск — **версия**
+(`nginx/1.18.0` → targeted CVE-lookup), а голое имя (`nginx`/`cloudflare`,
+вездесущее) раскрывает лишь технологию. Фикс: версия (есть цифры) → Medium, голое
+имя → Info (как CMS-fingerprint). Снижает инфляцию risk для повсеместного
+version-less `Server`. Покрыто `test_vuln_scanner` (versioned=Medium / bare=Info).
+
 **CSP unsafe-inline ложно «weak» при nonce/hash — `[ЗАКРЫТ, accuracy-фикс]`.**
 Backend-фаза, тот же FP-класс, что XFO/frame-ancestors. `_check_csp_weakness`
 флагал `unsafe-inline` безусловно, но по CSP3 браузеры **игнорируют** `'unsafe-
