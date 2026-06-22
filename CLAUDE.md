@@ -1254,6 +1254,19 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Security-headers SSOT — устранён дубликат-дрейф — `[ЗАКРЫТ, debt/latent-bug]`.**
+Backend-фаза. `core/security_headers.py` объявлял себя «single source of truth», но
+`vuln_scanner._EXPECTED_SECURITY_HEADERS` был **отдельным дубль-списком** тех же 6
+заголовков (не derive). Совпадали по удаче — дрейф (добавить заголовок в один список,
+не в другой) дал бы false-positive: recon-фильтр `SECURITY_HEADER_NAMES` не захватил
+бы новый заголовок → present-заголовок репортился бы «missing» (или наоборот).
+Фикс: `security_headers.py` стал истинным SSOT — **упорядоченный** `SECURITY_HEADERS`
+(канон-порядок для «missing: …» detail) + `SECURITY_HEADER_NAMES = frozenset(...)`
+derive; `vuln_scanner` импортит `SECURITY_HEADERS` (дубль удалён). Поведение байт-в-
+байт (тот же порядок/набор). Регресс-гард `test_vuln_scanner`: `_EXPECTED ⊆
+SECURITY_HEADER_NAMES` (expected-набор не может разойтись с capture-набором). recon/
+scan_diff (frozenset) не тронуты.
+
 **http→https redirect = НЕ «plain HTTP» (false-High закрыт) — `[ЗАКРЫТ, accuracy-фикс]`.**
 Backend-фаза, отложенный follow-up из #query-param (теперь сделан — user-present).
 `_check_https` рейтил `http://`-URL как **High** «served over plain HTTP», но если

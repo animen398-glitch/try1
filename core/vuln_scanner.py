@@ -5,6 +5,8 @@ Produces findings with severity: High / Medium / Info.
 import re
 from typing import Dict, List, Optional
 
+from core.security_headers import SECURITY_HEADERS
+
 # HSTS shorter than ~6 months is considered weak.
 _HSTS_MIN_MAX_AGE = 15768000
 
@@ -15,14 +17,9 @@ SEVERITY_INFO   = 'Info'
 # Weights used by summarize() to turn a finding list into a single risk score.
 _SEVERITY_WEIGHTS = {SEVERITY_HIGH: 5, SEVERITY_MEDIUM: 2, SEVERITY_INFO: 1}
 
-_EXPECTED_SECURITY_HEADERS = [
-    'strict-transport-security',
-    'content-security-policy',
-    'x-frame-options',
-    'x-content-type-options',
-    'referrer-policy',
-    'permissions-policy',
-]
+# The headers whose absence is flagged — derived from the shared SSOT so the
+# capture filter (recon) and this check can never drift out of sync.
+_EXPECTED_SECURITY_HEADERS = SECURITY_HEADERS
 
 _SENSITIVE_PATH_PATTERNS = [
     '.env', '.git/', '/admin', '/debug', 'wp-login',

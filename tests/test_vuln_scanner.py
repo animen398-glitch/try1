@@ -79,6 +79,16 @@ def test_summarize_empty():
     assert s == {"high": 0, "medium": 0, "info": 0, "total": 0, "risk_score": 0}
 
 
+def test_expected_headers_subset_of_recon_capture_set():
+    # Invariant: the missing-headers check must only expect headers recon actually
+    # captures, else a present header would be falsely reported missing. Both derive
+    # from the one SSOT (core.security_headers); this guards against re-introducing a
+    # drifting duplicate list.
+    from core.security_headers import SECURITY_HEADER_NAMES
+    from core.vuln_scanner import _EXPECTED_SECURITY_HEADERS
+    assert set(_EXPECTED_SECURITY_HEADERS) <= SECURITY_HEADER_NAMES
+
+
 def _recon_with_headers(**security):
     return {"url": "https://x", "security_headers": security}
 
