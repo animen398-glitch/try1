@@ -1175,13 +1175,22 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
   `project.get_business_context()` + кладёт `business_default` в report-карточку;
   web `_criticality_view` фолдит business из `ProjectStore(_REPORT_BASE)`; CLI
   `business_cli.py` (show/set/clear, default и per-asset через `--asset-type`/`--asset`).
-- **GUI-ввод — отложен** (internals-first); чтение бизнес-контекста уже видно в
-  Criticality-факторах/карточке/web. Покрыто `tests/test_business_context.py`
-  (вокаб/resolve/веса/Project RMW/ProjectStore.resolve/derive boost+per-asset/
-  management/CLI/web-parity).
+- **GUI-ввод — `[ВЫПОЛНЕНО 2026-06-23]`** (снят отложенный по запросу): редактор
+  бизнес-контекста проекта в Criticality-вкладке (`gui/tab_criticality.py`) — два
+  комбо (критичность бизнеса + чувствительность данных) с «—»=unset + кнопка
+  «Применить к проекту»; запись off-thread через `business_context.
+  set_business_context`, затем пересчёт критичности. Заодно закрыт пробел: вкладка
+  теперь грузит criticality **с** business (`_query_crit_table` тянет
+  `Project.get_business_context()` → `load_asset_criticality(business=)`), комбо
+  пресетятся из сохранённого default. Per-asset override остаётся на CLI
+  (`business_cli.py`) — в таблице показывается display-label, неоднозначный для
+  ключа asset-fingerprint. Покрыто `tests/test_criticality_tab.py` (combo/populate/
+  write-persist-boost/apply-writes-metadata). Покрытие core — `tests/
+  test_business_context.py`.
 
 **Tasks (выполнены):** enum-модель в `core/` ✓; set/get-примитивы ✓; derive в
-`asset_criticality` ✓; report+web+CLI ✓; GUI-ввод — отложен.
+`asset_criticality` ✓; report+web+CLI ✓; **GUI-ввод project default ✓**
+(per-asset GUI — отложен, есть в CLI).
 
 ### F2 — Business-Aware Prioritization
 
@@ -1349,8 +1358,9 @@ Dockerfile / docker-compose) → активы/находки.
 > Deterministic Attack Paths, Remediation Tasks, Semantic Drift Monitoring,
 > Auditor-Friendly Compliance, Cloud/Container/IaC Ingestion. Все — core→report→
 > web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт не
-> перестроен. **Отложено (осознанно, не блокеры):** GUI-ввод business-контекста /
-> GUI-вкладки remediation+IaC (internals-first — память
+> перестроен. **GUI business-контекста (project default) — добавлен 2026-06-23**
+> в Criticality-вкладку. **Отложено (осознанно, не блокеры):** per-asset
+> business-GUI (есть в CLI); GUI-вкладки remediation+IaC (internals-first — память
 > `feedback-internals-first-no-gui`); live threat-feed (KEV/EPSS) для F2; live
 > cloud-API для F7; прямой path→task маппинг для F4.
 

@@ -48,9 +48,9 @@ def test_query_projects_lists_asset_projects(qapp):
     assert by_name['p2']['total'] == 1
 
 
-def test_query_table_ranks_by_criticality(qapp):
+def test_query_table_ranks_by_criticality(qapp, tmp_path):
     _seed()
-    out = CriticalityTabMixin._query_crit_table('p1')
+    out = CriticalityTabMixin._query_crit_table('p1', str(tmp_path))
     items = out['crit']['items']
     assert items, 'expected at least one asset'
     # ranked criticality-desc: each score >= the next.
@@ -109,3 +109,53 @@ def test_selection_shows_factors(qapp):
     text = w.crit_detail.toPlainText()
     assert 'x.com' in text
     assert '+40' in text and 'Тип актива: domain' in text
+
+
+# ── business context editor (F1 GUI) ────────────────────────────────────────────
+
+def test_biz_combo_has_unset_and_options(qapp):
+    w = _window(qapp)
+    datas = [w.biz_default_crit.itemData(i)
+             for i in range(w.biz_default_crit.count())]
+    assert datas[0] == ''                 # leading unset entry
+    assert 'critical' in datas and 'low' in datas
+
+
+def test_populate_biz_default_reflects_stored(qapp):
+    w = _window(qapp)
+    w._populate_biz_default({'default': {'criticality': 'high',
+                                         'data_sensitivity': 'confidential'}})
+    assert w.biz_default_crit.currentData() == 'high'
+    assert w.biz_default_sens.currentData() == 'confidential'
+    w._populate_biz_default({})            # unset → back to '—'
+    assert w.biz_default_crit.currentData() == ''
+
+
+def test_write_business_persists_and_boosts_criticality(qapp, tmp_path):
+    s = AssetStore()
+    s.sync('shop.com', 's1', [Asset('subdomain', 'a.shop.com')])
+    base = str(tmp_path)
+    before = CriticalityTabMixin._query_crit_table(
+        'shop.com', base)['crit']['items'][0]['criticality']
+    res = CriticalityTabMixin._write_business(base, 'shop.com', 'critical',
+                                              'restricted')
+    assert res.get('ok')
+    out = CriticalityTabMixin._query_crit_table('shop.com', base)
+    assert out['business']['default'] == {'criticality': 'critical',
+                                          'data_sensitivity': 'restricted'}
+    assert out['crit']['items'][0]['criticality'] > before   # business augmented
+
+
+def test_apply_business_default_writes_metadata(qapp, tmp_path):
+    from core.project import ProjectStore
+    w = _window(qapp)
+    w.settings['output_dir'] = str(tmp_path)
+    w.crit_project.addItem('shop.com', 'shop.com')
+    w.crit_project.setCurrentIndex(w.crit_project.count() - 1)
+    w.biz_default_crit.setCurrentIndex(w.biz_default_crit.findData('high'))
+    w._set_busy = lambda *a, **k: None
+    w._apply_crit_filter = lambda *a, **k: None        # skip the reload chain
+    w._run_async = lambda work, cb: cb(work())         # run synchronously
+    w._apply_business_default()
+    proj = ProjectStore(str(tmp_path)).get('shop.com')
+    assert proj.get_business_context()['default'] == {'criticality': 'high'}

@@ -14,12 +14,17 @@ and closed inside the worker). Criticality is a display-only ranking (it never
 feeds the risk verdict), inherently per-project, and read-only.
 """
 
+from pathlib import Path
+
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
     QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from core.business_context import (
+    CRITICALITY_LABELS, CRITICALITY_TIERS, DATA_SENSITIVITY, SENSITIVITY_LABELS,
+)
 from gui import theme
 from gui.ui_components import (
     FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
@@ -102,10 +107,48 @@ class CriticalityTabMixin:
         detail_grp.setLayout(detail_layout)
         layout.addWidget(detail_grp)
 
+        # ── business context editor (F1 GUI) ────────────────────────────────
+        # User-declared business importance for the whole project; it augments the
+        # criticality scores above (a named factor). Per-asset overrides stay on the
+        # CLI (business_cli.py) — the table value is a display label, ambiguous to
+        # key an asset fingerprint on. Stored in metadata.json (no new table).
+        biz_grp = SectionGroupBox("Бизнес-контекст проекта (влияет на критичность)")
+        biz_layout = QVBoxLayout()
+        biz_row = FlowLayout()
+        biz_row.addWidget(QLabel("Критичность для бизнеса:"))
+        self.biz_default_crit = self._biz_combo(CRITICALITY_TIERS, CRITICALITY_LABELS)
+        biz_row.addWidget(self.biz_default_crit)
+        biz_row.addWidget(QLabel("Чувствительность данных:"))
+        self.biz_default_sens = self._biz_combo(DATA_SENSITIVITY, SENSITIVITY_LABELS)
+        biz_row.addWidget(self.biz_default_sens)
+        self.biz_apply = StyledButton("Применить к проекту", style='secondary')
+        self.biz_apply.setToolTip(
+            "Сохранить бизнес-контекст проекта в metadata.json и пересчитать "
+            "критичность активов с его учётом.")
+        self.biz_apply.clicked.connect(self._apply_business_default)
+        biz_row.addWidget(self.biz_apply)
+        biz_layout.addLayout(biz_row)
+        biz_grp.setLayout(biz_layout)
+        layout.addWidget(biz_grp)
+
         # Full ranked items backing the table (untruncated detail on selection).
         self._crit_records: list = []
         self._crit_widget = w
         return w
+
+    @staticmethod
+    def _biz_combo(options, labels) -> QComboBox:
+        """A combo with a leading '—' (unset) entry plus the vocab options; the
+        stored value is the option key ('' for unset)."""
+        cb = QComboBox()
+        cb.addItem("—", "")
+        for opt in options:
+            cb.addItem(labels.get(opt, opt), opt)
+        return cb
+
+    def _crit_base(self) -> str:
+        return (self.settings.get('output_dir')
+                or str(Path.home() / 'SiteAnalyzer'))
 
     # ── load (stage 1: project list) ──────────────────────────────────────────
 
@@ -169,16 +212,25 @@ class CriticalityTabMixin:
             return
         self._crit_table_loading = True
         self._set_busy(True)
+        base = self._crit_base()
         self._run_async(
-            lambda p=project: self._query_crit_table(p),
+            lambda p=project, b=base: self._query_crit_table(p, b),
             self._on_crit_table_loaded,
         )
 
     @staticmethod
-    def _query_crit_table(project) -> dict:
+    def _query_crit_table(project, base) -> dict:
         try:
             from core.intelligence import load_asset_criticality
-            return {'project': project, 'crit': load_asset_criticality(project)}
+            from core.project import ProjectStore
+            # F1: fold in the project's business context so the criticality the tab
+            # shows (and the editor presets) reflect the declared importance.
+            business = None
+            proj = ProjectStore(base).get(project)
+            if proj is not None:
+                business = proj.get_business_context()
+            return {'project': project, 'business': business or {},
+                    'crit': load_asset_criticality(project, business=business)}
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}
 
@@ -203,6 +255,7 @@ class CriticalityTabMixin:
             f"  ·  высокая критичность: {summary.get('high_criticality', 0)}")
         self._populate_crit_rollup(summary)
         self._populate_crit_table(items)
+        self._populate_biz_default(result.get('business') or {})
 
     # ── populate ──────────────────────────────────────────────────────────────
 
@@ -261,6 +314,54 @@ class CriticalityTabMixin:
             for f in factors:
                 lines.append(f"  +{f.get('points', 0)}  {f.get('factor', '')}")
         self.crit_detail.setPlainText("\n".join(lines))
+
+    # ── business context (F1 editor) ───────────────────────────────────────────
+
+    @staticmethod
+    def _set_combo(cb: QComboBox, value) -> None:
+        idx = cb.findData(value or "")
+        cb.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def _populate_biz_default(self, business: dict) -> None:
+        """Reflect the project's stored default in the editor combos."""
+        default = (business or {}).get('default') or {}
+        self._set_combo(self.biz_default_crit, default.get('criticality'))
+        self._set_combo(self.biz_default_sens, default.get('data_sensitivity'))
+
+    def _apply_business_default(self):
+        project = self.crit_project.currentData()
+        if not project:
+            self.crit_status.setText("Выберите проект")
+            return
+        crit = self.biz_default_crit.currentData() or None
+        sens = self.biz_default_sens.currentData() or None
+        base = self._crit_base()
+        self._set_busy(True)
+        self._run_async(
+            lambda: self._write_business(base, project, crit, sens),
+            self._on_business_written,
+        )
+
+    @staticmethod
+    def _write_business(base, project, crit, sens) -> dict:
+        # Off-GUI-thread write to metadata.json (full-replace of the project
+        # default, mirroring business_cli / scope set semantics).
+        try:
+            from core.business_context import set_business_context
+            from core.project import ProjectStore
+            set_business_context(ProjectStore(base), project,
+                                 criticality=crit, data_sensitivity=sens)
+            return {'ok': True}
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_business_written(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            self.crit_status.setText(f"Ошибка сохранения: {result['error']}")
+            return
+        self.crit_status.setText("Бизнес-контекст сохранён · пересчёт критичности…")
+        self._apply_crit_filter()   # reload so criticality reflects the change
 
     # ── export ────────────────────────────────────────────────────────────────
 
