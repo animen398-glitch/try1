@@ -105,6 +105,31 @@ def test_csp_strict_not_flagged():
     assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
 
 
+def test_csp_frame_ancestors_satisfies_x_frame_options():
+    # A site protecting against clickjacking with modern CSP frame-ancestors but no
+    # legacy X-Frame-Options header must NOT be reported as missing X-Frame-Options.
+    recon = _recon_with_headers(**{
+        "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
+        "strict-transport-security": "max-age=63072000; includeSubDomains",
+        "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        "permissions-policy": "geolocation=()"})
+    findings = VulnScanner().scan(recon, {})
+    missing = [f for f in findings if f["title"].startswith("Missing security headers")]
+    assert not missing                    # all expected headers covered (XFO via CSP)
+
+
+def test_missing_x_frame_options_without_frame_ancestors_still_flagged():
+    # Without frame-ancestors (or the header), X-Frame-Options is genuinely missing.
+    recon = _recon_with_headers(**{
+        "content-security-policy": "default-src 'self'",
+        "strict-transport-security": "max-age=63072000; includeSubDomains",
+        "x-content-type-options": "nosniff", "referrer-policy": "no-referrer",
+        "permissions-policy": "geolocation=()"})
+    findings = VulnScanner().scan(recon, {})
+    missing = [f for f in findings if f["title"].startswith("Missing security headers")]
+    assert missing and "x-frame-options" in missing[0]["detail"]
+
+
 def test_hsts_short_max_age_flagged():
     recon = _recon_with_headers(**{"strict-transport-security": "max-age=3600"})
     findings = VulnScanner().scan(recon, {})

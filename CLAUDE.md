@@ -1254,6 +1254,18 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**X-Frame-Options ложное «missing» при CSP frame-ancestors — `[ЗАКРЫТ, accuracy-фикс]`.**
+Backend-фаза, иной класс — не «detected-but-not-promoted», а **ложноположительная
+находка**. `_check_security_headers` репортил `x-frame-options` как missing при
+отсутствии легаси-заголовка, хотя современный CSP `frame-ancestors` его **вытесняет**
+(OWASP/MDN): сайт с frame-ancestors защищён от clickjacking эквивалентно/сильнее, но
+ловил ложное «Missing security headers (x-frame-options)». Фикс: при наличии
+`frame-ancestors` в CSP `x-frame-options` считается present (не missing). Пермиссивный
+`frame-ancestors *` всё равно ловится `_check_csp_weakness` (wildcard) — реальный
+пробел защиты сёрфится корректной находкой, а не легаси-missing. Снижает шум/FP в
+risk для современных сайтов (числа для них падают сознательно). Покрыто
+`test_vuln_scanner` (frame-ancestors→XFO не missing / без него — missing цел).
+
 **Weak DMARC (pct<100 / sp=none) → находка — `[ЗАКРЫТ]`.** Backend-фаза, прямой
 параллель к weak-SPF: `_dmarc_policy` извлекал только `p=`, а захваченная DMARC-
 запись несёт и `pct=` (частичное применение — известный обход: остаток почты идёт

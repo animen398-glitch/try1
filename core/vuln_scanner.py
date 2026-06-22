@@ -110,7 +110,15 @@ class VulnScanner:
     # ---------------------------------------------------------------- Medium
 
     def _check_security_headers(self, recon: Dict, findings: List[Dict]):
-        present = {k.lower() for k in recon.get('security_headers', {})}
+        headers = recon.get('security_headers', {})
+        present = {k.lower() for k in headers}
+        # Modern CSP frame-ancestors supersedes the legacy X-Frame-Options header
+        # (OWASP/MDN): a site that sets frame-ancestors has equivalent (stronger)
+        # clickjacking protection, so X-Frame-Options is not "missing" there. A
+        # permissive frame-ancestors is still surfaced by _check_csp_weakness.
+        csp = str(headers.get('content-security-policy', '') or '').lower()
+        if 'frame-ancestors' in csp:
+            present.add('x-frame-options')
         missing = [h for h in _EXPECTED_SECURITY_HEADERS if h not in present]
         if missing:
             findings.append({
