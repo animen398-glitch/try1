@@ -1254,6 +1254,20 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Robustness-проход по data-collection engine'ам — `[ЗАКРЫТ]`.** Backend-фаза,
+degrade-not-raise аудит (этос F-SR1). Вывод: engine'ы адекватно устойчивы там, где
+важно — все обёрнуты phase-level try/except (app-graceful), а общий http-слой
+(`http_retry.decompress`/`urlopen_retry`/`urlopen_text`) уже guarded (decompress
+возвращает raw на любой сбой gzip/deflate). `paywall_bypass._decompress` — менее-
+guarded дубликат, но его вызов обёрнут, и унификация регрессировала бы поведение на
+битом gzip (raise→None→skip уместнее, чем raw→мусор) — не трогал. **Один таргетный
+фикс:** `site_extractor.strip_html`/`_extract_script_urls` — публичные/тестируемые
+pure-парсеры, падали на не-str (None из неудачного fetch → `re.sub` TypeError);
+теперь `isinstance(html,str)`-гейт → '' / [] (safe building block, как F-SR1
+гардил tech_fingerprint/dependency_audit). Приватные парсеры image/frontend_cloner
+получают внутренние строки + phase-wrapped — гардить = busywork (не делал). Покрыто
+`test_site_extractor` (None/не-str → пусто).
+
 **Dynamic-analyzer секреты: фильтр placeholder/JWT-FP — `[ЗАКРЫТ, accuracy]`.**
 Backend-фаза (аудит неаудированного engine). `dynamic_analyzer` майнит секреты из
 перехваченных API-ответов и статического JS через SSOT `secret_scanner.scan_text`,

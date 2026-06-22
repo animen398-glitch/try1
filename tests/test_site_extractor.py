@@ -25,6 +25,14 @@ def test_extract_script_urls_resolves_and_dedups():
     assert urls == ["http://x/a.js", "https://cdn/b.js"]
 
 
+def test_parsers_degrade_on_non_string_input():
+    # Pure building blocks must not raise on a non-string body (e.g. None from a
+    # failed fetch) — they degrade to empty rather than crashing the caller.
+    assert SiteExtractor.strip_html(None) == ""
+    assert SiteExtractor.strip_html(123) == ""
+    assert SiteExtractor._extract_script_urls(None, "http://x/page") == []
+
+
 class _FakeResp:
     def __init__(self, text, status=200):
         self.text = text

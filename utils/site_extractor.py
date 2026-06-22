@@ -31,7 +31,12 @@ class SiteExtractor:
 
     @staticmethod
     def strip_html(html: str) -> str:
-        """Удалить скрипты/стили/теги и вернуть нормализованный текст."""
+        """Удалить скрипты/стили/теги и вернуть нормализованный текст.
+
+        Degrade-not-raise: a non-string (e.g. ``None`` from a failed fetch) yields
+        ''. so a caller never crashes on a bad body."""
+        if not isinstance(html, str):
+            return ''
         text = _SCRIPT_STYLE_RE.sub(' ', html)
         text = _TAG_RE.sub(' ', text)
         text = _html.unescape(text)
@@ -40,6 +45,8 @@ class SiteExtractor:
     @staticmethod
     def _extract_script_urls(html: str, base_url: str) -> List[str]:
         """Собрать абсолютные URL внешних скриптов из <script src="...">."""
+        if not isinstance(html, str):
+            return []
         urls: List[str] = []
         seen: set = set()
         for m in _SCRIPT_SRC_RE.finditer(html):
