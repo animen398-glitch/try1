@@ -683,6 +683,28 @@ def test_exposure_clusters_zero_without_graph():
     assert all('co-hosted' not in c['label'] for c in es.headline(s)['chips'])
 
 
+def test_exposure_clusters_excludes_cdn_edge():
+    # CDN-edge clusters are annotated but excluded from the metric/chip — a shared
+    # CDN IP is not the customer's blast radius. Largest reflects the real cluster.
+    r = _report(high=0)
+    r['asset_graph'] = {'summary': {'clusters': 3, 'cdn_clusters': 2,
+                                    'largest_cluster': 50, 'largest_real_cluster': 4}}
+    s = es.build_summary(r)
+    assert s['metrics']['exposure_clusters'] == 1          # 3 total − 2 CDN
+    assert s['metrics']['exposure_largest'] == 4           # real, not the 50-host CDN
+    assert '1× co-hosted' in [c['label'] for c in es.headline(s)['chips']]
+
+
+def test_exposure_clusters_all_cdn_no_chip():
+    r = _report(high=0)
+    r['asset_graph'] = {'summary': {'clusters': 2, 'cdn_clusters': 2,
+                                    'largest_cluster': 50, 'largest_real_cluster': 0}}
+    s = es.build_summary(r)
+    assert s['metrics']['exposure_clusters'] == 0
+    assert s['metrics']['exposure_largest'] == 0
+    assert all('co-hosted' not in c['label'] for c in es.headline(s)['chips'])
+
+
 # ── Core Intelligence metric (EPIC 7) — display only ──────────────────────────
 
 def test_intelligence_metric_from_report():

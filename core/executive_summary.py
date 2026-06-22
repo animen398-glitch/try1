@@ -248,13 +248,18 @@ def _exposure_clusters(report: Dict) -> Dict:
 
     Reads the asset-graph rollup (``report['asset_graph']``) the Asset Correlation
     Engine already stamped: how many infrastructure nodes concentrate ≥2 assets
-    (single points of exposure) and the largest such cluster. Deliberately NOT a
-    score addend — finding-level infra concentration is already counted by
-    ``_infra_concentration`` (F-R4); this is the asset-topology view, a metric/chip
-    only. Zero when the asset graph didn't run (older reports)."""
+    (single points of exposure) and the largest such cluster. **Excludes CDN-edge
+    clusters** (``cdn_clusters``): many hosts on one Cloudflare/Fastly/Akamai edge IP
+    is an artefact, not the customer's blast radius — so the chip counts only genuine
+    single points of exposure. Deliberately NOT a score addend — finding-level infra
+    concentration is already counted by ``_infra_concentration`` (F-R4); this is the
+    asset-topology view, a metric/chip only. Zero when the asset graph didn't run
+    (older reports; absent ``cdn_clusters`` → all counted, behaviour unchanged)."""
     s = (report.get('asset_graph') or {}).get('summary') or {}
-    return {'clusters': _int(s.get('clusters')),
-            'largest': _int(s.get('largest_cluster'))}
+    real = max(0, _int(s.get('clusters')) - _int(s.get('cdn_clusters')))
+    # Largest *real* cluster (older reports lack the field → fall back to overall).
+    largest = s.get('largest_real_cluster', s.get('largest_cluster'))
+    return {'clusters': real, 'largest': _int(largest) if real else 0}
 
 
 def _asset_criticality(report: Dict) -> Dict:

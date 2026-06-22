@@ -175,6 +175,25 @@ def test_load_asset_graph_related_none_has_zero_related():
     assert out['summary'].get('related', 0) == 0
 
 
+def test_load_summary_counts_cdn_clusters():
+    # The summary reports how many clusters are CDN-edge artefacts and the largest
+    # *genuine* cluster, so the exposure metric can exclude the edge clusters.
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    AssetStore().sync('cdn.com', 's1', [
+        Asset('subdomain', 'a.cdn.com', attrs={'ip': '1.1.1.1'}),
+        Asset('subdomain', 'b.cdn.com', attrs={'ip': '1.1.1.1'}),
+        Asset('subdomain', 'e.cdn.com', attrs={'ip': '1.1.1.1'}),
+        Asset('ip', '1.1.1.1', attrs={'cloud': 'Cloudflare'}),       # CDN edge
+        Asset('subdomain', 'c.cdn.com', attrs={'ip': '5.5.5.5'}),
+        Asset('subdomain', 'd.cdn.com', attrs={'ip': '5.5.5.5'}),
+        Asset('ip', '5.5.5.5', attrs={'provider': 'Acme Hosting'})]) # real
+    s = ag.load_asset_graph('cdn.com')['summary']
+    assert s['clusters'] == 2 and s['cdn_clusters'] == 1
+    assert s['largest_cluster'] == 3            # overall (the 3-host CDN cluster)
+    assert s['largest_real_cluster'] == 2       # largest non-CDN (5.5.5.5)
+
+
 def test_shared_infra_ignores_external_related():
     # external co-hosted domains are not owned hosts → never in blast-radius clusters.
     g = ag.build_asset_graph(_inventory(), related=_related())

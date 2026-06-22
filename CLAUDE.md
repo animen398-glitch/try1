@@ -1254,6 +1254,21 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Консьюмер `cdn:true` — метрика+карточка+web — `[ЗАКРЫТ]`.** Backend-фаза, замкнул
+маркер из предыдущего инкремента на поверхностях. `asset_graph.load_asset_graph`
+summary += `cdn_clusters` (сколько кластеров — CDN-edge) и `largest_real_cluster`
+(крупнейший НЕ-CDN); totals (`clusters`/`largest_cluster`) целы для display.
+`executive_summary._exposure_clusters` (метрика/чип «N× co-hosted») теперь считает
+**только реальные** single-points-of-exposure (`clusters − cdn_clusters`),
+`exposure_largest` = largest_real; полностью-CDN проект → 0 → нет чипа (не blast
+radius клиента). Back-compat: старые отчёты без `cdn_clusters` → real=total,
+largest=largest_cluster (байт-в-байт). Display (аддитивно, ничего не прячет):
+report-карточка «Asset Relationships» тегает CDN-кластер `(CDN edge)`, web-консоль
+`/correlation` — ` (CDN edge)`. Покрыто `test_asset_graph` (summary cdn_clusters/
+largest_real), `test_executive_summary` (метрика исключает CDN / all-CDN=0 чипа /
+старый отчёт unchanged). **CDN-вена закрыта end-to-end: детект (#20) → метрика+
+поверхности.**
+
 **CDN-аннотация exposure-кластеров (`cdn:true`) — `[ЗАКРЫТ, accuracy]`.** Backend-фаза,
 решение пользователя (аннотировать, НЕ исключать). `asset_graph.shared_infra` считал
 хосты на общем IP единым single-point-of-exposure, но для CDN-fronted сайтов (Cloudflare/

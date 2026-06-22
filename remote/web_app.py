@@ -1145,7 +1145,8 @@ async function showCorrelation(){
         +(gs.clusters||0)+' shared-infra cluster(s)'
         +(gs.related?' · '+gs.related+' co-hosted domain(s)':''),'data');
     (ag.shared_infra||[]).slice(0,10).forEach(c=>{
-      log('  '+(c.type||'')+' '+(c.node||'')+' ← '+(c.count||0)+' assets','info');
+      log('  '+(c.type||'')+' '+(c.node||'')+' ← '+(c.count||0)+' assets'
+          +(c.cdn?' (CDN edge)':''),'info');
     });
     (ag.graph&&ag.graph.nodes||[]).filter(n=>n.external).slice(0,15).forEach(n=>{
       log('  co-hosted: '+(n.value||''),'info');

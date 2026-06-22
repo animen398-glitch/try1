@@ -242,6 +242,10 @@ def load_asset_graph(project: str, related: Optional[Dict] = None) -> Dict:
         owned_nodes = [n for n in graph['nodes'] if not n.get('external')]
         owned_edges = [e for e in graph['edges'] if e.get('rel') != REL_CO_HOSTED]
         related_count = len(graph['nodes']) - len(owned_nodes)
+        # ``real`` excludes CDN-edge artefacts (clusters preserve sort-desc order, so
+        # real[0] is the largest genuine single point of exposure). Totals are kept
+        # for display; the exposure *metric* counts only the real ones.
+        real = [c for c in clusters if not c.get('cdn')]
         return {
             'graph': graph,
             'shared_infra': clusters,
@@ -249,7 +253,9 @@ def load_asset_graph(project: str, related: Optional[Dict] = None) -> Dict:
                 'nodes': len(owned_nodes),
                 'edges': len(owned_edges),
                 'clusters': len(clusters),
+                'cdn_clusters': len(clusters) - len(real),
                 'largest_cluster': clusters[0]['count'] if clusters else 0,
+                'largest_real_cluster': real[0]['count'] if real else 0,
                 'related': related_count,
             },
         }
