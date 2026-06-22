@@ -169,6 +169,7 @@ BUILTIN_TABS = [
     ("security",   "Security Audit",            "_build_security_tab",  "Безопасность", "top"),
     ("cookie",     "Cookie Security Audit",     "_build_cookie_tab",    "Безопасность", "top"),
     ("findings",   "Findings",                  "_build_findings_tab",  "Управление", "top"),
+    ("remediation", "Remediation",              "_build_remediation_tab", "Управление", "top"),
     ("intelligence", "Priorities",              "_build_intelligence_tab", "Управление", "top"),
     ("criticality", "Asset Criticality",        "_build_criticality_tab", "Управление", "top"),
     ("exposure",   "Asset Exposure",            "_build_exposure_tab",  "Управление", "top"),

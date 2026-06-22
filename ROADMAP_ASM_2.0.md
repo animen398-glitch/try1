@@ -1266,10 +1266,17 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 - **Поверхности** — `collection_runner._build_remediation` (**read-only**: скан НЕ
   авто-создаёт задачи, они user/CLI-owned) + карточка «Remediation»; web
   `_remediation_view` + `GET /remediation` + кнопка/`showRemediation()`; CLI
-  `remediation_cli.py` (`list`/`auto`/`set`). GUI — отложен (internals-first).
+  `remediation_cli.py` (`list`/`auto`/`set`).
   Workflow-state, **не** risk-сигнал (вердикт не тронут). Покрыто
   `tests/test_remediation.py` (merge/overdue/event-sourced latest-wins/auto-idemp/
   load summary/seed_from_intelligence/web/CLI).
+- **GUI-вкладка — `[ВЫПОЛНЕНО 2026-06-23]`** (снят отложенный): `gui/tab_remediation.py`
+  (`RemediationTabMixin`, секция «Управление» после Findings) — per-project селектор
+  (`FindingsStore.projects()`), rollup-карты (всего/открыто/в работе/просрочено),
+  таблица задач (статус/severity/находка/owner/срок, просрочка подсвечена), редактор
+  выбранной задачи (status-комбо + owner + due → `set_task` off-thread) и кнопка
+  «Создать для топ-находок» (`seed_from_intelligence` top-10). Зеркало
+  editable-Findings; lazy-load в `tab_history`. Покрыто `tests/test_remediation_tab.py`.
 - **Attack-path remediation** идёт через priority-seed (находка-entry критичного пути
   ранжируется высоко) — прямой path→task маппинг отложен (нет стабильного id у пути).
 
@@ -1359,10 +1366,11 @@ Dockerfile / docker-compose) → активы/находки.
 > Auditor-Friendly Compliance, Cloud/Container/IaC Ingestion. Все — core→report→
 > web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт не
 > перестроен. **GUI business-контекста (project default) — добавлен 2026-06-23**
-> в Criticality-вкладку. **Отложено (осознанно, не блокеры):** per-asset
-> business-GUI (есть в CLI); GUI-вкладки remediation+IaC (internals-first — память
-> `feedback-internals-first-no-gui`); live threat-feed (KEV/EPSS) для F2; live
-> cloud-API для F7; прямой path→task маппинг для F4.
+> в Criticality-вкладку. **Remediation GUI-вкладка — добавлена 2026-06-23.**
+> **Отложено (осознанно, не блокеры):** per-asset business-GUI (есть в CLI);
+> GUI-вкладка IaC (internals-first — память `feedback-internals-first-no-gui`);
+> live threat-feed (KEV/EPSS) для F2; live cloud-API для F7; прямой path→task
+> маппинг для F4.
 
 ### Точки интеграции (существующие — переиспользовать, НЕ дублировать)
 

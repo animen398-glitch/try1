@@ -16,6 +16,7 @@ from gui.tab_collection import FinalReportTabMixin
 from gui.tab_cookie import CookieAuditTabMixin
 from gui.tab_security import SecurityAuditTabMixin
 from gui.tab_findings import FindingsTabMixin
+from gui.tab_remediation import RemediationTabMixin
 from gui.tab_assets import AssetsTabMixin
 from gui.tab_intelligence import IntelligenceTabMixin
 from gui.tab_criticality import CriticalityTabMixin
@@ -37,7 +38,8 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  VideoTabMixin, ImageTabMixin, CaptureTabMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
                  CloneTabMixin, CookieAuditTabMixin, SecurityAuditTabMixin,
-                 FinalReportTabMixin, FindingsTabMixin, AssetsTabMixin,
+                 FinalReportTabMixin, FindingsTabMixin, RemediationTabMixin,
+                 AssetsTabMixin,
                  IntelligenceTabMixin, CriticalityTabMixin, ExposureTabMixin,
                  AttackPathsTabMixin,
                  AccuracyTabMixin, TechnologyRiskTabMixin, OsintCatalogTabMixin,
@@ -84,6 +86,10 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._findings_loaded = False
         self._findings_table_loading = False
         self._findings_filter_pending = False
+        self._rem_loading = False
+        self._rem_loaded = False
+        self._rem_table_loading = False
+        self._rem_filter_pending = False
         self._assets_loading = False
         self._assets_loaded = False
         self._assets_table_loading = False
