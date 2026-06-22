@@ -532,3 +532,27 @@ def test_project_load_scan_report_roundtrip(tmp_path):
     d = diff(a, b)
     assert d['risk']['level_a'] == 'Low' and d['risk']['level_b'] == 'High'
     assert p.load_scan_report('nope') is None
+
+
+# ── semantic drift (F5): aggregate posture metrics end-to-end ─────────────────
+
+def test_posture_drift_block_and_events():
+    a, b = _report('A'), _report('B')
+    a['executive_summary']['metrics'].update(
+        {'attack_surface_score': 10, 'exposed_assets': 5, 'critical_assets': 2})
+    b['executive_summary']['metrics'].update(
+        {'attack_surface_score': 25, 'exposed_assets': 9, 'critical_assets': 5})
+    d = diff(a, b)
+    assert d['posture']['a']['attack_surface_score'] == 10
+    assert d['posture']['b']['critical_assets'] == 5
+    types = {e['type'] for e in diff_events(d)}
+    assert {'attack_surface_drift', 'exposure_drift', 'criticality_drift'} <= types
+
+
+def test_posture_drift_silent_on_first_measurement():
+    a, b = _report('A'), _report('B')   # a's metrics are 0 (nothing measured)
+    b['executive_summary']['metrics'].update(
+        {'attack_surface_score': 50, 'exposed_assets': 9, 'critical_assets': 5})
+    types = {e['type'] for e in diff_events(diff(a, b))}
+    assert not ({'attack_surface_drift', 'exposure_drift',
+                 'criticality_drift'} & types)

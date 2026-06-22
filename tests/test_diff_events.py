@@ -394,3 +394,40 @@ def test_extract_alerts_is_alertable_subset_of_diff_events():
     # alert events keep the lean {type,title,severity} shape (no section key)
     for a in alerts.extract_alerts(d):
         assert set(a) == {'type', 'title', 'severity'}
+
+
+# ── semantic drift (F5) ────────────────────────────────────────────────────────
+
+def _posture(a, b):
+    return {'risk': {'level_a': 'Low', 'level_b': 'Low',
+                     'risk_100_a': 10, 'risk_100_b': 10},
+            'sections': {}, 'posture': {'a': a, 'b': b}}
+
+
+def test_posture_drift_classified_and_alertable():
+    d = _posture({'attack_surface_score': 10, 'exposed_assets': 5, 'critical_assets': 1},
+                 {'attack_surface_score': 20, 'exposed_assets': 9, 'critical_assets': 3})
+    by_type = {e['type']: e for e in diff_events(d)}
+    assert by_type['attack_surface_drift']['severity'] == 'medium'   # +10 ≥ 8
+    assert by_type['exposure_drift']['section'] == 'posture'         # +4 ≥ 3
+    assert 'criticality_drift' in by_type                            # +2 ≥ 2
+    alert_types = {a['type'] for a in alerts.extract_alerts(d)}
+    assert {'attack_surface_drift', 'exposure_drift',
+            'criticality_drift'} <= alert_types                      # posture monitored
+
+
+def test_posture_drift_below_threshold_or_decrease_is_silent():
+    d = _posture({'attack_surface_score': 10, 'exposed_assets': 5, 'critical_assets': 3},
+                 {'attack_surface_score': 14, 'exposed_assets': 6, 'critical_assets': 2})
+    types = {e['type'] for e in diff_events(d)}    # +4(<8), +1(<3), -1 → nothing
+    assert not ({'attack_surface_drift', 'exposure_drift',
+                 'criticality_drift'} & types)
+
+
+def test_posture_first_measurement_is_not_drift():
+    # a measured nothing (0) → a newly-enabled phase is not "drift" (guard a>0,b>0).
+    d = _posture({'attack_surface_score': 0, 'exposed_assets': 0, 'critical_assets': 0},
+                 {'attack_surface_score': 50, 'exposed_assets': 9, 'critical_assets': 5})
+    types = {e['type'] for e in diff_events(d)}
+    assert not ({'attack_surface_drift', 'exposure_drift',
+                 'criticality_drift'} & types)

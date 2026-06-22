@@ -1267,9 +1267,27 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 ### F5 — Semantic Drift Monitoring
 
 **Цель:** monitoring ловит значимое изменение позы, а не только появление актора.
-**Где живёт:** поверх `scan_diff`/`diff_events`/`timeline` — новый класс событий
-«drift» (значимое смещение exposure/criticality/attack-path band между сканами),
-alertable через существующий Alert Center. Derive, web-паритет автоматом.
+**Где живёт:** поверх `scan_diff`/`diff_events`/`timeline`.
+
+**[ВЫПОЛНЕНО 2026-06-22]** (derive, web/timeline/alerts-паритет автоматом):
+- **Posture-блок в Scan Diff.** `scan_diff.diff` рядом с `risk`-блоком кладёт
+  `posture: {a, b}` из `executive_summary.metrics` (`_posture_metrics`) — агрегатные
+  intelligence-числа (attack_surface_score / exposed_assets / critical_assets).
+  Безусловно (как `risk`), не section (не в `SECTION_PHASES`).
+- **Drift-события.** `diff_events` эмитит `attack_surface_drift` / `exposure_drift` /
+  `criticality_drift` (все medium) при **значимом росте** метрики (`_POSTURE_DRIFT`-
+  пороги: surface +8 / exposed +3 / critical +2). **Гейт `a>0 and b>0`** — первое
+  измерение / только-что-включённая фаза не считается дрейфом (discrete `new_*`-
+  события уже покрывают первое появление). Только worsening (рост); снижение — не
+  событие.
+- **Alertable** (CSM «поза деградирует»): три типа в `alerts.ALERT_TYPES`; метки в
+  `gui/tab_timeline._EVENT_LABELS` + Settings (`gui/dialogs`, покрыто alert-label
+  тестом). Web/`/timeline`/Alert Center получают их автоматом (общий `diff_events`).
+- **Attack-path band НЕ дублируется** — уже мониторится EPIC 13
+  (`new_attack_path`/`attack_path_escalated`); F5 покрывает остальные intelligence-оси.
+  Pure derive, без новых данных/таблиц, risk-вердикт не тронут. Покрыто
+  `tests/test_diff_events.py` (классификация+alertable / ниже порога+снижение молчат /
+  first-measurement guard) и `tests/test_scan_diff.py` (posture-блок + end-to-end).
 
 ### F6 — Auditor-Friendly Compliance
 

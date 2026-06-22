@@ -40,6 +40,9 @@ _ALERT_TYPE_LABELS = {
     'dns_email_auth_weakened': 'Email-auth ослаблен (SPF/DMARC)',
     'new_attack_path': 'Новый attack path',
     'attack_path_escalated': 'Attack path усилился',
+    'attack_surface_drift': 'Дрейф: attack surface ↑',
+    'exposure_drift': 'Дрейф: экспозиция ↑',
+    'criticality_drift': 'Дрейф: критичные активы ↑',
 }
 
 

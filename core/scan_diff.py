@@ -525,6 +525,9 @@ def diff(report_a: Dict, report_b: Dict) -> Dict:
             'level_a': a_hdr['risk_level'], 'level_b': b_hdr['risk_level'],
             'risk_100_a': a_hdr['risk_100'], 'risk_100_b': b_hdr['risk_100'],
         },
+        # Aggregate intelligence posture (F5) — diffed for semantic drift events.
+        'posture': {'a': _posture_metrics(report_a),
+                    'b': _posture_metrics(report_b)},
         'sections': sections,
         'skipped': skipped,
         'summary': summary,
@@ -578,6 +581,35 @@ def _band_rank(band: str) -> int:
     return _BAND_RANK.get(str(band).strip().lower(), -1)
 
 
+# Semantic drift (EPIC NEXT F5): aggregate intelligence-posture metrics whose
+# *significant worsening* between scans is a posture shift in its own right —
+# distinct from the discrete per-entity events. Sourced from
+# ``executive_summary.metrics`` (always built). ``{metric: (event, min increase to
+# count as significant, friendly label)}``. Drift fires only when BOTH scans
+# measured the axis (a > 0 and b > 0), so a first measurement / a newly-enabled
+# phase is never mistaken for drift (the discrete ``new_*`` events already cover
+# first appearances). Attack-path posture is already monitored by ``new_attack_path``
+# / ``attack_path_escalated`` (EPIC 13), so it is intentionally not duplicated here.
+_POSTURE_DRIFT = {
+    'attack_surface_score': ('attack_surface_drift', 8, 'Attack surface'),
+    'exposed_assets':       ('exposure_drift', 3, 'Exposed assets'),
+    'critical_assets':      ('criticality_drift', 2, 'Critical assets'),
+}
+
+
+def _posture_metrics(report: Dict) -> Dict[str, int]:
+    """The drift-tracked aggregate posture numbers from a report's executive
+    summary (0 when absent — a legacy/empty report just yields no drift)."""
+    m = ((report or {}).get('executive_summary') or {}).get('metrics') or {}
+    out: Dict[str, int] = {}
+    for k in _POSTURE_DRIFT:
+        try:
+            out[k] = int(m.get(k) or 0)
+        except (TypeError, ValueError):
+            out[k] = 0
+    return out
+
+
 EVENT_SEVERITY = {
     'new_secret':          'high',
     'new_secret_generic':  'medium',
@@ -608,6 +640,9 @@ EVENT_SEVERITY = {
     'security_header_removed':   'high',
     'risk_increase':       'high',
     'risk_decrease':       'info',
+    'attack_surface_drift': 'medium',
+    'exposure_drift':      'medium',
+    'criticality_drift':   'medium',
 }
 
 
@@ -834,6 +869,17 @@ def diff_events(d: Dict) -> List[Dict]:
         add('risk_decrease',
             f"{risk.get('level_a')} {risk.get('risk_100_a')} → "
             f"{risk.get('level_b')} {risk.get('risk_100_b')}", 'risk')
+
+    # Semantic drift (F5): a significant worsening of an aggregate posture metric,
+    # measured in both scans (a>0 and b>0 — a first measurement is not drift).
+    posture = (d or {}).get('posture', {})
+    pa = posture.get('a', {}) or {}
+    pb = posture.get('b', {}) or {}
+    for metric, (etype, threshold, label) in _POSTURE_DRIFT.items():
+        a = int(pa.get(metric) or 0)
+        b = int(pb.get(metric) or 0)
+        if a > 0 and b > 0 and b - a >= threshold:
+            add(etype, f'{label}: {a} → {b}', 'posture')
 
     return out
 
