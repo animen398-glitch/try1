@@ -1135,9 +1135,18 @@ cloud-API** на первом этапе.
   сторов/миграции не тронуты). Покрыто `tests/test_sqlite_migrations.py`
   (fresh/upgrade-order/partial/idempotent/no-downgrade/`_add_column`). Без слома
   существующих БД и контрактов.
-- **T0.2 Contract-тесты ключей.** Зафиксировать back-compat `report.json`/
-  `metadata.json`/findings/assets/timeline ключей регресс-тестом перед тем, как
-  NEXT-фичи начнут их расширять (страховка инварианта §4.7).
+- **T0.2 Contract-тесты ключей.** **[ВЫПОЛНЕНО 2026-06-22]** —
+  `tests/test_contracts.py` фиксирует текущие наборы ключей всех структур, что
+  читают несколько поверхностей: `report.json` (top-level + `scope_guard`),
+  `metadata.json` (проект + scan-entry), executive_summary (+ метрики, что
+  денормализуются в scan-entry/тренды), findings (DTO→stored row→events→summary/
+  projects + lifecycle-словарь STATUSES/EVENT_TYPES), assets (то же), timeline
+  (series-точка + change-event). Ассерты **subset** (`required <= produced`):
+  NEXT-фичи могут ДОБАВЛЯТЬ ключи, но удаление/переименование падает loudly до
+  того, как сломает GUI/web/export/scan-diff (страховка §4.7). Каждый `_KEYS`-
+  константа = живая документация контракта. Pure/offline; единственный e2e-кейс
+  гоняет полную коллекцию со стабом сетевых фаз и проверяет записанный
+  `report.json` + metadata scan-entry.
 
 ### F1 — Business Context Model (asset criticality + data sensitivity)
 
