@@ -582,6 +582,17 @@ def _attack_paths_view(project: Optional[str] = None) -> dict:
         return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}
 
 
+def _remediation_view(project: Optional[str] = None) -> dict:
+    """Remediation tasks (status/owner/due per finding) for one project (F4)."""
+    if not project:
+        return {'tasks': [], 'summary': {}}
+    try:
+        from core.remediation import load_remediation
+        return load_remediation(project)
+    except Exception as e:
+        return {'tasks': [], 'summary': {}, 'error': str(e)}
+
+
 def _exposure_view(project: Optional[str] = None) -> dict:
     """Assets ranked by exposure (likelihood — reachability/attackability) for one
     project."""
@@ -824,6 +835,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showExposure()">Exposure</button>
       <button class="btn sec" onclick="showRelatedAssets()">Related Assets</button>
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
+      <button class="btn sec" onclick="showRemediation()">Remediation</button>
       <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
       <button class="btn sec" onclick="showTechnologyRisk()">Technology Risk</button>
       <button class="btn sec" onclick="showOsintCatalog()">OSINT Catalog</button>
@@ -1276,6 +1288,23 @@ async function showAttackPaths(){
   }catch(ex){log('Attack paths failed: '+ex.message,'er');}
 }
 
+async function showRemediation(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Remediation: no projects','data'); return;}
+    const r=await fetch('/remediation?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    log('Remediation ['+proj+']: '+(s.total||0)+' task(s) · '+(s.open||0)+' open · '
+        +(s.overdue||0)+' overdue','data');
+    (d.tasks||[]).slice(0,10).forEach(t=>{
+      const tk=t.task||{};
+      log('  ['+(t.status_label||tk.status||'')+'] '+(t.severity||'')+' '
+          +(t.title||'')+(tk.due?(' · due '+tk.due+(t.overdue?' ⚠':'')):''),'info');
+    });
+  }catch(ex){log('Remediation failed: '+ex.message,'er');}
+}
+
 async function showAccuracy(){
   try{
     const o=await fetch('/overview'); const od=await o.json();
@@ -1590,6 +1619,10 @@ if _FASTAPI_OK:
     @app.get('/attack-paths')
     async def attack_paths(project: Optional[str] = None):
         return JSONResponse(_attack_paths_view(project))
+
+    @app.get('/remediation')
+    async def remediation(project: Optional[str] = None):
+        return JSONResponse(_remediation_view(project))
 
     @app.get('/exposure')
     async def exposure(project: Optional[str] = None):

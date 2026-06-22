@@ -47,7 +47,8 @@ INACTIVE_STATUSES = frozenset({'FIXED', 'IGNORED', 'FALSE_POSITIVE'})
 SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
-               'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED', 'ISSUE_CREATED')
+               'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED', 'ISSUE_CREATED',
+               'REMEDIATION')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -478,6 +479,61 @@ class FindingsStore(SQLiteStore):
         with self._connect() as conn:
             self._log_event(conn, str(finding_id), 'ISSUE_CREATED',
                             scan_id=scan_id, note=note, at=now or _now())
+
+    # ── remediation tasks (F4) — event-sourced over finding_events ────────────
+
+    def set_remediation(self, finding_id: str, payload: Dict, *,
+                        scan_id: Optional[str] = None,
+                        now: Optional[str] = None) -> None:
+        """Append a remediation-task state change as a ``REMEDIATION`` event.
+
+        The task (``note`` = its JSON: status/owner/due/note) is event-sourced — its
+        current state is the latest such event (see :meth:`get_remediation`) — so
+        there is no second table and the full edit history stays in
+        ``finding_events`` (mirrors the ``ISSUE_CREATED`` mapping)."""
+        with self._connect() as conn:
+            self._log_event(conn, str(finding_id), 'REMEDIATION', scan_id=scan_id,
+                            note=json.dumps(payload or {}, ensure_ascii=False),
+                            at=now or _now())
+
+    def get_remediation(self, finding_id: str) -> Optional[Dict]:
+        """The current remediation task for a finding (the latest ``REMEDIATION``
+        event's payload), or ``None`` if no task was ever set."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT note FROM finding_events WHERE finding_id = ?"
+                " AND type = 'REMEDIATION' ORDER BY id DESC LIMIT 1",
+                (str(finding_id),)).fetchone()
+        if row is None or not row['note']:
+            return None
+        try:
+            return json.loads(row['note'])
+        except (ValueError, TypeError):
+            return None
+
+    def remediations(self, project: str) -> List[Dict]:
+        """Every finding in ``project`` with a remediation task, carrying the current
+        task payload + the finding's title/severity/category/status (latest event per
+        finding wins). The Remediation view's source — joins ``finding_events`` to
+        ``findings``, no second table."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT e.finding_id, e.note, e.at, f.title, f.severity, f.category,"
+                " f.status FROM finding_events e JOIN findings f"
+                " ON f.id = e.finding_id WHERE f.project = ? AND e.type ="
+                " 'REMEDIATION' ORDER BY e.id", (project,)).fetchall()
+        latest: Dict[str, Dict] = {}
+        for r in rows:
+            try:
+                task = json.loads(r['note']) if r['note'] else {}
+            except (ValueError, TypeError):
+                task = {}
+            latest[r['finding_id']] = {
+                'finding_id': r['finding_id'], 'title': r['title'],
+                'severity': r['severity'], 'category': r['category'],
+                'finding_status': r['status'], 'updated_at': r['at'], 'task': task,
+            }
+        return list(latest.values())
 
     def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:
         """``finding_id → timestamp of its most recent REOPENED event``.

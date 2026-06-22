@@ -1239,9 +1239,30 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 ### F4 — Remediation Tasks
 
 **Цель:** для top findings/paths создаются remediation-задачи (status/owner/due).
-**Где живёт:** lifecycle поверх существующей `finding_events` (паттерн
-`github_issues` ISSUE_CREATED маркер / SLA one-shot) — **без новой таблицы**.
-core → report-карточка → GUI/web/export/CLI (паттерн issues/compliance).
+**Где живёт:** lifecycle поверх существующей `finding_events` — **без новой таблицы**.
+
+**[ВЫПОЛНЕНО 2026-06-22]** (event-sourced, решение: core+report+web+CLI, GUI позже):
+- **Модель/персист** — задача = work-item на находке (status `open`/`in_progress`/
+  `done` + опц. owner/due/note), **event-sourced** поверх `finding_events`: один
+  `REMEDIATION`-event на изменение, текущее состояние = последний event (note=JSON),
+  без второй таблицы (паттерн `ISSUE_CREATED`-маппинга). `FindingsStore.set_remediation`/
+  `get_remediation`/`remediations(project)` (`EVENT_TYPES += 'REMEDIATION'`).
+- **Логика** `core/remediation.py` (pure SSOT): вокаб+RU-лейблы, `normalize_task`/
+  `merge_task` (partial update; пустая строка очищает поле), `is_overdue` (due в
+  прошлом и не done; date-only = конец дня), `set_task`, `auto_create_tasks`
+  (идемпотентный seed `open`), `seed_from_intelligence` (top-N по priority — находка
+  на критичном пути уже высокоприоритетна F2/F3, так что «top findings/paths»
+  покрыто без fuzzy path→finding маппинга), `load_remediation` (rollup: overdue-
+  first сортировка + summary total/open/in_progress/done/overdue).
+- **Поверхности** — `collection_runner._build_remediation` (**read-only**: скан НЕ
+  авто-создаёт задачи, они user/CLI-owned) + карточка «Remediation»; web
+  `_remediation_view` + `GET /remediation` + кнопка/`showRemediation()`; CLI
+  `remediation_cli.py` (`list`/`auto`/`set`). GUI — отложен (internals-first).
+  Workflow-state, **не** risk-сигнал (вердикт не тронут). Покрыто
+  `tests/test_remediation.py` (merge/overdue/event-sourced latest-wins/auto-idemp/
+  load summary/seed_from_intelligence/web/CLI).
+- **Attack-path remediation** идёт через priority-seed (находка-entry критичного пути
+  ранжируется высоко) — прямой path→task маппинг отложен (нет стабильного id у пути).
 
 ### F5 — Semantic Drift Monitoring
 

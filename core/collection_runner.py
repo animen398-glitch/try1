@@ -555,6 +555,9 @@ class CollectionRunner:
         # Attack Paths (EPIC 11): lateral routes over shared infrastructure (entry →
         # pivot → co-located targets) — a display metric over the same views.
         self._build_attack_paths(report, project)
+        # Remediation Tasks (EPIC NEXT F4): the fix work tracked for findings —
+        # read-only here (tasks are user/CLI-owned; a scan never auto-creates them).
+        self._build_remediation(report, project)
         # Scan Accuracy (MODULE 1): unified confidence per entity (technologies /
         # findings / assets / infra / API / secrets) — derived from the report +
         # stores; flags the lowest-confidence detections to verify.
@@ -1826,6 +1829,61 @@ class CollectionRunner:
             self._log(f'  Attack paths failed: {e}')
             self._warn(report, 'attack_paths', 'Attack path derivation failed', e)
 
+    def _build_remediation(self, report: Dict, project) -> None:
+        """Surface the project's Remediation Tasks (EPIC NEXT F4, best-effort):
+        the fix work tracked on findings. Read-only — a scan never auto-creates
+        tasks (they are user/CLI-owned workflow state); it only reports the current
+        ones. Stored compactly in ``report['remediation']`` for the card."""
+        try:
+            from core.remediation import load_remediation
+            data = load_remediation(project.slug)
+            summary = data.get('summary') or {}
+            if not summary.get('total'):
+                return
+            report['remediation'] = {'summary': summary,
+                                     'tasks': (data.get('tasks') or [])[:10]}
+            self._log(f"  Remediation: {summary.get('total', 0)} задач, "
+                      f"{summary.get('open', 0)} открытых, "
+                      f"{summary.get('overdue', 0)} просрочено")
+        except Exception as e:  # noqa: BLE001 — remediation must not fail a scan
+            self._log(f'  Remediation failed: {e}')
+            self._warn(report, 'remediation', 'Remediation derivation failed', e)
+
+    @classmethod
+    def _render_remediation_card(cls, rdata: Dict) -> str:
+        """Offline HTML for the Remediation card: tracked fix work per finding with
+        status / owner / due (overdue first)."""
+        e = html.escape
+        summary = rdata.get('summary', {})
+        head = (f'<p style="font-size:13px;">Задач: '
+                f'<b>{e(str(summary.get("total", 0)))}</b> · открытых: '
+                f'<b>{e(str(summary.get("open", 0)))}</b> · в работе: '
+                f'<b>{e(str(summary.get("in_progress", 0)))}</b> · просрочено: '
+                f'<b>{e(str(summary.get("overdue", 0)))}</b></p>')
+        rows = []
+        for t in rdata.get('tasks', []):
+            task = t.get('task') or {}
+            meta = []
+            if task.get('owner'):
+                meta.append(e(str(task['owner'])))
+            if task.get('due'):
+                due = e(str(task['due']))
+                meta.append(f'<span style="color:#c62828;">{due} ⚠</span>'
+                            if t.get('overdue') else due)
+            meta_txt = (' · ' + ' · '.join(meta)) if meta else ''
+            rows.append(
+                f'<tr><td style="padding:1px 12px 1px 0;font-weight:bold;">'
+                f'{e(str(t.get("status_label") or ""))}</td>'
+                f'<td style="padding:1px 12px;color:#666;">'
+                f'{e(str(t.get("severity") or ""))}</td>'
+                f'<td>{e(str(t.get("title") or ""))}{meta_txt}</td></tr>')
+        table = (f'<table style="font-size:12px;"><tr>'
+                 f'<td style="padding-right:12px;"><b>Status</b></td>'
+                 f'<td style="padding:0 12px;"><b>Sev</b></td>'
+                 f'<td><b>Finding</b></td></tr>{"".join(rows)}</table>'
+                 if rows else '')
+        return head + table
+
     def _build_accuracy(self, report: Dict, project) -> None:
         """Score the scan's detection accuracy (MODULE 1, best-effort): a unified
         confidence per entity (technologies / findings / assets / infra / API /
@@ -2829,6 +2887,15 @@ class CollectionRunner:
                 'Attack Paths', self._render_attack_paths_card(pdata),
                 f"top {psum.get('top_score', 0)} · "
                 f"{psum.get('critical_paths', 0)} критичных"))
+
+        # Remediation Tasks (EPIC NEXT F4) — tracked fix work per finding.
+        rdata = report.get('remediation')
+        if isinstance(rdata, dict) and (rdata.get('summary') or {}).get('total'):
+            rsum = rdata['summary']
+            body_parts.append(card(
+                'Remediation', self._render_remediation_card(rdata),
+                f"{rsum.get('open', 0)} открытых · "
+                f"{rsum.get('overdue', 0)} просрочено"))
 
         # Technology Risk (EPIC 15) — display posture over detected technologies
         # and JS dependencies (does not alter the authoritative risk verdict).
