@@ -107,16 +107,27 @@ def _spf_all_qualifier(spf: Optional[str]) -> Optional[str]:
     return None
 
 
-def _dmarc_policy(records: Dict) -> Optional[str]:
-    """The DMARC policy (``none``/``quarantine``/``reject``) or None if absent."""
+def _dmarc_tags(records: Dict) -> Dict[str, str]:
+    """All tags of the domain's DMARC record as a ``{tag: value}`` dict (keys
+    lower-cased), or ``{}`` when no DMARC record is published."""
     for txt in records.get('DMARC', []):
         if txt.lower().startswith('v=dmarc1'):
+            tags: Dict[str, str] = {}
             for part in txt.split(';'):
-                part = part.strip()
-                if part.lower().startswith('p='):
-                    return part[2:].strip().lower()
-            return 'none'   # DMARC present but no explicit policy tag
-    return None
+                key, sep, val = part.strip().partition('=')
+                if sep and key.strip():
+                    tags[key.strip().lower()] = val.strip()
+            return tags
+    return {}
+
+
+def _dmarc_policy(records: Dict) -> Optional[str]:
+    """The DMARC policy (``none``/``quarantine``/``reject``) or None if absent. A
+    record present but without an explicit ``p`` tag is treated as ``none``."""
+    tags = _dmarc_tags(records)
+    if not tags:
+        return None
+    return tags.get('p', 'none').lower()
 
 
 def analyze(records: Dict) -> Dict:
@@ -154,6 +165,20 @@ def analyze(records: Dict) -> Dict:
     elif dmarc == 'none':
         add('Info', 'DMARC policy is p=none',
             'DMARC is monitor-only (p=none); failing mail is still delivered.')
+    else:
+        # p is quarantine/reject (enforcing) — but two tags can still undercut it:
+        # pct<100 enforces on only a fraction of mail (the rest bypasses policy),
+        # and sp=none leaves subdomains unprotected despite the domain enforcing.
+        dtags = _dmarc_tags(records)
+        pct = dtags.get('pct', '')
+        if pct.isdigit() and int(pct) < 100:
+            add('Info', f'DMARC partial enforcement (pct={pct})',
+                f'DMARC applies its {dmarc} policy to only {pct}% of mail — the '
+                f'remainder is delivered unenforced.')
+        if dtags.get('sp', '').lower() == 'none':
+            add('Info', 'DMARC subdomain policy is sp=none',
+                'DMARC subdomain policy is none (sp=none) — subdomains accept '
+                'spoofed mail even though the domain itself enforces.')
     if not dkim_selectors:
         add('Info', 'No DKIM selector found',
             'None of the common DKIM selectors resolved (mail may still sign with a custom selector).')

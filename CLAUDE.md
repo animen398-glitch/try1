@@ -1254,6 +1254,17 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Weak DMARC (pct<100 / sp=none) → находка — `[ЗАКРЫТ]`.** Backend-фаза, прямой
+параллель к weak-SPF: `_dmarc_policy` извлекал только `p=`, а захваченная DMARC-
+запись несёт и `pct=` (частичное применение — известный обход: остаток почты идёт
+без политики) и `sp=` (политика субдоменов). `p=reject` с `pct=10` или `sp=none`
+детектился, но находкой не становился. Рефактор: `_dmarc_tags(records)` парсит все
+теги (lower-keys), `_dmarc_policy` теперь поверх него (контракт цел: present-no-p →
+'none', absent → None); `analyze` в enforcing-ветке (p=quarantine/reject) эмитит
+`DMARC partial enforcement (pct=N)` и `DMARC subdomain policy is sp=none` (оба Info).
+pct=100/без sp — чисто (healthy-тест цел). `source='dns'`→A05/CWE-16. Покрыто
+`test_dns_intel` (pct+sp findings / pct=100 чисто / _dmarc_tags+policy парсинг).
+
 **Weak SPF (+all/?all) → находка — `[ЗАКРЫТ]`.** Backend-фаза, тот же
 detected-but-not-promoted паттерн, что #GraphQL (лид с него). `dns_intel.analyze`
 флагует только **отсутствие** SPF, а present-but-weak SPF (квалификатор `all`)

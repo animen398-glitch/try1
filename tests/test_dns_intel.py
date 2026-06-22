@@ -73,6 +73,30 @@ def test_analyze_flags_neutral_spf_is_info():
     assert sev == {'SPF policy is neutral (?all)': 'Info'}
 
 
+def test_analyze_flags_dmarc_partial_enforcement():
+    # An enforcing policy undercut by pct<100 (partial) or sp=none (subdomains
+    # unprotected) — both Info findings; pct=100 / no sp is clean.
+    rec = _records(TXT=['v=spf1 -all'],
+                   DMARC=['v=DMARC1; p=reject; pct=10; sp=none'],
+                   DKIM={'default': ['v=DKIM1']}, CAA=['0 issue "x"'])
+    titles = {f['title']: f['severity'] for f in dns.analyze(rec)['findings']}
+    assert titles == {'DMARC partial enforcement (pct=10)': 'Info',
+                      'DMARC subdomain policy is sp=none': 'Info'}
+    # pct=100 and no sp → no DMARC finding.
+    rec['DMARC'] = ['v=DMARC1; p=reject; pct=100']
+    assert dns.analyze(rec)['findings'] == []
+
+
+def test_dmarc_tags_and_policy_parsing():
+    rec = _records(DMARC=['v=DMARC1; p=Quarantine; pct=50; sp=none'])
+    tags = dns._dmarc_tags(rec)
+    assert tags['p'] == 'Quarantine' and tags['pct'] == '50' and tags['sp'] == 'none'
+    assert dns._dmarc_policy(rec) == 'quarantine'          # normalized lower-case
+    # present but no explicit p tag → 'none'; absent → None
+    assert dns._dmarc_policy(_records(DMARC=['v=DMARC1; rua=mailto:a@x'])) == 'none'
+    assert dns._dmarc_policy(_records()) is None
+
+
 def test_spf_all_qualifier_parsing():
     assert dns._spf_all_qualifier('v=spf1 include:x -all') == '-'
     assert dns._spf_all_qualifier('v=spf1 ~all') == '~'
