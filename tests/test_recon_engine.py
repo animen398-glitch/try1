@@ -22,6 +22,7 @@ def test_recon_report_excludes_large_pwa_manifest(tmp_path):
     eng._fetch_with_headers = lambda url: (
         b"<html><head></head><body>wp-content/</body></html>",
         {"Server": "nginx"},
+        url,
     )
     eng._fetch_pwa_manifest = lambda html, url: {
         "url": url + "/manifest.json",
@@ -48,6 +49,7 @@ def test_recon_populates_technologies_and_infrastructure():
         b'<html><head><script src="/gtag/js?id=G-X"></script></head>'
         b'<body></body></html>',
         {"Server": "nginx/1.25.3", "CF-Ray": "abc"},
+        url,
     )
     eng._fetch_pwa_manifest = lambda html, url: {}
 

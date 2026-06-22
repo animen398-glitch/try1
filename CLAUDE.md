@@ -1254,6 +1254,19 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**http→https redirect = НЕ «plain HTTP» (false-High закрыт) — `[ЗАКРЫТ, accuracy-фикс]`.**
+Backend-фаза, отложенный follow-up из #query-param (теперь сделан — user-present).
+`_check_https` рейтил `http://`-URL как **High** «served over plain HTTP», но если
+сайт редиректит на HTTPS — это false-High (инфлейтит risk-**level**, не только score).
+Причина: `recon['url']` хранил ВХОДНОЙ url, финальный (post-redirect) не
+захватывался. Фикс (multi-module, backward-compat): `utils.http_retry.urlopen_retry`
++= opt-in `return_final_url` (3-tuple с `response.geturl()`; 4 прочих вызова целы);
+`recon_engine._fetch_with_headers` тащит final-url → `result['final_url']`;
+`_check_https` судит по `final_url or url` (fallback при fetch-fail/legacy →
+прежнее поведение). http→https → не флагается; http→http → High; downgrade
+https→http → High (корректно). Покрыто `test_http_retry` (opt-in 3-tuple),
+`test_vuln_scanner` (redirect/plain/fallback), стабы `test_recon_engine` → 3-tuple.
+
 **Query-param «sensitive path» → Info — `[ЗАКРЫТ, accuracy-фикс]`.** Backend-фаза,
 severity-калибровка. `_check_sensitive_paths` рейтил ВСЕ паттерны Medium, включая
 query-param-хинты `?id=`/`?user=`/`?file=` — но наличие параметра само по себе слаб.

@@ -20,7 +20,7 @@ import time
 import urllib.error
 import urllib.request
 import zlib
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional
 
 # Statuses worth retrying: rate-limit + transient upstream/server errors.
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
@@ -82,14 +82,21 @@ def retry(fn: Callable, *, attempts: int = 3, base_delay: float = 0.5,
     raise last  # pragma: no cover — loop always returns or raises
 
 
-def urlopen_retry(req, timeout: float, **kw) -> Tuple[bytes, object]:
+def urlopen_retry(req, timeout: float, *, return_final_url: bool = False, **kw):
     """GET ``req`` with retry; return ``(body_bytes, response_headers)``.
+
+    With ``return_final_url=True`` the tuple gains a third element — the final URL
+    after any redirects (``response.geturl()``) — so callers can tell e.g. that an
+    ``http://`` request was redirected to ``https://``. Default off, so existing
+    two-tuple callers are unaffected.
 
     The response is read fully inside each attempt (a connection can't be
     retried once consumed). Extra kwargs pass through to :func:`retry`.
     """
     def _once():
         with urllib.request.urlopen(req, timeout=timeout) as r:
+            if return_final_url:
+                return r.read(), r.headers, r.geturl()
             return r.read(), r.headers
     return retry(_once, **kw)
 

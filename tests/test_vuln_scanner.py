@@ -105,6 +105,21 @@ def test_csp_strict_not_flagged():
     assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
 
 
+def test_https_judged_on_final_url_after_redirect():
+    title = "Site served over plain HTTP (not HTTPS)"
+    # http requested but redirected to https → not "plain HTTP".
+    redirected = {"url": "http://x", "final_url": "https://x/"}
+    assert not any(f["title"] == title
+                   for f in VulnScanner().scan(redirected, {}))
+    # http requested and stayed http → genuinely plain HTTP (High).
+    plain = {"url": "http://x", "final_url": "http://x/"}
+    assert any(f["title"] == title and f["severity"] == SEVERITY_HIGH
+               for f in VulnScanner().scan(plain, {}))
+    # no final_url captured (fetch failure / legacy) → fall back to requested url.
+    assert any(f["title"] == title
+               for f in VulnScanner().scan({"url": "http://x"}, {}))
+
+
 def test_sensitive_path_vs_param_severity():
     # A genuinely sensitive path is Medium; a mere query-parameter hint (?id=) —
     # near-universal, weak IDOR recon — is only Info.

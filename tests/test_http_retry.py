@@ -121,8 +121,8 @@ def test_invalid_attempts_rejected():
 # ------------------------------------------------------------- urlopen_retry
 
 class _FakeResp:
-    def __init__(self, body, headers):
-        self._body, self.headers = body, headers
+    def __init__(self, body, headers, final_url='https://final/'):
+        self._body, self.headers, self._url = body, headers, final_url
 
     def __enter__(self):
         return self
@@ -133,12 +133,24 @@ class _FakeResp:
     def read(self):
         return self._body
 
+    def geturl(self):
+        return self._url
+
 
 def test_urlopen_retry_returns_body_and_headers(monkeypatch):
     monkeypatch.setattr(hr.urllib.request, 'urlopen',
                         lambda req, timeout: _FakeResp(b'hello', {'X': '1'}))
     body, headers = urlopen_retry('req', 5)
     assert body == b'hello' and headers == {'X': '1'}
+
+
+def test_urlopen_retry_optional_final_url(monkeypatch):
+    # return_final_url=True adds the post-redirect URL as a third element; the
+    # default two-tuple shape is unaffected.
+    monkeypatch.setattr(hr.urllib.request, 'urlopen', lambda req, timeout:
+                        _FakeResp(b'x', {}, final_url='https://x/after-redirect'))
+    body, headers, final = urlopen_retry('req', 5, return_final_url=True)
+    assert body == b'x' and final == 'https://x/after-redirect'
 
 
 def test_urlopen_retry_retries_then_succeeds(monkeypatch):

@@ -152,11 +152,15 @@ class ReconEngine:
         except Exception:
             return None
 
-    def _fetch_with_headers(self, url: str) -> Tuple[Optional[bytes], Dict[str, str]]:
+    def _fetch_with_headers(
+            self, url: str) -> Tuple[Optional[bytes], Dict[str, str], str]:
+        """Fetch ``url``; return ``(body, headers, final_url)``. ``final_url`` is the
+        post-redirect URL (so an http→https redirect is visible); '' on failure."""
         try:
             headers = SessionBuilder(self._profile).get_headers()
             req = urllib.request.Request(url, headers=headers)
-            raw, resp_headers = urlopen_retry(req, self._timeout)
+            raw, resp_headers, final_url = urlopen_retry(
+                req, self._timeout, return_final_url=True)
             hdrs = dict(resp_headers)
             # dict() collapses duplicate headers; preserve every Set-Cookie so
             # cookie-based backend fingerprints (Laravel/Django/Rails) still fire.
@@ -164,9 +168,9 @@ class ReconEngine:
                 cookies = resp_headers.get_all('Set-Cookie')
                 if cookies:
                     hdrs['Set-Cookie'] = '\n'.join(cookies)
-            return decompress(raw, resp_headers), hdrs
+            return decompress(raw, resp_headers), hdrs, str(final_url or '')
         except Exception:
-            return None, {}
+            return None, {}, ''
 
     # ---------------------------------------------------------------- geo / ip
 
@@ -330,10 +334,14 @@ class ReconEngine:
             )
 
         # Fetch main page
-        raw, resp_headers = self._fetch_with_headers(url)
+        raw, resp_headers, final_url = self._fetch_with_headers(url)
         if raw is None:
             result['error'] = 'Failed to fetch main page'
             return result
+        # The post-redirect URL — lets the vuln scanner tell an http→https redirect
+        # apart from a site genuinely served over plain HTTP.
+        if final_url:
+            result['final_url'] = final_url
 
         html = raw.decode('utf-8', errors='ignore')
 

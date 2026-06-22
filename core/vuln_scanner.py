@@ -84,7 +84,11 @@ class VulnScanner:
     # ---------------------------------------------------------------- High
 
     def _check_https(self, recon: Dict, findings: List[Dict]):
-        if recon.get('url', '').startswith('http://'):
+        # Judge the *final* URL after redirects: an http:// site that redirects to
+        # https is not "served over plain HTTP". Fall back to the requested url when
+        # no final url was captured (fetch failure / pre-final_url reports).
+        final = str(recon.get('final_url') or recon.get('url', ''))
+        if final.startswith('http://'):
             findings.append({
                 'severity': SEVERITY_HIGH,
                 'title': 'Site served over plain HTTP (not HTTPS)',
