@@ -14,7 +14,8 @@ def test_build_series_maps_metadata_entries_in_order():
     entries = [
         {'id': '20260102_000000', 'finished_at': 'b', 'risk_score': 30,
          'risk_level': 'Medium', 'attack_surface_score': 12, 'secrets': 1,
-         'high': 2, 'medium': 3},
+         'high': 2, 'medium': 3, 'weak_cookies': 4, 'source_map_leaks': 1,
+         'graphql': 2, 'graphql_introspection': 1},
         {'id': '20260101_000000', 'finished_at': 'a', 'risk_score': 10,
          'risk_level': 'Low', 'attack_surface_score': 5, 'secrets': 0,
          'high': 0, 'medium': 1},
@@ -23,12 +24,17 @@ def test_build_series_maps_metadata_entries_in_order():
     assert [p['scan_id'] for p in series] == ['20260101_000000', '20260102_000000']
     assert series[0]['risk_score'] == 10 and series[0]['attack_surface'] == 5
     assert series[1]['secrets'] == 1 and series[1]['high'] == 2
+    # Detection-category counts are carried for the trend layer.
+    assert series[1]['weak_cookies'] == 4 and series[1]['graphql_introspection'] == 1
+    assert series[0]['weak_cookies'] is None        # pre-EPIC entry → gap, not 0
 
 
 def test_build_series_tolerates_junk():
     assert timeline.build_series([None, {}, 'x']) == [
         {'scan_id': None, 'at': None, 'risk_score': None, 'risk_level': None,
-         'attack_surface': None, 'secrets': None, 'high': None, 'medium': None}]
+         'attack_surface': None, 'secrets': None, 'high': None, 'medium': None,
+         'source_map_leaks': None, 'weak_cookies': None, 'graphql': None,
+         'graphql_introspection': None}]
 
 
 # ── build_events: structural / risk from consecutive scans ─────────────────────

@@ -15,8 +15,12 @@ the companion view (``timeline.build_events``) — this module is the trend half
 
 from typing import Dict, List, Optional
 
-# The metrics ``timeline.build_series`` carries, in display priority.
-METRICS = ('risk_score', 'attack_surface', 'secrets', 'high', 'medium')
+# The metrics ``timeline.build_series`` carries, in display priority. After the
+# core risk numbers come the detection-category exposure counts (source maps /
+# weak cookies / GraphQL), so a glance shows whether exposure hygiene is degrading
+# — metrics with no numeric point in a project's history are simply omitted.
+METRICS = ('risk_score', 'attack_surface', 'secrets', 'high', 'medium',
+           'source_map_leaks', 'weak_cookies', 'graphql', 'graphql_introspection')
 
 
 def _clean(x):

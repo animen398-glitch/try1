@@ -60,7 +60,11 @@ def build_series(scan_entries: List[Dict]) -> List[Dict]:
     """Per-scan metric points from ``metadata.json`` ``scans[]`` (pure).
 
     Reuses the risk/secrets/attack-surface numbers already stored on each scan
-    entry — never recomputed. Sorted chronologically by scan id (a timestamp)."""
+    entry — never recomputed. Also carries the detection-category counts that
+    ``_scan_entry`` denormalizes for cross-scan use (source maps / weak cookies /
+    GraphQL exposure), so the trend layer can answer "is our exposure hygiene
+    degrading?" over the history. Sorted chronologically by scan id (a timestamp).
+    Pre-EPIC metadata without these keys leaves them ``None`` (a gap, not a fake 0)."""
     out: List[Dict] = []
     for s in scan_entries or []:
         if not isinstance(s, dict):
@@ -74,6 +78,10 @@ def build_series(scan_entries: List[Dict]) -> List[Dict]:
             'secrets': s.get('secrets'),
             'high': s.get('high'),
             'medium': s.get('medium'),
+            'source_map_leaks': s.get('source_map_leaks'),
+            'weak_cookies': s.get('weak_cookies'),
+            'graphql': s.get('graphql'),
+            'graphql_introspection': s.get('graphql_introspection'),
         })
     out.sort(key=lambda p: str(p.get('scan_id') or ''))
     return out

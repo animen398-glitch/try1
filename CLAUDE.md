@@ -1254,6 +1254,22 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Detection-метрики в trend-аналитике — `[ЗАКРЫТ]`.** Backend-фаза. `_scan_entry`
+денормализует в `metadata.json` 9 метрик per-scan **специально для cross-scan
+анализа** (heatmap), но `timeline.build_series` тащил лишь 5 — детект-категории
+(`source_map_leaks`/`weak_cookies`/`graphql`/`graphql_introspection`) персистились,
+но trend-слой их не видел. Для CSM-платформы «деградирует ли наша exposure-гигиена
+во времени?» — ровно тот вопрос, на который trends должен отвечать. Фикс:
+`build_series` несёт 4 детект-метрики (None при их отсутствии — gap, не фейковый 0),
+`trends.METRICS` их трендит. Pure/additive, данные уже персистятся. Потребители целы:
+`_render_trends_card` использует фикс-список из 4 sparkline'ов (не METRICS) →
+визуал отчёта не меняется; `trend_summary` (web `/timeline`) подхватывает новые
+метрики автоматом; старые проекты без этих ключей → `metric_trend` возвращает None →
+метрика опускается (graceful). Покрыто `test_timeline` (build_series несёт+gap),
+`test_trends` (детект-метрика трендится / отсутствующая опускается). (Побочно
+замечено: `report['trends_summary']` пишется, но нигде не читается — оба потребителя
+пересчитывают; кандидат на отдельную чистку.)
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)

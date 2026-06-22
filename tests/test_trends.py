@@ -55,3 +55,14 @@ def test_trend_summary_covers_metrics_and_risk_direction():
     assert summary['risk_score']['direction'] == 'up'
     assert trends.risk_direction(s) == 'up'
     assert trends.trend_summary([]) == {}
+
+
+def test_trend_summary_trends_detection_metrics():
+    # Exposure-hygiene counts are first-class trend metrics; a metric with no
+    # numeric point in the history is omitted (not faked).
+    s = [{'scan_id': 's0', 'risk_score': 10, 'weak_cookies': 1},
+         {'scan_id': 's1', 'risk_score': 10, 'weak_cookies': 4}]
+    summary = trends.trend_summary(s)
+    assert summary['weak_cookies']['direction'] == 'up'
+    assert summary['weak_cookies']['delta_total'] == 3
+    assert 'graphql' not in summary           # never present → omitted, not zeroed
