@@ -5,6 +5,7 @@ from typing import Callable, Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
 from core.secret_scanner import SecretScanner
+from core.secret_validator import INVALID
 
 try:
     from playwright.async_api import async_playwright
@@ -96,8 +97,12 @@ def _scan_json_for_secrets(body: object, source_url: str) -> List[Dict]:
         if isinstance(val, str):
             if val in seen_values or len(val) < 8:
                 return
-            # 1. Pattern-based (high precision) — shared rule set.
-            hits = _SCANNER.scan_text(val)
+            # 1. Pattern-based (high precision) — shared rule set. Drop hits the
+            # structural validator flags as placeholders/examples (e.g. a docs key
+            # in an API response), so they don't become a false High "secret exposed"
+            # — the same filtering the api/document/audit secret folders apply.
+            hits = [h for h in _SCANNER.scan_text(val)
+                    if (h.get('validation') or {}).get('status') != INVALID]
             if hits:
                 seen_values.add(val)
                 found.append({
@@ -107,7 +112,9 @@ def _scan_json_for_secrets(body: object, source_url: str) -> List[Dict]:
                     'source_url': source_url,
                 })
                 return
-            # 2. Semantic key name + secret-looking value (lower precision)
+            # 2. Semantic key name + secret-looking value (lower precision). No
+            # validator filter here: the value is an untyped 'token-field', for which
+            # the structural validator is 'unverifiable' (it can't add signal).
             key_norm = key.lower().replace('-', '_').replace(' ', '_')
             if key_norm in _SECRET_KEY_NAMES and _looks_like_secret(val):
                 seen_values.add(val)
@@ -202,6 +209,8 @@ class DynamicAnalyzer:
                 except Exception:
                     return
                 for hit in _SCANNER.scan_text(text, js_url):
+                    if (hit.get('validation') or {}).get('status') == INVALID:
+                        continue   # placeholder/example in the bundle, not a secret
                     static_secrets.append({
                         'key': '(static-js)',
                         'type': hit['type'],

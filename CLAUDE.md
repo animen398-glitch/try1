@@ -1254,6 +1254,20 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**Dynamic-analyzer секреты: фильтр placeholder/JWT-FP — `[ЗАКРЫТ, accuracy]`.**
+Backend-фаза (аудит неаудированного engine). `dynamic_analyzer` майнит секреты из
+перехваченных API-ответов и статического JS через SSOT `secret_scanner.scan_text`,
+но не отбрасывал хиты, которые структурный валидатор метит INVALID — а scan_text-
+хиты несут `validation`. Конкретный FP: base64-блоб вида `eyJ…` матчит JWT-правило,
+но не является реальным JWT (валидатор декодит → INVALID) → ложный High «Secret
+exposed in API response». Фикс: `_scan_json_for_secrets` (path-1, pattern) и
+static-JS-путь пропускают INVALID-хиты — тот же placeholder-фильтр, что api/document/
+audit-фолдеры. Path-2 (key-name эвристика, тип `token-field`) валидатор НЕ фильтрует
+(unverifiable — сознательно без фильтра, чтобы не вводить в заблуждение). Покрыто
+`test_dynamic_js_urls` (JWT-FP отброшен / реальный GitHub-token сохранён). Аудит
+также подтвердил исправным: secret-детект делегирует SSOT (без дубля правил),
+findings_store-миграция v1→v2 идемпотентна/version-gated, asset/cve-сторы версионны.
+
 **Консьюмер `cdn:true` — метрика+карточка+web — `[ЗАКРЫТ]`.** Backend-фаза, замкнул
 маркер из предыдущего инкремента на поверхностях. `asset_graph.load_asset_graph`
 summary += `cdn_clusters` (сколько кластеров — CDN-edge) и `largest_real_cluster`
