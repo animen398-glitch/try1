@@ -524,7 +524,16 @@ def _intelligence_view(project: Optional[str] = None) -> dict:
         return {'items': [], 'top': [], 'summary': {}}
     try:
         from core.intelligence import load_intelligence
-        return load_intelligence(project)
+        # F2: fold in the project's Business Context Model so business criticality /
+        # data sensitivity reach priority (best-effort — missing project → topology).
+        business = None
+        try:
+            proj = ProjectStore(str(_REPORT_BASE)).get(project)
+            if proj is not None:
+                business = proj.get_business_context()
+        except Exception:
+            business = None
+        return load_intelligence(project, business=business)
     except Exception as e:
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
 

@@ -1789,7 +1789,9 @@ class CollectionRunner:
         ``report['intelligence']`` (summary + top items) for the report card."""
         try:
             from core.intelligence import load_intelligence
-            data = load_intelligence(project.slug)
+            # F2: business context reaches finding priority via the criticality band.
+            data = load_intelligence(project.slug,
+                                     business=project.get_business_context())
             summary = data.get('summary') or {}
             if data.get('error') or not summary.get('findings'):
                 return

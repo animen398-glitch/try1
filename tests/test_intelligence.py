@@ -437,3 +437,57 @@ def test_build_attack_paths_empty_is_safe():
     out = intel.build_attack_paths()
     assert out == {'paths': [], 'top': [],
                    'summary': {'paths': 0, 'critical_paths': 0, 'top_score': 0}}
+
+
+# ── EPIC NEXT F2 — Business-Aware Prioritization ──────────────────────────────
+
+def test_threat_tier_classification():
+    assert intel._threat_tier({'category': 'takeover'}) == 'high'
+    assert intel._threat_tier({'category': 'secret'}) == 'high'
+    assert intel._threat_tier({'category': 'vuln', 'rule_id': 'sqli-detect'}) == 'high'
+    assert intel._threat_tier({'category': 'vuln', 'rule_id': 'cve-2021-1'}) == 'medium'
+    assert intel._threat_tier({'category': 'graphql'}) == 'medium'
+    assert intel._threat_tier({'category': 'header', 'rule_id': 'x'}) is None
+
+
+def test_priority_threat_bonus():
+    f = {'severity': 'medium'}
+    base = intel.priority(f, 100)['score']
+    hi = intel.priority(f, 100, threat_tier='high')
+    assert hi['score'] == base + 10
+    assert any('эксплуатируем' in x['factor'].lower() for x in hi['factors'])
+    assert intel.priority(f, 100, threat_tier='medium')['score'] == base + 5
+    # No tier → byte-identical to the pre-F2 result (no extra factor).
+    assert intel.priority(f, 100, threat_tier=None) == intel.priority(f, 100)
+
+
+def test_build_intelligence_carries_threat_tier():
+    item = intel.build_intelligence([{'id': 't', 'title': 'Subdomain takeover',
+                                      'severity': 'high', 'category': 'takeover',
+                                      'evidence': {}}])['items'][0]
+    assert item['threat'] == 'high'
+    assert any('эксплуатируем' in x['factor'].lower()
+               for x in item['priority_factors'])
+
+
+def test_business_context_raises_finding_priority():
+    """Business criticality / data sensitivity reach finding priority through the
+    (business-aware) criticality band — the F2 end-to-end path."""
+    from core.asset_adapter import asset_fingerprint
+    assets = [{'id': 'subdomain:shop.site.com', 'type': 'subdomain',
+               'value': 'shop.site.com', 'attrs': {}}]
+    # Stored findings carry a scheme-stripped, host-matchable location.
+    finding = {'id': 'f1', 'title': 'Missing header', 'severity': 'medium',
+               'category': 'header', 'evidence': {'location': 'shop.site.com/'}}
+
+    plain_crit = intel.build_asset_criticality(assets)
+    plain = intel.build_intelligence([finding],
+                                     criticality=plain_crit)['items'][0]['priority']
+
+    fp = asset_fingerprint('subdomain', 'shop.site.com')
+    biz = {'assets': {fp: {'criticality': 'critical',
+                           'data_sensitivity': 'restricted'}}}
+    boosted_crit = intel.build_asset_criticality(assets, business=biz)
+    boosted = intel.build_intelligence([finding],
+                                       criticality=boosted_crit)['items'][0]['priority']
+    assert boosted > plain   # the declared business importance lifted its priority

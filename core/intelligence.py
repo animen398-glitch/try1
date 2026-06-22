@@ -472,13 +472,17 @@ def load_accuracy(project) -> Dict:
 
 def priority(finding: Dict, confidence_score: int, *, exposed: bool = False,
              clustered: bool = False, sla_bucket: Optional[str] = None,
-             criticality_band: Optional[str] = None) -> Dict:
+             criticality_band: Optional[str] = None,
+             threat_tier: Optional[str] = None) -> Dict:
     """Priority score → ``{score, factors}`` (pure).
 
     ``severity_base × confidence/100`` (confidence discounts severity), plus an
-    exposure bonus (blast-radius / correlated asset), an SLA-urgency bonus, and an
+    exposure bonus (blast-radius / correlated asset), an SLA-urgency bonus, an
     asset-criticality bonus (EPIC 10 — the same finding on a more important asset is
-    fixed sooner; ``criticality_band`` is the band of the asset it sits on)."""
+    fixed sooner; ``criticality_band`` is the band of the asset it sits on, now
+    business-aware via F1 so business criticality / data sensitivity reach priority
+    through it), and a threat-context bonus (EPIC NEXT F2 — ``threat_tier`` flags an
+    actively-targeted finding class; a likelihood signal distinct from severity)."""
     sev = str(finding.get('severity') or 'info').lower()
     base = _SEV_BASE.get(sev, 2)
     sev_pts = round(base * confidence_score / 100)
@@ -503,8 +507,41 @@ def priority(finding: Dict, confidence_score: int, *, exposed: bool = False,
         factors.append({'factor': ('Критичный актив' if criticality_band == 'high'
                                    else 'Важный актив'), 'points': crit_bonus})
 
-    score = min(100, sev_pts + exposure_bonus + sla_bonus + crit_bonus)
+    threat_bonus = 10 if threat_tier == 'high' else (5 if threat_tier == 'medium' else 0)
+    if threat_bonus:
+        factors.append({'factor': ('Активно эксплуатируемый класс' if threat_tier == 'high'
+                                   else 'Повышенный интерес атакующих'),
+                        'points': threat_bonus})
+
+    score = min(100, sev_pts + exposure_bonus + sla_bonus + crit_bonus + threat_bonus)
     return {'score': score, 'factors': factors}
+
+
+# Phase-1 threat context (EPIC NEXT F2): a static tier for actively-targeted /
+# high-interest finding classes. It is a *likelihood-of-exploitation* signal,
+# distinct from severity (impact), so it adds a small priority bonus on top of
+# severity × confidence. A live KEV/EPSS feed is an opt-in follow-up, not phase 1.
+_THREAT_HIGH_CATEGORIES = frozenset({'takeover', 'secret'})
+_THREAT_MED_CATEGORIES = frozenset({'graphql', 'sourcemap', 'vuln'})
+_THREAT_HIGH_KEYWORDS = ('rce', 'sqli', 'sql-injection', 'sql_injection', 'ssrf',
+                         'deserial', 'command-injection', 'command_injection',
+                         'file-upload', 'path-traversal', 'lfi', 'xxe')
+
+
+def _threat_tier(finding: Dict) -> Optional[str]:
+    """Static threat tier for a finding (high / medium / None), phase-1 F2.
+
+    High = a class abused in the wild as an entry point (takeover, leaked secret,
+    or an injection/RCE-style rule). Medium = exposure / known-vuln classes
+    (graphql / source maps / a CVE-bearing dependency). Else None."""
+    cat = str(finding.get('category') or '').lower()
+    rule = str(finding.get('rule_id') or '').lower()
+    hay = f"{rule} {str(finding.get('title') or '').lower()}"
+    if cat in _THREAT_HIGH_CATEGORIES or any(k in hay for k in _THREAT_HIGH_KEYWORDS):
+        return 'high'
+    if cat in _THREAT_MED_CATEGORIES or rule.startswith('cve-') or 'cve-' in hay:
+        return 'medium'
+    return None
 
 
 # ── explanation ───────────────────────────────────────────────────────────────
@@ -563,8 +600,10 @@ def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
         clustered = bool(host) and host in cluster_hosts
         crit_band = crit_by_value.get(host) or crit_by_value.get(loc)
         bucket = _sla_bucket_of(f, now)
+        threat = _threat_tier(f)
         prio = priority(f, acc['score'], exposed=exposed, clustered=clustered,
-                        sla_bucket=bucket, criticality_band=crit_band)
+                        sla_bucket=bucket, criticality_band=crit_band,
+                        threat_tier=threat)
         items.append({
             'id': f.get('id'), 'title': f.get('title'),
             'severity': f.get('severity'), 'category': f.get('category'),
@@ -575,6 +614,7 @@ def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
             'evidence': acc['evidence'], 'source': acc['source'],
             'verification': acc['verification'],
             'asset_criticality': crit_band,   # EPIC 10: band of the finding's asset
+            'threat': threat,                 # F2: phase-1 threat-context tier
             'priority': prio['score'], 'priority_factors': prio['factors'],
             'explanation': explain(f),
         })
@@ -589,9 +629,13 @@ def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
     return {'items': items, 'top': items[:10], 'summary': summary}
 
 
-def load_intelligence(project: str, *, now=None) -> Dict:
+def load_intelligence(project: str, *, business: Optional[Dict] = None, now=None) -> Dict:
     """Build a project's intelligence view (thin reader; reuses the F1 store,
-    correlation and the asset graph). Offline, read-only, guarded."""
+    correlation and the asset graph). ``business`` is the project's Business Context
+    Model root (F1) — callers that hold the Project pass
+    ``project.get_business_context()`` so business criticality / data sensitivity
+    reach finding priority through the (business-aware) criticality band (F2).
+    Offline, read-only, guarded."""
     try:
         from core.asset_graph import load_asset_graph
         from core.asset_store import AssetStore
@@ -603,7 +647,8 @@ def load_intelligence(project: str, *, now=None) -> Dict:
         # Reuse the just-loaded correlation + graph (no duplicate store reads) to
         # rank assets, so a finding on a critical asset gets its priority bonus.
         assets = AssetStore().list_assets(project=project)
-        criticality = build_asset_criticality(assets, correlation, asset_graph)
+        criticality = build_asset_criticality(assets, correlation, asset_graph,
+                                              business=business)
         return build_intelligence(findings, correlation, asset_graph,
                                   criticality=criticality, now=now)
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller

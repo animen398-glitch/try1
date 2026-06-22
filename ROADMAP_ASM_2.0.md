@@ -1189,8 +1189,25 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 + data sensitivity + threat context.
 **Где живёт:** расширение `intelligence.priority`/`build_intelligence` (как EPIC 10
 вплёл criticality-band) — **аддитивные опц. аргументы**, поведение без контекста
-байт-в-байт. Threat context фаза 1 = статический tier/derive; live-фиды (KEV/EPSS)
-— opt-in feature-gate, отдельный Task.
+байт-в-байт.
+
+**[ВЫПОЛНЕНО 2026-06-22]** (без двойного счёта — решение):
+- **Business criticality + data sensitivity → priority через criticality-band.**
+  F1 уже сложил их в `asset_criticality` (impact-ось); F2 прокинул `business` в
+  `load_intelligence` → `build_asset_criticality(business=)`, поэтому band находки
+  (и её priority-бонус «Критичный/Важный актив») теперь business-aware. Один путь,
+  без отдельного аддитивного фактора → нет двойного счёта.
+- **Threat context (фаза 1, статический).** Новый `intelligence._threat_tier(finding)`
+  — likelihood-сигнал, отличный от severity: high = активно-эксплуатируемый класс
+  (takeover/secret/инъекция-RCE-правило), medium = exposure/known-vuln (graphql/
+  sourcemap/CVE-несущая либа). `priority(..., threat_tier=)` добавляет именованный
+  бонус (high +10 / medium +5); `build_intelligence` считает tier на находку,
+  прокидывает и кладёт `threat` в item. Live KEV/EPSS — opt-in follow-up, НЕ фаза 1.
+- **Проводка:** `collection_runner._build_intelligence` и web `_intelligence_view`
+  передают `project.get_business_context()`. Priority — **display** (risk-вердикт не
+  тронут); без business/threat → байт-в-байт. Покрыто `tests/test_intelligence.py`
+  (threat-классификация/бонус/byte-identical-без-tier; business поднимает priority
+  через band end-to-end).
 
 ### F3 — Deterministic Attack Paths (external → critical asset)
 
