@@ -108,6 +108,14 @@ def has_lift() -> bool:
     return _has_binary('lift_extract')
 
 
+def has_yaml() -> bool:
+    """A YAML parser (PyYAML) — optional, for the IaC scanner's YAML formats
+    (docker-compose / Kubernetes / CloudFormation, EPIC NEXT F7). Absent → those
+    files degrade to a soft skip; the stdlib formats (Dockerfile / Terraform /
+    JSON CloudFormation) still scan."""
+    return _has_module('yaml')
+
+
 def has_ollama() -> bool:
     """A local Ollama answering on localhost (optional LLM narrative).
 
@@ -137,6 +145,7 @@ OPTIONAL_FEATURES = {
     'pdf-text':   ('PDF text extraction (document intel)',          has_pdf_text),
     'ocr':        ('Image OCR — document intel (external)',         has_ocr),
     'lift':       ('lift document→JSON extraction (external)',      has_lift),
+    'yaml':       ('YAML IaC parsing (docker-compose/k8s/CFN)',     has_yaml),
 }
 
 

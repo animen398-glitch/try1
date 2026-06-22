@@ -106,7 +106,8 @@ class CollectionRunner:
                  emails: bool = False, employees: bool = False,
                  ct: bool = False, asn_intel: bool = False,
                  osv: bool = False, security: bool = False,
-                 bbot: bool = False, documents: bool = False):
+                 bbot: bool = False, documents: bool = False,
+                 iac: bool = False, iac_path: Optional[str] = None):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -172,6 +173,12 @@ class CollectionRunner:
         # sensitive data, via core.document_intelligence (+ optional lift if
         # installed). Local/passive (no new network); off by default. (EXT-OSINT F2.)
         self.documents = documents
+        # Opt-in IaC / container config ingestion (EPIC NEXT F7) — parse local
+        # IaC/config files at ``iac_path`` (Dockerfile/compose/k8s/CloudFormation/
+        # Terraform) into findings (misconfig + secrets) + assets (images). Local
+        # only (no cloud API in phase 1); off by default; needs an explicit path.
+        self.iac = iac
+        self.iac_path = iac_path
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -196,7 +203,9 @@ class CollectionRunner:
                   osv: Optional[bool] = None,
                   security: Optional[bool] = None,
                   bbot: Optional[bool] = None,
-                  documents: Optional[bool] = None):
+                  documents: Optional[bool] = None,
+                  iac: Optional[bool] = None,
+                  iac_path: Optional[str] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -239,6 +248,10 @@ class CollectionRunner:
             self.bbot = bbot
         if documents is not None:
             self.documents = documents
+        if iac is not None:
+            self.iac = iac
+        if iac_path is not None:
+            self.iac_path = iac_path
         if capture_delay is not None:
             self.capture_delay = capture_delay
 
@@ -499,6 +512,11 @@ class CollectionRunner:
         # scope-gated; the capture/clone that produced them already were.
         if self.documents and not self._cancelled(report):
             report['phases']['documents'] = self._phase_documents(scan_dir, report)
+        # 7n. IaC / container config ingestion (opt-in, EPIC NEXT F7) → parse local
+        # IaC/config files at iac_path into findings (misconfig + secrets) + assets
+        # (images). Local only (no cloud API) → not scope-gated (reads files).
+        if self.iac and self.iac_path and not self._cancelled(report):
+            report['phases']['iac'] = self._phase_iac(report)
         # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
         if self.katana and not self._cancelled(report):
             skipped = self._scope_skip_active(report, 'katana', url)
@@ -1437,6 +1455,32 @@ class CollectionRunner:
             self._log(f'  Document intelligence failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
+    def _phase_iac(self, report: Dict) -> Dict:
+        """IaC / container config ingestion (opt-in, EPIC NEXT F7): parse the local
+        files at ``self.iac_path`` (Dockerfile / compose / k8s / CloudFormation /
+        Terraform) into findings (misconfig + leaked secrets) folded into the vuln
+        phase (lifecycle / SLA / triage + risk via severity) and technologies
+        (container images) the asset adapter promotes. Local only — no cloud API,
+        no network. Guarded; never sinks the scan."""
+        self._log(f'[+] IaC config scan… ({self.iac_path})')
+        try:
+            from core.iac_scanner import scan_path
+            data = scan_path(self.iac_path)
+            findings = data.get('findings') or []
+            vulns = report['phases'].get('vulns')
+            if findings and isinstance(vulns, dict):
+                merged = vulns.get('findings', []) + findings
+                vulns['findings'] = merged
+                vulns['summary'] = VulnScanner.summarize(merged)
+            s = data.get('summary') or {}
+            self._log(f"  IaC: {s.get('files', 0)} файлов, находок "
+                      f"+{len(findings)}, образов {s.get('technologies', 0)}"
+                      + ('' if s.get('yaml_available') else ' (YAML-парсер недоступен)'))
+            return {'status': 'Success', 'data': data}
+        except Exception as e:
+            self._log(f'  IaC config scan failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
     def _dedup_vuln_findings(self, report: Dict) -> None:
         """Collapse the vuln phase's findings that share an identity (same CVE
         across scanners) into one + recompute the phase summary. Best-effort: a
@@ -1513,6 +1557,10 @@ class CollectionRunner:
                     # document-intel findings come from the opt-in documents phase
                     # — a skipped run must not auto-FIX them (EXT-OSINT F2).
                     return phase_ok('documents')
+                if s == 'iac':
+                    # IaC-config findings come from the opt-in iac phase — a skipped
+                    # run must not auto-FIX them (EPIC NEXT F7).
+                    return phase_ok('iac')
                 return phase_ok('vulns')
 
             store = FindingsStore()
@@ -2311,6 +2359,34 @@ class CollectionRunner:
         return intro + table
 
     @staticmethod
+    def _render_iac_card(data: Dict) -> str:
+        """Offline HTML for the IaC Config card: files scanned, container images
+        found and the misconfiguration findings (which fold into the vuln
+        lifecycle). EPIC NEXT F7."""
+        e = html.escape
+        if not isinstance(data, dict):
+            return ''
+        s = data.get('summary') or {}
+        rows_src = [
+            ('Files scanned', s.get('files', 0)),
+            ('Findings', s.get('findings', 0)),
+            ('Container images', s.get('technologies', 0)),
+        ]
+        rows = ''.join(
+            f'<tr><td style="padding:1px 12px 1px 0;">{e(label)}</td>'
+            f'<td style="color:#666;">{e(str(count))}</td></tr>'
+            for label, count in rows_src)
+        note = ('' if s.get('yaml_available') else
+                '<p style="font-size:12px;color:#888;">YAML-парсер недоступен — '
+                'docker-compose / k8s / CloudFormation-YAML пропущены '
+                '(установите PyYAML).</p>')
+        intro = ('<p style="font-size:13px;">IaC / container config — '
+                 'misconfigurations + leaked secrets from local files (findings '
+                 'fold into the vuln lifecycle; no cloud API).</p>')
+        table = f'<table style="font-size:12px;">{rows}</table>'
+        return intro + table + note
+
+    @staticmethod
     def _render_trends_card(trends: list) -> str:
         """Offline HTML for the Trends card: sparklines of the project's metric
         history over its scans (F5). Reuses the offline-SVG ``sparkline`` (the
@@ -2538,6 +2614,14 @@ class CollectionRunner:
                 'Document Intelligence', self._render_documents_card(
                     doc_phase.get('data')),
                 doc_phase.get('status', '—'),
+            ))
+
+        # IaC / container config (opt-in, EPIC NEXT F7) — misconfig + secrets.
+        iac_phase = phases.get('iac')
+        if isinstance(iac_phase, dict) and iac_phase.get('status') == 'Success':
+            body_parts.append(card(
+                'IaC Config', self._render_iac_card(iac_phase.get('data')),
+                iac_phase.get('status', '—'),
             ))
 
         # Related Assets (infra-chain tail) — co-hosted external domains on our IP.

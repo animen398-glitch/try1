@@ -45,6 +45,7 @@ _CATEGORY_MAP: Dict[str, Dict] = {
     'endpoint':   {'owasp': 'A01:2021', 'cwe': ['CWE-200']},
     'takeover':   {'owasp': 'A05:2021', 'cwe': ['CWE-284']},
     'transport':  {'owasp': 'A02:2021', 'cwe': ['CWE-319']},
+    'iac':        {'owasp': 'A05:2021', 'cwe': ['CWE-1032', 'CWE-16']},
     # Generic vuln: resolved by the rule map below; unmapped otherwise.
     'vuln':       {'owasp': None, 'cwe': []},
 }

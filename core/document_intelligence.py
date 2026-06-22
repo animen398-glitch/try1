@@ -167,15 +167,18 @@ def extract_text(path) -> Dict:
 
 
 def secret_finding(ktype, value, location, *,
-                   validation: Optional[Dict] = None) -> Optional[Dict]:
+                   validation: Optional[Dict] = None,
+                   source: str = 'document') -> Optional[Dict]:
     """One masked secret finding dict, or ``None`` for a clear placeholder.
 
-    The single constructor for document-sourced secret findings (reused by the
-    text path and the lift provider), so the finding shape stays identical to the
-    api/security secret folders: ``category='secret'``, ``source='document'``, a
+    The single constructor for document/config-sourced secret findings (reused by
+    the text path, the lift provider and the IaC scanner), so the finding shape
+    stays identical to the api/security secret folders: ``category='secret'``, a
     non-leaking ``discriminator`` (vendor + masked prefix + length) and a masked
-    detail — no plaintext ever enters the finding. Pass ``validation`` to reuse a
-    structural check already done (e.g. ``scan_text``); otherwise it is computed."""
+    detail — no plaintext ever enters the finding. ``source`` tags the producing
+    phase (``document`` / ``iac`` …) so the auto-FIX scope-guard ties it to the
+    right phase. Pass ``validation`` to reuse a structural check already done (e.g.
+    ``scan_text``); otherwise it is computed."""
     value = str(value or '')
     if not value:
         return None
@@ -188,22 +191,24 @@ def secret_finding(ktype, value, location, *,
         'severity': 'High',
         'title': f'Leaked secret: {ktype}',
         'detail': f'{location} — exposed {ktype} ({mask_value(value)}).',
-        'source': 'document', 'category': 'secret', 'location': str(location),
+        'source': source, 'category': 'secret', 'location': str(location),
         'discriminator': secret_discriminator(ktype, value),
     }
 
 
-def secret_findings_from_text(text: str, location: str) -> List[Dict]:
+def secret_findings_from_text(text: str, location: str, *,
+                              source: str = 'document') -> List[Dict]:
     """Raw secret finding dicts for credentials in ``text`` (SSOT-based).
 
     Runs the single secret rule set (``secret_scanner.scan_text``), drops clear
     placeholders/false-positives via the structural validator already attached to
-    each hit, and builds findings via :func:`secret_finding`. De-dup across
-    documents happens later by fingerprint."""
+    each hit, and builds findings via :func:`secret_finding`. ``source`` tags the
+    producing phase (default ``document``; the IaC scanner passes ``iac``). De-dup
+    across files happens later by fingerprint."""
     out: List[Dict] = []
     for hit in scan_text(text or '', source=location):
         f = secret_finding(hit.get('type', ''), hit.get('match', ''), location,
-                           validation=hit.get('validation'))
+                           validation=hit.get('validation'), source=source)
         if f:
             out.append(f)
     return out

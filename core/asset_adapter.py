@@ -38,7 +38,7 @@ ASSET_TYPES = ('domain', 'subdomain', 'ip', 'asn', 'netblock', 'endpoint',
 # deep-JS security audit.
 ASSET_SOURCE_PHASES = {
     'domain': ('recon',), 'ip': ('recon',), 'asn': ('recon',),
-    'technology': ('recon',), 'subdomain': ('subdomains',),
+    'technology': ('recon', 'iac'), 'subdomain': ('subdomains',),
     'netblock': ('asn_intel',), 'endpoint': ('katana', 'openapi', 'security'),
 }
 
@@ -299,6 +299,16 @@ def derive_assets(report: Dict) -> List[Asset]:
     for t in bbot.get('technologies') or []:
         if isinstance(t, dict) and t.get('name'):
             attrs = {'source': 'bbot'}
+            attrs.update(_present(version=t.get('version')))
+            out.append(Asset('technology', t['name'], attrs=attrs))
+
+    # IaC / container config (opt-in, EPIC NEXT F7). Container images parsed from
+    # Dockerfiles / compose / k8s / CFN become technology assets (source='iac' so
+    # the store gates their GONE on the 'iac' phase).
+    iac = _phase(report, 'iac')
+    for t in iac.get('technologies') or []:
+        if isinstance(t, dict) and t.get('name'):
+            attrs = {'source': 'iac'}
             attrs.update(_present(version=t.get('version')))
             out.append(Asset('technology', t['name'], attrs=attrs))
 

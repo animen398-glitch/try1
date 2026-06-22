@@ -1315,10 +1315,44 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 
 **Цель:** локальные IaC/конфиги (Terraform / CloudFormation / k8s manifests /
 Dockerfile / docker-compose) → активы/находки.
-**Где живёт:** opt-in фаза в `CollectionRunner` (паттерн `_phase_*`), парсинг
-**локальных файлов** (нет cloud-API в фазе 1; любое будущее API — Scope Guard +
-отдельный Task); нормализация через существующие `asset_adapter`/`findings_adapter`.
-Тяжёлые парсеры — feature-gate + мягкая деградация (паттерн document_providers).
+**Где живёт:** opt-in фаза в `CollectionRunner`, парсинг **локальных файлов**.
+
+**[ВЫПОЛНЕНО 2026-06-22]** (фаза 1, без cloud API; core+phase+CLI, GUI позже):
+- **Движок** `core/iac_scanner.py` (pure/offline/never-raise): `scan_path(path)` →
+  `{findings, technologies, summary}`. Парсеры (консервативные, high-signal):
+  Dockerfile (stdlib: root-контейнер / unpinned-образ / ADD remote-URL), Terraform
+  `.tf` (stdlib regex: `0.0.0.0/0` / public-read ACL), CloudFormation JSON (stdlib:
+  открытый SG / публичный бакет), docker-compose / k8s / CloudFormation-YAML
+  (опц. PyYAML — `features.has_yaml`; нет → мягкий skip, stdlib-форматы работают).
+  Секреты — через SSOT `secret_scanner.scan_text` (`document_intelligence.
+  secret_findings_from_text` получил `source=`-параметр → `source='iac'`, маска,
+  валидатор). Находки: `category='iac'` (misconfig) / `'secret'`, `source='iac'`,
+  `location`=repo-relative; образы → technologies (assets).
+- **Канон-вокаб**: `'iac'` в `finding_fingerprint.CATEGORIES`,
+  `finding_knowledge['iac']` (description/impact/remediation), `compliance.
+  _CATEGORY_MAP['iac']` → A05/CWE-1032 (+F6 framework-crosswalk автоматом).
+- **Проводка** `CollectionRunner`: флаги `iac`/`iac_path` (__init__/configure),
+  `_phase_iac` (фолд находок в vulns как `_phase_documents`; **локально → НЕ в**
+  `ACTIVE_SCOPE_GUARDED_PHASES`), `in_scope` `'iac'→phase_ok('iac')`, карточка
+  «IaC Config». `asset_adapter`: образы из `phases.iac.data.technologies` →
+  technology-активы (`source='iac'`; `ASSET_SOURCE_PHASES['technology'] += 'iac'`)
+  → инвентарь/Timeline/web автоматом.
+- **CLI** `iac_cli.py` (ad-hoc scan репозитория → находки/образы/JSON; без
+  персиста — lifecycle идёт через фазу). GUI/monitor — отложены (фаза path-based,
+  не URL-based). Покрыто `tests/test_iac_scanner.py` (5 форматов + секреты +
+  robustness + YAML-gate + фолд в vulns + промоут активов + таксономия).
+
+---
+
+> **EPIC NEXT — ЗАКРЫТ (2026-06-22).** F0–F7 реализованы: Platform Trust Hardening
+> (миграции+contract-тесты), Business Context Model, Business-Aware Prioritization,
+> Deterministic Attack Paths, Remediation Tasks, Semantic Drift Monitoring,
+> Auditor-Friendly Compliance, Cloud/Container/IaC Ingestion. Все — core→report→
+> web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт не
+> перестроен. **Отложено (осознанно, не блокеры):** GUI-ввод business-контекста /
+> GUI-вкладки remediation+IaC (internals-first — память
+> `feedback-internals-first-no-gui`); live threat-feed (KEV/EPSS) для F2; live
+> cloud-API для F7; прямой path→task маппинг для F4.
 
 ### Точки интеграции (существующие — переиспользовать, НЕ дублировать)
 
