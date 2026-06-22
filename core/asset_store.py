@@ -35,7 +35,6 @@ GONE_STATUS = 'GONE'
 EVENT_TYPES = ('CREATED', 'SEEN', 'GONE', 'REAPPEARED')
 # Human-readable status labels — single source for the GUI tab and web console.
 STATUS_LABELS = {'ACTIVE': 'Активен', 'GONE': 'Исчез'}
-SCHEMA_VERSION = 1
 
 
 def _now() -> str:
@@ -46,6 +45,7 @@ class AssetStore(SQLiteStore):
     """SQLite-backed persistence for assets + their event history."""
 
     JSON_FIELDS = ('attrs',)
+    SCHEMA_VERSION = 1
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS assets (
@@ -74,11 +74,6 @@ class AssetStore(SQLiteStore):
 
     def __init__(self, db_path: Optional[Union[str, Path]] = None):
         super().__init__(db_path or ASSETS_DB)
-
-    def _init_schema(self) -> None:
-        super()._init_schema()
-        with self._connect() as conn:
-            conn.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
 
     # ── internal ──────────────────────────────────────────────────────────────
 

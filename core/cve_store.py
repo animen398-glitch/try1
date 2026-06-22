@@ -29,8 +29,6 @@ from typing import Dict, List, Optional, Union
 from core.config import CVE_CACHE_DB
 from utils.sqlite_store import SQLiteStore
 
-SCHEMA_VERSION = 1
-
 
 def _now() -> str:
     return datetime.now().isoformat(timespec='seconds')
@@ -56,8 +54,9 @@ class CVEStore(SQLiteStore):
     """SQLite-backed persistent cache for CVE lookups + per-CVE enrichment."""
 
     JSON_FIELDS = ('vulns',)
+    SCHEMA_VERSION = 1
 
-    SCHEMA = f"""
+    SCHEMA = """
     CREATE TABLE IF NOT EXISTS lib_cves (
         key        TEXT PRIMARY KEY,
         vulns      TEXT NOT NULL,
@@ -72,7 +71,6 @@ class CVEStore(SQLiteStore):
         source     TEXT,
         fetched_at TEXT NOT NULL
     );
-    PRAGMA user_version = {SCHEMA_VERSION};
     """
 
     def __init__(self, db_path: Optional[Union[str, object]] = None):

@@ -56,12 +56,6 @@ STATUS_LABELS = {
     'IGNORED': 'Игнор', 'FALSE_POSITIVE': 'Ложное',
 }
 
-# v2: findings are keyed by their project-scoped id (scoped_id(project,
-# fingerprint)) instead of the bare, project-agnostic fingerprint — so two
-# projects no longer collide on a location-less finding (DNS / host-level).
-SCHEMA_VERSION = 2
-
-
 def _now() -> str:
     return datetime.now().isoformat(timespec='seconds')
 
@@ -70,6 +64,10 @@ class FindingsStore(SQLiteStore):
     """SQLite-backed persistence for findings + their event history."""
 
     JSON_FIELDS = ('evidence',)
+    # v2: findings are keyed by their project-scoped id (scoped_id(project,
+    # fingerprint)) instead of the bare, project-agnostic fingerprint — so two
+    # projects no longer collide on a location-less finding (DNS / host-level).
+    SCHEMA_VERSION = 2
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS findings (
@@ -103,14 +101,6 @@ class FindingsStore(SQLiteStore):
     def __init__(self, db_path: Optional[Union[str, Path]] = None):
         super().__init__(db_path or FINDINGS_DB)
 
-    def _init_schema(self) -> None:
-        super()._init_schema()  # CREATE TABLE IF NOT EXISTS (idempotent)
-        with self._connect() as conn:
-            version = conn.execute('PRAGMA user_version').fetchone()[0]
-            if version < 2:
-                self._migrate_to_v2(conn)
-            conn.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
-
     @staticmethod
     def _migrate_to_v2(conn) -> None:
         """Re-key v1 rows to their project-scoped id (the B fix). A v1 DB keyed
@@ -128,6 +118,12 @@ class FindingsStore(SQLiteStore):
                              'WHERE finding_id = ?', (new, old))
                 conn.execute('UPDATE findings SET id = ? WHERE id = ?',
                              (new, old))
+
+    # Declarative migration map consumed by SQLiteStore._apply_migrations:
+    # {target_version: fn(conn)}. Applied once when the on-disk version is below
+    # the target (the ``user_version`` guard, not the op itself, gives
+    # idempotency — re-keying twice would double-scope).
+    MIGRATIONS = {2: _migrate_to_v2.__func__}
 
     # ── internal helpers ──────────────────────────────────────────────────────
 
