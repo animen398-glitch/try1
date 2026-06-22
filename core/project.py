@@ -243,6 +243,35 @@ class Project:
         meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
         self._write_metadata(meta)
 
+    # ---------------------------------------------------------------- business context
+    def get_business_context(self) -> Dict:
+        """The project's Business Context Model, normalized (EPIC NEXT F1).
+
+        User-declared asset importance — a project-level ``default`` plus per-asset
+        overrides — stored as a single optional ``business_context`` key in
+        ``metadata.json`` (never a directory/table, like ``company``/``scope``).
+        Missing/legacy/garbage shapes normalize to ``{}``; ``core.business_context``
+        owns the shape."""
+        from core.business_context import normalize_root
+        return normalize_root(self.load_metadata().get('business_context'))
+
+    def set_business_context(self, root: Optional[Dict]) -> None:
+        """Store (or, with ``None``/empty, clear) the business context.
+
+        Read-modify-write so it composes with ``record_scan``/``set_monitor``/
+        ``set_scope`` (each preserves the others' keys). The value is normalized;
+        an empty result drops the key so pre-F1 metadata stays byte-identical."""
+        from core.business_context import normalize_root
+        self.ensure()
+        meta = self.load_metadata()
+        normalized = normalize_root(root) if root is not None else {}
+        if normalized:
+            meta['business_context'] = normalized
+        else:
+            meta.pop('business_context', None)
+        meta['updated_at'] = datetime.now().isoformat(timespec='seconds')
+        self._write_metadata(meta)
+
     # ---------------------------------------------------------------- scope
     def get_scope(self) -> Dict:
         """The project's Scope Guard config.
@@ -286,6 +315,20 @@ class ProjectStore:
     def get(self, slug: str) -> Optional[Project]:
         d = self.root / slug
         return Project(d) if (d / METADATA_NAME).exists() else None
+
+    def resolve(self, target: str, *, create: bool = False) -> Project:
+        """Resolve a slug-or-URL ``target`` to a Project (shared by the
+        management/CLI layers). With ``create`` a missing project is created; else
+        a missing one raises ``KeyError``. A URL target is mapped to its slug."""
+        if create:
+            return self.get_or_create(target)
+        slug = target
+        if '://' in target or '/' in target:
+            slug = self.get_or_create(target).slug
+        project = self.get(slug)
+        if project is None:
+            raise KeyError(f'project not found: {target}')
+        return project
 
     def list_projects(self) -> List[Dict]:
         """Every project's metadata, newest-updated first (for a Projects view)."""

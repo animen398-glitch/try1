@@ -1688,12 +1688,16 @@ class CollectionRunner:
         (summary + top assets) for the report card + the display metric."""
         try:
             from core.intelligence import load_asset_criticality
-            data = load_asset_criticality(project.slug)
+            # Business Context Model (F1): user-declared importance augments the
+            # technical criticality. None/empty → byte-identical to pre-F1.
+            business = project.get_business_context()
+            data = load_asset_criticality(project.slug, business=business)
             summary = data.get('summary') or {}
             if data.get('error') or not summary.get('assets'):
                 return
-            report['asset_criticality'] = {'summary': summary,
-                                           'top': (data.get('top') or [])[:10]}
+            report['asset_criticality'] = {
+                'summary': summary, 'top': (data.get('top') or [])[:10],
+                'business_default': business.get('default') or {}}
             self._log(f"  Asset criticality: {summary.get('assets', 0)} активов, "
                       f"top {summary.get('top_criticality', 0)}, "
                       f"{summary.get('high_criticality', 0)} критичных")
@@ -1711,6 +1715,14 @@ class CollectionRunner:
                 f'<b>{e(str(summary.get("assets", 0)))}</b> · критичных: '
                 f'<b>{e(str(summary.get("high_criticality", 0)))}</b> · макс. '
                 f'criticality: <b>{e(str(summary.get("top_criticality", 0)))}</b></p>')
+        # F1: surface the project-level business context default when declared.
+        biz_default = cdata.get('business_default') or {}
+        if biz_default:
+            from core.business_context import describe
+            label = describe(biz_default)
+            if label:
+                head += (f'<p style="font-size:12px;color:#666;">Бизнес-контекст '
+                         f'(проект): <b>{e(label)}</b></p>')
         rows = ''.join(
             f'<tr><td style="padding:1px 12px 1px 0;color:#888;">'
             f'{e(str(i.get("criticality", 0)))}</td>'

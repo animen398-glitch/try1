@@ -1151,11 +1151,37 @@ cloud-API** на первом этапе.
 ### F1 — Business Context Model (asset criticality + data sensitivity)
 
 **Цель:** пользователь задаёт бизнес-контекст активов.
-**Где живёт:** аддитивный ключ в `metadata.json` проекта / `Asset.attrs`
-(паттерн Company-tier membership F-C1), **без новой таблицы**.
-**Tasks:** enum-модель (business tier + data class) в `core/`; set/get-примитивы;
-GUI/web ввод (по образцу Company-assign); derive в `asset_criticality`
-(business-вес как дополнительный фактор, не замена type-веса).
+**Где живёт:** аддитивный ключ в `metadata.json` проекта (паттерн Company-tier
+membership F-C1), **без новой таблицы**.
+
+**[ВЫПОЛНЕНО 2026-06-22]** (решение пользователя: project default + per-asset;
+core+derive+report+web+CLI, GUI позже — память `feedback-internals-first-no-gui`).
+- **Модель** `core/business_context.py` (pure/SSOT): вокаб `CRITICALITY_TIERS`
+  (critical/high/medium/low) + `DATA_SENSITIVITY` (restricted/confidential/internal/
+  public), RU-лейблы, аддитивные веса (critical 30 / high 20 / medium 10; restricted
+  20 / confidential 12 / internal 5), `normalize_*`/`normalize_root`, pure-edиты
+  `set_default`/`set_asset`, `resolve` (per-asset override поверх project default,
+  field-by-field), `business_weight`/`business_factors`/`describe` + management-
+  хелперы show/set/clear.
+- **Хранение** — `Project.get/set_business_context` (RMW в `metadata.json`, как
+  company/monitor/scope; нормализованный `{default?, assets?}`, ключ актива =
+  bare `asset_fingerprint(type,value)`; пустой → ключ дропается, pre-F1 байт-в-байт).
+  `ProjectStore.resolve(target, create=)` — общий резолвер slug/URL (для CLI/web).
+- **Derive** — `intelligence.asset_criticality(..., business=)` добавляет
+  business-факторы (augment type-веса, не замена); `build_asset_criticality`/
+  `load_asset_criticality` принимают `business` root; **display-only** (risk-вердикт
+  не тронут). Без business → байт-в-байт.
+- **Поверхности** — `collection_runner._build_asset_criticality` прокидывает
+  `project.get_business_context()` + кладёт `business_default` в report-карточку;
+  web `_criticality_view` фолдит business из `ProjectStore(_REPORT_BASE)`; CLI
+  `business_cli.py` (show/set/clear, default и per-asset через `--asset-type`/`--asset`).
+- **GUI-ввод — отложен** (internals-first); чтение бизнес-контекста уже видно в
+  Criticality-факторах/карточке/web. Покрыто `tests/test_business_context.py`
+  (вокаб/resolve/веса/Project RMW/ProjectStore.resolve/derive boost+per-asset/
+  management/CLI/web-parity).
+
+**Tasks (выполнены):** enum-модель в `core/` ✓; set/get-примитивы ✓; derive в
+`asset_criticality` ✓; report+web+CLI ✓; GUI-ввод — отложен.
 
 ### F2 — Business-Aware Prioritization
 

@@ -539,7 +539,16 @@ def _criticality_view(project: Optional[str] = None) -> dict:
         return {'items': [], 'top': [], 'summary': {}}
     try:
         from core.intelligence import load_asset_criticality
-        return load_asset_criticality(project)
+        # F1: fold in the project's Business Context Model when available
+        # (best-effort — a missing project just yields the technical ranking).
+        business = None
+        try:
+            proj = ProjectStore(str(_REPORT_BASE)).get(project)
+            if proj is not None:
+                business = proj.get_business_context()
+        except Exception:
+            business = None
+        return load_asset_criticality(project, business=business)
     except Exception as e:
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
 

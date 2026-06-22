@@ -643,13 +643,17 @@ def _reachable(attrs: Dict) -> bool:
 
 
 def asset_criticality(asset: Dict, *, dependents: int = 0,
-                      findings: Optional[Dict] = None) -> Dict:
+                      findings: Optional[Dict] = None,
+                      business: Optional[Dict] = None) -> Dict:
     """How important an asset is → ``{score, band, factors}`` (pure).
 
     ``dependents`` is the blast radius (assets depending on this one, from the
     graph / shared-infra); ``findings`` is ``{count, worst}`` for the risk attached
-    to it (from correlation). ``score`` 0–100; ``band`` high ≥70 / medium ≥40 / low.
-    Each contribution is a named factor so the number is auditable."""
+    to it (from correlation). ``business`` is the resolved Business Context Model
+    for this asset (EPIC NEXT F1) — user-declared criticality / data sensitivity
+    that AUGMENTS the technical type-weight as extra named factors (never replaces
+    it). ``score`` 0–100; ``band`` high ≥70 / medium ≥40 / low. Each contribution
+    is a named factor so the number is auditable."""
     atype = str(asset.get('type') or '').lower()
     attrs = asset.get('attrs') or {}
     factors = [{'factor': f'Тип актива: {atype or "—"}',
@@ -668,6 +672,9 @@ def asset_criticality(asset: Dict, *, dependents: int = 0,
         factors.append({'factor': 'Кандидат на takeover', 'points': 20})
     elif _reachable(attrs):
         factors.append({'factor': 'Публично доступен (2xx)', 'points': 5})
+    if business:
+        from core.business_context import business_factors
+        factors.extend(business_factors(business))
     score = max(0, min(100, sum(int(f['points']) for f in factors)))
     return {'score': score, 'band': _crit_band(score), 'factors': factors}
 
@@ -725,20 +732,31 @@ def _asset_findings_map(correlation: Optional[Dict],
 
 
 def build_asset_criticality(assets: List[Dict], correlation: Optional[Dict] = None,
-                            asset_graph: Optional[Dict] = None) -> Dict:
+                            asset_graph: Optional[Dict] = None,
+                            business: Optional[Dict] = None) -> Dict:
     """Rank a project's assets by criticality (pure, EPIC 9).
 
     ``assets`` are ``AssetStore`` rows; ``correlation`` / ``asset_graph`` are the
-    already-derived views (``load_correlation`` / ``load_asset_graph``). Returns
-    ``{items (criticality desc), top, summary}``."""
+    already-derived views (``load_correlation`` / ``load_asset_graph``).
+    ``business`` is the project's Business Context Model root (EPIC NEXT F1,
+    ``Project.get_business_context``) — when given, each asset's resolved context
+    augments its criticality. Returns ``{items (criticality desc), top, summary}``."""
     assets = [a for a in (assets or []) if isinstance(a, dict)]
     dep = _dependents_map(asset_graph, assets)
     fmap = _asset_findings_map(correlation, assets)
+    biz_root = business or None
+    if biz_root:
+        from core.asset_adapter import asset_fingerprint
+        from core.business_context import resolve as _resolve_business
     items: List[Dict] = []
     for a in assets:
         aid = a.get('id')
+        biz = None
+        if biz_root:
+            fp = asset_fingerprint(a.get('type'), a.get('value'))
+            biz = _resolve_business(biz_root, fp) or None
         crit = asset_criticality(a, dependents=dep.get(aid, 0),
-                                 findings=fmap.get(aid))
+                                 findings=fmap.get(aid), business=biz)
         items.append({'id': aid, 'type': a.get('type'),
                       'value': a.get('label') or a.get('value'),
                       'criticality': crit['score'], 'band': crit['band'],
@@ -752,16 +770,18 @@ def build_asset_criticality(assets: List[Dict], correlation: Optional[Dict] = No
     return {'items': items, 'top': items[:10], 'summary': summary}
 
 
-def load_asset_criticality(project: str) -> Dict:
+def load_asset_criticality(project: str, business: Optional[Dict] = None) -> Dict:
     """Build a project's asset-criticality ranking (thin reader; reuses the asset
-    store, correlation and the asset graph). Offline, read-only, guarded."""
+    store, correlation and the asset graph). ``business`` is the project's Business
+    Context Model root (F1) — callers that hold the Project pass
+    ``project.get_business_context()``. Offline, read-only, guarded."""
     try:
         from core.asset_graph import load_asset_graph
         from core.asset_store import AssetStore
         from core.correlation import load_correlation
         assets = AssetStore().list_assets(project=project)
         return build_asset_criticality(assets, load_correlation(project),
-                                       load_asset_graph(project))
+                                       load_asset_graph(project), business=business)
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
         return {'items': [], 'top': [], 'summary': {}, 'error': str(e)}
 
