@@ -859,6 +859,25 @@ class CollectionRunner:
                     'detail': f'{loc} — reachable GraphQL API (introspection off).',
                     'source': 'security-audit', 'category': 'graphql',
                     'location': loc})
+            # Hardening exposures that GraphQLDiscovery detects independently of
+            # introspection (they leak schema / enable abuse even with it off) —
+            # previously carried in the endpoint data but never made findings.
+            if g.get('suggestions'):
+                findings.append({
+                    'severity': 'Info',
+                    'title': 'GraphQL field suggestions enabled',
+                    'detail': f'{loc} — server returns "Did you mean" hints, leaking '
+                              f'valid schema names even with introspection disabled.',
+                    'source': 'security-audit', 'category': 'graphql',
+                    'location': loc})
+            if g.get('batching'):
+                findings.append({
+                    'severity': 'Medium',
+                    'title': 'GraphQL query batching enabled',
+                    'detail': f'{loc} — accepts batched array queries, enabling '
+                              f'request amplification / brute-force / DoS.',
+                    'source': 'security-audit', 'category': 'graphql',
+                    'location': loc})
         # Secrets the deep-JS audit found (the api phase sees only the initial
         # page). Folded as first-class secret findings — identical shape to the
         # api-phase secrets, so an overlapping key at the same location dedups by

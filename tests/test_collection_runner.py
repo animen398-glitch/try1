@@ -162,6 +162,21 @@ def test_security_findings_reachable_graphql_is_info():
     assert by_loc['https://x/g1']['severity'] == 'Info'
 
 
+def test_security_findings_graphql_suggestions_and_batching():
+    # Field suggestions and query batching are detected independently of
+    # introspection and now become first-class findings (Info / Medium), not just
+    # endpoint-data flags. One endpoint can yield several graphql findings.
+    data = {'source_maps': [], 'graphql': [
+        {'url': 'https://x/g', 'graphql': True, 'introspection': False,
+         'suggestions': True, 'batching': True}]}
+    found = CollectionRunner._security_findings(data)
+    titles = {f['title']: f for f in found if f['category'] == 'graphql'}
+    assert 'GraphQL endpoint exposed' in titles          # reachable (Info)
+    assert titles['GraphQL field suggestions enabled']['severity'] == 'Info'
+    assert titles['GraphQL query batching enabled']['severity'] == 'Medium'
+    assert all(f['location'] == 'https://x/g' for f in found)
+
+
 def test_security_findings_fold_audit_secrets():
     # Secrets the deep-JS audit finds become High secret findings (source
     # 'secret-audit', located at the script URL); placeholders are dropped and no

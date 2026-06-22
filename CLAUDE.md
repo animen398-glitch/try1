@@ -1254,6 +1254,24 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**GraphQL field-suggestions / query-batching → находки — `[ЗАКРЫТ]`.** Backend-
+фаза, computed-but-lost. `GraphQLDiscovery` детектит 4 экспозиции (introspection,
+reachable, **field suggestions**, **query batching** — последние две независимо от
+introspection, leak схемы / amplification-DoS) и кладёт флаги в endpoint-данные
+(`data.graphql[].suggestions/batching`), но `collection_runner._security_findings`
+синтезировал находки **только** для introspection/reachable → suggestions и batching
+детектились, но не становились находками (нет risk/F1/SLA/alerts/compliance).
+SecurityAuditor берёт из discovery лишь endpoints (его собственные 4 находки
+отбрасываются), поэтому коллекция — единственный путь, и он ронял два сигнала. Фикс:
+`_security_findings` эмитит `GraphQL field suggestions enabled` (Info) и `GraphQL
+query batching enabled` (Medium) из флагов endpoint'а, независимо от introspection,
+дословно повторяя severity/формулировки `graphql_discovery`. Один endpoint теперь
+даёт до 3 graphql-находок (разные тайтлы → разные rule_id → разные fingerprint, без
+коллизии). category='graphql' → finding_knowledge/attack-surface/compliance/dedup
+работают автоматом. **Числа risk выросли сознательно** для batching-целей (Medium-
+находка). Покрыто `test_collection_runner` (suggestions=Info+batching=Medium+мульти-
+находка на endpoint; reachable-тест цел — без флагов нет лишних находок).
+
 **Detection-метрики в trend-аналитике — `[ЗАКРЫТ]`.** Backend-фаза. `_scan_entry`
 денормализует в `metadata.json` 9 метрик per-scan **специально для cross-scan
 анализа** (heatmap), но `timeline.build_series` тащил лишь 5 — детект-категории
