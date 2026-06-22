@@ -1122,11 +1122,19 @@ cloud-API** на первом этапе.
 
 **Цель:** сначала укрепить фундамент, чтобы следующий слой не разъехался.
 
-- **T0.1 SQLite migration framework.** Сейчас `findings_store`/`asset_store`/
-  `cve_store` версионируются каждый по-своему (`SCHEMA_VERSION`/`user_version`,
-  свои `_migrate_*`). Свести к единому паттерну: общий хелпер версии/миграций
-  (`utils/sqlite_store.py`), idempotent migrations, upgrade-path тесты (v_old→v_new
-  на временной БД), **без слома существующих БД** и контрактов сторов.
+- **T0.1 SQLite migration framework.** **[ВЫПОЛНЕНО 2026-06-22]** — паттерн
+  `FindingsStore._migrate_to_v2` поднят в базовый `utils/sqlite_store.SQLiteStore`:
+  стор декларирует `SCHEMA_VERSION` (дефолт 1) + опц. `MIGRATIONS`
+  (`{target_version: fn(conn)}`); `_apply_migrations` гоняет недостающие шаги по
+  возрастанию, **forward-only** (не понижает версию), затем проставляет
+  `user_version`. Добавлены `schema_version()` (диагностика/тесты) и идемпотентный
+  `_add_column()` (безопасный аддитивный ALTER для будущих миграций). `cve_store`/
+  `asset_store` сбросили своё version-stamping; `findings_store` убрал
+  `_init_schema`-override и регистрирует `_migrate_to_v2` декларативно
+  (`MIGRATIONS = {2: ...}`). Поведение байт-в-байт для всех трёх (старые тесты
+  сторов/миграции не тронуты). Покрыто `tests/test_sqlite_migrations.py`
+  (fresh/upgrade-order/partial/idempotent/no-downgrade/`_add_column`). Без слома
+  существующих БД и контрактов.
 - **T0.2 Contract-тесты ключей.** Зафиксировать back-compat `report.json`/
   `metadata.json`/findings/assets/timeline ключей регресс-тестом перед тем, как
   NEXT-фичи начнут их расширять (страховка инварианта §4.7).
