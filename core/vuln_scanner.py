@@ -132,7 +132,16 @@ class VulnScanner:
         if not csp:
             return  # absence is covered by _check_security_headers
         low = csp.lower()
-        weak = [t for t in ('unsafe-inline', 'unsafe-eval') if t in low]
+        weak: List[str] = []
+        # CSP3: browsers IGNORE 'unsafe-inline' when a nonce or hash source is also
+        # present (it is a backward-compat fallback for old browsers), so it is only
+        # a real weakness without one — flagging it otherwise is a false positive.
+        has_nonce_or_hash = any(s in low for s in
+                                ("'nonce-", "'sha256-", "'sha384-", "'sha512-"))
+        if 'unsafe-inline' in low and not has_nonce_or_hash:
+            weak.append('unsafe-inline')
+        if 'unsafe-eval' in low:
+            weak.append('unsafe-eval')
         if '*' in re.split(r'[;\s]+', low):   # a bare wildcard source
             weak.append('wildcard source (*)')
         if weak:

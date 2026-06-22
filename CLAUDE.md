@@ -1254,6 +1254,18 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**CSP unsafe-inline ложно «weak» при nonce/hash — `[ЗАКРЫТ, accuracy-фикс]`.**
+Backend-фаза, тот же FP-класс, что XFO/frame-ancestors. `_check_csp_weakness`
+флагал `unsafe-inline` безусловно, но по CSP3 браузеры **игнорируют** `'unsafe-
+inline'` при наличии nonce- или hash-источника (это backward-compat fallback для
+старых браузеров) → корректная современная политика `script-src 'nonce-…'
+'unsafe-inline'` ловила ложный «Weak CSP». Фикс: `unsafe-inline` флагается только
+БЕЗ nonce/hash (`'nonce-`/`'sha256-`/`'sha384-`/`'sha512-`). `unsafe-eval`
+исключения НЕ получает (nonce на eval не влияет); wildcard-проверка цела. Снижает
+FP/risk для корректно-настроенных CSP. Покрыто `test_vuln_scanner`
+(unsafe-inline+nonce/+hash не флагается / без nonce — флагается / unsafe-eval+nonce
+всё равно флагается).
+
 **X-Frame-Options ложное «missing» при CSP frame-ancestors — `[ЗАКРЫТ, accuracy-фикс]`.**
 Backend-фаза, иной класс — не «detected-but-not-promoted», а **ложноположительная
 находка**. `_check_security_headers` репортил `x-frame-options` как missing при

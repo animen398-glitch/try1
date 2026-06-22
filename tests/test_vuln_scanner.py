@@ -105,6 +105,31 @@ def test_csp_strict_not_flagged():
     assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
 
 
+def test_csp_unsafe_inline_with_nonce_not_flagged():
+    # CSP3: 'unsafe-inline' is ignored when a nonce/hash is present, so a modern
+    # backward-compatible policy must NOT be reported as weak for unsafe-inline.
+    recon = _recon_with_headers(**{
+        "content-security-policy":
+            "script-src 'nonce-rAnd0m==' 'unsafe-inline'; default-src 'self'"})
+    findings = VulnScanner().scan(recon, {})
+    assert not any(f["title"] == "Weak Content-Security-Policy" for f in findings)
+    # A hash source grants the same exemption.
+    recon2 = _recon_with_headers(**{
+        "content-security-policy": "script-src 'sha256-abc123' 'unsafe-inline'"})
+    assert not any(f["title"] == "Weak Content-Security-Policy"
+                   for f in VulnScanner().scan(recon2, {}))
+
+
+def test_csp_unsafe_inline_without_nonce_still_flagged():
+    # No nonce/hash → 'unsafe-inline' is a genuine weakness (still flagged); and
+    # 'unsafe-eval' is never exempted by a nonce.
+    recon = _recon_with_headers(**{
+        "content-security-policy": "script-src 'nonce-x' 'unsafe-eval'"})
+    csp = [f for f in VulnScanner().scan(recon, {})
+           if f["title"] == "Weak Content-Security-Policy"]
+    assert csp and "unsafe-eval" in csp[0]["detail"]
+
+
 def test_csp_frame_ancestors_satisfies_x_frame_options():
     # A site protecting against clickjacking with modern CSP frame-ancestors but no
     # legacy X-Frame-Options header must NOT be reported as missing X-Frame-Options.
