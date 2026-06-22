@@ -422,6 +422,34 @@ def test_build_attack_paths_lateral_over_shared_infra():
     assert sorted(p['targets']) == ['b.x.com', 'c.x.com']
     assert p['critical_targets'] == 1
     assert p['score'] == 41 and p['band'] == 'medium'   # 30 + min(20,6) + 5
+    # F3: the deterministic route ends at the most critical reachable asset.
+    assert p['goal'] == 'b.x.com' and p['goal_band'] == 'high'
+    assert [h['node'] for h in p['hops']] == ['a.x.com', 'ip 1.2.3.4', 'b.x.com']
+    assert [h['kind'] for h in p['hops']] == ['entry', 'pivot', 'target']
+
+
+def test_build_attack_paths_skips_cdn_cluster():
+    # A CDN edge is co-location, not a real lateral pivot → no path.
+    correlation = {'exposure': [{'value': 'a.x.com', 'worst': 'high'}]}
+    asset_graph = {'shared_infra': [{'type': 'ip', 'node': '104.16.0.1',
+                                     'members': ['a.x.com', 'b.x.com'],
+                                     'count': 2, 'cdn': True}]}
+    out = intel.build_attack_paths(correlation, asset_graph, {})
+    assert out['summary']['paths'] == 0
+
+
+def test_build_attack_paths_goal_prefers_higher_band_then_name():
+    correlation = {'exposure': [{'value': 'a.x.com', 'worst': 'high'}]}
+    asset_graph = {'shared_infra': [{'type': 'ip', 'node': '1.2.3.4',
+                                     'members': ['a.x.com', 'm.x.com', 'z.x.com'],
+                                     'count': 3}]}
+    # m is medium, z has no band → goal is the medium one.
+    crit = {'items': [{'value': 'm.x.com', 'band': 'medium'}]}
+    p = intel.build_attack_paths(correlation, asset_graph, crit)['paths'][0]
+    assert p['goal'] == 'm.x.com' and p['goal_band'] == 'medium'
+    # No bands at all → deterministic by name.
+    p2 = intel.build_attack_paths(correlation, asset_graph, {})['paths'][0]
+    assert p2['goal'] == 'm.x.com' and p2['goal_band'] is None
 
 
 def test_build_attack_paths_needs_a_finding_bearing_entry():

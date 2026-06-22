@@ -969,6 +969,7 @@ def load_exposure(project: str) -> Dict:
 
 _PATH_SEV_PTS = {'critical': 30, 'high': 20, 'medium': 10, 'low': 4, 'info': 1}
 _PATH_HIGH, _PATH_MED = 60, 35
+_BAND_RANK = {'high': 0, 'medium': 1, 'low': 2}
 
 
 def _path_band(score: int) -> str:
@@ -979,16 +980,20 @@ def _path_band(score: int) -> str:
 def build_attack_paths(correlation: Optional[Dict] = None,
                        asset_graph: Optional[Dict] = None,
                        criticality: Optional[Dict] = None) -> Dict:
-    """Derive lateral attack paths over shared infrastructure (pure, EPIC 11).
+    """Derive deterministic attack paths over shared infrastructure (pure, EPIC 11
+    + EPIC NEXT F3).
 
-    For each shared-infra cluster (``asset_graph['shared_infra']``) that contains at
-    least one finding-bearing host (``correlation['exposure']``) and at least one
-    other member, emit a path: the worst-severity finding-bearing member is the
-    *entry*, the shared node is the *pivot*, the remaining members are *targets*
-    (those that are high-criticality counted separately). ``score`` =
-    entry-severity points + cluster-size points + per-critical-target points,
-    bounded 0–100; ``band`` high ≥60 / medium ≥35 / low. Returns
-    ``{paths (score desc), top, summary}``."""
+    For each non-CDN shared-infra cluster (``asset_graph['shared_infra']``) that
+    contains at least one finding-bearing host (``correlation['exposure']``) and at
+    least one other member, emit a deterministic route **external entry → pivot →
+    critical asset**: the worst-severity finding-bearing member is the *entry*
+    (foothold), the shared node is the *pivot*, the remaining members are *targets*.
+    The single most important target is the path's *goal* (highest criticality band,
+    business-aware via F1/F2; ties by name); the route is spelled out in ``hops``.
+    CDN-edge clusters are skipped — co-location behind a CDN is an artifact, not a
+    real lateral pivot. ``score`` = entry-severity + cluster-size + per-high-
+    criticality-target points, bounded 0–100; ``band`` high ≥60 / medium ≥35 / low.
+    Returns ``{paths (score desc), top, summary}``."""
     clusters = (asset_graph or {}).get('shared_infra') or []
     exposure_by_host: Dict[str, Dict] = {}
     for row in (correlation or {}).get('exposure') or []:
@@ -1003,6 +1008,8 @@ def build_attack_paths(correlation: Optional[Dict] = None,
 
     paths: List[Dict] = []
     for c in clusters:
+        if c.get('cdn'):
+            continue   # a CDN edge is not a real lateral pivot
         members = [str(m).strip().lower() for m in (c.get('members') or []) if m]
         entries = [(m, exposure_by_host[m]) for m in members
                    if m in exposure_by_host]
@@ -1016,6 +1023,11 @@ def build_attack_paths(correlation: Optional[Dict] = None,
         entry_sev = _sev(entry_row.get('worst'))
         critical_targets = sum(1 for m in targets if crit_by_value.get(m) == 'high')
         size = int(c.get('count') or len(members))
+        # The goal is the single most valuable reachable asset (best criticality
+        # band, ties by name) — the deterministic endpoint of the path.
+        goal = sorted(targets, key=lambda m: (_BAND_RANK.get(crit_by_value.get(m), 3),
+                                              m))[0]
+        goal_band = crit_by_value.get(goal)
         score = min(100, _PATH_SEV_PTS.get(entry_sev, 1) + min(20, size * 2)
                     + critical_targets * 5)
         paths.append({
@@ -1023,6 +1035,11 @@ def build_attack_paths(correlation: Optional[Dict] = None,
             'entry': entry_host, 'entry_severity': entry_sev,
             'members': members, 'size': size,
             'targets': targets, 'critical_targets': critical_targets,
+            'goal': goal, 'goal_band': goal_band,
+            # The explicit, deterministic route the path describes.
+            'hops': [{'node': entry_host, 'kind': 'entry'},
+                     {'node': f"{c.get('type')} {c.get('node')}", 'kind': 'pivot'},
+                     {'node': goal, 'kind': 'target'}],
             'score': score, 'band': _path_band(score),
         })
 
@@ -1035,9 +1052,13 @@ def build_attack_paths(correlation: Optional[Dict] = None,
     return {'paths': paths, 'top': paths[:10], 'summary': summary}
 
 
-def load_attack_paths(project: str) -> Dict:
+def load_attack_paths(project: str, business: Optional[Dict] = None) -> Dict:
     """Build a project's attack paths (thin reader; reuses correlation, the asset
-    graph and the criticality ranking). Offline, read-only, guarded."""
+    graph and the criticality ranking). ``business`` is the project's Business
+    Context Model root (F1) — callers that hold the Project pass
+    ``project.get_business_context()`` so the goal/target criticality (and thus
+    which paths reach a *critical* asset) is business-aware (F3). Offline,
+    read-only, guarded."""
     try:
         from core.asset_graph import load_asset_graph
         from core.asset_store import AssetStore
@@ -1045,7 +1066,8 @@ def load_attack_paths(project: str) -> Dict:
         correlation = load_correlation(project)
         asset_graph = load_asset_graph(project)
         assets = AssetStore().list_assets(project=project)
-        criticality = build_asset_criticality(assets, correlation, asset_graph)
+        criticality = build_asset_criticality(assets, correlation, asset_graph,
+                                              business=business)
         return build_attack_paths(correlation, asset_graph, criticality)
     except Exception as e:  # noqa: BLE001 — surface as data, never crash a caller
         return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}

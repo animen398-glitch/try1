@@ -563,12 +563,21 @@ def _criticality_view(project: Optional[str] = None) -> dict:
 
 
 def _attack_paths_view(project: Optional[str] = None) -> dict:
-    """Lateral attack paths (entry → pivot → targets) for one project."""
+    """Lateral attack paths (entry → pivot → critical goal) for one project."""
     if not project:
         return {'paths': [], 'top': [], 'summary': {}}
     try:
         from core.intelligence import load_attack_paths
-        return load_attack_paths(project)
+        # F3: fold in the project's Business Context Model so the goal criticality
+        # is business-aware (best-effort — missing project → topology only).
+        business = None
+        try:
+            proj = ProjectStore(str(_REPORT_BASE)).get(project)
+            if proj is not None:
+                business = proj.get_business_context()
+        except Exception:
+            business = None
+        return load_attack_paths(project, business=business)
     except Exception as e:
         return {'paths': [], 'top': [], 'summary': {}, 'error': str(e)}
 

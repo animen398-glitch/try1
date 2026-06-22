@@ -1212,11 +1212,29 @@ core+derive+report+web+CLI, GUI позже — память `feedback-internals-
 ### F3 — Deterministic Attack Paths (external → critical asset)
 
 **Цель:** маршрут от внешней точки входа до критичного актива.
-**Где живёт:** углубление `intelligence.build_attack_paths` (EPIC 11). Сейчас —
-derive по shared-infra кластерам; NEXT — детерминированный multi-hop путь по рёбрам
-`asset_graph` (external entry → pivot → critical target), ранжирование с учётом
-business criticality (F1). Display/derive, мониторинг автоматом (EPIC 13 уже диффит
-attack-paths).
+**Где живёт:** углубление `intelligence.build_attack_paths` (EPIC 11).
+
+**[ВЫПОЛНЕНО 2026-06-22]** (аддитивное углубление поверх кластерной модели EPIC 11,
+без шумного rewrite графа):
+- **Детерминированный маршрут external → critical.** Каждый путь теперь несёт явный
+  **`goal`** (единственный самый ценный достижимый актив = лучший criticality-band,
+  business-aware, ties по имени) + **`hops`** — спелл-аут цепочки
+  `entry (foothold) → pivot (общий infra-узел) → goal (critical asset)`
+  (`[{node, kind: entry|pivot|target}]`). Старые ключи (entry/pivot/targets/
+  critical_targets/score/band) целы → существующие тесты/score байт-в-байт.
+- **Business-aware target criticality.** `load_attack_paths(project, business=)`
+  прокидывает `project.get_business_context()` в `build_asset_criticality`, поэтому
+  `goal`/`critical_targets` (и какие пути «дотягиваются до критичного актива»)
+  учитывают бизнес-важность (F1/F2 параллель, которую F2 для attack-paths не трогал).
+- **CDN-edge кластеры пропускаются** — co-location за CDN это артефакт, не реальный
+  lateral-pivot (использует существующий `shared_infra[].cdn`-флаг). Точность ↑.
+- **Поверхности:** `collection_runner._build_attack_paths` + web `_attack_paths_view`
+  передают business; report-карточка показывает детерминированный endpoint (колонка
+  «Goal» = `goal [band]` + счётчик targets). GUI не перестраивался (новые ключи
+  аддитивны; память `feedback-internals-first-no-gui`). Мониторинг (EPIC 13 диффит
+  attack-paths по pivot-identity) ловит новые пути автоматом. Display-only (risk-
+  вердикт не тронут). Покрыто `tests/test_intelligence.py` (goal/hops/CDN-skip/
+  goal-selection по band+имени).
 
 ### F4 — Remediation Tasks
 

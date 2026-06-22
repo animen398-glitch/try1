@@ -1811,7 +1811,9 @@ class CollectionRunner:
         ``report['attack_paths']`` (summary + top paths) for the card + the metric."""
         try:
             from core.intelligence import load_attack_paths
-            data = load_attack_paths(project.slug)
+            # F3: business context makes the goal/target criticality business-aware.
+            data = load_attack_paths(project.slug,
+                                     business=project.get_business_context())
             summary = data.get('summary') or {}
             if data.get('error') or not summary.get('paths'):
                 return
@@ -2019,7 +2021,15 @@ class CollectionRunner:
         for p in pdata.get('top', []):
             n_targets = len(p.get('targets') or [])
             crit = p.get('critical_targets') or 0
-            targets_txt = f'{n_targets} targets' + (f' ({crit} crit)' if crit else '')
+            goal = str(p.get('goal') or '')
+            gb = p.get('goal_band')
+            # Deterministic endpoint: the critical asset the route reaches.
+            goal_txt = ((f'{goal} [{gb}]' if gb else goal) if goal
+                        else f'{n_targets} targets')
+            if goal and n_targets > 1:
+                goal_txt += f' · +{n_targets - 1}'
+            if crit:
+                goal_txt += f' ({crit} crit)'
             sev_color = cls._CORR_SEV_COLOR.get(
                 str(p.get('entry_severity', '')).lower(), '#666')
             rows.append(
@@ -2030,11 +2040,11 @@ class CollectionRunner:
                 f'<td style="padding:1px 12px;color:#666;">→ '
                 f'{e(str(p.get("pivot_type") or ""))}: '
                 f'{e(str(p.get("pivot_node") or ""))} →</td>'
-                f'<td>{e(targets_txt)}</td></tr>')
+                f'<td>{e(goal_txt)}</td></tr>')
         table = (f'<table style="font-size:12px;"><tr>'
                  f'<td style="padding-right:12px;"><b>Score</b></td>'
                  f'<td><b>Entry</b></td><td style="padding:0 12px;"><b>Pivot</b></td>'
-                 f'<td><b>Targets</b></td></tr>{"".join(rows)}</table>'
+                 f'<td><b>Goal</b></td></tr>{"".join(rows)}</table>'
                  if rows else '')
         return head + table
 
