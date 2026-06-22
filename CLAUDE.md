@@ -2028,6 +2028,53 @@ cmd_compliance пишет отчёт). Коммит e76afd8. **Остаток wa
 GitHub auto-close при FIXED; GUI/web/report-card-поверхности для issues+compliance.
 Память `project-epic16-integrations-reporting`.
 
+**EPIC NEXT — Attack Path & Business Risk Intelligence Platform — `[ЗАКРЫТ
+2026-06-22]`.** Сдвиг приоритизации с severity-driven на business-risk-driven.
+Полный план/детали — `ROADMAP_ASM_2.0.md` → **EPIC NEXT**. Все фичи: core→report→
+web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт НЕ
+перестроен (business/threat/drift — display/derive слой поверх существующих
+движков). По фичам:
+- **F0 Platform Trust Hardening** — единый каркас миграций SQLite (`utils/
+  sqlite_store`: декларативные `SCHEMA_VERSION`+`MIGRATIONS`, forward-only,
+  `_add_column`; findings/asset/cve-сторы сведены к одному паттерну) + contract-
+  тесты back-compat ключей (`tests/test_contracts.py`: report.json/metadata.json/
+  findings/assets/timeline/exec-summary, subset-ассерты — страховка §4.7).
+- **F1 Business Context Model** — `core/business_context.py` (вокаб criticality +
+  data sensitivity, веса, resolve default+per-asset); хранение = ключ
+  `business_context` в `metadata.json` (`Project.get/set_business_context`, паттерн
+  Company-tier, без таблицы); `ProjectStore.resolve`; вплетено в
+  `intelligence.asset_criticality` (augment type-веса); report/web/CLI
+  (`business_cli.py`). GUI отложен.
+- **F2 Business-Aware Prioritization** — business criticality/data sensitivity
+  доходят до priority через (business-aware) criticality-band; новый статический
+  **threat-tier** (`intelligence._threat_tier`: takeover/secret/инъекция=high,
+  graphql/sourcemap/CVE=medium) как явный priority-фактор. Без двойного счёта.
+  Live KEV/EPSS — отложен.
+- **F3 Deterministic Attack Paths** — `build_attack_paths` углублён: явный `goal`
+  (самый ценный достижимый актив, business-aware) + `hops` (entry→pivot→critical),
+  CDN-edge кластеры пропускаются. Display.
+- **F4 Remediation Tasks** — work-item на находке (status/owner/due), **event-
+  sourced** поверх `finding_events` (`REMEDIATION`-event, latest wins, без таблицы);
+  `core/remediation.py` + report-карточка + web `/remediation` + `remediation_cli.py`
+  (list/auto/set). Скан НЕ авто-создаёт (user/CLI-owned). GUI отложен.
+- **F5 Semantic Drift Monitoring** — `scan_diff` += `posture`-блок (из exec-summary
+  метрик); `diff_events` эмитит `attack_surface_drift`/`exposure_drift`/
+  `criticality_drift` (значимый рост, гейт a>0&b>0), alertable. Attack-path drift не
+  дублируется (EPIC 13).
+- **F6 Auditor-Friendly Compliance** — `compliance.classify` += `frameworks`
+  (derive над OWASP-классом: PCI DSS/ISO 27001/NIST CSF/SOC2); crosswalk-таблица в
+  `compliance_markdown` + framework-теги в SARIF. Один SSOT.
+- **F7 Cloud/Container/IaC Ingestion (фаза 1, без cloud API)** — `core/iac_scanner.py`
+  (Dockerfile/Terraform/CFN-JSON stdlib; compose/k8s/CFN-YAML опц. PyYAML;
+  консервативные misconfig-правила + секреты через SSOT); канон-категория `'iac'`
+  (fingerprint/knowledge/compliance A05); opt-in фаза `_phase_iac` (флаги `iac`/
+  `iac_path`, локально → не scope-gated), образы → technology-активы; `iac_cli.py`.
+  GUI/monitor + live cloud-API отложены.
+
+**Осознанно отложено (не блокеры):** GUI-ввод business-контекста + GUI-вкладки
+remediation/IaC (internals-first — память `feedback-internals-first-no-gui`); live
+threat-feed KEV/EPSS (F2); live cloud-API (F7); прямой path→task маппинг (F4).
+
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
 IA-консолидация безопасный срез) + Risk Engine углублён (F-R4 infra + F-R5 SLA +
