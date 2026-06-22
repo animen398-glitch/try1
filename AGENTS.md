@@ -252,10 +252,10 @@ Dashboard и Reporting, риски и точки интеграции описа
 ## 12. Текущее состояние (единый ориентир — чтобы не путаться)
 
 > Это краткая «карта» статуса. Полный хронологический лог — `PROJECT_STATUS.txt`,
-> каталог модулей — `PROJECT_REPORT.md`. **AGENTS.md — единственная точка входа.**
+> каталог модулей — `PROJECT_REPORT.md`. **CLAUDE.md — единственная точка входа.**
 
 **Документы-источники (не плодить новые):**
-- `AGENTS.md` — правила + архитектура + статус (этот файл, авто-загрузка).
+- `CLAUDE.md` — правила + архитектура + статус (этот файл, авто-загрузка).
 - `ROADMAP_ASM_2.0.md` — план эпика F1–F6 (корень, НЕ `docs/`).
 - `KICKOFF_PROMPT.md` — стартовый промпт эпика.
 - `PROJECT_STATUS.txt` — детальный лог реализаций (исторический).
@@ -1237,6 +1237,319 @@ overlap сохраняет katana-source; audit-only гейтит GONE на фа
 без новых зависимостей. Покрыто `test_asset_adapter` (audit-endpoint→актив source=security
 / shared с katana сохраняет katana-source), `test_attack_surface` (katana+audit мёрж+дедуп).
 
+**Document-Intelligence секреты в alert-канал (хвост secret-convergence) — `[ЗАКРЫТ]`.**
+Backend-фаза, баг-фикс. Document Intelligence (opt-in, F2) эмитит секреты как
+первоклассные F1-находки (`category='secret'`, `source='document'`), но они не
+алертились **никаким** каналом: diff-канал `new_secret` читает секции `secrets`
+только из api-фазы (`source='secret'`), а finding-based `_is_audit_only_secret`
+узнавал **лишь** `'secret-audit'` (deep-JS аудит). Документ-only секрет → находка
+есть, риск считается, но **алерта нет** — тот же пробел, что F-S6 закрыл для
+secret-audit, переоткрытый позже добавленной document-фазой. Фикс: `_is_audit_only_
+secret` обобщён с «несёт secret-audit» на «секрет-находка БЕЗ api-источника
+`secret`» (`bool(sources) and 'secret' not in sources`) — дифф покрывает **только**
+api-секреты, поэтому любой иной продьюсер (secret-audit / document / будущие) не
+diff-covered и корректно идёт в one-shot finding-канал. api-секреты (одни или
+merged с api) по-прежнему исключены (нет двойного алерта). `collect_secret_alerts`/
+`record_secret_alerts`/monitor-проводка не тронуты — generic-предикат пускает
+document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
+api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
+
+**Robustness-проход по data-collection engine'ам — `[ЗАКРЫТ]`.** Backend-фаза,
+degrade-not-raise аудит (этос F-SR1). Вывод: engine'ы адекватно устойчивы там, где
+важно — все обёрнуты phase-level try/except (app-graceful), а общий http-слой
+(`http_retry.decompress`/`urlopen_retry`/`urlopen_text`) уже guarded (decompress
+возвращает raw на любой сбой gzip/deflate). `paywall_bypass._decompress` — менее-
+guarded дубликат, но его вызов обёрнут, и унификация регрессировала бы поведение на
+битом gzip (raise→None→skip уместнее, чем raw→мусор) — не трогал. **Один таргетный
+фикс:** `site_extractor.strip_html`/`_extract_script_urls` — публичные/тестируемые
+pure-парсеры, падали на не-str (None из неудачного fetch → `re.sub` TypeError);
+теперь `isinstance(html,str)`-гейт → '' / [] (safe building block, как F-SR1
+гардил tech_fingerprint/dependency_audit). Приватные парсеры image/frontend_cloner
+получают внутренние строки + phase-wrapped — гардить = busywork (не делал). Покрыто
+`test_site_extractor` (None/не-str → пусто).
+
+**Dynamic-analyzer секреты: фильтр placeholder/JWT-FP — `[ЗАКРЫТ, accuracy]`.**
+Backend-фаза (аудит неаудированного engine). `dynamic_analyzer` майнит секреты из
+перехваченных API-ответов и статического JS через SSOT `secret_scanner.scan_text`,
+но не отбрасывал хиты, которые структурный валидатор метит INVALID — а scan_text-
+хиты несут `validation`. Конкретный FP: base64-блоб вида `eyJ…` матчит JWT-правило,
+но не является реальным JWT (валидатор декодит → INVALID) → ложный High «Secret
+exposed in API response». Фикс: `_scan_json_for_secrets` (path-1, pattern) и
+static-JS-путь пропускают INVALID-хиты — тот же placeholder-фильтр, что api/document/
+audit-фолдеры. Path-2 (key-name эвристика, тип `token-field`) валидатор НЕ фильтрует
+(unverifiable — сознательно без фильтра, чтобы не вводить в заблуждение). Покрыто
+`test_dynamic_js_urls` (JWT-FP отброшен / реальный GitHub-token сохранён). Аудит
+также подтвердил исправным: secret-детект делегирует SSOT (без дубля правил),
+findings_store-миграция v1→v2 идемпотентна/version-gated, asset/cve-сторы версионны.
+
+**Консьюмер `cdn:true` — метрика+карточка+web — `[ЗАКРЫТ]`.** Backend-фаза, замкнул
+маркер из предыдущего инкремента на поверхностях. `asset_graph.load_asset_graph`
+summary += `cdn_clusters` (сколько кластеров — CDN-edge) и `largest_real_cluster`
+(крупнейший НЕ-CDN); totals (`clusters`/`largest_cluster`) целы для display.
+`executive_summary._exposure_clusters` (метрика/чип «N× co-hosted») теперь считает
+**только реальные** single-points-of-exposure (`clusters − cdn_clusters`),
+`exposure_largest` = largest_real; полностью-CDN проект → 0 → нет чипа (не blast
+radius клиента). Back-compat: старые отчёты без `cdn_clusters` → real=total,
+largest=largest_cluster (байт-в-байт). Display (аддитивно, ничего не прячет):
+report-карточка «Asset Relationships» тегает CDN-кластер `(CDN edge)`, web-консоль
+`/correlation` — ` (CDN edge)`. Покрыто `test_asset_graph` (summary cdn_clusters/
+largest_real), `test_executive_summary` (метрика исключает CDN / all-CDN=0 чипа /
+старый отчёт unchanged). **CDN-вена закрыта end-to-end: детект (#20) → метрика+
+поверхности.**
+
+**CDN-аннотация exposure-кластеров (`cdn:true`) — `[ЗАКРЫТ, accuracy]`.** Backend-фаза,
+решение пользователя (аннотировать, НЕ исключать). `asset_graph.shared_infra` считал
+хосты на общем IP единым single-point-of-exposure, но для CDN-fronted сайтов (Cloudflare/
+Fastly/Akamai) десятки субдоменов резолвятся в **общий edge-IP** — это CDN-артефакт, не
+blast radius клиента. Фикс **аддитивный** (ничего не прячет): `cloud_classifier.CDN_CLOUDS`
+(SSOT: только чистые edge-провайдеры; гиперскейлеры AWS/GCP/Azure ИСКЛЮЧЕНЫ — там IP
+инстанса = реальный blast radius) + `is_cdn_cloud()`; `shared_infra` резолвит cloud узла
+кластера (`_node_cloud`: готовый `attrs.cloud` → fallback `classify_cloud` по provider/ASN;
+загружены asn-активы) и ставит `cdn:True` на CDN-кластер. Кластер ОСТАЁТСЯ в выводе
+(count/members целы) — потребители могут де-эмфазировать. Display-only (exposure_clusters —
+не risk-score). Покрыто `test_asset_graph` (CDN-IP→cdn:true+не дропнут / не-CDN без ключа),
+`test_cloud_classifier` (is_cdn_cloud: CDN да / гиперскейлер нет / None).
+
+**SPF-enforcement downgrade → diff-регрессия (хвост #11) — `[ЗАКРЫТ]`.** Backend-фаза,
+закрыт self-flagged follow-up из weak-SPF (#11). `dns_email_auth_weakened` ловил
+removal SPF/DMARC + DMARC policy downgrade, но **смену SPF-строки не судил** («не
+provably weaker»). Теперь судит: квалификатор `all`-механизма orderable
+(`-all > ~all > ?all > +all`), так что `-all → +all` = реальная анти-спуфинг
+регрессия. Фикс: `_SPF_QUAL_RANK` (локальный, как `_dmarc_rank`) + в dns-handler
+`diff_events` для changed SPF (обе стороны не-'—') парсит квалификаторы через
+**функция-локальный** импорт `dns_intel._spf_all_qualifier` (SSOT, без дубля; lazy
+— модуль-загрузка scan_diff остаётся лёгкой; dns_intel lean, не recon-heavy) →
+downgrade эмитит `dns_email_auth_weakened` (high, alertable, как DMARC-downgrade).
+Upgrade (~all→-all) и неранжируемая смена (нет `all` ни у одной стороны) — не
+событие. Покрыто `test_diff_events` (downgrade=high+alertable / strengthen+unrankable
+не событие). SPF-строка в HTML-диффе цела (full string для display).
+
+**Security-headers SSOT — устранён дубликат-дрейф — `[ЗАКРЫТ, debt/latent-bug]`.**
+Backend-фаза. `core/security_headers.py` объявлял себя «single source of truth», но
+`vuln_scanner._EXPECTED_SECURITY_HEADERS` был **отдельным дубль-списком** тех же 6
+заголовков (не derive). Совпадали по удаче — дрейф (добавить заголовок в один список,
+не в другой) дал бы false-positive: recon-фильтр `SECURITY_HEADER_NAMES` не захватил
+бы новый заголовок → present-заголовок репортился бы «missing» (или наоборот).
+Фикс: `security_headers.py` стал истинным SSOT — **упорядоченный** `SECURITY_HEADERS`
+(канон-порядок для «missing: …» detail) + `SECURITY_HEADER_NAMES = frozenset(...)`
+derive; `vuln_scanner` импортит `SECURITY_HEADERS` (дубль удалён). Поведение байт-в-
+байт (тот же порядок/набор). Регресс-гард `test_vuln_scanner`: `_EXPECTED ⊆
+SECURITY_HEADER_NAMES` (expected-набор не может разойтись с capture-набором). recon/
+scan_diff (frozenset) не тронуты.
+
+**http→https redirect = НЕ «plain HTTP» (false-High закрыт) — `[ЗАКРЫТ, accuracy-фикс]`.**
+Backend-фаза, отложенный follow-up из #query-param (теперь сделан — user-present).
+`_check_https` рейтил `http://`-URL как **High** «served over plain HTTP», но если
+сайт редиректит на HTTPS — это false-High (инфлейтит risk-**level**, не только score).
+Причина: `recon['url']` хранил ВХОДНОЙ url, финальный (post-redirect) не
+захватывался. Фикс (multi-module, backward-compat): `utils.http_retry.urlopen_retry`
++= opt-in `return_final_url` (3-tuple с `response.geturl()`; 4 прочих вызова целы);
+`recon_engine._fetch_with_headers` тащит final-url → `result['final_url']`;
+`_check_https` судит по `final_url or url` (fallback при fetch-fail/legacy →
+прежнее поведение). http→https → не флагается; http→http → High; downgrade
+https→http → High (корректно). Покрыто `test_http_retry` (opt-in 3-tuple),
+`test_vuln_scanner` (redirect/plain/fallback), стабы `test_recon_engine` → 3-tuple.
+
+**Query-param «sensitive path» → Info — `[ЗАКРЫТ, accuracy-фикс]`.** Backend-фаза,
+severity-калибровка. `_check_sensitive_paths` рейтил ВСЕ паттерны Medium, включая
+query-param-хинты `?id=`/`?user=`/`?file=` — но наличие параметра само по себе слаб.
+IDOR/LFI-recon (вездесущи на динамике), не подтверждённая проблема → постоянный
+false-Medium на каждом сайте. Фикс: `_SENSITIVE_PARAM_HINTS` → Info; path-паттерны
+(`.env`/`/admin`/`/credentials`…) остаются Medium. Severity НЕ часть fingerprint →
+ноль identity-churn. Снижает risk-инфляцию. Покрыто `test_vuln_scanner`
+(path=Medium / param=Info). **Отложенный follow-up (флаг):** `_check_https` рейтит
+`http://`-URL как High, но если сайт редиректит на HTTPS, это false-High —
+`recon['url']` хранит ВХОДНОЙ url, финальный (post-redirect) не захватывается
+(`urlopen_retry` дропает `geturl()`); фикс требует прокинуть final-url через
+shared http-util → deliberate multi-module, не leaf (триггерится лишь на явный
+`http://`-ввод, т.к. голый домен → https).
+
+**Server-disclosure severity по версии — `[ЗАКРЫТ, accuracy-фикс]`.** Backend-фаза,
+severity-калибровка (под-класс accuracy). `_check_server_disclosure` рейтил ЛЮБОЙ
+`Server`/`X-Powered-By`/`X-Generator` как **Medium**, но реальный риск — **версия**
+(`nginx/1.18.0` → targeted CVE-lookup), а голое имя (`nginx`/`cloudflare`,
+вездесущее) раскрывает лишь технологию. Фикс: версия (есть цифры) → Medium, голое
+имя → Info (как CMS-fingerprint). Снижает инфляцию risk для повсеместного
+version-less `Server`. Покрыто `test_vuln_scanner` (versioned=Medium / bare=Info).
+
+**CSP unsafe-inline ложно «weak» при nonce/hash — `[ЗАКРЫТ, accuracy-фикс]`.**
+Backend-фаза, тот же FP-класс, что XFO/frame-ancestors. `_check_csp_weakness`
+флагал `unsafe-inline` безусловно, но по CSP3 браузеры **игнорируют** `'unsafe-
+inline'` при наличии nonce- или hash-источника (это backward-compat fallback для
+старых браузеров) → корректная современная политика `script-src 'nonce-…'
+'unsafe-inline'` ловила ложный «Weak CSP». Фикс: `unsafe-inline` флагается только
+БЕЗ nonce/hash (`'nonce-`/`'sha256-`/`'sha384-`/`'sha512-`). `unsafe-eval`
+исключения НЕ получает (nonce на eval не влияет); wildcard-проверка цела. Снижает
+FP/risk для корректно-настроенных CSP. Покрыто `test_vuln_scanner`
+(unsafe-inline+nonce/+hash не флагается / без nonce — флагается / unsafe-eval+nonce
+всё равно флагается).
+
+**X-Frame-Options ложное «missing» при CSP frame-ancestors — `[ЗАКРЫТ, accuracy-фикс]`.**
+Backend-фаза, иной класс — не «detected-but-not-promoted», а **ложноположительная
+находка**. `_check_security_headers` репортил `x-frame-options` как missing при
+отсутствии легаси-заголовка, хотя современный CSP `frame-ancestors` его **вытесняет**
+(OWASP/MDN): сайт с frame-ancestors защищён от clickjacking эквивалентно/сильнее, но
+ловил ложное «Missing security headers (x-frame-options)». Фикс: при наличии
+`frame-ancestors` в CSP `x-frame-options` считается present (не missing). Пермиссивный
+`frame-ancestors *` всё равно ловится `_check_csp_weakness` (wildcard) — реальный
+пробел защиты сёрфится корректной находкой, а не легаси-missing. Снижает шум/FP в
+risk для современных сайтов (числа для них падают сознательно). Покрыто
+`test_vuln_scanner` (frame-ancestors→XFO не missing / без него — missing цел).
+
+**Weak DMARC (pct<100 / sp=none) → находка — `[ЗАКРЫТ]`.** Backend-фаза, прямой
+параллель к weak-SPF: `_dmarc_policy` извлекал только `p=`, а захваченная DMARC-
+запись несёт и `pct=` (частичное применение — известный обход: остаток почты идёт
+без политики) и `sp=` (политика субдоменов). `p=reject` с `pct=10` или `sp=none`
+детектился, но находкой не становился. Рефактор: `_dmarc_tags(records)` парсит все
+теги (lower-keys), `_dmarc_policy` теперь поверх него (контракт цел: present-no-p →
+'none', absent → None); `analyze` в enforcing-ветке (p=quarantine/reject) эмитит
+`DMARC partial enforcement (pct=N)` и `DMARC subdomain policy is sp=none` (оба Info).
+pct=100/без sp — чисто (healthy-тест цел). `source='dns'`→A05/CWE-16. Покрыто
+`test_dns_intel` (pct+sp findings / pct=100 чисто / _dmarc_tags+policy парсинг).
+
+**Weak SPF (+all/?all) → находка — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+detected-but-not-promoted паттерн, что #GraphQL (лид с него). `dns_intel.analyze`
+флагует только **отсутствие** SPF, а present-but-weak SPF (квалификатор `all`)
+детектился (полная строка в `email_auth.spf`), но находкой не становился. Фикс:
+`_spf_all_qualifier(spf)` парсит квалификатор `all`-механизма (`-`/`~`/`?`/`+`, bare
+`all`→`+` по RFC 7208); `analyze` эмитит `SPF allows all senders (+all)` (Medium —
+проходят все отправители, SPF бесполезен) и `SPF policy is neutral (?all)` (Info).
+**`~all` (softfail) НЕ флагуется** — это де-факто стандарт (Google/Microsoft), флаг
+был бы шумом и ломал бы established «healthy»-тест. `source='dns'` (scope-guard цел),
+category='dns'→A05/CWE-16 (compliance/knowledge/risk автоматом). SPF-qualifier
+downgrade в dns_email_auth_weakened (diff-регрессия, теперь orderable как DMARC) —
+возможный follow-up; пока покрыто F1 new_finding. Покрыто `test_dns_intel`
+(+all=Medium/bare-all/?all=Info/qualifier-парсинг; healthy ~all и weak-dmarc тесты
+целы).
+
+**GraphQL field-suggestions / query-batching → находки — `[ЗАКРЫТ]`.** Backend-
+фаза, computed-but-lost. `GraphQLDiscovery` детектит 4 экспозиции (introspection,
+reachable, **field suggestions**, **query batching** — последние две независимо от
+introspection, leak схемы / amplification-DoS) и кладёт флаги в endpoint-данные
+(`data.graphql[].suggestions/batching`), но `collection_runner._security_findings`
+синтезировал находки **только** для introspection/reachable → suggestions и batching
+детектились, но не становились находками (нет risk/F1/SLA/alerts/compliance).
+SecurityAuditor берёт из discovery лишь endpoints (его собственные 4 находки
+отбрасываются), поэтому коллекция — единственный путь, и он ронял два сигнала. Фикс:
+`_security_findings` эмитит `GraphQL field suggestions enabled` (Info) и `GraphQL
+query batching enabled` (Medium) из флагов endpoint'а, независимо от introspection,
+дословно повторяя severity/формулировки `graphql_discovery`. Один endpoint теперь
+даёт до 3 graphql-находок (разные тайтлы → разные rule_id → разные fingerprint, без
+коллизии). category='graphql' → finding_knowledge/attack-surface/compliance/dedup
+работают автоматом. **Числа risk выросли сознательно** для batching-целей (Medium-
+находка). Покрыто `test_collection_runner` (suggestions=Info+batching=Medium+мульти-
+находка на endpoint; reachable-тест цел — без флагов нет лишних находок).
+
+**Detection-метрики в trend-аналитике — `[ЗАКРЫТ]`.** Backend-фаза. `_scan_entry`
+денормализует в `metadata.json` 9 метрик per-scan **специально для cross-scan
+анализа** (heatmap), но `timeline.build_series` тащил лишь 5 — детект-категории
+(`source_map_leaks`/`weak_cookies`/`graphql`/`graphql_introspection`) персистились,
+но trend-слой их не видел. Для CSM-платформы «деградирует ли наша exposure-гигиена
+во времени?» — ровно тот вопрос, на который trends должен отвечать. Фикс:
+`build_series` несёт 4 детект-метрики (None при их отсутствии — gap, не фейковый 0),
+`trends.METRICS` их трендит. Pure/additive, данные уже персистятся. Потребители целы:
+`_render_trends_card` использует фикс-список из 4 sparkline'ов (не METRICS) →
+визуал отчёта не меняется; `trend_summary` (web `/timeline`) подхватывает новые
+метрики автоматом; старые проекты без этих ключей → `metric_trend` возвращает None →
+метрика опускается (graceful). Покрыто `test_timeline` (build_series несёт+gap),
+`test_trends` (детект-метрика трендится / отсутствующая опускается). (Побочно
+замечено: `report['trends_summary']` пишется, но нигде не читается — оба потребителя
+пересчитывают; кандидат на отдельную чистку.)
+
+**Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
+Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
+только в `detail`-строке находки (human-display), машинные поверхности (SARIF)
+не могли его взять структурно. Проведён структурный `cwe`-канал через модель
+находки (опц., обратносовместимо): `Finding.cwe` (dataclass) + `_cwe_list(raw)`
+(нормализация в `CWE-NNN`, дедуп, фильтр junk) в обеих ветках `from_raw` +
+`to_store` кладёт `cwe` в evidence; `cve_intel.to_findings` отдаёт структурный
+`cwe` рядом с detail; `report_export._sarif_tags` читает explicit `evidence.cwe` и
+эмитит точный тег (`external/cwe/cwe-79`) **рядом** с generic category-маппингом
+(`cwe-1395`), дедуп — теги аддитивны, точность строго лучше. compliance/issue-body
+оставлены на category-уровне (cwe-1395/A06 корректен для уязвимого компонента;
+SARIF — главный машинный потребитель CWE для GitHub code-scanning). Покрыто
+`test_findings_adapter` (cwe в evidence+нормализация+отсутствие), `test_cve_intel`
+(структурный cwe), `test_report_export` (explicit+generic тег+дедуп). Цепочка
+NVD→find→store→SARIF замкнута.
+
+**NVD CWE извлекается и сёрфится в CVE-находке — `[ЗАКРЫТ]`.** Backend-фаза,
+fetched-but-lost. `nvd_provider._parse_nvd` тащил CVSS/severity/published/summary,
+но **ронял `weaknesses` (CWE)** — авторитетный per-CVE класс слабости (CWE-79/89…),
+который NVD-ответ уже несёт. Фикс: `_extract_cwes(cve)` (из `weaknesses[].
+description[].value`, фильтр `^CWE-\d+$` — плейсхолдеры `NVD-CWE-noinfo`/`-Other`
+скипаются, дедуп) → `cwe` в parse-результат → `_enrich` мёржит в CVE-record →
+`to_findings` добавляет CWE в `detail` рядом с CVSS/датой (тот же surface-паттерн).
+CWE теперь виден в Findings-UI/report-карточке/CSV. Pure, инъектируемый seam,
+без новых зависимостей. (Точный per-CVE CWE в SARIF/compliance-таксономию —
+естественный follow-up; generic `cwe-1395`/A06 уже корректен для компонента.)
+Покрыто `test_nvd_provider` (CWE+дедуп+плейсхолдеры/пусто), `test_cve_intel`
+(CWE в detail).
+
+**GitHub-issue body несёт CWE/OWASP-класс — `[ЗАКРЫТ]`.** Backend-фаза, третий
+(и последний) потребитель таксономии после SARIF/compliance. `github_issues.
+issue_body` нёс Severity/Category/Location, но **ронял OWASP/CWE** — хотя его же
+docstring обещал «same enrichment as the SARIF export» (который теперь таксономию
+несёт). Триажер в трекере не видел класс находки. Фикс: meta-строка body обогащена
+`**OWASP:**`/`**CWE:**` через тот же SSOT `compliance.classify` (как SARIF-теги).
+Метки issue не трогал (severity-only — избегаем label-проливерации; CWE как label
+плодил бы десятки значений). Pure, без новых зависимостей. Покрыто
+`test_github_issues` (sqli-находка → A03/CWE-89 в body). **Все три EPIC-16
+deliverable (SARIF / compliance / GitHub Issues) несут одну таксономию из единого
+`compliance.classify`.**
+
+**SARIF rule-теги несут CWE/OWASP-таксономию — `[ЗАКРЫТ]`.** Backend-фаза. SARIF-
+экспорт (`findings_sarif`, EPIC 16) клал в `rule.properties.tags` только
+`[category]` + security-severity, **роняя CWE-таксономию**, которую compliance уже
+вычисляет. GitHub code-scanning распознаёт `external/cwe/cwe-NNN` для группировки/
+фильтрации — без них SARIF не нёс класс находки, хотя compliance-отчёт нёс. Фикс:
+`_sarif_tags(finding)` через единый SSOT `compliance.classify` добавляет к категории
+CWE-теги (`external/cwe/cwe-NNN`, конвенция GitHub) + OWASP-класс (`OWASP:A06:2021`) →
+SARIF и compliance-отчёт несут одну таксономию. Pure stdlib, без новых зависимостей,
+без второй системы маппинга. CVE-находки автоматом получают `cwe-1395`/A06 (от только
+что добавленного правила). Покрыто `test_report_export` (secret→cwe-798/A07,
+CVE→cwe-1395/A06).
+
+**CVE-находки → OWASP A06 в compliance — `[ЗАКРЫТ]`.** Backend-фаза, баг-фикс.
+CVE-находка канонизируется `findings_adapter` в `category='vuln'`/`rule_id='cve-…'`,
+но `compliance.classify` не имела для неё правила → `owasp=None` → попадала в
+**unmapped**, хотя CVE — учебниковый случай **A06:2021 Vulnerable and Outdated
+Components**. Фикс: правило `('cve-', A06/CWE-1395)` в конце `_RULE_MAP` (порядок
+важен: специфичный класс — XSS-CVE → A03 — выигрывает выше; неклассифицированный
+CVE падает в A06, а не в unmapped). `cve-` матчит и канонический `rule_id`, и
+ссылку «CVE-XXXX» в тайтле. Чистый derive, mapping — единый SSOT (как
+finding_knowledge). Покрыто `test_compliance` (cve→A06+CWE-1395; XSS-CVE сохраняет
+A03; «weird»/«Mystery» по-прежнему unmapped).
+
+**Document-секреты в attack-surface «Secrets» — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел, что закрыл «Security-audit секреты → breadth»: document-only
+секрет (найден ТОЛЬКО Document Intelligence) был **полностью вне графа атак-
+поверхности** — категория «Secrets» читала api.details + security.secrets, а из
+«Findings» секреты исключены (category='secret', анти-дубль). Фикс: `attack_surface.
+build_surface` добавляет типы из `phases.documents.data.findings` (плейсхолдеры уже
+отброшены продьюсером, тип — из стабильного тайтла `'Leaked secret: <type>'`), дедуп
+против api/audit-типов — мирроринг блока audit_secrets. Document-only ключ теперь в
+breadth/`surface_score`, как api/audit. Pure, без новых зависимостей, без влияния на
+risk-вердикт (surface — отдельная ось). Покрыто `test_attack_surface` (document-типы
+в Secrets + дедуп с api + не-secret findings игнорятся).
+
+**BBOT recon → attack-surface breadth — `[ЗАКРЫТ]`.** Backend-фаза, тот же
+асимметричный пробел, что закрыл «Security-audit endpoints → surface» — но для
+opt-in внешнего recon BBOT. BBOT-хосты/эндпоинты/технологии уже промоутятся в
+asset-инвентарь (`asset_adapter.derive_assets` из `phases.bbot.data`) и видны в
+Assets-табе + Timeline (asset-события), но `attack_surface.build_surface` их ронял:
+«Subdomains» читала только `subdomains.results`, «Endpoints» — `katana+security`,
+«Technologies» — `recon` → BBOT-only активы молча выпадали из графа атак-поверхности
+и `surface_score`. Фикс: `build_surface` мёржит `bbot.data` hosts→Subdomains,
+endpoints→Endpoints, technologies→Technologies (дедуп против нативных), переиспользуя
+**те же предикаты apex/host** (`asset_adapter._is_concrete_host`/`_host_of`, ленивый
+импорт — SSOT, поэтому граф совпадает с инвентарём; apex/wildcard/out-of-scope хосты
+отфильтрованы как в инвентаре). ips/asns/netblocks BBOT в Infrastructure НЕ вливаются
+(там Domain→ASN→IP-цепочка из recon-geo, host-уровневые BBOT-узлы — отдельная ось,
+как co-hosted). Pure, без новых зависимостей. **Числа surface_score для BBOT-сканов
+выросли сознательно** (граф недосчитывал то, что инвентарь уже считал); легаси-отчёты
+без bbot-фазы — байт-в-байт (gate `if bbot`). Покрыто `test_attack_surface`
+(мёрж+дедуп hosts/endpoints/tech, apex/scope-фильтр, отсутствие bbot=без изменений).
+
 **EPIC 3 — CVE Intelligence (фаза 1: JS-либы) — `[ЗАКРЫТ]`.** Мульти-источниковый
 CVE-движок поверх существующего OSV-пайплайна (расширение, не дубль). Новые модули:
 `core/cve_store.py` (SQLite `data/cve_cache.db`, `SQLiteStore`, user_version=1 —
@@ -1564,41 +1877,203 @@ Risk-числа байт-в-байт (фактор 0, экспозиция ни�
 likelihood-оси — все 4 формулы Intelligence Foundation теперь именованные величины с
 поверхностями.**
 
+**Infrastructure chain — Cloud + Region классификация (EPIC infra-chain, phase 1) —
+`[ЗАКРЫТ]`.** Backend-фаза. Достроена инфра-цепочка Domain→Subdomain→IP→ASN→Provider→
+**Cloud→Region**→Certificate→Related Assets: первые 5 и Certificate/Related уже были
+(`asset_graph` рёбра, `infrastructure.py`, `correlation` chain, `asn_intel`), не
+хватало **нормализованного Cloud** и **структурного Region**. Решение: единый pure
+`core/cloud_classifier.py` (`classify_cloud(provider, asn_name, asn, technologies,
+cname)` → `{cloud, confidence, evidence}` или `{}`) — табличный матч по уже собранным
+сигналам (provider/ASN-строка, CDN-tech из `tech_fingerprint`, takeover-CNAME из
+`subdomain_active`), **сильнейший сигнал**: exact ASN-номер (90) > provider-keyword
+(80) > CDN-tech (75) > CNAME (70); unknown остаётся unknown (нет догадок). Offline,
+без сети/зависимостей, **не входит в risk-score** (display/derive, как exposure/
+criticality). Проводка: `infrastructure.build_infrastructure` — структурные
+`cloud`/`region`/`country` + hops Cloud/Region в `chain` + `render_html` (cloud
+`#e65100`, region `#00838f`; cloud классифицируется по always-available provider/ASN,
+т.к. recon строит infra ДО technologies — порядок учтён); `asset_adapter` кладёт
+`cloud`/`region` в attrs domain/ip/asn (из infra) и **per-subdomain cloud из CNAME**
+(аддитивно, identity байт-в-байт → ноль churn в сторе). **True cloud-region**
+(`us-east-1`) **намеренно НЕ выдумывается** — не выводим offline из GeoIP. Покрыто
+`test_cloud_classifier`(11: keyword/ASN/CDN/CNAME/unknown/strongest-wins/bad-types),
+`test_infrastructure`(+3: cloud+region в chain/ASN-номер→AWS/unknown без hop),
+`test_asset_adapter`(+4: cloud/region attrs domain/ip/asn, subdomain-cloud-from-CNAME,
+no-cname→no-cloud, identity-инвариант). **Не делалось** (осознанно): cloud/region в
+risk-score, новые SQLite-таблицы, сетевые cloud-лукапы, GUI.
+
+**Infrastructure chain — Phase 2 (co-hosted related assets) — `[ЗАКРЫТ]`.** Bulk уже
+был сделан в `feea0a6` (не отражён в статусе): derive-view `asn_intel.related_assets`/
+`related_assets_from_report`/`load_related_assets` (co-hosted домены с reverse-IP минус
+свои хосты) + report-карточка «Related Assets» (`report['related_assets']`) + web
+`/related-assets` + кнопка + тесты. **Хвост (этот инкремент)** — surface co-hosted в
+`asset_graph` (решение пользователя: asset_graph, backend+report+web; correlation НЕ
+трогаем). Co-hosted соседи добавляются как **внешние (non-owned) узлы** типа `related`
+(`external:True`) с ребром `co_hosted` от **owned**-IP-узла — **никогда** не пишутся в
+`AssetStore` (уважает явное решение `asn_intel.py:210`: co-hosted ≠ наш актив, промоут
+дал бы ложные ownership/takeover-сигналы). `build_asset_graph(assets, related=None)` +
+`_add_co_hosted` (anchor только если shared_ip — owned `ip`-актив; дедуп + фильтр
+коллизий со своими узлами); `load_asset_graph(project, related=None)` — summary держит
+`nodes`/`edges` = **owned**-топология (внешние узлы/co_hosted-рёбра вынесены в
+отдельный `related`-счётчик → существующие метрики не инфлейтятся). Проводка:
+`collection_runner._build_asset_graph` передаёт `related=related_assets_from_report(report)`
+(читает asn_intel-фазу напрямую → порядок с `_build_related_assets` неважен), карточка
+«Asset Relationships» показывает «со-хостящихся доменов: N»; web `_correlation_view`
+резолвит проект → `load_related_assets` → `load_asset_graph(project, related=…)` +
+JS-консоль печатает co-hosted. **Гарантия:** criticality/exposure/attack_paths/
+`shared_infra` не тронуты — они зовут `load_asset_graph(project)` БЕЗ related (внешние
+узлы не owned-активы → blast-radius owned-активов и `_dependents_map` не меняются;
+co_hosted-ребро идёт от IP к внешнему `dst`, IP как `src` не инфлейтится). Покрыто
+`test_asset_graph`(+7: внешние узлы/ребро/anchor-skip/дедуп/related=None unchanged/
+load-summary owned-only/shared_infra игнорит external), `test_collection_runner`(+2:
+карточка показывает/скрывает co-hosted), `test_web_intelligence`(+1: correlation-view
+surface). **Не делалось** (осознанно): промоут co-hosted в AssetStore, correlation,
+GUI, влияние на risk/criticality/exposure.
+
 **EPIC 15 — Technology Risk Scoring — `[ЗАКРЫТ]`.** Полный backend+report+web+CSV+GUI
 паритет (GUI-вкладка добавлена — см. ниже). Чистый **display-слой**
-(derive-on-read, **НЕ слагаемое risk-score** — как exposure/criticality/accuracy):
-EOL/устаревшие технологии и уязвимые JS-либы, **без двойного счёта CVE** (уязвимые
-деп уже считаются через находки, EPIC 3). Новый pure `core/tech_risk.py`
-(`build_technology_risk(report)` поверх `phases.recon.data`; `_TECH_POLICIES`/
-`_DEPENDENCY_EOL`; version-exposed для Server/Backend/Language; degrade-not-raise;
-`load_technology_risk(project)` тонкий report-based ридер). Проводка-паритет (образец
-Scan Accuracy): `collection_runner._build_technology_risk` → `report['technology_risk']`
-+ карточка «Technology Risk» (`_render_technology_risk_card` — был осиротевшим, хук
-добавлен); `executive_summary._technology_risk` → метрики `tech_risk_score`/
-`outdated_technologies`/`vulnerable_dependencies` + чип «N outdated components» (display,
-risk-числа байт-в-байт); web `GET /technology-risk` + кнопка; `report_export.
-technology_risk_csv`. Покрыто `test_tech_risk`(16)/`test_executive_summary`(+2)/
-`test_report_export`(+2)/`test_web_intelligence`(+5)/`test_collection_runner`(+3).
-GUI-вкладка добавлена (`gui/tab_technology_risk.py`, зеркало Scan Accuracy; покрыто
-`test_technology_risk_tab`(10)). Не делалось: влияние на risk-score, новые таблицы,
-расширение EOL-политик (для CVE есть EPIC 3). EPIC 15 — полная GUI+web+report+CSV
-проводка.
+(derive-on-read, **НЕ слагаемое risk-score** `_risk_level`/`risk_100` — как
+exposure/criticality/accuracy): «какие из обнаруженных технологий/JS-зависимостей
+заслуживают внимания» — EOL/устаревшие версии и уязвимые либы, **без двойного счёта
+CVE** (уязвимые деп уже считаются через находки, EPIC 3). Новый pure
+`core/tech_risk.py` (`build_technology_risk(report)` — читает только `phases.recon.data`
+technologies+dependencies; консервативные `_TECH_POLICIES` PHP<8.1/AngularJS/Flask +
+`_DEPENDENCY_EOL`; version-exposed для Server/Backend/Language; band high≥60/medium≥25/
+low>0/clean; degrade-not-raise по этосу F-SR1; `load_technology_risk(project)` тонкий
+report-based ридер, зеркало `intelligence.load_accuracy`). Проводка-паритет по образцу
+Scan Accuracy: `collection_runner._build_technology_risk` → `report['technology_risk']`
+(`{summary, top:10}`) + карточка «Technology Risk» (`_render_technology_risk_card` —
+**был написан, но не вызван; хук добавлен**, закрыт техдолг); `executive_summary.
+_technology_risk` → display-метрики `tech_risk_score`/`outdated_technologies`/
+`vulnerable_dependencies` + headline-чип «N outdated components» (medium, НЕ score-
+фактор — числа риска байт-в-байт); web `_technology_risk_view` + `GET /technology-risk`
++ кнопка «Technology Risk»/`showTechnologyRisk()` в консоли; `report_export.
+technology_risk_csv` (+`_TECHNOLOGY_RISK_COLUMNS`). Покрыто `test_tech_risk`(16:
+EOL/version-exposed/vuln-деп/clamp/band/сортировка/summary/empty/malformed/reader),
+`test_executive_summary`(+2: метрика+чип/zero, risk_score неизменен),
+`test_report_export`(+2), `test_web_intelligence`(+5: view/empty/unknown/dashboard/
+testclient), `test_collection_runner`(+3: карточка/build/skip-when-empty). **GUI-
+вкладка добавлена** (`gui/tab_technology_risk.py`, `TechnologyRiskTabMixin` — зеркало
+Scan Accuracy: per-project report-based, таблица risk-desc с band-подсветкой (high =
+attention), rollup-карты, панель причина+доказательства, Export CSV; секция
+«Управление» после Scan Accuracy; lazy-load в `tab_history`; покрыто
+`test_technology_risk_tab`(10) + `TechnologyRiskHost`). **Не делалось** (осознанно):
+влияние на risk-score, новые таблицы, расширение EOL-политик за консервативный
+минимум (для CVE есть EPIC 3). **EPIC 15 имеет полную GUI+web+report+CSV проводку.**
 
-**Infrastructure chain — Phase 2 (co-hosted related assets) — `[ЗАКРЫТ]`.** Bulk был
-сделан в `feea0a6` (derive-view `asn_intel.related_assets`/`load_related_assets` +
-report-карточка + web `/related-assets`). Хвост: surface co-hosted в `asset_graph`
-(решение пользователя: asset_graph, backend+report+web; correlation не трогаем).
-Co-hosted соседи — **внешние (non-owned) узлы** типа `related` (`external:True`) с ребром
-`co_hosted` от owned-IP-узла, **никогда** не в `AssetStore` (уважает решение
-`asn_intel.py:210`). `build_asset_graph(assets, related=None)` + `_add_co_hosted`;
-`load_asset_graph(project, related=None)` — summary держит `nodes`/`edges`=owned,
-внешние в отдельном `related`-счётчике (метрики не инфлейтятся). Проводка:
-`collection_runner._build_asset_graph(related=related_assets_from_report(report))` +
-карточка «со-хостящихся доменов: N»; web `_correlation_view` резолвит проект →
-`load_related_assets` → `load_asset_graph(related=…)`. Criticality/exposure/attack_paths
-не тронуты (зовут `load_asset_graph` без related). Покрыто `test_asset_graph`(+7)/
-`test_collection_runner`(+2)/`test_web_intelligence`(+1). Не делалось: промоут в
-AssetStore, correlation, GUI, влияние на risk.
+**EPIC 16 — Integrations & Reporting (wave 1) — `[ЗАКРЫТ]`.** Безопасная волна
+интеграций без новых тяжёлых зависимостей (всё stdlib, opt-in). **F0+F1** SARIF
+2.1.0 экспорт находок (`report_export.findings_sarif`: `APP_VERSION` из config;
+каждая находка → SARIF result, пары category/rule_id → reportingDescriptors с
+description/impact/remediation из `finding_knowledge` (то же обогащение, что
+`findings_csv`); severity → SARIF level + numeric security-severity для GitHub;
+`evidence.location` → physicalLocation URI; пустой список = валидный пустой run).
+**F2** Markdown-отчёт. **F3** generic-webhook alert-канал (снят отложенный YAGNI из
+F4 Alert Center — плоский POST). **F4 CI/CD-gate** (`core/ci_gate.py` pure-политика
++ `monitor_cli ci`): `evaluate_gate(events, fail_on='high')` фейлит сборку, если
+появилась новая находка ≥ порога severity (counts/triggers/total; пустой/None =
+PASS, как первый скан без baseline); `exit_code`/`summary_line` — CLI-обёртки.
+Команда `monitor_cli ci <url>` — тонкая оркестрация: прогон скана через
+`CollectionRunner` (или `--no-scan` гейтит два последних существующих скана) →
+**канонический change-feed `timeline.build_timeline`, отфильтрованный по текущему
+scan_id** (НЕ сырой `diff_events`: свежая generic high/critical vuln всплывает как
+`new_finding` с её severity только через F1-lifecycle; timeline мёржит это с
+Scan-Diff регрессиями takeover/source-map/GraphQL/dependency) → `ci_gate` →
+process exit-code; опц. `--sarif-out` пишет SARIF активных находок. Первый скан
+без baseline = PASS. Покрыто `test_ci_gate`(7: пороги/exit/summary/non-dict/empty)
++ `test_monitor_cli`(+4: single-scan PASS, takeover→critical FAIL, scan вызывает
+run_fn, SARIF записан). Коммиты c42e70c (F0+F1) / 041da8c (F2) / ba7cbf4 (F3) /
+28cf617 (F4).
+
+**EPIC 16 — wave 2: GitHub Issues push (B2) — `[ЗАКРЫТ]`.** Открывает GitHub-issue
+на каждую активную находку (триаж/закрытие в трекере). **Create-only и
+идемпотентно**: маппинг `находка→issue` = событие `ISSUE_CREATED` в **существующей**
+таблице `finding_events` (`note={number,url}`) — без новой таблицы, без schema-bump;
+переоткрытая находка (новый REOPENED-эпизод) снова получает issue; авто-закрытие при
+FIXED осознанно отложено. `core/github_issues.py` (pure-логика + инъектируемый
+urllib-транспорт `_api_request`, зеркало `alerts.py`): `issue_title`/`issue_body`
+рендерятся из `finding_knowledge` (то же обогащение, что SARIF/CSV);
+`GitHubIssueClient.create_issue` (POST `/repos/{owner}/{repo}/issues`, 2xx=успех);
+`sync_findings(store, project, config, *, client)` гейтит по `min_severity` (дефолт
+high), скипает уже-отслеженные (`untracked_for_issue` — episode-aware read), пишет
+маппинг **только после** успешного создания (упавший API оставляет находку
+неотслеженной → ретрай). `findings_store`: тип события `ISSUE_CREATED` +
+`record_issue`/`untracked_for_issue`. CLI `monitor_cli issues <url> [--min-severity]`;
+дефолт `settings.json "github": {enabled:False}` (токен вне project-metadata, как
+`alerts`). Решения пользователя: create-only/идемпотентно, min_severity=high,
+**только core+CLI** (GUI/web отложены — `feedback-internals-first-no-gui`).
+Offline-first, opt-in, без новых зависимостей. Покрыто `test_github_issues`(11:
+рендер/гейт/build_client/idempotent-sync/min-sev/error-leaves-untracked/non-2xx)
++ `test_findings_store`(+3: record+untracked/reopen-reset/empty) +
+`test_monitor_cli`(+1: cmd_issues через инъектируемый client). Коммит a5a1cdf.
+
+**EPIC 16 — wave 2: OWASP/CWE compliance report (A3) — `[ЗАКРЫТ]`.** Свёртка
+активных находок по **OWASP Top 10 (2021) + CWE** в Markdown-deliverable. Чистый
+offline-derive, без схемы/новых данных, зеркало каталога `finding_knowledge` (один
+источник правды маппинга). `core/compliance.py`: `OWASP_TOP10` (A01…A10, порядок),
+консервативный `_CATEGORY_MAP` (канон-категория → `{owasp, cwe}`: header→A05/CWE-693,
+secret→A07/CWE-798, dependency→A06/CWE-1104, sourcemap→A05/CWE-540, cookie→A05/CWE-614,
+graphql→A05/CWE-200, takeover→A05/CWE-284, transport→A02/CWE-319) + keyword-`_RULE_MAP`,
+уточняющий generic `vuln` (sqli→A03/CWE-89, ssrf→A10/CWE-918, xss→A03/CWE-79, idor→A01,
+path-traversal→A01, rce→A03…); `classify()` + `build_compliance()` (свёртка по всем 10
+категориям, count 0 = clean; неузнанные vuln-подтипы → **unmapped**, а не
+ложно-классифицированы); `load_compliance()` — тонкий ридер по active-находкам
+(текущая поза, триаж исключён). `report_export.compliance_markdown(findings)` —
+таблица Top 10 (статус ✅OK/⚠️findings · CWE · counts · severities) + посекционные
+находки + Unmapped. CLI `monitor_cli compliance <url> [--out PATH]`. Решение:
+**только core+Markdown+CLI** (report.html-карточка/web отложены —
+`feedback-internals-first-no-gui`). Покрыто `test_compliance`(11:
+classify-defaults/rule-override/unmapped/all-10/grouping/non-dict/load),
+`test_report_export`(+3: таблица+секции/all-clean/unmapped), `test_monitor_cli`(+1:
+cmd_compliance пишет отчёт). Коммит e76afd8. **Остаток wave 2 (отложен):** опц.
+GitHub auto-close при FIXED; GUI/web/report-card-поверхности для issues+compliance.
+Память `project-epic16-integrations-reporting`.
+
+**EPIC NEXT — Attack Path & Business Risk Intelligence Platform — `[ЗАКРЫТ
+2026-06-22]`.** Сдвиг приоритизации с severity-driven на business-risk-driven.
+Полный план/детали — `ROADMAP_ASM_2.0.md` → **EPIC NEXT**. Все фичи: core→report→
+web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт НЕ
+перестроен (business/threat/drift — display/derive слой поверх существующих
+движков). По фичам:
+- **F0 Platform Trust Hardening** — единый каркас миграций SQLite (`utils/
+  sqlite_store`: декларативные `SCHEMA_VERSION`+`MIGRATIONS`, forward-only,
+  `_add_column`; findings/asset/cve-сторы сведены к одному паттерну) + contract-
+  тесты back-compat ключей (`tests/test_contracts.py`: report.json/metadata.json/
+  findings/assets/timeline/exec-summary, subset-ассерты — страховка §4.7).
+- **F1 Business Context Model** — `core/business_context.py` (вокаб criticality +
+  data sensitivity, веса, resolve default+per-asset); хранение = ключ
+  `business_context` в `metadata.json` (`Project.get/set_business_context`, паттерн
+  Company-tier, без таблицы); `ProjectStore.resolve`; вплетено в
+  `intelligence.asset_criticality` (augment type-веса); report/web/CLI
+  (`business_cli.py`). GUI отложен.
+- **F2 Business-Aware Prioritization** — business criticality/data sensitivity
+  доходят до priority через (business-aware) criticality-band; новый статический
+  **threat-tier** (`intelligence._threat_tier`: takeover/secret/инъекция=high,
+  graphql/sourcemap/CVE=medium) как явный priority-фактор. Без двойного счёта.
+  Live KEV/EPSS — отложен.
+- **F3 Deterministic Attack Paths** — `build_attack_paths` углублён: явный `goal`
+  (самый ценный достижимый актив, business-aware) + `hops` (entry→pivot→critical),
+  CDN-edge кластеры пропускаются. Display.
+- **F4 Remediation Tasks** — work-item на находке (status/owner/due), **event-
+  sourced** поверх `finding_events` (`REMEDIATION`-event, latest wins, без таблицы);
+  `core/remediation.py` + report-карточка + web `/remediation` + `remediation_cli.py`
+  (list/auto/set). Скан НЕ авто-создаёт (user/CLI-owned). GUI отложен.
+- **F5 Semantic Drift Monitoring** — `scan_diff` += `posture`-блок (из exec-summary
+  метрик); `diff_events` эмитит `attack_surface_drift`/`exposure_drift`/
+  `criticality_drift` (значимый рост, гейт a>0&b>0), alertable. Attack-path drift не
+  дублируется (EPIC 13).
+- **F6 Auditor-Friendly Compliance** — `compliance.classify` += `frameworks`
+  (derive над OWASP-классом: PCI DSS/ISO 27001/NIST CSF/SOC2); crosswalk-таблица в
+  `compliance_markdown` + framework-теги в SARIF. Один SSOT.
+- **F7 Cloud/Container/IaC Ingestion (фаза 1, без cloud API)** — `core/iac_scanner.py`
+  (Dockerfile/Terraform/CFN-JSON stdlib; compose/k8s/CFN-YAML опц. PyYAML;
+  консервативные misconfig-правила + секреты через SSOT); канон-категория `'iac'`
+  (fingerprint/knowledge/compliance A05); opt-in фаза `_phase_iac` (флаги `iac`/
+  `iac_path`, локально → не scope-gated), образы → technology-активы; `iac_cli.py`.
+  GUI/monitor + live cloud-API отложены.
+
+**Осознанно отложено (не блокеры):** GUI-ввод business-контекста + GUI-вкладки
+remediation/IaC (internals-first — память `feedback-internals-first-no-gui`); live
+threat-feed KEV/EPSS (F2); live cloud-API (F7); прямой path→task маппинг (F4).
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,
