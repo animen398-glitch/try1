@@ -76,6 +76,24 @@ def test_shared_infra_clusters_blast_radius():
     assert clusters[0]['count'] >= clusters[-1]['count']
 
 
+def test_shared_infra_marks_cdn_clusters():
+    # Hosts sharing a CDN edge IP (cloud=Cloudflare) are annotated cdn=True — an edge
+    # artifact, not a real single point of exposure. A non-CDN shared IP is unmarked
+    # (the marker is additive; nothing is dropped). Both clusters still appear.
+    inv = [
+        _asset('subdomain', 'a.x.com', ip='1.1.1.1'),
+        _asset('subdomain', 'b.x.com', ip='1.1.1.1'),
+        _asset('ip', '1.1.1.1', cloud='Cloudflare'),
+        _asset('subdomain', 'c.y.com', ip='5.5.5.5'),
+        _asset('subdomain', 'd.y.com', ip='5.5.5.5'),
+        _asset('ip', '5.5.5.5', provider='Acme Hosting'),   # not a CDN
+    ]
+    by_node = {c['node']: c for c in ag.shared_infra(inv) if c['type'] == 'ip'}
+    assert by_node['1.1.1.1'].get('cdn') is True
+    assert by_node['1.1.1.1']['count'] == 2                  # not dropped
+    assert 'cdn' not in by_node['5.5.5.5']                   # absent when not a CDN
+
+
 def test_shared_infra_needs_two_members():
     # A single host on an IP is not a "shared" cluster.
     one = [_asset('subdomain', 'solo.x.com', ip='1.1.1.1'),

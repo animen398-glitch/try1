@@ -111,6 +111,18 @@ _CONF_KEYWORD = 80
 _CONF_TECH = 75
 _CONF_CNAME = 70
 
+# Pure CDN / edge providers: a host's IP here is a *shared edge*, not the customer's
+# own instance, so many hosts on one such IP is a CDN artifact rather than a real
+# single-point-of-exposure. Deliberately excludes the hyperscalers (AWS/GCP/Azure):
+# a customer's instance IP there genuinely IS their blast radius.
+CDN_CLOUDS = frozenset({'Cloudflare', 'Fastly', 'Akamai'})
+
+
+def is_cdn_cloud(cloud) -> bool:
+    """Whether ``cloud`` (a name from :func:`classify_cloud`) is a pure CDN/edge
+    provider — used to annotate shared-infra clusters that are edge artifacts."""
+    return str(cloud or '') in CDN_CLOUDS
+
 
 def _norm(s) -> str:
     return str(s or '').strip().lower()

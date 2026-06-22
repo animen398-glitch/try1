@@ -1254,6 +1254,19 @@ merged с api) по-прежнему исключены (нет двойного
 document-секреты автоматом. Покрыто `test_alerts` (document-only→alert+one-shot;
 api-only и merged-with-api по-прежнему пропущены; generic-tiering цел).
 
+**CDN-аннотация exposure-кластеров (`cdn:true`) — `[ЗАКРЫТ, accuracy]`.** Backend-фаза,
+решение пользователя (аннотировать, НЕ исключать). `asset_graph.shared_infra` считал
+хосты на общем IP единым single-point-of-exposure, но для CDN-fronted сайтов (Cloudflare/
+Fastly/Akamai) десятки субдоменов резолвятся в **общий edge-IP** — это CDN-артефакт, не
+blast radius клиента. Фикс **аддитивный** (ничего не прячет): `cloud_classifier.CDN_CLOUDS`
+(SSOT: только чистые edge-провайдеры; гиперскейлеры AWS/GCP/Azure ИСКЛЮЧЕНЫ — там IP
+инстанса = реальный blast radius) + `is_cdn_cloud()`; `shared_infra` резолвит cloud узла
+кластера (`_node_cloud`: готовый `attrs.cloud` → fallback `classify_cloud` по provider/ASN;
+загружены asn-активы) и ставит `cdn:True` на CDN-кластер. Кластер ОСТАЁТСЯ в выводе
+(count/members целы) — потребители могут де-эмфазировать. Display-only (exposure_clusters —
+не risk-score). Покрыто `test_asset_graph` (CDN-IP→cdn:true+не дропнут / не-CDN без ключа),
+`test_cloud_classifier` (is_cdn_cloud: CDN да / гиперскейлер нет / None).
+
 **SPF-enforcement downgrade → diff-регрессия (хвост #11) — `[ЗАКРЫТ]`.** Backend-фаза,
 закрыт self-flagged follow-up из weak-SPF (#11). `dns_email_auth_weakened` ловил
 removal SPF/DMARC + DMARC policy downgrade, но **смену SPF-строки не судил** («не

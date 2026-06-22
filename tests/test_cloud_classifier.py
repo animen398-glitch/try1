@@ -1,6 +1,6 @@
 """core/cloud_classifier.py — pure, offline cloud classification."""
 
-from core.cloud_classifier import classify_cloud
+from core.cloud_classifier import classify_cloud, is_cdn_cloud
 
 
 # ── provider / ASN-name keyword ────────────────────────────────────────────────
@@ -71,3 +71,11 @@ def test_asn_beats_keyword_when_both_present():
 def test_tolerates_none_and_bad_types():
     assert classify_cloud(provider=None, asn_name=None, technologies=None) == {}
     assert classify_cloud(technologies=[None, {'no_name': 1}]) == {}
+
+
+def test_is_cdn_cloud():
+    # Pure CDN/edge providers (shared edge IPs); the hyperscalers are NOT CDNs (a
+    # customer instance IP there is real blast radius).
+    assert is_cdn_cloud('Cloudflare') and is_cdn_cloud('Fastly') and is_cdn_cloud('Akamai')
+    assert not is_cdn_cloud('AWS') and not is_cdn_cloud('Google Cloud')
+    assert not is_cdn_cloud('') and not is_cdn_cloud(None)

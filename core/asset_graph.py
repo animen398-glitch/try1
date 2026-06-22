@@ -25,6 +25,7 @@ cluster. Pure / stdlib / offline (I1/I2/I5); the CIDR match is reused from
 
 from typing import Dict, List, Optional
 
+from core.cloud_classifier import classify_cloud, is_cdn_cloud
 from core.correlation import _host, _netblock_for
 
 # Edge relationship vocabulary (src → dst).
@@ -161,17 +162,33 @@ def shared_infra(assets: List[Dict], *, min_members: int = 2) -> List[Dict]:
     A cluster of ``min_members``+ hosts on one infrastructure node is a single point
     of exposure (compromise the node → every member is affected) — blast radius at
     the *asset* level, regardless of findings. Returns
-    ``[{type, node, members:[host values], count}]``, largest cluster first. The ASN
-    of a host is resolved via its IP's ``ip`` asset (subdomains carry ``ip`` but not
+    ``[{type, node, members:[host values], count[, cdn]}]``, largest cluster first;
+    ``cdn=True`` marks a cluster whose shared node is a pure CDN edge (Cloudflare/
+    Fastly/Akamai) — an edge artifact, not a real single point of exposure — so
+    consumers can de-emphasise it without it being silently dropped. The ASN of a
+    host is resolved via its IP's ``ip`` asset (subdomains carry ``ip`` but not
     ``asn`` directly)."""
     assets = [a for a in (assets or []) if isinstance(a, dict)]
     bt = _by_type(assets)
     hosts = {**bt.get('domain', {}), **bt.get('subdomain', {})}
-    ips, netblocks = bt.get('ip', {}), bt.get('netblock', {})
+    ips, netblocks, asns = bt.get('ip', {}), bt.get('netblock', {}), bt.get('asn', {})
 
     def _asn_of(ip: str) -> Optional[str]:
         a = ips.get(ip)
         return (a.get('attrs') or {}).get('asn') if a else None
+
+    def _node_cloud(ntype: str, node: str) -> str:
+        """The cloud attributed to a cluster's infra node — the already-derived
+        ``attrs.cloud`` first, else classified from its provider / ASN."""
+        asset = {'ip': ips, 'asn': asns, 'netblock': netblocks}.get(ntype, {}).get(node)
+        attrs = (asset or {}).get('attrs') or {}
+        if attrs.get('cloud'):
+            return str(attrs['cloud'])
+        return classify_cloud(
+            provider=str(attrs.get('provider') or ''),
+            asn_name=str(attrs.get('name') or attrs.get('org') or ''),
+            asn=node if ntype == 'asn' else '',
+        ).get('cloud', '')
 
     clusters: Dict[tuple, set] = {}
 
@@ -189,10 +206,18 @@ def shared_infra(assets: List[Dict], *, min_members: int = 2) -> List[Dict]:
         elif attrs.get('asn'):
             put('asn', attrs['asn'], hval)
 
-    rows = [{'type': ntype, 'node': node,
-             'members': sorted(members), 'count': len(members)}
-            for (ntype, node), members in clusters.items()
-            if len(members) >= min_members]
+    rows: List[Dict] = []
+    for (ntype, node), members in clusters.items():
+        if len(members) < min_members:
+            continue
+        row = {'type': ntype, 'node': node,
+               'members': sorted(members), 'count': len(members)}
+        # Annotate (never exclude) a cluster whose shared node is a pure CDN edge:
+        # many hosts on one Cloudflare/Fastly/Akamai IP is an edge artifact, not a
+        # real single point of exposure. Consumers can de-emphasise these.
+        if is_cdn_cloud(_node_cloud(ntype, str(node))):
+            row['cdn'] = True
+        rows.append(row)
     rows.sort(key=lambda r: (-r['count'], r['type'], r['node']))
     return rows
 
