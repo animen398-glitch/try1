@@ -98,6 +98,16 @@ class OverviewTabMixin:
         btn_export.setToolTip("Сохранить портфолио проектов в CSV.")
         btn_export.clicked.connect(self._export_overview_csv)
         ctrl.addWidget(btn_export)
+        btn_export_proj = StyledButton("Export project…", style='secondary')
+        btn_export_proj.setToolTip(
+            "Экспортировать выбранный проект (дерево + findings/assets) в .zip "
+            "для переноса на другую машину или шаринга.")
+        btn_export_proj.clicked.connect(self._export_project_bundle)
+        ctrl.addWidget(btn_export_proj)
+        btn_import_proj = StyledButton("Import project…", style='secondary')
+        btn_import_proj.setToolTip("Импортировать проект из .zip-бандла.")
+        btn_import_proj.clicked.connect(self._import_project_bundle)
+        ctrl.addWidget(btn_import_proj)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_overview)
         ctrl.addWidget(btn_refresh)
@@ -264,6 +274,92 @@ class OverviewTabMixin:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить CSV: {e}")
             return
         self.overview_status.setText(f"Экспортировано проектов: {len(rows)}")
+
+    # ── project bundle export / import (core.project_io) ──────────────────────────
+
+    def _export_project_bundle(self):
+        """Export the selected portfolio project to a portable .zip (off-thread)."""
+        slug = self._selected_overview_slug()
+        if not slug:
+            self.overview_status.setText("Выберите проект в таблице для экспорта")
+            return
+        default = f"{slug}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export project", default, "Project bundle (*.zip)")
+        if not path:
+            return
+        base = self._overview_base()
+        self._set_busy(True)
+        self._run_async(
+            lambda b=base, s=slug, p=path: self._do_export_bundle(b, s, p),
+            self._on_bundle_exported)
+
+    @staticmethod
+    def _do_export_bundle(base: str, slug: str, path: str) -> dict:
+        try:
+            from core.project_io import export_project
+            return export_project(base, slug, path)
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_bundle_exported(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            QMessageBox.critical(self, "Ошибка экспорта", result['error'])
+            return
+        self.overview_status.setText(
+            f"Экспортирован {result['slug']}: {result['findings']} findings, "
+            f"{result['assets']} assets, {result['scans']} сканов")
+
+    def _import_project_bundle(self):
+        """Import a project from a .zip bundle (off-thread), then refresh."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import project", "", "Project bundle (*.zip)")
+        if not path:
+            return
+        from core.project_io import bundle_info
+        info = bundle_info(path)
+        if info is None:
+            QMessageBox.critical(self, "Ошибка", "Это не бандл проекта (.zip).")
+            return
+        base = self._overview_base()
+        slug = info.get('slug', '?')
+        # Pre-flight: warn + offer overwrite when the project already exists.
+        replace = False
+        if (ProjectStore(base).root / slug).exists():
+            choice = QMessageBox.question(
+                self, "Проект существует",
+                f"Проект «{slug}» уже есть. Перезаписать его данными из бандла?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if choice != QMessageBox.Yes:
+                return
+            replace = True
+        self._set_busy(True)
+        self._run_async(
+            lambda b=base, p=path, r=replace: self._do_import_bundle(b, p, r),
+            self._on_bundle_imported)
+
+    @staticmethod
+    def _do_import_bundle(base: str, path: str, replace: bool) -> dict:
+        try:
+            from core.project_io import import_project
+            return import_project(path, base, replace=replace)
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    def _on_bundle_imported(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            QMessageBox.critical(self, "Ошибка импорта", result['error'])
+            return
+        if result.get('skipped'):
+            self.overview_status.setText(
+                f"Пропущено ({result.get('reason')}): {result.get('slug')}")
+            return
+        self.overview_status.setText(
+            f"Импортирован {result['slug']}: {result['findings']} findings, "
+            f"{result['assets']} assets, {result['files']} файлов")
+        self._refresh_overview()
 
     def _refresh_overview(self):
         if self._overview_loading:

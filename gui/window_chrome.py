@@ -38,6 +38,9 @@ class WindowChromeMixin:
         nav.addItem(routeKey='settings', icon=FluentIcon.SETTING,
                     text="Настройки", onClick=lambda *_: self._open_settings(),
                     selectable=False, position=NavigationItemPosition.BOTTOM)
+        nav.addItem(routeKey='health', icon=FluentIcon.HEART,
+                    text="Состояние системы", onClick=lambda *_: self._show_health(),
+                    selectable=False, position=NavigationItemPosition.BOTTOM)
         nav.addItem(routeKey='about', icon=FluentIcon.INFO,
                     text="О программе", onClick=lambda *_: self._show_about(),
                     selectable=False, position=NavigationItemPosition.BOTTOM)
@@ -114,6 +117,11 @@ class WindowChromeMixin:
         dialog = SettingsDialog(self)
         if dialog.exec():
             self.settings = dialog.get_settings()
+
+    def _show_health(self):
+        """System-health screen (reuses the launcher's health engine)."""
+        from gui.first_run import show_health_dialog
+        show_health_dialog(self)
 
     def _show_about(self):
         QMessageBox.about(

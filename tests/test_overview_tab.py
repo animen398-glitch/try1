@@ -247,3 +247,48 @@ def test_on_assign_done_error(qapp):
     w._refresh_overview = lambda: None           # don't spawn the reload worker
     w._on_assign_done({'error': 'boom', 'slug': 'x.com'})
     assert 'boom' in w.overview_status.text()
+
+
+# ── project bundle export / import (core.project_io wiring) ───────────────────
+
+def test_do_export_bundle_writes_zip(qapp, tmp_path):
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    from core.findings_store import FindingsStore
+    _seed_project(tmp_path)                      # tree under Projects/x.com
+    FindingsStore().sync('x.com', 's1', [
+        {'category': 'vuln', 'rule_id': 'r0', 'title': 'V', 'severity': 'high',
+         'location': 'https://x.com/a'}])
+    AssetStore().sync('x.com', 's1', [Asset('domain', 'x.com')])
+    bundle = tmp_path / 'x.com.zip'
+    res = OverviewTabMixin._do_export_bundle(str(tmp_path), 'x.com', str(bundle))
+    assert 'error' not in res
+    assert bundle.exists()
+    assert res['findings'] == 1 and res['assets'] == 1
+
+
+def test_do_export_bundle_unknown_project_returns_error(qapp, tmp_path):
+    res = OverviewTabMixin._do_export_bundle(str(tmp_path), 'ghost.com',
+                                             str(tmp_path / 'g.zip'))
+    assert 'error' in res
+
+
+def test_on_bundle_exported_status_and_error(qapp, monkeypatch):
+    import gui.tab_overview as ov
+    # The error path shows a modal QMessageBox.critical, which would block under
+    # offscreen Qt — stub it so the handler logic is exercised without a dialog.
+    monkeypatch.setattr(ov.QMessageBox, 'critical',
+                        staticmethod(lambda *a, **k: None))
+    w = _window(qapp)
+    w._on_bundle_exported({'slug': 'x.com', 'findings': 3, 'assets': 2, 'scans': 1})
+    assert 'x.com' in w.overview_status.text()
+    w._on_bundle_exported({'error': 'disk full'})    # error path: no crash, no block
+
+
+def test_on_bundle_imported_variants(qapp):
+    w = _window(qapp)
+    w._refresh_overview = lambda: None               # don't spawn the reload worker
+    w._on_bundle_imported({'slug': 'x.com', 'findings': 2, 'assets': 1, 'files': 5})
+    assert 'x.com' in w.overview_status.text() and 'Импортирован' in w.overview_status.text()
+    w._on_bundle_imported({'slug': 'y.com', 'skipped': True, 'reason': 'project exists'})
+    assert 'Пропущено' in w.overview_status.text()

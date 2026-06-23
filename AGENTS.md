@@ -77,6 +77,7 @@ core/                   # ВСЯ бизнес-логика и движки (UI �
   features.py           # централизованный детект опц. зависимостей (pip-модули vs PATH-бинарники); summary()/missing()
   launcher.py           # EPIC 6: engine Install/Repair/Update/Launch + health_check (REQUIRED + features.summary); offline-first, subprocess инъектируется
   report_export.py      # CSV-экспорт findings/portfolio (PDF — печатью report.html)
+  project_io.py         # экспорт/импорт проекта одним .zip (дерево Projects/<slug> + faithful срез findings/assets); zip-slip/SQL-safe; generic срез в SQLiteStore.export_project/import_project
   # — detection-движки (вливаются в risk/attack-surface/report) —
   infrastructure.py     # Domain→ASN→IP→Provider (offline, из recon-geo)
   asn_intel.py          # АКТИВНО (opt-in): RDAP CIDR + RIPEstat префиксы + reverse-IP (keyless)
@@ -96,6 +97,7 @@ gui/                    # ТОНКИЙ UI-слой (mixin-паттерн)
   task_runner.py        # TaskRunnerMixin: _start_task / _run_async — ЕДИНЫЙ раннер фоновых задач
   window_chrome.py      # меню, таб-бар из PluginManager, статус-бар
   window_helpers.py     # общие helpers (пути, архивация, busy-state, browse)
+  first_run.py          # first-run onboarding + system-health screen (тонкий фронт над launcher.health_check; пункт «Состояние системы» в nav)
   monitor_runner.py     # MonitorRunnerMixin: in-app планировщик мониторинга (F3)
   theme.py              # F6: единый источник темы (Fusion+QPalette, opt-in dark; risk/severity-цвета)
   plugin_manager.py     # реестр вкладок-плагинов + авто-дискавери из plugins/
@@ -283,6 +285,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - `remote/web_app.py` — LAN web-console, parity через тонкие helpers/JOBS.
 
 **Последние важные изменения на 2026-06-23:**
+- Release-слой (шаг 5): добавлен `core/project_io.py` — экспорт/импорт проекта одним `.zip` (дерево `Projects/<slug>` + faithful срез findings/assets со строками и событиями lifecycle; zip-slip/SQL-safe). Generic срез — `SQLiteStore.export_project`/`import_project` (декларация `PROJECT_EXPORT` в findings/asset сторах). Поверхность — кнопки Export/Import project в Overview. Добавлен `CHANGELOG.md` (Keep a Changelog; 1.0.0 + Unreleased). Добавлен `gui/first_run.py` — first-run onboarding + system-health screen поверх `launcher.health_check` (+ пункт «Состояние системы» в nav, хук в `main.py`). Подтверждено: `init_path_manager()` во frozen-пути чтит `ASA_DATA_ROOT`. Покрыто `tests/test_project_io.py`/`test_first_run.py` + GUI-тесты Overview.
 - Demo/Release подготовка: добавлен `ASA_DATA_ROOT` env-override в `PathManager._detect_data_root` (единый seam — уводит ВСЕ data-БД/configs/settings/workspaces под один каталог, портится поверх source- и frozen-дефолтов; явный `data_root=` ctor-арг по-прежнему выше). Добавлен `demo_seed.py` (entry-скрипт корня): сеет self-contained demo workspace (1 company + 3 домена, 7 сканов, lifecycle-находки с drift, активы, business-контекст, remediation) в один каталог через явные PathManager-пути; запуск приложения — `ASA_DATA_ROOT=<dir> python main.py`. Проверено end-to-end (override → GUI читает портфель) + `tests/test_demo_seed.py`/`test_paths.py`.
 - Подтверждён GUI smoke (живой `MainWindow`, 28 вкладок): Criticality/Remediation/IaC/Overview-Portfolio на едином богатом проекте.
 - Почищен устаревший статус-баннер EPIC NEXT в `ROADMAP_ASM_2.0.md` (NOT STARTED → ЗАКРЫТ).
@@ -299,7 +302,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 2. ✅ Почищен устаревший статус-баннер EPIC NEXT в `ROADMAP_ASM_2.0.md`.
 3. ✅ Проведён живой GUI smoke (Criticality/Remediation/IaC/Overview-Portfolio).
 4. ✅ Подготовлен demo workspace (`demo_seed.py` + `ASA_DATA_ROOT` override).
-5. Релиз: version/changelog, PyInstaller build (проверить, что frozen чтит `ASA_DATA_ROOT`), first-run/system-health screen, import/export проекта. Demo workspace уже годится для показа платформы.
+5. ✅ Релиз-слой: CHANGELOG + version, project import/export (`core/project_io.py` + Overview GUI), first-run/system-health screen (`gui/first_run.py`), frozen чтит `ASA_DATA_ROOT` (через `init_path_manager()`). Остаётся по желанию: фактический PyInstaller build на стороне пользователя для поставки `.exe` + подпись/инсталлятор.
 
 **Осознанно отложено и не является блокером:**
 - live KEV/EPSS threat feed;

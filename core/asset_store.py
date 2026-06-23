@@ -40,6 +40,8 @@ class AssetStore(SQLiteStore):
     """SQLite-backed persistence for assets + their event history."""
 
     JSON_FIELDS = ('attrs',)
+    # Project-scoped export/import slice (core.project_io): assets + their events.
+    PROJECT_EXPORT = ('assets', 'asset_events', 'asset_id')
     SCHEMA_VERSION = 1
 
     SCHEMA = """

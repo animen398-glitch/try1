@@ -1,0 +1,178 @@
+"""core/project_io.py — project export/import bundle round-trip (offline).
+
+Seeds a project (tree + findings/assets lifecycle slice), exports it to a zip,
+imports into a *separate* workspace + fresh DBs, and asserts both the tree and
+the lifecycle (ids/status/remediation/events) survive faithfully — proving an
+imported project is self-sufficient. Also covers skip/replace, the zip-slip
+guard and bundle_info. Explicit db_paths keep it off the global stores.
+"""
+import json
+import zipfile
+
+import pytest
+
+from core import project_io
+from core.asset_adapter import Asset
+from core.asset_store import AssetStore
+from core.findings_store import FindingsStore
+from core.project import ProjectStore
+from core.remediation import set_task
+
+
+def _seed(base, fdb, adb, slug_url='https://shop.io'):
+    store = ProjectStore(str(base))
+    proj = store.get_or_create(slug_url)
+    slug = proj.slug
+    scan_dir = proj.start_scan('20260101_000000')
+    report = {'scan_id': '20260101_000000', 'finished_at': '20260101_000000',
+              'executive_summary': {'risk_level': 'High', 'risk_score': 70,
+                                    'risk_100': 70, 'metrics': {'risk_100': 70}}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    proj.record_scan(scan_dir, report)
+
+    fs = FindingsStore(db_path=fdb)
+    fs.sync(slug, 's1', [
+        {'category': 'vuln', 'rule_id': 'idor', 'title': 'IDOR', 'severity': 'high',
+         'location': 'https://shop.io/cart'},
+        {'category': 'headers', 'rule_id': 'hsts', 'title': 'No HSTS',
+         'severity': 'medium', 'location': 'https://shop.io'},
+    ])
+    fid = fs.list_findings(slug)[0]['id']
+    # find the idor finding id deterministically
+    fid = [r['id'] for r in fs.list_findings(slug) if r['rule_id'] == 'idor'][0]
+    set_task(fs, fid, status='in_progress', owner='alice', due='2026-02-01')
+
+    AssetStore(db_path=adb).sync(slug, 's1',
+                                 [Asset('domain', 'shop.io'),
+                                  Asset('ip', '198.51.100.5')])
+    return slug, fid
+
+
+# ── round-trip ──────────────────────────────────────────────────────────────
+
+def test_export_then_import_restores_tree_and_lifecycle(tmp_path):
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    slug, fid = _seed(src, src_f, src_a)
+
+    bundle = tmp_path / 'shop.io.zip'
+    out = project_io.export_project(src, slug, bundle,
+                                    findings_db=src_f, assets_db=src_a)
+    assert bundle.exists()
+    assert out['findings'] == 2 and out['assets'] == 2 and out['scans'] == 1
+
+    # fresh, empty destination
+    dst = tmp_path / 'dst'
+    dst_f, dst_a = dst / 'findings.db', dst / 'assets.db'
+    res = project_io.import_project(bundle, dst,
+                                    findings_db=dst_f, assets_db=dst_a)
+    assert res['skipped'] is False
+    assert res['findings'] == 2 and res['assets'] == 2
+
+    # tree restored
+    proj = ProjectStore(str(dst)).get(slug)
+    assert proj is not None
+    report = json.loads((proj.root / 'scans' / '20260101_000000'
+                         / 'report.json').read_text('utf-8'))
+    assert report['executive_summary']['risk_score'] == 70
+
+    # findings lifecycle faithful: same id + status, remediation preserved
+    rows = {r['id']: r for r in FindingsStore(db_path=dst_f).list_findings(slug)}
+    assert fid in rows
+    assert FindingsStore(db_path=dst_f).get_remediation(fid)['owner'] == 'alice'
+    # assets restored
+    assert len(AssetStore(db_path=dst_a).list_assets(slug)) == 2
+
+
+def test_import_preserves_status_and_timestamps(tmp_path):
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    slug, fid = _seed(src, src_f, src_a)
+    before = [r for r in FindingsStore(db_path=src_f).list_findings(slug)
+              if r['id'] == fid][0]
+
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src_f, assets_db=src_a)
+    dst = tmp_path / 'dst'
+    dst_f = dst / 'findings.db'
+    project_io.import_project(bundle, dst, findings_db=dst_f, assets_db=dst / 'a.db')
+
+    dst_store = FindingsStore(db_path=dst_f)
+    after = [r for r in dst_store.list_findings(slug) if r['id'] == fid][0]
+    # lifecycle status + timestamps copied verbatim (status is the finding's own
+    # OPEN — the remediation task status lives separately and is checked below).
+    assert after['status'] == before['status']
+    assert after['first_seen_at'] == before['first_seen_at']
+    assert after['updated_at'] == before['updated_at']
+    # the remediation task (a REMEDIATION event) travelled with the slice.
+    assert dst_store.get_remediation(fid)['status'] == 'in_progress'
+
+
+# ── skip / replace ────────────────────────────────────────────────────────────
+
+def test_import_skips_existing_without_replace(tmp_path):
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    slug, _ = _seed(src, src_f, src_a)
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src_f, assets_db=src_a)
+
+    dst = tmp_path / 'dst'
+    dst_f, dst_a = dst / 'findings.db', dst / 'assets.db'
+    project_io.import_project(bundle, dst, findings_db=dst_f, assets_db=dst_a)
+    again = project_io.import_project(bundle, dst, findings_db=dst_f, assets_db=dst_a)
+    assert again['skipped'] is True and again['reason'] == 'project exists'
+
+
+def test_import_replace_overwrites(tmp_path):
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    slug, _ = _seed(src, src_f, src_a)
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src_f, assets_db=src_a)
+
+    dst = tmp_path / 'dst'
+    dst_f, dst_a = dst / 'findings.db', dst / 'assets.db'
+    project_io.import_project(bundle, dst, findings_db=dst_f, assets_db=dst_a)
+    res = project_io.import_project(bundle, dst, findings_db=dst_f, assets_db=dst_a,
+                                    replace=True)
+    assert res['skipped'] is False and res['findings'] == 2
+    # no duplication after replace
+    assert len(FindingsStore(db_path=dst_f).list_findings(slug)) == 2
+
+
+# ── safety / errors ─────────────────────────────────────────────────────────────
+
+def test_export_unknown_project_raises(tmp_path):
+    with pytest.raises(KeyError):
+        project_io.export_project(tmp_path, 'ghost.io', tmp_path / 'x.zip')
+
+
+def test_import_rejects_zip_slip(tmp_path):
+    bad = tmp_path / 'evil.zip'
+    with zipfile.ZipFile(bad, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps(
+            {'format_version': 1, 'slug': 'evil.io'}))
+        zf.writestr('project/../../escape.txt', 'pwned')
+    with pytest.raises(ValueError):
+        project_io.import_project(bad, tmp_path / 'dst')
+
+
+def test_import_rejects_wrong_format(tmp_path):
+    bad = tmp_path / 'old.zip'
+    with zipfile.ZipFile(bad, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps(
+            {'format_version': 99, 'slug': 'x.io'}))
+    with pytest.raises(ValueError):
+        project_io.import_project(bad, tmp_path / 'dst')
+
+
+def test_bundle_info_reads_manifest(tmp_path):
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    slug, _ = _seed(src, src_f, src_a)
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src_f, assets_db=src_a)
+    info = project_io.bundle_info(bundle)
+    assert info['slug'] == slug and info['format_version'] == 1
+    assert project_io.bundle_info(tmp_path / 'nope.zip') is None

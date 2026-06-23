@@ -62,6 +62,8 @@ class FindingsStore(SQLiteStore):
     """SQLite-backed persistence for findings + their event history."""
 
     JSON_FIELDS = ('evidence',)
+    # Project-scoped export/import slice (core.project_io): findings + their events.
+    PROJECT_EXPORT = ('findings', 'finding_events', 'finding_id')
     # v2: findings are keyed by their project-scoped id (scoped_id(project,
     # fingerprint)) instead of the bare, project-agnostic fingerprint — so two
     # projects no longer collide on a location-less finding (DNS / host-level).

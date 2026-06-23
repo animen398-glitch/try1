@@ -46,6 +46,11 @@ def main() -> int:
         print(f"self-check OK — {n} tab(s)")
         return 0
 
+    # First-run onboarding + system-health screen (one-time; reachable later from
+    # the navigation footer). Skipped in --self-check (no dialogs in CI smoke).
+    from gui.first_run import maybe_show_first_run
+    maybe_show_first_run(window)
+
     window.show()
     return app.exec()
 

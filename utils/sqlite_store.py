@@ -39,6 +39,11 @@ class SQLiteStore:
     JSON_FIELDS: tuple = ('metadata',)
     SCHEMA_VERSION: int = 1
     MIGRATIONS: Dict[int, Callable[[sqlite3.Connection], None]] = {}
+    # Stores whose rows are scoped by a ``project`` column opt into project-scoped
+    # export/import (used by project bundles, core.project_io) by declaring
+    # ``(main_table, events_table, events_fk_column)``. The faithful slice is the
+    # main rows plus their event rows — ids/status/timestamps preserved verbatim.
+    PROJECT_EXPORT: Optional[tuple] = None
 
     def __init__(self, db_path: Union[str, Path]):
         self.db_path = Path(db_path)
@@ -95,6 +100,83 @@ class SQLiteStore:
             raise
         finally:
             conn.close()
+
+    # ── project-scoped export / import (faithful row+event slice) ──────────────
+
+    def _project_export_spec(self) -> tuple:
+        if not self.PROJECT_EXPORT:
+            raise NotImplementedError(
+                f'{type(self).__name__} does not declare PROJECT_EXPORT')
+        return self.PROJECT_EXPORT
+
+    @staticmethod
+    def _columns(conn: sqlite3.Connection, table: str) -> set:
+        return {r[1] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+
+    @staticmethod
+    def _insert_rows(conn: sqlite3.Connection, table: str, rows, *,
+                     allowed: set, replace: bool = True) -> int:
+        """Insert raw row dicts verbatim. Column names are whitelisted against
+        the live table schema (``allowed``) so an untrusted import bundle can
+        never inject SQL via crafted keys. Table name comes from a trusted class
+        attr (PROJECT_EXPORT), never user input."""
+        verb = 'INSERT OR REPLACE' if replace else 'INSERT'
+        n = 0
+        for r in rows:
+            cols = [c for c in r.keys() if c in allowed]
+            if not cols:
+                continue
+            ph = ','.join('?' * len(cols))
+            conn.execute(
+                f'{verb} INTO {table} ({",".join(cols)}) VALUES ({ph})',
+                [r[c] for c in cols])
+            n += 1
+        return n
+
+    def export_project(self, project: str) -> Dict[str, Any]:
+        """The project's rows + their event rows (raw column values, JSON fields
+        left encoded so import is byte-faithful). Empty lists if none."""
+        main, ev_tbl, fk = self._project_export_spec()
+        with self._connect() as conn:
+            rows = [dict(r) for r in conn.execute(
+                f'SELECT * FROM {main} WHERE project = ?', (project,)).fetchall()]
+            ids = [r['id'] for r in rows]
+            events = []
+            if ids:
+                ph = ','.join('?' * len(ids))
+                events = [dict(r) for r in conn.execute(
+                    f'SELECT * FROM {ev_tbl} WHERE {fk} IN ({ph})', ids).fetchall()]
+        return {'rows': rows, 'events': events}
+
+    def import_project(self, project: str, payload: Dict[str, Any], *,
+                       replace: bool = False) -> Dict[str, Any]:
+        """Insert an exported slice for ``project``. If the project already has
+        rows: skipped unless ``replace`` (then its rows+events are deleted first).
+        Event ``id`` (autoincrement) is dropped so it re-generates locally."""
+        main, ev_tbl, fk = self._project_export_spec()
+        rows = payload.get('rows') or []
+        events = payload.get('events') or []
+        with self._connect() as conn:
+            existing = conn.execute(
+                f'SELECT COUNT(*) FROM {main} WHERE project = ?',
+                (project,)).fetchone()[0]
+            if existing and not replace:
+                return {'imported': 0, 'events': 0, 'skipped': True,
+                        'reason': 'project exists'}
+            if existing:
+                old = [r[0] for r in conn.execute(
+                    f'SELECT id FROM {main} WHERE project = ?', (project,)).fetchall()]
+                if old:
+                    ph = ','.join('?' * len(old))
+                    conn.execute(f'DELETE FROM {ev_tbl} WHERE {fk} IN ({ph})', old)
+                conn.execute(f'DELETE FROM {main} WHERE project = ?', (project,))
+            main_cols = self._columns(conn, main)
+            ev_cols = self._columns(conn, ev_tbl)
+            n = self._insert_rows(conn, main, rows, allowed=main_cols)
+            ev_no_id = [{k: v for k, v in e.items() if k != 'id'} for e in events]
+            ne = self._insert_rows(conn, ev_tbl, ev_no_id, allowed=ev_cols,
+                                   replace=False)
+        return {'imported': n, 'events': ne, 'skipped': False}
 
     @classmethod
     def _row_to_dict(cls, row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
