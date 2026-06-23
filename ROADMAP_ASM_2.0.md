@@ -1354,9 +1354,16 @@ Dockerfile / docker-compose) → активы/находки.
   technology-активы (`source='iac'`; `ASSET_SOURCE_PHASES['technology'] += 'iac'`)
   → инвентарь/Timeline/web автоматом.
 - **CLI** `iac_cli.py` (ad-hoc scan репозитория → находки/образы/JSON; без
-  персиста — lifecycle идёт через фазу). GUI/monitor — отложены (фаза path-based,
+  персиста — lifecycle идёт через фазу). Monitor — отложен (фаза path-based,
   не URL-based). Покрыто `tests/test_iac_scanner.py` (5 форматов + секреты +
   robustness + YAML-gate + фолд в vulns + промоут активов + таксономия).
+- **GUI-вкладка — `[ВЫПОЛНЕНО 2026-06-23]`**: `gui/tab_iac.py`
+  (`IaC Config`, секция «Управление») — ad-hoc локальный scan path/file/folder
+  через `core.iac_scanner.scan_path`, rollup-карты (files/findings/images/YAML
+  skipped), таблица findings, таблица container images, detail panel и JSON export.
+  Вкладка intentionally read-only для lifecycle: она не пишет findings/assets в
+  store; персистентный lifecycle остаётся у opt-in `CollectionRunner(iac=True,
+  iac_path=...)`. Покрыто `tests/test_iac_tab.py`.
 
 ---
 
@@ -1367,8 +1374,8 @@ Dockerfile / docker-compose) → активы/находки.
 > web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт не
 > перестроен. **GUI business-контекста (project default) — добавлен 2026-06-23**
 > в Criticality-вкладку. **Remediation GUI-вкладка — добавлена 2026-06-23.**
+> **IaC Config GUI-вкладка — добавлена 2026-06-23.**
 > **Отложено (осознанно, не блокеры):** per-asset business-GUI (есть в CLI);
-> GUI-вкладка IaC (internals-first — память `feedback-internals-first-no-gui`);
 > live threat-feed (KEV/EPSS) для F2; live cloud-API для F7; прямой path→task
 > маппинг для F4.
 

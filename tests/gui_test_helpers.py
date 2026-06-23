@@ -12,6 +12,7 @@ from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_assets import AssetsTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_findings import FindingsTabMixin
+from gui.tab_iac import IacTabMixin
 from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 
@@ -98,3 +99,9 @@ class OsintCatalogHost(_BaseHost, OsintCatalogTabMixin, DashboardTabMixin):
         self._osint_table_loading = False
         self._osint_filter_pending = False
         self._build_osint_catalog_tab()
+
+
+class IacHost(_BaseHost, IacTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._build_iac_tab()

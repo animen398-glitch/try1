@@ -4573,3 +4573,37 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
   NEXT: choose the next epic/task explicitly (EXT-OSINT closed).
 
 ==============================================================================
+
+==============================================================================
+  2026-06-23 - EPIC NEXT / F7 GUI tail - IaC Config desktop tab
+==============================================================================
+
+  STATUS: DONE. Added the deferred desktop GUI surface for the existing local
+    IaC/container config scanner. This is an ad-hoc read-only scan surface: it
+    does not persist findings/assets by itself; lifecycle persistence remains
+    owned by the opt-in CollectionRunner(iac=True, iac_path=...) phase.
+
+  IMPLEMENTED:
+    - gui/tab_iac.py: new IaC Config tab in the Management section. User selects
+      a local file/folder, runs core.iac_scanner.scan_path off-thread, sees rollup
+      cards (files/findings/images/YAML skipped), findings table, container image
+      table, selected finding detail, and JSON export.
+    - gui/plugin_manager.py / gui/main_window.py: tab registered and mixed into
+      MainWindow. main.py --self-check now builds 28 tabs.
+    - tests/gui_test_helpers.py + tests/test_iac_tab.py: headless coverage for
+      tab construction, registry entry, local scan query, table population,
+      selection detail, and JSON payload.
+    - ROADMAP_ASM_2.0.md / CLAUDE.md: deferred IaC GUI note updated.
+
+  VERIFICATION:
+    - ruff clean on changed files.
+    - tests/test_iac_tab.py: 6 passed.
+    - main.py --self-check: OK, 28 tab(s).
+
+  NOTE:
+    - The first pytest attempt with --basetemp=.pytest-tmp hit a Windows
+      PermissionError removing a stale temp directory; rerun with a fresh
+      .pytest-tmp-iac succeeded. This was a temp cleanup issue, not a test/code
+      failure.
+
+  NEXT: full suite + local commit.

@@ -2069,11 +2069,12 @@ web/CLI, offline/headless тесты, без второй модели данн�
   консервативные misconfig-правила + секреты через SSOT); канон-категория `'iac'`
   (fingerprint/knowledge/compliance A05); opt-in фаза `_phase_iac` (флаги `iac`/
   `iac_path`, локально → не scope-gated), образы → technology-активы; `iac_cli.py`.
-  GUI/monitor + live cloud-API отложены.
+  GUI ad-hoc scan surface добавлен 2026-06-23 (`gui/tab_iac.py`, read-only для
+  lifecycle, JSON export); monitor + live cloud-API отложены.
 
-**Осознанно отложено (не блокеры):** GUI-ввод business-контекста + GUI-вкладки
-remediation/IaC (internals-first — память `feedback-internals-first-no-gui`); live
-threat-feed KEV/EPSS (F2); live cloud-API (F7); прямой path→task маппинг (F4).
+**Осознанно отложено (не блокеры):** per-asset business-GUI (project-default GUI уже
+есть в Criticality); live threat-feed KEV/EPSS (F2); live cloud-API (F7); прямой
+path→task маппинг (F4). Remediation GUI и IaC GUI добавлены 2026-06-23.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

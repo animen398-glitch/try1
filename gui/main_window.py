@@ -25,6 +25,7 @@ from gui.tab_attack_paths import AttackPathsTabMixin
 from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_osint_catalog import OsintCatalogTabMixin
+from gui.tab_iac import IacTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_overview import OverviewTabMixin
 from gui.tab_dashboard import DashboardTabMixin
@@ -43,6 +44,7 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  IntelligenceTabMixin, CriticalityTabMixin, ExposureTabMixin,
                  AttackPathsTabMixin,
                  AccuracyTabMixin, TechnologyRiskTabMixin, OsintCatalogTabMixin,
+                 IacTabMixin,
                  TimelineTabMixin,
                  OverviewTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.
