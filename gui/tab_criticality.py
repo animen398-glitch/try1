@@ -24,6 +24,7 @@ from qtpy.QtWidgets import (
 
 from core.business_context import (
     CRITICALITY_LABELS, CRITICALITY_TIERS, DATA_SENSITIVITY, SENSITIVITY_LABELS,
+    describe as describe_business, resolve as resolve_business,
 )
 from gui import theme
 from gui.ui_components import (
@@ -107,11 +108,43 @@ class CriticalityTabMixin:
         detail_grp.setLayout(detail_layout)
         layout.addWidget(detail_grp)
 
+        # ── per-asset business override editor (F1 GUI tail) ─────────────────
+        # User-declared business importance for the *selected* asset; it overrides
+        # the project default field-by-field and augments that asset's criticality
+        # (a named factor). Keyed on the item's bare fingerprint (item['fp']) — the
+        # same join key the CLI uses. Stored in metadata.json (no new table).
+        asset_grp = SectionGroupBox("Бизнес-контекст актива (override выбранного)")
+        asset_layout = QVBoxLayout()
+        self.biz_asset_label = QLabel("Выберите актив, чтобы задать override")
+        self.biz_asset_label.setWordWrap(True)
+        asset_layout.addWidget(self.biz_asset_label)
+        asset_row = FlowLayout()
+        asset_row.addWidget(QLabel("Критичность для бизнеса:"))
+        self.biz_asset_crit = self._biz_combo(CRITICALITY_TIERS, CRITICALITY_LABELS)
+        asset_row.addWidget(self.biz_asset_crit)
+        asset_row.addWidget(QLabel("Чувствительность данных:"))
+        self.biz_asset_sens = self._biz_combo(DATA_SENSITIVITY, SENSITIVITY_LABELS)
+        asset_row.addWidget(self.biz_asset_sens)
+        self.biz_asset_apply = StyledButton("Применить к активу", style='secondary')
+        self.biz_asset_apply.setToolTip(
+            "Сохранить override бизнес-контекста для выбранного актива и "
+            "пересчитать критичность с его учётом.")
+        self.biz_asset_apply.clicked.connect(self._apply_business_asset)
+        asset_row.addWidget(self.biz_asset_apply)
+        self.biz_asset_clear = StyledButton("Сбросить override", style='secondary')
+        self.biz_asset_clear.setToolTip(
+            "Удалить override выбранного актива (вернуться к проектному дефолту).")
+        self.biz_asset_clear.clicked.connect(self._clear_business_asset)
+        asset_row.addWidget(self.biz_asset_clear)
+        asset_layout.addLayout(asset_row)
+        asset_grp.setLayout(asset_layout)
+        layout.addWidget(asset_grp)
+        self._set_biz_asset_enabled(False)
+
         # ── business context editor (F1 GUI) ────────────────────────────────
         # User-declared business importance for the whole project; it augments the
-        # criticality scores above (a named factor). Per-asset overrides stay on the
-        # CLI (business_cli.py) — the table value is a display label, ambiguous to
-        # key an asset fingerprint on. Stored in metadata.json (no new table).
+        # criticality scores above (a named factor) and is the fallback a per-asset
+        # override layers over. Stored in metadata.json (no new table).
         biz_grp = SectionGroupBox("Бизнес-контекст проекта (влияет на критичность)")
         biz_layout = QVBoxLayout()
         biz_row = FlowLayout()
@@ -250,12 +283,13 @@ class CriticalityTabMixin:
             return
         summary = crit.get('summary') or {}
         items = crit.get('items') or []
+        self._crit_business = result.get('business') or {}
         self.crit_status.setText(
             f"Активов: {summary.get('assets', len(items))}"
             f"  ·  высокая критичность: {summary.get('high_criticality', 0)}")
         self._populate_crit_rollup(summary)
         self._populate_crit_table(items)
-        self._populate_biz_default(result.get('business') or {})
+        self._populate_biz_default(self._crit_business)
 
     # ── populate ──────────────────────────────────────────────────────────────
 
@@ -283,7 +317,18 @@ class CriticalityTabMixin:
                     if color:
                         item.setForeground(QColor(color))
                 self.crit_table.setItem(r, col, item)
-        self.crit_detail.clear()
+        # Restore the previously selected asset after an apply/clear reload so the
+        # editor stays on the same asset; selectRow re-fires the detail/editor fill.
+        target = self._crit_reselect_fp
+        self._crit_reselect_fp = None
+        if target:
+            for r, rec in enumerate(items):
+                if rec.get('fp') == target:
+                    self.crit_table.selectRow(r)
+                    break
+        if not self.crit_table.selectionModel().selectedRows():
+            self.crit_detail.clear()
+            self._populate_biz_asset(None)
 
     # ── selection / detail ────────────────────────────────────────────────────
 
@@ -300,6 +345,9 @@ class CriticalityTabMixin:
         rec = self._selected_crit()
         if rec:
             self._show_crit_detail(rec)
+            self._populate_biz_asset(rec)
+        else:
+            self._populate_biz_asset(None)
 
     def _show_crit_detail(self, rec: dict):
         lines = [
@@ -362,6 +410,88 @@ class CriticalityTabMixin:
             return
         self.crit_status.setText("Бизнес-контекст сохранён · пересчёт критичности…")
         self._apply_crit_filter()   # reload so criticality reflects the change
+
+    # ── per-asset business override (F1 GUI tail) ──────────────────────────────
+
+    def _set_biz_asset_enabled(self, on: bool) -> None:
+        for w in (self.biz_asset_crit, self.biz_asset_sens,
+                  self.biz_asset_apply, self.biz_asset_clear):
+            w.setEnabled(on)
+
+    def _populate_biz_asset(self, rec) -> None:
+        """Reflect the selected asset's stored override in the editor combos and
+        show its resolved context (project default + override)."""
+        if not rec:
+            self._set_combo(self.biz_asset_crit, None)
+            self._set_combo(self.biz_asset_sens, None)
+            self._set_biz_asset_enabled(False)
+            self.biz_asset_label.setText("Выберите актив, чтобы задать override")
+            return
+        fp = rec.get('fp')
+        override = (self._crit_business.get('assets') or {}).get(fp) or {}
+        self._set_combo(self.biz_asset_crit, override.get('criticality'))
+        self._set_combo(self.biz_asset_sens, override.get('data_sensitivity'))
+        self._set_biz_asset_enabled(bool(fp))
+        resolved = describe_business(resolve_business(self._crit_business, fp))
+        self.biz_asset_label.setText(
+            f"{rec.get('value', '')} — итог: {resolved or '—'}")
+
+    def _apply_business_asset(self):
+        rec = self._selected_crit()
+        project = self.crit_project.currentData()
+        if not rec or not rec.get('fp'):
+            self.crit_status.setText("Выберите актив")
+            return
+        if not project:
+            self.crit_status.setText("Выберите проект")
+            return
+        crit = self.biz_asset_crit.currentData() or None
+        sens = self.biz_asset_sens.currentData() or None
+        self._crit_reselect_fp = rec['fp']
+        base = self._crit_base()
+        self._set_busy(True)
+        self._run_async(
+            lambda: self._write_business_asset(base, project, rec['fp'], crit,
+                                               sens, False),
+            self._on_business_written,
+        )
+
+    def _clear_business_asset(self):
+        rec = self._selected_crit()
+        project = self.crit_project.currentData()
+        if not rec or not rec.get('fp'):
+            self.crit_status.setText("Выберите актив")
+            return
+        if not project:
+            self.crit_status.setText("Выберите проект")
+            return
+        self._crit_reselect_fp = rec['fp']
+        base = self._crit_base()
+        self._set_busy(True)
+        self._run_async(
+            lambda: self._write_business_asset(base, project, rec['fp'], None,
+                                               None, True),
+            self._on_business_written,
+        )
+
+    @staticmethod
+    def _write_business_asset(base, project, asset_fp, crit, sens, clear) -> dict:
+        # Off-GUI-thread write of a per-asset override to metadata.json (replace
+        # semantics, mirroring business_cli). ``clear`` removes the override.
+        try:
+            from core.business_context import (
+                clear_business_context, set_business_context,
+            )
+            from core.project import ProjectStore
+            store = ProjectStore(base)
+            if clear:
+                clear_business_context(store, project, asset_fp=asset_fp)
+            else:
+                set_business_context(store, project, asset_fp=asset_fp,
+                                     criticality=crit, data_sensitivity=sens)
+            return {'ok': True}
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
 
     # ── export ────────────────────────────────────────────────────────────────
 

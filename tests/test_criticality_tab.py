@@ -159,3 +159,80 @@ def test_apply_business_default_writes_metadata(qapp, tmp_path):
     w._apply_business_default()
     proj = ProjectStore(str(tmp_path)).get('shop.com')
     assert proj.get_business_context()['default'] == {'criticality': 'high'}
+
+
+# ── per-asset business override editor (F1 GUI tail) ─────────────────────────────
+
+def test_items_carry_business_fingerprint(qapp, tmp_path):
+    # Each criticality item exposes the bare fingerprint the override keys on.
+    from core.asset_adapter import asset_fingerprint
+    AssetStore().sync('p1', 's1', [Asset('domain', 'x.com')])
+    items = CriticalityTabMixin._query_crit_table('p1', str(tmp_path))['crit']['items']
+    assert items[0]['fp'] == asset_fingerprint('domain', 'x.com')
+
+
+def test_asset_editor_disabled_until_selection(qapp):
+    w = _window(qapp)
+    w._populate_biz_asset(None)
+    assert not w.biz_asset_crit.isEnabled()
+    assert not w.biz_asset_apply.isEnabled()
+
+
+def test_populate_biz_asset_reflects_override_and_resolved(qapp):
+    w = _window(qapp)
+    w._crit_business = {'default': {'criticality': 'low'},
+                        'assets': {'fp-1': {'criticality': 'critical',
+                                            'data_sensitivity': 'restricted'}}}
+    w._populate_biz_asset({'fp': 'fp-1', 'type': 'domain', 'value': 'x.com'})
+    assert w.biz_asset_crit.currentData() == 'critical'      # override, not default
+    assert w.biz_asset_sens.currentData() == 'restricted'
+    assert w.biz_asset_apply.isEnabled()
+    # resolved = default + override, override wins field-by-field.
+    assert 'Строго конфиденциально' in w.biz_asset_label.text()
+
+
+def test_apply_business_asset_writes_override(qapp, tmp_path):
+    from core.asset_adapter import asset_fingerprint
+    from core.project import ProjectStore
+    AssetStore().sync('shop.com', 's1', [Asset('subdomain', 'a.shop.com')])
+    fp = asset_fingerprint('subdomain', 'a.shop.com')
+    w = _window(qapp)
+    w.settings['output_dir'] = str(tmp_path)
+    w.crit_project.addItem('shop.com', 'shop.com')
+    w.crit_project.setCurrentIndex(w.crit_project.count() - 1)
+    w._populate_crit_table([{'fp': fp, 'id': 'a-1', 'type': 'subdomain',
+                             'value': 'a.shop.com', 'criticality': 30,
+                             'band': 'low', 'factors': []}])
+    w.crit_table.selectRow(0)
+    w.biz_asset_crit.setCurrentIndex(w.biz_asset_crit.findData('critical'))
+    w._set_busy = lambda *a, **k: None
+    w._apply_crit_filter = lambda *a, **k: None        # skip the reload chain
+    w._run_async = lambda work, cb: cb(work())         # run synchronously
+    w._apply_business_asset()
+    ctx = ProjectStore(str(tmp_path)).get('shop.com').get_business_context()
+    assert ctx['assets'][fp] == {'criticality': 'critical'}
+    assert w._crit_reselect_fp == fp                   # selection preserved on reload
+
+
+def test_clear_business_asset_removes_override(qapp, tmp_path):
+    from core.asset_adapter import asset_fingerprint
+    from core.business_context import set_business_context
+    from core.project import ProjectStore
+    AssetStore().sync('shop.com', 's1', [Asset('subdomain', 'a.shop.com')])
+    fp = asset_fingerprint('subdomain', 'a.shop.com')
+    store = ProjectStore(str(tmp_path))
+    set_business_context(store, 'shop.com', asset_fp=fp, criticality='high')
+    w = _window(qapp)
+    w.settings['output_dir'] = str(tmp_path)
+    w.crit_project.addItem('shop.com', 'shop.com')
+    w.crit_project.setCurrentIndex(w.crit_project.count() - 1)
+    w._populate_crit_table([{'fp': fp, 'id': 'a-1', 'type': 'subdomain',
+                             'value': 'a.shop.com', 'criticality': 50,
+                             'band': 'low', 'factors': []}])
+    w.crit_table.selectRow(0)
+    w._set_busy = lambda *a, **k: None
+    w._apply_crit_filter = lambda *a, **k: None
+    w._run_async = lambda work, cb: cb(work())
+    w._clear_business_asset()
+    ctx = store.get('shop.com').get_business_context()
+    assert fp not in (ctx.get('assets') or {})

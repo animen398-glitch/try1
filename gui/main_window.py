@@ -104,6 +104,8 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._crit_loaded = False
         self._crit_table_loading = False
         self._crit_filter_pending = False
+        self._crit_business = {}
+        self._crit_reselect_fp = None
         self._exp_loading = False
         self._exp_loaded = False
         self._exp_table_loading = False

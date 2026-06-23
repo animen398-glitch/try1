@@ -1373,11 +1373,11 @@ Dockerfile / docker-compose) → активы/находки.
 > Auditor-Friendly Compliance, Cloud/Container/IaC Ingestion. Все — core→report→
 > web/CLI, offline/headless тесты, без второй модели данных, risk-вердикт не
 > перестроен. **GUI business-контекста (project default) — добавлен 2026-06-23**
-> в Criticality-вкладку. **Remediation GUI-вкладка — добавлена 2026-06-23.**
+> в Criticality-вкладку (project default + per-asset override, добавлен per-asset
+> 2026-06-23). **Remediation GUI-вкладка — добавлена 2026-06-23.**
 > **IaC Config GUI-вкладка — добавлена 2026-06-23.**
-> **Отложено (осознанно, не блокеры):** per-asset business-GUI (есть в CLI);
-> live threat-feed (KEV/EPSS) для F2; live cloud-API для F7; прямой path→task
-> маппинг для F4.
+> **Отложено (осознанно, не блокеры):** live threat-feed (KEV/EPSS) для F2;
+> live cloud-API для F7; прямой path→task маппинг для F4.
 
 ### Точки интеграции (существующие — переиспользовать, НЕ дублировать)
 

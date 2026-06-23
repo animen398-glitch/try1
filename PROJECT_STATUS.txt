@@ -4607,3 +4607,46 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
       failure.
 
   NEXT: full suite + local commit.
+
+================================================================================
+2026-06-23  EPIC NEXT F1 GUI tail — per-asset business context editor
+================================================================================
+  GOAL: Close the last deferred F1 GUI item — per-asset business-context
+  override editing in the desktop GUI. Project-default editing already shipped
+  (commit 0c25800); per-asset overrides were CLI-only until now.
+
+  WHAT:
+    - core/intelligence.py: build_asset_criticality now exposes item['fp'] =
+      asset_adapter.asset_fingerprint(type, value) on every ranked item — the
+      bare business-context join key (same one the CLI / business_context.resolve
+      use). Removes the old "display label is ambiguous to key a fingerprint on"
+      blocker. asset_fingerprint import moved out of the biz-only branch.
+    - gui/tab_criticality.py: new "Бизнес-контекст актива (override выбранного)"
+      group under the factors detail panel. Two combos (criticality /
+      data_sensitivity from core.business_context vocab; owner/tags/notes NOT
+      added — core does not model them) + Apply / Clear buttons. On row
+      selection the editor shows the asset's stored override and the resolved
+      context (project default + override). Writes run off-thread via _run_async
+      -> business_context.set_business_context / clear_business_context (asset_fp),
+      then reload the criticality table preserving the selected asset
+      (_crit_reselect_fp). UI stays thin; all logic in core.
+    - gui/main_window.py: init flags _crit_business / _crit_reselect_fp.
+    - tests/test_criticality_tab.py: +5 (fp on items, editor disabled until
+      selection, populate reflects override+resolved, apply writes override and
+      preserves selection, clear removes override).
+    - ROADMAP_ASM_2.0.md / CLAUDE.md / AGENTS.md: deferred per-asset business-GUI
+      note removed; marked DONE 2026-06-23.
+
+  CONSTRAINTS HONORED:
+    - No business-context model change, no new SQLite table, risk verdict
+      untouched. Storage unchanged (metadata.json -> business_context -> assets).
+    - No bulk edit (single selected asset only). GUI not blocked (off-thread).
+
+  VERIFICATION:
+    - ruff clean on changed files.
+    - tests/test_criticality_tab.py: 17 passed.
+    - Regression batch (criticality/assets/intelligence/exposure/attack_paths
+      tabs + business_context + intelligence + collection_runner + contracts +
+      report_export): 240 passed.
+
+  NEXT: local commit; backend polish phase on request.

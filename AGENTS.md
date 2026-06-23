@@ -2072,9 +2072,29 @@ web/CLI, offline/headless тесты, без второй модели данн�
   GUI ad-hoc scan surface добавлен 2026-06-23 (`gui/tab_iac.py`, read-only для
   lifecycle, JSON export); monitor + live cloud-API отложены.
 
-**Осознанно отложено (не блокеры):** per-asset business-GUI (project-default GUI уже
-есть в Criticality); live threat-feed KEV/EPSS (F2); live cloud-API (F7); прямой
-path→task маппинг (F4). Remediation GUI и IaC GUI добавлены 2026-06-23.
+**Per-asset business-context GUI (EPIC NEXT F1 GUI-хвост) — `[ЗАКРЫТ 2026-06-23]`.**
+Снят последний отложенный GUI F1: project-default редактор уже был в Criticality-
+вкладке (`0c25800`), теперь добавлен **per-asset override** для выбранного актива.
+Решение: расширить существующую `gui/tab_criticality.py` (UI тонкий, без новой вкладки/
+таблицы) — под detail-панелью факторов появилась группа «Бизнес-контекст актива
+(override выбранного)»: два комбо (Критичность для бизнеса / Чувствительность данных,
+словарь из `core/business_context.py` — `CRITICALITY_TIERS`/`DATA_SENSITIVITY`, owner/
+tags/notes core НЕ поддерживает → не добавлены) + кнопки «Применить к активу» / «Сбросить
+override». При выборе актива показывается резолв (project default + override) и текущий
+override актива; запись off-thread через `_run_async` → `business_context.set_business_
+context`/`clear_business_context` (asset_fp), затем reload таблицы критичности с
+**сохранением выбранного актива** (`_crit_reselect_fp`). Ключ override — **bare
+fingerprint**: `build_asset_criticality` теперь кладёт `item['fp']` =
+`asset_adapter.asset_fingerprint(type, value)` (тот же join-key, что CLI/`resolve`) —
+снимает прежнюю неоднозначность «key на display-label». Хранение прежнее
+(`metadata.json` → `business_context` → `assets`), risk-вердикт не тронут, новой
+таблицы нет. Покрыто `test_criticality_tab` (+5: fp на items, editor disabled до
+выбора, populate override+resolved, apply пишет override+сохраняет выбор, clear
+удаляет override) + регресс `test_intelligence`/`test_collection_runner`/`test_contracts`
+зелёные.
+
+**Осознанно отложено (не блокеры):** live threat-feed KEV/EPSS (F2); live cloud-API
+(F7); прямой path→task маппинг (F4). Remediation GUI и IaC GUI добавлены 2026-06-23.
 
 **Следующий шаг:** фаза backend-доводки (по запросу). Отфильтрованный бенчмарк-
 бэклог закрыт (Company tier, Correlation, Finding Objects, Executive Headline,

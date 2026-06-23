@@ -790,19 +790,21 @@ def build_asset_criticality(assets: List[Dict], correlation: Optional[Dict] = No
     dep = _dependents_map(asset_graph, assets)
     fmap = _asset_findings_map(correlation, assets)
     biz_root = business or None
+    from core.asset_adapter import asset_fingerprint
     if biz_root:
-        from core.asset_adapter import asset_fingerprint
         from core.business_context import resolve as _resolve_business
     items: List[Dict] = []
     for a in assets:
         aid = a.get('id')
-        biz = None
-        if biz_root:
-            fp = asset_fingerprint(a.get('type'), a.get('value'))
-            biz = _resolve_business(biz_root, fp) or None
+        # Bare business-context fingerprint (the override join key shared by the
+        # CLI and the Criticality-tab editor). Exposed on every item so the GUI can
+        # key a per-asset override on the selected row without re-deriving identity
+        # from the display label.
+        fp = asset_fingerprint(a.get('type'), a.get('value'))
+        biz = _resolve_business(biz_root, fp) or None if biz_root else None
         crit = asset_criticality(a, dependents=dep.get(aid, 0),
                                  findings=fmap.get(aid), business=biz)
-        items.append({'id': aid, 'type': a.get('type'),
+        items.append({'id': aid, 'fp': fp, 'type': a.get('type'),
                       'value': a.get('label') or a.get('value'),
                       'criticality': crit['score'], 'band': crit['band'],
                       'factors': crit['factors']})
