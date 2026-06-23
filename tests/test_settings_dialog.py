@@ -70,3 +70,17 @@ def test_dialog_persists_ollama_model(qapp, isolated_config):
     # And it loads back into the field on reopen.
     dlg2 = SettingsDialog()
     assert dlg2.ollama_model_edit.text() == "mistral"
+
+
+def test_dialog_has_dependency_health_tab(qapp, isolated_config):
+    from qtpy.QtWidgets import QTabWidget
+
+    from gui.dialogs import SettingsDialog
+
+    dlg = SettingsDialog()
+    tabs = dlg.findChild(QTabWidget)
+    names = [tabs.tabText(i) for i in range(tabs.count())]
+
+    assert "Зависимости" in names
+    assert hasattr(dlg, "dependencies_text")
+    assert "Python:" in dlg.dependencies_text.toPlainText()

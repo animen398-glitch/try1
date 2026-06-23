@@ -38,9 +38,6 @@ class WindowChromeMixin:
         nav.addItem(routeKey='settings', icon=FluentIcon.SETTING,
                     text="Настройки", onClick=lambda *_: self._open_settings(),
                     selectable=False, position=NavigationItemPosition.BOTTOM)
-        nav.addItem(routeKey='health', icon=FluentIcon.HEART,
-                    text="Состояние системы", onClick=lambda *_: self._show_health(),
-                    selectable=False, position=NavigationItemPosition.BOTTOM)
         nav.addItem(routeKey='about', icon=FluentIcon.INFO,
                     text="О программе", onClick=lambda *_: self._show_about(),
                     selectable=False, position=NavigationItemPosition.BOTTOM)
@@ -75,6 +72,7 @@ class WindowChromeMixin:
         # running. Deferred via singleShot so headless tests (which never exec the
         # loop) don't spawn the load; the real app loads the first tab on startup.
         QTimer.singleShot(0, lambda: self._on_tab_changed(self.tabs.currentIndex()))
+        self._wire_window_controls()
 
     def _build_statusbar(self):
         self.status_bar = StatusBar()
@@ -118,16 +116,43 @@ class WindowChromeMixin:
         if dialog.exec():
             self.settings = dialog.get_settings()
 
-    def _show_health(self):
-        """System-health screen (reuses the launcher's health engine)."""
-        from gui.first_run import show_health_dialog
-        show_health_dialog(self)
+    def _wire_window_controls(self):
+        """Make the frameless title-bar buttons explicit.
+
+        qfluentwidgets normally wires these internally, but our FluentWindow
+        layout is re-parented to add the bottom status bar. Reconnecting the
+        buttons here keeps minimize/maximize/close reliable in the frozen app.
+        """
+        title_bar = getattr(self, 'titleBar', None)
+        if title_bar is None:
+            return
+        mapping = (
+            ('minBtn', self.showMinimized),
+            ('maxBtn', self._toggle_maximized),
+            ('closeBtn', self.close),
+        )
+        for name, slot in mapping:
+            btn = getattr(title_bar, name, None)
+            if btn is None:
+                continue
+            try:
+                btn.clicked.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            btn.clicked.connect(slot)
+
+    def _toggle_maximized(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def _show_about(self):
+        from core.config import APP_VERSION
         QMessageBox.about(
             self,
             "О программе",
-            "Advanced Site Analyzer v1.0\n\n"
+            f"Advanced Site Analyzer v{APP_VERSION}\n\n"
             "• Поиск утечек API ключей\n"
             "• Захват структуры сайтов\n"
             "• Загрузка видео (yt-dlp)\n"

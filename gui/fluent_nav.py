@@ -20,7 +20,7 @@ P3b), so qfluentwidgets is a hard dependency here.
 """
 
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
-from qtpy.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from gui._fluent import FluentIcon, FluentWindow, NavigationItemPosition
 
@@ -69,6 +69,8 @@ class FluentWindowTabs(QObject):
         self._win = window
         self._stack = window.stackedWidget
         self._titles: list = []
+        self._widgets: list = []
+        self._containers: dict = {}
         self._stack.currentChanged.connect(self.currentChanged)
 
     def addTab(self, widget: QWidget, title: str, position: str = 'top',
@@ -80,8 +82,9 @@ class FluentWindowTabs(QObject):
         cluster. Both are best-effort over the live Fluent nav — a failure to draw
         a separator never blocks the tab from being added."""
         index = self._stack.count()
+        container = self._scroll_container(widget)
         # FluentWindow keys interfaces by objectName — must be unique & set.
-        widget.setObjectName(f"tab{index}")
+        container.setObjectName(f"tab{index}")
         pos = (NavigationItemPosition.BOTTOM if position == 'bottom'
                else NavigationItemPosition.TOP)
         if new_section and pos == NavigationItemPosition.TOP:
@@ -89,15 +92,34 @@ class FluentWindowTabs(QObject):
                 self._win.navigationInterface.addSeparator(pos)
             except Exception:   # noqa: BLE001 — a separator is cosmetic
                 pass
-        self._win.addSubInterface(widget, _icon_for(title), title, position=pos)
+        self._win.addSubInterface(container, _icon_for(title), title,
+                                  position=pos)
         self._titles.append(title)
+        self._widgets.append(widget)
+        self._containers[widget] = container
         return index
+
+    @staticmethod
+    def _scroll_container(widget: QWidget) -> QScrollArea:
+        """Wrap a tab in a vertical scroll area without changing its API.
+
+        Many legacy tab builders assume a large desktop height. The Fluent
+        shell is denser, so a single wrapper gives every tab a right-side
+        scrollbar while ``widget(index)`` still returns the original tab.
+        """
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(widget)
+        return scroll
 
     def count(self) -> int:
         return self._stack.count()
 
     def widget(self, index: int) -> QWidget:
-        return self._stack.widget(index)
+        return self._widgets[index]
 
     def tabText(self, index: int) -> str:
         return self._titles[index] if 0 <= index < len(self._titles) else ''
@@ -106,9 +128,16 @@ class FluentWindowTabs(QObject):
         return self._stack.currentIndex()
 
     def currentWidget(self) -> QWidget:
-        return self._stack.currentWidget()
+        current = self._stack.currentWidget()
+        if isinstance(current, QScrollArea):
+            inner = current.widget()
+            if inner is not None:
+                return inner
+        return current
 
     def indexOf(self, widget: QWidget) -> int:
+        if widget in self._widgets:
+            return self._widgets.index(widget)
         return self._stack.indexOf(widget)
 
     def setCurrentIndex(self, index: int) -> None:
@@ -117,7 +146,7 @@ class FluentWindowTabs(QObject):
             self._win.switchTo(w)
 
     def setCurrentWidget(self, widget: QWidget) -> None:
-        self._win.switchTo(widget)
+        self._win.switchTo(self._containers.get(widget, widget))
 
 
 class StatusBar(QWidget):

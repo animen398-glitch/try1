@@ -3,7 +3,7 @@ import os
 from qtpy.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox,
-    QTabWidget, QVBoxLayout, QWidget,
+    QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from core import alerts as alert_center
@@ -67,6 +67,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_network_tab(), "Сеть")
         tabs.addTab(self._build_output_tab(), "Вывод")
         tabs.addTab(self._build_alerts_tab(), "Уведомления")
+        tabs.addTab(self._build_dependencies_tab(), "Зависимости")
         layout.addWidget(tabs)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -89,6 +90,32 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(group)
         layout.addStretch()
+        return widget
+
+    def _build_dependencies_tab(self) -> QWidget:
+        """Read-only dependency/system-health view.
+
+        This replaces the startup health popup: users can inspect required and
+        optional components from Settings whenever they need it.
+        """
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        layout.addWidget(QLabel(
+            "Проверка окружения и опциональных компонентов. "
+            "Отсутствующие опциональные зависимости отключают только связанные функции."
+        ))
+
+        self.dependencies_text = QPlainTextEdit()
+        self.dependencies_text.setReadOnly(True)
+        self.dependencies_text.setMinimumHeight(260)
+        layout.addWidget(self.dependencies_text, 1)
+
+        refresh_btn = StyledButton("Обновить проверку", style='secondary')
+        refresh_btn.clicked.connect(self._refresh_dependencies)
+        layout.addWidget(refresh_btn)
+
+        self._refresh_dependencies()
         return widget
 
     def _build_network_tab(self) -> QWidget:
@@ -316,6 +343,13 @@ class SettingsDialog(QDialog):
         QMessageBox.information(
             self, "Уведомления",
             f"Отправлено каналов: {out['sent']}\n" + "\n".join(lines))
+
+    def _refresh_dependencies(self):
+        """Refresh the dependency health text in the Settings dialog."""
+        from core.launcher import health_check
+        from gui.first_run import health_report_text
+
+        self.dependencies_text.setPlainText(health_report_text(health_check()))
 
     def _clear_cache(self):
         """Сбросить кеши сканирования: in-memory TTL (GeoIP + пассивные субдомены
