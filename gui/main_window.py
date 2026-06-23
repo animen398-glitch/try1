@@ -158,3 +158,9 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
         self._stop_monitor_scheduler()
         self._await_running_tasks()
         super().closeEvent(event)
+
+    def eventFilter(self, obj, event):
+        handled = self._window_chrome_event_filter(obj, event)
+        if handled is not None:
+            return handled
+        return super().eventFilter(obj, event)

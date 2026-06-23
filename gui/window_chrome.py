@@ -15,7 +15,7 @@ and, after _build_central runs, this mixin sets ``self.tabs``, ``self.plugins``,
 
 import shutil
 
-from qtpy.QtCore import QTimer
+from qtpy.QtCore import QEvent, Qt, QTimer
 from qtpy.QtWidgets import QLabel, QMessageBox, QProgressBar
 
 from gui._fluent import FluentIcon, NavigationItemPosition
@@ -73,6 +73,8 @@ class WindowChromeMixin:
         # loop) don't spawn the load; the real app loads the first tab on startup.
         QTimer.singleShot(0, lambda: self._on_tab_changed(self.tabs.currentIndex()))
         self._wire_window_controls()
+        self._install_window_drag()
+        self._install_navigation_scroll()
 
     def _build_statusbar(self):
         self.status_bar = StatusBar()
@@ -127,9 +129,9 @@ class WindowChromeMixin:
         if title_bar is None:
             return
         mapping = (
-            ('minBtn', self.showMinimized),
-            ('maxBtn', self._toggle_maximized),
-            ('closeBtn', self.close),
+            ('minBtn', lambda *_: self.showMinimized()),
+            ('maxBtn', lambda *_: self._toggle_maximized()),
+            ('closeBtn', lambda *_: self.close()),
         )
         for name, slot in mapping:
             btn = getattr(title_bar, name, None)
@@ -146,6 +148,78 @@ class WindowChromeMixin:
             self.showNormal()
         else:
             self.showMaximized()
+
+    def _install_window_drag(self):
+        """Allow moving the frameless window like a normal native window."""
+        self._drag_pos = None
+        self._drag_widgets = set()
+        title_bar = getattr(self, 'titleBar', None)
+        if title_bar is None:
+            return
+        for widget in (
+            title_bar,
+            getattr(title_bar, 'titleLabel', None),
+            getattr(title_bar, 'iconLabel', None),
+        ):
+            if widget is None:
+                continue
+            self._drag_widgets.add(widget)
+            widget.installEventFilter(self)
+
+    def _install_navigation_scroll(self):
+        """Make mouse-wheel scrolling work anywhere over the left nav rail."""
+        self._nav_scroll_widgets = set()
+        panel = getattr(getattr(self, 'navigationInterface', None), 'panel', None)
+        if panel is None:
+            return
+        widgets = [
+            panel,
+            getattr(panel, 'scrollArea', None),
+            getattr(panel, 'scrollWidget', None),
+        ]
+        widgets.extend(item.widget for item in getattr(panel, 'items', {}).values())
+        for widget in widgets:
+            if widget is None:
+                continue
+            self._nav_scroll_widgets.add(widget)
+            widget.installEventFilter(self)
+
+    @staticmethod
+    def _event_global_pos(event):
+        if hasattr(event, 'globalPosition'):
+            return event.globalPosition().toPoint()
+        return event.globalPos()
+
+    def _window_chrome_event_filter(self, obj, event):
+        if obj in getattr(self, '_nav_scroll_widgets', set()) \
+                and event.type() == QEvent.Wheel:
+            panel = getattr(getattr(self, 'navigationInterface', None), 'panel', None)
+            scroll_area = getattr(panel, 'scrollArea', None)
+            if scroll_area is not None:
+                bar = scroll_area.verticalScrollBar()
+                delta = event.angleDelta().y()
+                if delta:
+                    bar.setValue(bar.value() - delta)
+                    return True
+
+        drag_widgets = getattr(self, '_drag_widgets', set())
+        if obj in drag_widgets:
+            et = event.type()
+            if et == QEvent.MouseButtonDblClick and event.button() == Qt.LeftButton:
+                self._toggle_maximized()
+                return True
+            if et == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                self._drag_pos = self._event_global_pos(event) - self.frameGeometry().topLeft()
+                return True
+            if et == QEvent.MouseMove and self._drag_pos is not None:
+                if event.buttons() & Qt.LeftButton:
+                    if not self.isMaximized():
+                        self.move(self._event_global_pos(event) - self._drag_pos)
+                    return True
+            if et == QEvent.MouseButtonRelease:
+                self._drag_pos = None
+                return True
+        return None
 
     def _show_about(self):
         from core.config import APP_VERSION
