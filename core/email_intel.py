@@ -16,7 +16,7 @@ Invariants:
 
 import html
 import re
-from typing import Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from utils.browser_utils import SessionBuilder
@@ -122,6 +122,18 @@ def classify(emails, domain: str) -> Dict:
 
 # ── discovery (fetch + extract + classify) ────────────────────────────────────
 
+def target_root_and_domain(target: str) -> Tuple[str, str]:
+    """Split a target (bare host or full URL) into ``(root URL, apex domain)``.
+
+    A leading ``www.`` is stripped from the domain so addresses at the apex (e.g.
+    ``info@gnu.org``) count as on-domain even when the site is served from www.
+    Shared with employee_intel, which harvests from the same target shape."""
+    parts = urlparse(target if '://' in target else 'https://' + target)
+    root = f'{parts.scheme}://{parts.netloc}'
+    domain = parts.netloc.split(':')[0].removeprefix('www.')
+    return root, domain
+
+
 def discover(target: str, fetch: Optional[Callable] = None,
              timeout: float = _FETCH_TIMEOUT,
              profile: str = 'chrome_windows') -> Dict:
@@ -129,11 +141,7 @@ def discover(target: str, fetch: Optional[Callable] = None,
 
     ``fetch(url)`` overrides the default getter (tests inject a fake). Returns
     ``{status, domain, sources, ...classify}``."""
-    parts = urlparse(target if '://' in target else 'https://' + target)
-    root = f'{parts.scheme}://{parts.netloc}'
-    # Strip a leading www. so addresses at the apex (e.g. info@gnu.org) count as
-    # on-domain when the site is served from www. (gnu.org -> matches).
-    domain = parts.netloc.split(':')[0].removeprefix('www.')
+    root, domain = target_root_and_domain(target)
     getter = fetch or (lambda u: _fetch_text(u, timeout, profile))
 
     sources = {'homepage': root, 'robots': f'{root}/robots.txt',

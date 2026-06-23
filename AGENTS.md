@@ -1517,6 +1517,16 @@ critical=0, взаимосвязаны, intelligence их импортит) то
 ruff чист, `test_correlation`/`test_findings_sla`/`test_findings_store`/
 `test_findings_tab`/`test_intelligence` (119 passed).
 
+**DRY target-parse в OSINT — `email_intel.target_root_and_domain` — `[ЗАКРЫТ
+2026-06-23]`.** Backend-полировка. `email_intel.discover` и `employee_intel.discover`
+несли байт-в-байт одинаковый блок «target (голый host или URL) → `(root, domain)`»
+(`urlparse(... if '://' ... else 'https://'+...)`; root=scheme://netloc; domain без
+ведущего `www.`). Вынесен в публичный `email_intel.target_root_and_domain(target)`;
+`employee_intel` (уже импортит `role_of` оттуда) переиспользует его. Лишний
+`from urllib.parse import urlparse` из employee_intel убран. Прочие host-идиомы
+(ct_history/dns_intel — только netloc, другая форма) НЕ трогал — не дубль этого блока.
+Поведение байт-в-байт. ruff чист, `test_email_intel`/`test_employee_intel` (26 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)

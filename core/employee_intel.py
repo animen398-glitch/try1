@@ -29,9 +29,8 @@ import html
 import json
 import re
 from typing import Callable, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
 
-from core.email_intel import role_of
+from core.email_intel import role_of, target_root_and_domain
 from utils.browser_utils import SessionBuilder
 from utils.http_retry import urlopen_text
 
@@ -262,9 +261,7 @@ def discover(target: str, fetch: Optional[Callable] = None,
 
     ``fetch(url)`` overrides the default getter (tests inject a fake). Returns
     ``{status, domain, sources, ...build_roster}``."""
-    parts = urlparse(target if '://' in target else 'https://' + target)
-    root = f'{parts.scheme}://{parts.netloc}'
-    domain = parts.netloc.split(':')[0].removeprefix('www.')
+    root, domain = target_root_and_domain(target)
     getter = fetch or (lambda u: _fetch_text(u, timeout, profile))
 
     people: List[Dict] = []
