@@ -57,6 +57,7 @@ def show_health_dialog(parent, *, health: Optional[dict] = None,
                        onboarding: bool = False) -> None:
     """Show the system-health dialog. ``health`` is injectable for tests; by
     default it is computed from ``core.launcher.health_check``."""
+    from qtpy.QtCore import Qt
     from qtpy.QtWidgets import QMessageBox
     from core.launcher import health_check
     health = health if health is not None else health_check()
@@ -72,6 +73,8 @@ def show_health_dialog(parent, *, health: Optional[dict] = None,
     box.setIcon(QMessageBox.Information if health.get('ok')
                 else QMessageBox.Warning)
     box.setText(text)
+    # Let the user select & copy the health report (versions, missing deps).
+    box.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
     box.exec()
 
 

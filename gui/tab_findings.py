@@ -23,7 +23,7 @@ from core.findings_store import (
     FindingsStore, SEVERITY_ORDER, STATUS_LABELS, STATUSES,
 )
 from gui import theme
-from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import LinkTextBrowser, SectionGroupBox, StyledButton
 
 # Severity → cell colour. The canonical (light) palette now lives in gui.theme;
 # this alias is kept for backward compatibility. Rendering uses
@@ -121,7 +121,7 @@ class FindingsTabMixin:
         # ── detail / history panel ──────────────────────────────────────────
         detail_grp = SectionGroupBox("Детали и история выбранной находки")
         detail_layout = QVBoxLayout()
-        self.findings_detail = ResultsDisplay()
+        self.findings_detail = LinkTextBrowser()
         self.findings_detail.setMaximumHeight(180)
         self.findings_detail.setPlaceholderText(
             "Выберите находку, чтобы увидеть улики и историю статусов")
@@ -402,7 +402,7 @@ class FindingsTabMixin:
                     transition = f" {ev.get('from_status') or '—'}→{ev.get('to_status') or '—'}"
                 note = f"  ({ev['note']})" if ev.get('note') else ''
                 lines.append(f"  {ev.get('at', '')}  {ev.get('type', '')}{transition}{note}")
-        self.findings_detail.setPlainText("\n".join(lines))
+        self.findings_detail.set_linkified("\n".join(lines))
 
     # ── status change (write) ──────────────────────────────────────────────────
 

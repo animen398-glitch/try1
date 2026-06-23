@@ -1,10 +1,93 @@
 import html
+import re
 
 from qtpy.QtCore import QPoint, QRect, QSize, Qt
 from qtpy.QtGui import QFont
-from qtpy.QtWidgets import QGroupBox, QLayout, QPushButton, QTextEdit
+from qtpy.QtWidgets import (
+    QGroupBox, QLabel, QLayout, QPushButton, QTextBrowser, QTextEdit,
+)
 
 from gui import theme
+
+# A finding's location, an export path, an endpoint — these show up all over the
+# UI and users expect to click/copy them. ``linkify`` and the helpers below are
+# the single place that turns such text into selectable, clickable content so no
+# tab re-implements it (Task 4). http(s) URLs are wrapped in anchors; everything
+# else is HTML-escaped so it can never inject markup.
+_URL_RE = re.compile(r'(https?://[^\s<>"\')]+)')
+
+# Flags that make a QLabel's text selectable by mouse + keyboard and let links be
+# clicked — the standard "you can read, select, copy and open this" set.
+SELECTABLE_FLAGS = (Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard
+                    | Qt.LinksAccessibleByMouse)
+
+
+def linkify(text, *, newlines_to_br: bool = True) -> str:
+    """HTML-escape ``text`` and wrap any http(s) URL in a clickable anchor.
+
+    Pure/string-only (unit-tested): the rest of the text is escaped first, so a
+    value can never inject markup; newlines become ``<br>`` for rich-text widgets
+    unless disabled.
+    """
+    escaped = html.escape(str(text))
+    out = _URL_RE.sub(lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>', escaped)
+    if newlines_to_br:
+        out = out.replace('\n', '<br>')
+    return out
+
+
+def make_selectable_label(text: str = '', parent=None) -> QLabel:
+    """A QLabel whose plain text can be selected and copied (no link parsing)."""
+    label = QLabel(str(text), parent)
+    label.setTextInteractionFlags(SELECTABLE_FLAGS)
+    label.setCursor(Qt.IBeamCursor)
+    label.setWordWrap(True)
+    return label
+
+
+def make_link_label(url: str, text: str = None, parent=None) -> QLabel:
+    """A QLabel showing ``url`` (or ``text``) as a clickable, selectable link that
+    opens in the system browser."""
+    safe_url = html.escape(str(url), quote=True)
+    caption = html.escape(str(text if text is not None else url))
+    label = QLabel(f'<a href="{safe_url}">{caption}</a>', parent)
+    label.setTextInteractionFlags(SELECTABLE_FLAGS)
+    label.setOpenExternalLinks(True)
+    label.setCursor(Qt.IBeamCursor)
+    return label
+
+
+class SelectableText(QLabel):
+    """Selectable/copyable label for short values (paths, endpoints, IDs)."""
+
+    def __init__(self, text: str = '', parent=None):
+        super().__init__(str(text), parent)
+        self.setTextInteractionFlags(SELECTABLE_FLAGS)
+        self.setCursor(Qt.IBeamCursor)
+        self.setWordWrap(True)
+
+
+class LinkTextBrowser(QTextBrowser):
+    """Read-only text panel for longer content where URLs must be clickable and
+    everything stays selectable/copyable — without breaking plain-text logs
+    (those keep using ResultsDisplay). Use ``set_linkified`` to feed plain text.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setOpenExternalLinks(True)
+        self.setFont(QFont('Consolas', 10))
+        self.setStyleSheet("""
+            QTextBrowser {
+                background-color: #1e1e1e; color: #d4d4d4;
+                border: 1px solid #555; border-radius: 4px; padding: 6px;
+            }
+        """)
+
+    def set_linkified(self, text: str):
+        """Show ``text`` with URLs turned into clickable links (rest escaped)."""
+        self.setHtml(linkify(text))
 
 
 class FlowLayout(QLayout):
