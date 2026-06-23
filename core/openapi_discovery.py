@@ -78,15 +78,20 @@ def parse_spec(spec: Dict) -> Optional[Dict]:
         if not isinstance(item, dict):
             continue
         for method, op in item.items():
-            if method.lower() not in _HTTP_METHODS or not isinstance(op, dict):
+            # Tolerate a malformed-but-object spec (degrade, never raise): a
+            # method key need not be a string, and operation fields may be the
+            # wrong type — coerce/skip rather than crash on untrusted input.
+            if str(method).lower() not in _HTTP_METHODS or not isinstance(op, dict):
                 continue
+            tags = op.get('tags')
+            params = op.get('parameters')
             endpoints.append({
                 'path': str(path),
-                'method': method.upper(),
-                'summary': op.get('summary') or op.get('operationId') or '',
-                'tags': [str(t) for t in (op.get('tags') or [])],
+                'method': str(method).upper(),
+                'summary': str(op.get('summary') or op.get('operationId') or ''),
+                'tags': [str(t) for t in tags] if isinstance(tags, list) else [],
                 'deprecated': bool(op.get('deprecated')),
-                'params': len(op.get('parameters') or []),
+                'params': len(params) if isinstance(params, list) else 0,
             })
     endpoints.sort(key=lambda e: (e['path'], e['method']))
 

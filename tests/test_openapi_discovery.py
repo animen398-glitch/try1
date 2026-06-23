@@ -60,6 +60,29 @@ def test_parse_rejects_non_spec():
     assert openapi_discovery.parse_spec('nope') is None
 
 
+def test_parse_degrades_on_malformed_spec():
+    # A malformed-but-object spec (untrusted remote / fuzzed) must degrade, not
+    # raise (F-SR1 ethos): wrong-typed operation fields are skipped/coerced.
+    spec = {
+        'openapi': '3.0.0',
+        'paths': {
+            '/a': {200: {}},                      # non-str method key -> skipped
+            '/b': {'get': {'tags': 5}},           # tags not a list -> []
+            '/c': {'get': {'parameters': 3}},     # parameters not a list -> 0
+            '/d': {'get': {'summary': {'x': 1}}},  # non-str summary -> coerced
+        },
+    }
+    out = openapi_discovery.parse_spec(spec)
+    assert out is not None
+    by_path = {e['path']: e for e in out['endpoints']}
+    assert '/a' not in by_path                    # bogus method dropped
+    assert by_path['/b']['tags'] == []
+    assert by_path['/c']['params'] == 0
+    assert isinstance(by_path['/d']['summary'], str)
+    # the coerced result must stay render-safe (html.escape needs str)
+    openapi_discovery.render_html({**out, 'status': 'Success'})
+
+
 # ── discover (injected fetch, no network) ─────────────────────────────────────
 
 def test_discover_finds_first_spec():

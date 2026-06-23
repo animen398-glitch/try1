@@ -1527,6 +1527,18 @@ ruff чист, `test_correlation`/`test_findings_sla`/`test_findings_store`/
 (ct_history/dns_intel — только netloc, другая форма) НЕ трогал — не дубль этого блока.
 Поведение байт-в-байт. ruff чист, `test_email_intel`/`test_employee_intel` (26 passed).
 
+**Robustness `openapi_discovery.parse_spec` (degrade-not-raise, F-SR1) — `[ЗАКРЫТ
+2026-06-23]`.** Backend-полировка. Публичный pure-парсер `parse_spec` принимает
+**недоверенную удалённую спеку** (или фаззинг/hand-built dict) и падал на
+malformed-but-object вводе: non-str ключ метода (`{200:{}}`) → `method.lower()`
+AttributeError; `tags` не-список (число) → `for t in tags` TypeError; `parameters`
+не-список → `len()` TypeError; non-str `summary` сохранялся сырым → `html.escape`
+в `render_html` падал. Точечный фикс по этосу F-SR1 (как `dependency_audit`/
+`tech_fingerprint`): `str(method)` для ключа, `tags`/`parameters` учитываются только
+если `isinstance(list)` (иначе `[]`/`0`), `summary` коэрсится в `str`. **Поведение для
+корректных спек байт-в-байт** (общий путь не тронут — проверено). Покрыто
+`test_openapi_discovery` (+1: malformed-spec degrade + render-safe; 12 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)
