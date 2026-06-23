@@ -1,7 +1,7 @@
 # Advanced Site Analyzer — Отчёт о состоянии проекта
 
-> Снимок на 2026-06-13, обновлён 2026-06-21 (эпик ASM 2.0 F1–F6 + пост-эпик +
-> Advanced Intelligence Framework EPIC 8–16).
+> Снимок на 2026-06-13, обновлён 2026-06-23 (эпик ASM 2.0 F1–F6 + пост-эпик +
+> Advanced Intelligence Framework EPIC 8–16 + EPIC NEXT business-risk слой).
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -12,14 +12,14 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **1563 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt) |
+| Тесты | **1794 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
 | Маркеры TODO/FIXME/XXX | 0 |
 | Своих модулей / тест-файлов | 100+ модулей / 140+ test-файлов |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build **+ smoke-run собранного .exe (`--self-check`)** |
-| Git | ветка `master`, локально впереди `origin/master` на 9 коммитов; удалённые действия запрещены без явного разрешения |
+| Git | ветка `master`, синхронизирована с `origin/master` (push 2026-06-23, `21e88ac`); удалённые действия — только по явному разовому разрешению |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
 Весь реализуемый роадмап закрыт (P1–P12 + TIER S/A/B + C1/C2 в безопасных
@@ -29,7 +29,13 @@ Asset Inventory, CVE Intelligence, углубление detection) и **Advanced
 Intelligence Framework (EPIC 8–13)**: единый confidence по всем сущностям
 (MODULE 1 Scan Accuracy), Asset Criticality, Priority deepening, Attack Paths,
 report/web-поверхности и мониторинг attack-path событий — всё derive-on-read,
-display-метрики (риск-вердикт не тронут). Пофичный статус в CLAUDE.md §12.
+display-метрики (риск-вердикт не тронут). Сверх того закрыт **EPIC NEXT**
+(business-risk слой 2026-06-22): Business Context Model, business-aware
+prioritization, deterministic attack paths, remediation tasks, semantic drift
+monitoring, auditor-friendly compliance, Cloud/Container/IaC ingestion. GUI-
+хвосты добавлены 2026-06-23: Remediation, IaC Config, бизнес-контекст в
+Criticality-вкладке (**project default + per-asset override**). Пофичный статус
+в CLAUDE.md §12.
 
 ---
 
@@ -41,7 +47,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 безопасности (cookie, секреты, source-map, уязвимости).
 
 **Точки входа:**
-- `main.py` — GUI (PySide6/qfluent через qtpy), self-check: 25 вкладок.
+- `main.py` — GUI (PySide6/qfluent через qtpy), self-check: 28 вкладок.
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
 - `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8, + Alert Center #9).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
@@ -91,6 +97,8 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 | site_map | дерево путей сайта по HTTP-статусам + тип/глубина (визуальная карта) |
 | executive_summary | **единый риск-движок 0–100** + вердикт/рекомендации над фазами; опц. LLM-нарратив (поле `narrative`) поверх детерминированного вердикта |
 | intelligence | **Core + Advanced Intelligence (EPIC 7–11)**: confidence + priority + explanation per finding и обобщение на ВСЕ сущности (derive-on-read, без новых моделей/таблиц). `confidence`/`confidence_for` (корроборация+валидация+специфичность детекта для finding/technology/cve/asset/infrastructure/api/secret — **MODULE 1 Scan Accuracy**), `priority` (severity дисконтирован confidence + exposure/SLA + **asset-criticality бонус, EPIC 10**), `explain` (finding_knowledge). **EPIC 9** `asset_criticality`/`build_asset_criticality` (тип-вес + blast radius + находки + exposure → ранжирование активов). **EPIC 11** `build_attack_paths` (латеральные маршруты entry→pivot→targets по shared-infra). **Asset Exposure (likelihood-ось)** `exposure_score`/`build_exposure`/`load_exposure` (reachability + open findings + blast radius, **без тип-веса** — дополняет Criticality impact). `build_accuracy`/`accuracy_from_report` — единый rollup достоверности скана. Всё **display-метрики** (риск-вердикт не тронут). Переиспользует findings_store/correlation/asset_graph/findings_sla. Поверхности: report['intelligence'/'accuracy'/'asset_criticality'/'attack_paths'/'exposure'], web `/intelligence`+`/criticality`+`/attack-paths`+`/accuracy`+`/exposure`, GUI-вкладки «Priorities»/«Asset Criticality»/«Attack Paths»/«Scan Accuracy»/«Asset Exposure» |
+| business_context | **Business Context Model (EPIC NEXT F1)**: user-declared важность актива (criticality + data sensitivity) — единый источник словаря/весов/резолва. Хранение = аддитивный ключ `business_context` в `metadata.json` (default + per-asset overrides по bare fingerprint; БЕЗ новой таблицы), `Project.get/set_business_context`. Augment-слой над `intelligence.asset_criticality` (риск-вердикт не тронут). Поверхности: report-карточка, web, `business_cli.py`, GUI-редактор в Criticality-вкладке (project default **+ per-asset override**, 2026-06-23) |
+| remediation / iac_scanner / compliance | **EPIC NEXT** прочее: remediation work-items (event-sourced поверх `finding_events`, GUI-вкладка + CLI), Cloud/Container/IaC misconfig-скан (Dockerfile/Terraform/CFN, категория `iac`, GUI ad-hoc scan + CLI), OWASP Top 10 + CWE + framework-crosswalk (PCI/ISO/NIST/SOC2) compliance-отчёт (Markdown + SARIF-теги) |
 | llm_summary | опц. LLM-резюме через **локальный Ollama** (stdlib urllib, graceful, ничего не уходит с машины) |
 | report_charts | оффлайн inline-CSS бары для HTML-отчётов (без JS/зависимостей) |
 | screenshot | опц. headless-скриншоты (Playwright, lazy, gated); **мульти-страничные** (home/login/admin/dashboard) через select_targets/capture_many |
@@ -118,7 +126,10 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 `tab_attack_paths`)/**Scan Accuracy** (MODULE 1 — `tab_accuracy`)/Timeline/Overview.
 Вкладки регистрируются из `BUILTIN_TABS` (секции nav-рельса), не хардкодятся;
 кластер Intelligence (Priorities → Asset Criticality → Attack Paths → Scan Accuracy)
-— в секции «Управление» после Findings.
+— в секции «Управление» после Findings. **Asset Criticality** несёт редактор
+бизнес-контекста (project default **+ per-asset override** выбранного актива,
+off-thread запись в `metadata.json` через `business_context`); EPIC NEXT GUI-
+хвосты — вкладки **Remediation** и **IaC Config** (2026-06-23).
 
 ---
 
@@ -283,3 +294,8 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 > Coverage Audit, Evidence Integrity Integration With Monitor/Export, and
 > roadmap/status cleanup. Final verification: ruff clean; full pytest 1460
 > passed with 1 existing Starlette/httpx warning.
+> Update 2026-06-23: EPIC NEXT (business-risk слой, F0–F7) CLOSED 2026-06-22;
+> GUI-хвосты добавлены 2026-06-23 — Remediation, IaC Config, и per-asset business
+> context override в Criticality-вкладке (хранение прежнее: metadata.json →
+> business_context → assets; risk-вердикт не тронут). Final verification: ruff
+> clean; full pytest **1794 passed** с 1 существующим Starlette/httpx warning.
