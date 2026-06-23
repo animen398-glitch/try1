@@ -54,6 +54,10 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
         self.setMinimumSize(500, 380)
+        # Open large enough that the tallest tab (Уведомления: Email/Telegram/
+        # Discord/Webhook + test) fits without scrolling; each tab is still
+        # wrapped in a QScrollArea so smaller windows degrade gracefully.
+        self.resize(580, 600)
         self.settings = config.load_settings()
         self._build_ui()
 
