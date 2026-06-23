@@ -82,7 +82,7 @@ def fetch_wayback(domain: str, limit: int = _DEFAULT_LIMIT,
 
 def classify(url: str) -> List[str]:
     """Categories a URL falls into (substring heuristics on the lowercased URL)."""
-    low = url.lower()
+    low = str(url).lower()   # tolerate a non-str url (degrade, never raise)
     return [cat for cat, sigs in CATEGORY_RULES.items()
             if any(s in low for s in sigs)]
 
@@ -97,9 +97,14 @@ def analyze(entries: List) -> Dict:
     urls: List[str] = []
     for e in entries:
         u = e.get('url') if isinstance(e, dict) else e
-        if u and u not in seen:
+        if not u:
+            continue
+        # Coerce before the dedup check: a malformed entry (e.g. a list) is
+        # unhashable, and `u in seen` would raise — degrade, never raise.
+        u = str(u)
+        if u not in seen:
             seen.add(u)
-            urls.append(str(u))
+            urls.append(u)
 
     categories: Dict[str, List[str]] = {}
     interesting: List[str] = []

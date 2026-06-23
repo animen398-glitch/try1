@@ -43,6 +43,15 @@ def test_analyze_empty():
     assert out == {'total': 0, 'categories': {}, 'interesting': []}
 
 
+def test_analyze_degrades_on_malformed_entries():
+    # analyze accepts heterogeneous entries; a malformed element (unhashable
+    # list, int, None) must degrade, not raise (F-SR1 degrade-not-raise).
+    out = hi.analyze([['/admin'], 123, None, 'https://x/login'])
+    assert out['total'] >= 1                      # at least the valid login URL
+    assert 'https://x/login' in out['interesting']
+    assert hi.classify(123) == []                 # non-str url -> no categories
+
+
 # ── fetch_wayback (network stubbed) ───────────────────────────────────────────
 
 def test_fetch_wayback_parses_cdx(monkeypatch):

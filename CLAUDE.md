@@ -1564,6 +1564,19 @@ TypeError. Гард ужесточён до `if not isinstance(text, str) or not
 цель — не трогал). Покрыто `test_secret_scanner` (+1: bytes/int/dict/list/float
 degrade + scan_many; 9 passed).
 
+**Robustness `historical_intel.analyze`/`classify` (degrade-not-raise, F-SR1) —
+`[ЗАКРЫТ 2026-06-23]`.** Backend-полировка. Публичные pure-функции, парсящие
+Wayback-историю: `analyze` документирован как принимающий **гетерогенные** entries
+(строки или `{url}`-dict), но malformed-элемент падал — unhashable list-элемент →
+`u not in seen` TypeError; `classify(non-str)` → `.lower()` AttributeError. Фикс:
+`analyze` коэрсит `u = str(u)` **до** dedup-проверки (всегда хэшируемо; интент
+прежнего `str(u)` сохранён), `classify` гейтит `str(url).lower()`. Сетевой путь
+(`fetch_wayback`) уже был гарден (isinstance list/row). **Well-formed байт-в-байт**
+(dedup/категории/interesting не изменились — проверено). Покрыто
+`test_historical_intel` (+1: list/int/None degrade + classify non-str; 12 passed).
+`secret_validator.validate` проверен — **уже** degrade-not-raise by construction
+(try/except→UNVERIFIABLE), правок не требует.
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)
