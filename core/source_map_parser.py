@@ -30,6 +30,15 @@ _SOURCEMAP_URL_RE = re.compile(
     r'(?://[#@]|/\*[#@])\s*sourceMappingURL\s*=\s*([^\s*]+)')
 
 
+def _str_list(value) -> List[str]:
+    """The string entries of ``value`` when it is a list, else ``[]``.
+
+    A source map is untrusted JSON: ``sources``/``names``/``sourcesContent`` may
+    be the wrong type (a number, an object …). Degrade to an empty list rather
+    than iterate a non-list and raise (the module's documented contract)."""
+    return [s for s in value if isinstance(s, str)] if isinstance(value, list) else []
+
+
 class SourceMapParser:
     """Parse ``.js.map`` JSON and surface original sources / leaked secrets."""
 
@@ -46,7 +55,8 @@ class SourceMapParser:
         Data-URI maps are returned verbatim (the scheme makes them recognisable).
         """
         urls: List[str] = []
-        for raw in _SOURCEMAP_URL_RE.findall(js_text or ''):
+        text = js_text if isinstance(js_text, str) else ''
+        for raw in _SOURCEMAP_URL_RE.findall(text):
             ref = raw.strip()
             if not ref:
                 continue
@@ -74,15 +84,14 @@ class SourceMapParser:
             return {'ok': False, 'error': 'source map is not a JSON object',
                     'sources': []}
 
-        sources = [s for s in (data.get('sources') or []) if isinstance(s, str)]
-        contents = data.get('sourcesContent') or []
-        contents = [c for c in contents if isinstance(c, str)]
+        sources = _str_list(data.get('sources'))
+        contents = _str_list(data.get('sourcesContent'))
         return {
             'ok': True,
             'version': data.get('version'),
             'file': data.get('file'),
             'sources': sources,
-            'names': [n for n in (data.get('names') or []) if isinstance(n, str)],
+            'names': _str_list(data.get('names')),
             'sources_content_count': len(contents),
             'has_content': bool(contents),
             'error': None,
@@ -106,8 +115,10 @@ class SourceMapParser:
             return []
         if not isinstance(data, dict):
             return []
-        sources = data.get('sources') or []
-        contents = data.get('sourcesContent') or []
+        sources = data.get('sources')
+        contents = data.get('sourcesContent')
+        sources = sources if isinstance(sources, list) else []
+        contents = contents if isinstance(contents, list) else []
         pairs: List[Tuple[str, str]] = []
         for path, text in zip(sources, contents):
             if isinstance(text, str):

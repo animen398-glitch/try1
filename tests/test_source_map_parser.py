@@ -63,6 +63,21 @@ def test_malformed_map_does_not_raise():
     assert SourceMapParser.extract_sources_content("{bad") == []
 
 
+def test_wrong_typed_fields_degrade_not_raise():
+    # An untrusted map whose list fields are the wrong type must degrade, not
+    # raise (the module's documented contract / F-SR1 ethos).
+    out = SourceMapParser.parse(
+        '{"version":3,"sources":5,"names":7,"sourcesContent":9}')
+    assert out["ok"] is True
+    assert out["sources"] == [] and out["names"] == []
+    assert out["sources_content_count"] == 0 and out["has_content"] is False
+    # zip over non-list fields must not raise either.
+    assert SourceMapParser.extract_sources_content(
+        '{"sources":5,"sourcesContent":["x"]}') == []
+    # non-str JS body (e.g. bytes) must not crash the URL scan.
+    assert SourceMapParser.find_map_urls(b'//# sourceMappingURL=a.map') == []
+
+
 def test_map_without_sources_content():
     m = json.dumps({"version": 3, "sources": ["a.js"]})
     out = SourceMapParser.parse(m)

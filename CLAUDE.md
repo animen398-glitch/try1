@@ -1539,6 +1539,19 @@ AttributeError; `tags` не-список (число) → `for t in tags` TypeEr
 корректных спек байт-в-байт** (общий путь не тронут — проверено). Покрыто
 `test_openapi_discovery` (+1: malformed-spec degrade + render-safe; 12 passed).
 
+**Robustness `source_map_parser` (degrade-not-raise, F-SR1) — `[ЗАКРЫТ 2026-06-23]`.**
+Backend-полировка. Pure-парсер недоверенного `.js.map` JSON **нарушал собственный
+задокументированный контракт** («Malformed input yields ok=False rather than
+raising»): `data.get('sources') or []` (и `names`/`sourcesContent`) ловил только
+falsy — non-list **truthy** (`"sources":5`) давал `for s in 5` TypeError; `zip` в
+`extract_sources_content` падал на non-list `sources`/`sourcesContent`; `find_map_urls`
+падал на non-str `js_text` (bytes) в `regex.findall`. Введён helper `_str_list(value)`
+(string-элементы только если `isinstance(list)`, иначе `[]`); `parse` переведён на него,
+`extract_sources_content` коэрсит обе стороны zip к list, `find_map_urls` гейтит
+`isinstance(js_text,str)` (тот же фикс, что F-SR1 в `site_extractor`). **Корректные
+карты байт-в-байт** (проверено parse/extract/find на well-formed). Покрыто
+`test_source_map_parser` (+1: wrong-typed поля degrade + zip + bytes; 7 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)
