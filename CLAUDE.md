@@ -1552,6 +1552,18 @@ falsy — non-list **truthy** (`"sources":5`) давал `for s in 5` TypeError;
 карты байт-в-байт** (проверено parse/extract/find на well-formed). Покрыто
 `test_source_map_parser` (+1: wrong-typed поля degrade + zip + bytes; 7 passed).
 
+**Robustness `secret_scanner.scan_text` (degrade-not-raise, F-SR1) — `[ЗАКРЫТ
+2026-06-23]`.** Backend-полировка. `scan_text` — **SSOT-точка** детекта секретов,
+которую кормят несколько движков (dynamic_analyzer, source_map_parser,
+security_auditor). Гард `if not text` ловил только пустое/None — non-str truthy
+(bytes из фетча, JSON-число/объект) доходил до `rule.pattern.finditer(text)` →
+TypeError. Гард ужесточён до `if not isinstance(text, str) or not text: return []`.
+Поведение для str (и пустого/None) байт-в-байт; non-str теперь → `[]` (а не краш),
+`scan_many` с non-str элементом сканирует остальные. Аудит `cookie_auditor` показал,
+что его parse-функции приватны и получают только строки от сетевого слоя (не F-SR1-
+цель — не трогал). Покрыто `test_secret_scanner` (+1: bytes/int/dict/list/float
+degrade + scan_many; 9 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)

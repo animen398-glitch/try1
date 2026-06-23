@@ -72,6 +72,20 @@ def test_clean_text_yields_nothing():
     assert SecretScanner().scan_text("") == []
 
 
+def test_non_str_input_degrades_not_raises():
+    # The SSOT entry point is fed corpus by several engines; a non-str blob
+    # (bytes from a fetch, a JSON number/object) must yield [] rather than crash
+    # re.finditer (F-SR1 degrade-not-raise).
+    for bad in (b"AKIA1234567890ABCD56", 12345, {"a": 1}, [1, 2], 3.14):
+        assert scan_text(bad) == []
+    # scan_many tolerates a non-str text element while still scanning the rest.
+    out = SecretScanner().scan_many([
+        (b"AKIA1234567890ABCD56", "bytes.js"),
+        ("AKIA1234567890ABCD56", "good.js"),
+    ])
+    assert len(out) == 1 and out[0]["source"] == "good.js"
+
+
 def test_scan_many_flattens_and_keeps_sources():
     scanner = SecretScanner()
     out = scanner.scan_many([

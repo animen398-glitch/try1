@@ -100,7 +100,10 @@ class SecretScanner:
         one blob is reported once. ``source`` (a URL or file path) is attached
         to every finding for drill-down.
         """
-        if not text:
+        # Degrade, never raise (F-SR1): this is the shared SSOT entry point, fed
+        # corpus by several engines — a non-str blob (bytes from a fetch, a JSON
+        # number) must yield no findings rather than crash re.finditer.
+        if not isinstance(text, str) or not text:
             return []
         findings: List[Dict] = []
         seen: set = set()
