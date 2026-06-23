@@ -19,6 +19,9 @@ temp/
 reports/
 ~/
 
+# Demo workspace produced by demo_seed.py (self-contained, regenerable)
+demo_workspace/
+
 # SQLite operation history (runtime DB; keep the data/ dir tracked)
 data/*.db
 data/*.db-journal

@@ -45,6 +45,7 @@ cookie, GraphQL), захват и оффлайн-клонирование фро
 
 ```
 main.py                 # точка входа GUI
+demo_seed.py            # сеет self-contained demo workspace (company+домены, lifecycle/assets/remediation) под один каталог; запуск приложения на нём через ASA_DATA_ROOT
 main_orchestrator.py    # CLI-пайплайн из 6 фаз (Recon→[Paywall]→Capture→[Dynamic]→[Vulns]→[API])
 monitor_cli.py          # OS-level адаптер мониторинга (run = прогон готовых для cron; watch = блок-цикл)
 launcher.py             # EPIC 6: тонкий entry Launcher (CLI --health/--repair/--update/--launch/--install + Qt-окно Module 5)
@@ -282,10 +283,11 @@ Dashboard и Reporting, риски и точки интеграции описа
 - `remote/web_app.py` — LAN web-console, parity через тонкие helpers/JOBS.
 
 **Последние важные изменения на 2026-06-23:**
+- Demo/Release подготовка: добавлен `ASA_DATA_ROOT` env-override в `PathManager._detect_data_root` (единый seam — уводит ВСЕ data-БД/configs/settings/workspaces под один каталог, портится поверх source- и frozen-дефолтов; явный `data_root=` ctor-арг по-прежнему выше). Добавлен `demo_seed.py` (entry-скрипт корня): сеет self-contained demo workspace (1 company + 3 домена, 7 сканов, lifecycle-находки с drift, активы, business-контекст, remediation) в один каталог через явные PathManager-пути; запуск приложения — `ASA_DATA_ROOT=<dir> python main.py`. Проверено end-to-end (override → GUI читает портфель) + `tests/test_demo_seed.py`/`test_paths.py`.
+- Подтверждён GUI smoke (живой `MainWindow`, 28 вкладок): Criticality/Remediation/IaC/Overview-Portfolio на едином богатом проекте.
+- Почищен устаревший статус-баннер EPIC NEXT в `ROADMAP_ASM_2.0.md` (NOT STARTED → ЗАКРЫТ).
 - Добавлен per-asset business context editor в Criticality GUI.
-- Обновлён `PROJECT_REPORT.md` под EPIC NEXT + GUI tails.
-- Проведён backend polish: dead code cleanup, SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening для malformed OpenAPI/source map/secret/history inputs.
-- Последний известный backend polish commit: `abca7ee fix: harden historical_intel.analyze/classify on malformed entries (F-SR1)`.
+- Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
 - `PROJECT_REPORT.md` указывает актуальный масштаб набора около 1794 offline/headless тестов.
@@ -293,11 +295,11 @@ Dashboard и Reporting, риски и точки интеграции описа
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 
 **Что делать дальше в первую очередь:**
-1. Подтвердить полный pytest после последнего backend polish.
-2. Почистить возможные устаревшие строки в `ROADMAP_ASM_2.0.md` про “planning/not started” и “GUI позже”, если они противоречат закрытому EPIC NEXT.
-3. Провести живой GUI smoke: Criticality project default/per-asset override, Remediation, IaC Config, Overview/Portfolio.
-4. Подготовить demo workspace/sample project, чтобы продукт можно было показать как ASM/CSM-платформу, а не только набор сканеров.
-5. Для релиза: version/changelog, PyInstaller build, first-run/system-health screen, import/export проекта.
+1. ✅ Подтверждён полный pytest после backend polish (1798 зелёных).
+2. ✅ Почищен устаревший статус-баннер EPIC NEXT в `ROADMAP_ASM_2.0.md`.
+3. ✅ Проведён живой GUI smoke (Criticality/Remediation/IaC/Overview-Portfolio).
+4. ✅ Подготовлен demo workspace (`demo_seed.py` + `ASA_DATA_ROOT` override).
+5. Релиз: version/changelog, PyInstaller build (проверить, что frozen чтит `ASA_DATA_ROOT`), first-run/system-health screen, import/export проекта. Demo workspace уже годится для показа платформы.
 
 **Осознанно отложено и не является блокером:**
 - live KEV/EPSS threat feed;

@@ -54,6 +54,36 @@ def test_frozen_honours_xdg_when_no_appdata(monkeypatch, tmp_path):
     assert pm.data_root == tmp_path / "xdg" / "MyApp"
 
 
+# --------------------------------------------------------- data-root override
+
+def test_env_override_wins_in_dev(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setenv("ASA_DATA_ROOT", str(tmp_path / "demo"))
+    pm = PathManager()
+    assert pm.data_root == tmp_path / "demo"          # env beats project root
+
+
+def test_env_override_wins_when_frozen(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "_MEI"), raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
+    monkeypatch.setenv("ASA_DATA_ROOT", str(tmp_path / "demo"))
+    pm = PathManager()
+    assert pm.data_root == tmp_path / "demo"          # env beats %APPDATA% too
+
+
+def test_explicit_data_root_beats_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("ASA_DATA_ROOT", str(tmp_path / "env"))
+    pm = PathManager(data_root=tmp_path / "explicit")
+    assert pm.data_root == tmp_path / "explicit"      # ctor arg is highest
+
+
+def test_no_env_keeps_dev_default(monkeypatch):
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.delenv("ASA_DATA_ROOT", raising=False)
+    assert PathManager().data_root == paths._PROJECT_ROOT
+
+
 # ------------------------------------------------------------------- getters
 
 def test_get_db_path_creates_data_dir(tmp_path):

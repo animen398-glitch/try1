@@ -31,6 +31,14 @@ from urllib.parse import urlparse
 
 APP_NAME = 'AdvancedSiteAnalyzer'
 
+# Environment override for the writable-data root. When set, it wins over both
+# the source-tree and frozen-%APPDATA% defaults — every DB, config, report and
+# workspace then lives under that one directory. This is the seam a portable /
+# demo workspace uses: point the app at a self-contained folder without touching
+# the user's real data/ (see demo_seed.py). An explicit ``data_root=`` ctor arg
+# (used by tests) still takes precedence over the env var.
+DATA_ROOT_ENV = 'ASA_DATA_ROOT'
+
 # Project root when running from source: …/core/paths.py -> project root.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -68,9 +76,15 @@ class PathManager:
         return _PROJECT_ROOT
 
     def _detect_data_root(self) -> Path:
-        # A frozen .exe must write to a stable, user-writable location — never
-        # the ephemeral _MEIPASS extraction dir. From source, keep the existing
-        # project-root data layout so nothing moves during development.
+        # An explicit env override wins everywhere (portable / demo workspace);
+        # it lets the app run against a self-contained data dir without touching
+        # the real one. Otherwise: a frozen .exe must write to a stable,
+        # user-writable location — never the ephemeral _MEIPASS extraction dir;
+        # from source, keep the existing project-root data layout so nothing
+        # moves during development.
+        override = os.getenv(DATA_ROOT_ENV)
+        if override:
+            return Path(override).expanduser()
         if self.frozen:
             return self._user_data_base()
         return _PROJECT_ROOT
