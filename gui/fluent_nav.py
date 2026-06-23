@@ -20,6 +20,7 @@ and resize are handled by Windows itself.
 from dataclasses import dataclass
 
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
+from qtpy.QtCore import QSize
 from qtpy.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QScrollArea,
     QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
@@ -28,12 +29,14 @@ from qtpy.QtWidgets import (
 from gui._fluent import FluentIcon, NavigationItemPosition
 
 _NAV_WIDTH = 280
+_NAV_COLLAPSED_WIDTH = 56
 
 
 @dataclass
 class _NavigationItem:
     routeKey: str
     widget: QPushButton
+    text: str
     selectable: bool = True
 
 
@@ -45,6 +48,7 @@ class StableNavigationInterface(QFrame):
         self.panel = self
         self.items: dict[str, _NavigationItem] = {}
         self._current_route = ""
+        self._expanded = True
 
         self.setObjectName("stableNavigation")
         self.setFixedWidth(_NAV_WIDTH)
@@ -58,6 +62,13 @@ class StableNavigationInterface(QFrame):
         self.topLayout.setContentsMargins(0, 0, 0, 0)
         self.topLayout.setSpacing(4)
         root.addLayout(self.topLayout, 0)
+        self.menuButton = QPushButton("☰", self)
+        self.menuButton.setProperty("navItem", True)
+        self.menuButton.setCursor(Qt.PointingHandCursor)
+        self.menuButton.setMinimumHeight(44)
+        self.menuButton.setToolTip("Свернуть/развернуть меню")
+        self.menuButton.clicked.connect(self.toggle)
+        self.topLayout.addWidget(self.menuButton)
 
         self.scrollArea = QScrollArea(self)
         self.scrollArea.setWidgetResizable(True)
@@ -118,13 +129,15 @@ class StableNavigationInterface(QFrame):
         if routeKey in self.items:
             return self.items[routeKey].widget
 
-        button = QPushButton(text, self)
+        display_text = text.replace("&", "&&")
+        button = QPushButton(display_text, self)
         button.setProperty("navItem", True)
         button.setCheckable(bool(selectable))
         button.setCursor(Qt.PointingHandCursor)
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         button.setMinimumHeight(44)
         button.setToolTip(tooltip or text)
+        button.setIconSize(QSize(22, 22))
         qicon = _qicon(icon)
         if not qicon.isNull():
             try:
@@ -140,7 +153,8 @@ class StableNavigationInterface(QFrame):
         if selectable:
             button.clicked.connect(lambda _checked=False, _rk=routeKey: self.setCurrentItem(_rk))
 
-        self.items[routeKey] = _NavigationItem(routeKey, button, selectable)
+        self.items[routeKey] = _NavigationItem(routeKey, button, display_text,
+                                               selectable)
         layout = self._layout_for(position)
         if layout is self.scrollLayout:
             insert_at = max(0, layout.count() - 1) if index < 0 else index
@@ -172,7 +186,7 @@ class StableNavigationInterface(QFrame):
             return
         if tooltip:
             widget.setToolTip(tooltip)
-        self.items[routeKey] = _NavigationItem(routeKey, widget, False)
+        self.items[routeKey] = _NavigationItem(routeKey, widget, "", False)
         self._layout_for(position).insertWidget(index, widget)
 
     def widget(self, routeKey: str):
@@ -199,6 +213,19 @@ class StableNavigationInterface(QFrame):
 
     def layoutMinHeight(self):
         return self.minimumSizeHint().height()
+
+    def toggle(self):
+        self.setExpanded(not self._expanded)
+
+    def setExpanded(self, expanded: bool):
+        self._expanded = bool(expanded)
+        self.setFixedWidth(_NAV_WIDTH if self._expanded else _NAV_COLLAPSED_WIDTH)
+        self.menuButton.setText("☰" if self._expanded else "☰")
+        for item in self.items.values():
+            if not isinstance(item.widget, QPushButton):
+                continue
+            item.widget.setText(item.text if self._expanded else "")
+            item.widget.setToolTip(item.text.replace("&&", "&"))
 
     def _layout_for(self, position):
         if position == NavigationItemPosition.BOTTOM:

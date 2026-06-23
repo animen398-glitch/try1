@@ -1,9 +1,10 @@
 import os
 
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QSpinBox,
-    QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
+    QPlainTextEdit, QScrollArea, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from core import alerts as alert_center
@@ -63,17 +64,27 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         tabs = QTabWidget()
-        tabs.addTab(self._build_paths_tab(), "Пути")
-        tabs.addTab(self._build_network_tab(), "Сеть")
-        tabs.addTab(self._build_output_tab(), "Вывод")
-        tabs.addTab(self._build_alerts_tab(), "Уведомления")
-        tabs.addTab(self._build_dependencies_tab(), "Зависимости")
+        tabs.addTab(self._scroll_tab(self._build_paths_tab()), "Пути")
+        tabs.addTab(self._scroll_tab(self._build_network_tab()), "Сеть")
+        tabs.addTab(self._scroll_tab(self._build_output_tab()), "Вывод")
+        tabs.addTab(self._scroll_tab(self._build_alerts_tab()), "Уведомления")
+        tabs.addTab(self._scroll_tab(self._build_dependencies_tab()), "Зависимости")
         layout.addWidget(tabs)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    @staticmethod
+    def _scroll_tab(widget: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(widget)
+        return scroll
 
     def _build_paths_tab(self) -> QWidget:
         widget = QWidget()

@@ -73,7 +73,7 @@ def test_dialog_persists_ollama_model(qapp, isolated_config):
 
 
 def test_dialog_has_dependency_health_tab(qapp, isolated_config):
-    from qtpy.QtWidgets import QTabWidget
+    from qtpy.QtWidgets import QScrollArea, QTabWidget
 
     from gui.dialogs import SettingsDialog
 
@@ -84,3 +84,5 @@ def test_dialog_has_dependency_health_tab(qapp, isolated_config):
     assert "Зависимости" in names
     assert hasattr(dlg, "dependencies_text")
     assert "Python:" in dlg.dependencies_text.toPlainText()
+    assert all(isinstance(tabs.widget(i), QScrollArea)
+               for i in range(tabs.count()))

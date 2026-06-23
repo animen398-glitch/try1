@@ -63,3 +63,33 @@ def test_fluent_navigation_wheel_scrolls_from_item(qapp):
 
     assert handled is True
     assert bar.value() == 100
+
+
+def test_stable_navigation_can_collapse_and_expand(qapp):
+    from gui.main_window import MainWindow
+
+    window = MainWindow()
+    nav = window.navigationInterface
+    item = nav.items["tab0"].widget
+    expanded_width = nav.width()
+
+    nav.toggle()
+
+    assert nav.width() < expanded_width
+    assert item.text() == ""
+
+    nav.toggle()
+
+    assert nav.width() == expanded_width
+    assert item.text() == "Dashboard"
+
+
+def test_stable_navigation_escapes_ampersand_titles(qapp):
+    from gui.main_window import MainWindow
+
+    window = MainWindow()
+    titles = [window.navigationInterface.items[f"tab{i}"].widget.text()
+              for i in range(window.tabs.count())]
+
+    assert "Recon && Intel" in titles
+    assert "Final Report && Collection" in titles

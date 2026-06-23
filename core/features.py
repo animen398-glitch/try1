@@ -8,6 +8,7 @@ GUI and CLI can surface what's enabled instead of scattering ad-hoc checks.
 """
 
 import importlib.util
+from pathlib import Path
 import shutil
 
 
@@ -96,7 +97,9 @@ def has_ocr() -> bool:
     """Local OCR for image documents (optional) — the pytesseract wrapper plus the
     tesseract binary on PATH. Used to extract text from images (EXT-OSINT F2);
     absent → image documents degrade to metadata only."""
-    return _has_module('pytesseract') and _has_binary('tesseract')
+    tesseract = _has_binary('tesseract') or Path(
+        r'C:\Program Files\Tesseract-OCR\tesseract.exe').is_file()
+    return _has_module('pytesseract') and tesseract
 
 
 def has_lift() -> bool:
