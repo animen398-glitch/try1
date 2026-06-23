@@ -20,21 +20,37 @@ from qtpy.QtGui import QColor, QPalette
 THEMES = ('system', 'light', 'dark')
 DEFAULT_THEME = 'system'
 
-# Dark palette — the single source of chrome colours (Win11/Defender-ish dark).
+# Dark palette — the single source of chrome colours. Tuned for a calm, layered
+# security/productivity look: a deep neutral (not pure-black) content surface,
+# with the nav rail a touch darker and cards/rows a step lighter, so blocks read
+# as distinct surfaces instead of one flat grey.
 DARK = {
-    'window':        '#252526',
-    'base':          '#1e1e1e',
-    'alt_base':      '#2d2d30',
-    'text':          '#d4d4d4',
+    # Surfaces, darkest → lightest (each step is a readable tone apart).
+    'sidebar':       '#191a1d',   # left nav rail — slightly recessed
+    'base':          '#1c1d21',   # inputs / tables / editors background
+    'window':        '#202125',   # main content background
+    'card':          '#26282d',   # sections / cards / alternating rows — lifts off
+    'alt_base':      '#26282d',
+    'header_bg':     '#23242a',   # table header strip
+    'hover':         '#2c2e34',   # hover state on rows / nav items
+    # Text.
+    'text':          '#e3e3e6',
+    'muted_text':    '#9aa0a6',
     'disabled_text': '#6d6d6d',
-    'button':        '#333337',
-    'bright_text':   '#ff5252',
-    'accent':        '#0078d4',
+    'placeholder':   '#7c8087',
+    # Accent / interaction.
+    'accent':        '#0078d4',   # selection / focus accent (calm blue)
     'accent_text':   '#ffffff',
-    'tooltip_bg':    '#2d2d30',
-    'border':        '#3c3c3c',
-    'link':          '#4fc3f7',
-    'placeholder':   '#808080',
+    'selection':     '#2d4f76',   # table row selection bg — visible, not shouting
+    'button':        '#2c2e33',
+    'bright_text':   '#ff5252',
+    'link':          '#5cc8ff',
+    # Lines / chrome.
+    'border':        '#34363b',
+    'input_border':  '#3a3d44',
+    'scrollbar':     '#3a3d44',
+    'scrollbar_hover': '#4a4e57',
+    'tooltip_bg':    '#2a2c31',
     'disabled_hl':   '#3a3a3a',
 }
 
@@ -66,12 +82,70 @@ def dark_palette() -> QPalette:
     return p
 
 
-# Supplemental QSS for what QPalette doesn't style cleanly under Fusion. Kept
-# intentionally tiny — the palette does the heavy lifting.
-_DARK_QSS = (
-    'QToolTip {{ color: {text}; background-color: {tooltip_bg}; '
-    'border: 1px solid {border}; }}'
-).format(**DARK)
+# Supplemental QSS for what QPalette doesn't style cleanly under Fusion — tables,
+# inputs, editors and scrollbars — so content reads as calm, distinct blocks
+# rather than one flat tone. The palette still does the base lift; this only adds
+# borders, surfaces, hover/selection and slim scrollbars. Scoped to standard Qt
+# widgets used in tabs; StyledButton / SectionGroupBox keep owning their own look
+# (see button_qss / group_box_qss), and window controls are untouched.
+def _build_dark_qss() -> str:
+    d = DARK
+    return f"""
+    QToolTip {{ color: {d['text']}; background-color: {d['tooltip_bg']};
+        border: 1px solid {d['border']}; padding: 4px 6px; }}
+
+    /* Text inputs / selectors — recessed surface, subtle border, accent focus. */
+    QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QTextBrowser {{
+        background-color: {d['base']}; color: {d['text']};
+        border: 1px solid {d['input_border']}; border-radius: 5px;
+        selection-background-color: {d['accent']}; selection-color: {d['accent_text']};
+        padding: 3px 6px; }}
+    QLineEdit:focus, QComboBox:focus, QAbstractSpinBox:focus,
+    QPlainTextEdit:focus, QTextEdit:focus {{ border: 1px solid {d['accent']}; }}
+    QComboBox QAbstractItemView {{ background-color: {d['card']}; color: {d['text']};
+        border: 1px solid {d['border']};
+        selection-background-color: {d['selection']}; }}
+
+    /* Tables — readable header strip, gridlines, alternating rows and selection. */
+    QTableView, QTableWidget, QTreeView, QListView {{
+        background-color: {d['base']}; alternate-background-color: {d['card']};
+        gridline-color: {d['border']};
+        selection-background-color: {d['selection']}; selection-color: {d['text']};
+        border: 1px solid {d['border']}; border-radius: 6px; }}
+    QTableView::item, QTreeView::item, QListView::item {{ padding: 2px 4px; }}
+    QTableView::item:hover, QTreeView::item:hover, QListView::item:hover {{
+        background-color: {d['hover']}; }}
+    QHeaderView::section {{ background-color: {d['header_bg']}; color: {d['muted_text']};
+        border: none; border-bottom: 1px solid {d['border']};
+        border-right: 1px solid {d['border']}; padding: 5px 8px; font-weight: 600; }}
+    QTableCornerButton::section {{ background-color: {d['header_bg']};
+        border: none; border-bottom: 1px solid {d['border']}; }}
+
+    /* Tab panes (QTabWidget facades inside tabs). */
+    QTabWidget::pane {{ border: 1px solid {d['border']}; border-radius: 6px;
+        top: -1px; }}
+    QTabBar::tab {{ background: {d['base']}; color: {d['muted_text']};
+        border: 1px solid {d['border']}; border-bottom: none;
+        border-top-left-radius: 5px; border-top-right-radius: 5px;
+        padding: 6px 12px; }}
+    QTabBar::tab:selected {{ background: {d['card']}; color: {d['text']}; }}
+    QTabBar::tab:hover {{ background: {d['hover']}; }}
+
+    /* Slim, neutral scrollbars (wheel/drag both work; no arrow buttons). */
+    QScrollBar:vertical {{ background: transparent; width: 12px; margin: 0; }}
+    QScrollBar::handle:vertical {{ background: {d['scrollbar']}; min-height: 28px;
+        border-radius: 6px; }}
+    QScrollBar::handle:vertical:hover {{ background: {d['scrollbar_hover']}; }}
+    QScrollBar:horizontal {{ background: transparent; height: 12px; margin: 0; }}
+    QScrollBar::handle:horizontal {{ background: {d['scrollbar']}; min-width: 28px;
+        border-radius: 6px; }}
+    QScrollBar::handle:horizontal:hover {{ background: {d['scrollbar_hover']}; }}
+    QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+    QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+    """
+
+
+_DARK_QSS = _build_dark_qss()
 
 
 def theme_qss(name: str) -> str:
