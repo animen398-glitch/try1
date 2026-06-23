@@ -21,6 +21,8 @@ from typing import Callable, Dict, List, Optional
 
 from urllib.parse import urlparse
 
+from utils.subprocess_utils import run_hidden
+
 from core.features import (
     has_amass, has_httpx, has_katana, has_nuclei, has_subfinder,
 )
@@ -36,8 +38,8 @@ def run_command(cmd: List[str], timeout: int,
     partial stdout was captured.
     """
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=timeout, input=input_text)
+        proc = run_hidden(cmd, capture_output=True, text=True,
+                          timeout=timeout, input=input_text)
         return {'rc': proc.returncode, 'stdout': proc.stdout or '',
                 'stderr': (proc.stderr or '')[-1000:], 'timed_out': False}
     except subprocess.TimeoutExpired as e:

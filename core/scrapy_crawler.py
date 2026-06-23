@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 
 from core.features import has_scrapy
 from core.paths import get_path_manager
+from utils.subprocess_utils import run_hidden
 
 _RUNNER = Path(__file__).resolve().parent / '_scrapy_spider.py'
 
@@ -85,7 +86,7 @@ class ScrapyCrawler:
         truncated = False
         stderr_tail = ''
         try:
-            proc = subprocess.run(
+            proc = run_hidden(
                 cmd, capture_output=True, text=True, timeout=self.timeout)
             stderr_tail = (proc.stderr or '')[-500:]
             if proc.returncode not in (0, None):

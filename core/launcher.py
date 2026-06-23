@@ -185,11 +185,11 @@ def update(*, run: Optional[Callable] = None, git: bool = False) -> Dict:
 def _spawn_app() -> None:
     """Start the main application as a detached child process (source mode runs
     ``python main.py``; a frozen build re-launches its own bundle)."""
-    import subprocess
+    from utils.subprocess_utils import popen_hidden
     if getattr(sys, 'frozen', False):
-        subprocess.Popen([sys.executable, '--app'])      # frozen: app mode flag
+        popen_hidden([sys.executable, '--app'])      # frozen: app mode flag
     else:
-        subprocess.Popen([sys.executable, str(_PROJECT_ROOT / 'main.py')])
+        popen_hidden([sys.executable, str(_PROJECT_ROOT / 'main.py')])
 
 
 def launch_app(*, spawn: Optional[Callable] = None) -> Dict:

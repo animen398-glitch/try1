@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 from utils.browser_utils import SessionBuilder
 from utils.operation_registry import OperationRegistry
+from utils.subprocess_utils import run_hidden
 
 # Operation history shares the orchestrator's database so extractions appear in
 # the GUI "История операций" tab alongside the other phases.
@@ -225,8 +226,8 @@ class ImageExtractor:
 
         self._log(f'Instagram/соцсеть → yt-dlp: {url}')
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=max(self.timeout, 120))
+            proc = run_hidden(cmd, capture_output=True, text=True,
+                              timeout=max(self.timeout, 120))
         except subprocess.TimeoutExpired:
             result['status'] = 'Error: timeout'
             self.registry.finish(op_id, status='failed', error='timeout')

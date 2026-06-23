@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Union
 
 from utils.operation_registry import OperationRegistry
+from utils.subprocess_utils import run_hidden
 
 # Operation history shares the orchestrator's database so downloads appear in
 # the GUI "История операций" tab alongside the other pipeline phases.
@@ -141,7 +142,7 @@ class VideoDownloader:
 
         try:
             self._log(f'Загружаю [{self.quality}]: {url}')
-            process = subprocess.run(
+            process = run_hidden(
                 cmd, capture_output=True, text=True, timeout=self.timeout,
             )
 

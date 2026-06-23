@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Автоматический пуш обновлений в Git репозиторий"""
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+from utils.subprocess_utils import run_hidden
 
 PROJECT_DIR = str(Path(__file__).parent)
 
 
 def run_git(*args) -> tuple:
-    result = subprocess.run(
+    result = run_hidden(
         ['git', *args],
         capture_output=True,
         text=True,

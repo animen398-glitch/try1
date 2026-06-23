@@ -1,9 +1,10 @@
 import shutil
-import subprocess
 import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union
+
+from utils.subprocess_utils import run_hidden
 
 
 class FileCompressor:
@@ -61,7 +62,7 @@ class FileCompressor:
             return FileCompressor.to_zip(source, output_path.replace('.rar', '.zip'))
 
         cmd = [rar_exe, 'a', '-r', output_path, str(source)]
-        proc = subprocess.run(cmd, capture_output=True, timeout=120)
+        proc = run_hidden(cmd, capture_output=True, timeout=120)
         if proc.returncode != 0:
             return FileCompressor.to_zip(source, output_path.replace('.rar', '.zip'))
 
