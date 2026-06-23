@@ -33,9 +33,7 @@ import json
 import urllib.request
 from typing import Dict, List, Optional
 
-# Severity scale (highest first) shared with the rest of the platform; used to
-# apply the min-severity gate so the tracker is not flooded with info findings.
-_SEVERITY_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, 'info': 0}
+from core.severity import RANK as _SEVERITY_RANK  # platform severity ranking SSOT
 
 _API_ROOT = 'https://api.github.com'
 

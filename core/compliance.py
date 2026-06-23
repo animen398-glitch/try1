@@ -16,6 +16,8 @@ ssrf → A10/CWE-918, …). A ``vuln`` finding with no recognized subtype stays
 
 from typing import Dict, List, Optional
 
+from core.severity import RANK as _SEVERITY_RANK  # platform severity ranking SSOT
+
 # OWASP Top 10 2021, in canonical order (id → name). Kept as an ordered tuple so a
 # report can list every category — including the ones with zero findings (clean).
 OWASP_TOP10 = (
@@ -78,8 +80,6 @@ _RULE_MAP = (
     # otherwise-unclassified CVE falls here instead of "unmapped".
     ('cve-', {'owasp': 'A06:2021', 'cwe': ['CWE-1395']}),
 )
-
-_SEVERITY_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, 'info': 0}
 
 # Auditor-friendly framework crosswalk (EPIC NEXT F6). Beyond OWASP/CWE, an
 # auditor wants the finding mapped to the control frameworks they certify against.

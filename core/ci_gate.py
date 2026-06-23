@@ -9,8 +9,7 @@ result into a process exit code. No I/O, no network — fully unit-testable.
 
 from typing import Dict, List, Optional
 
-# severity ranking shared with the rest of the platform (critical worst).
-_RANK = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, 'info': 0}
+from core.severity import RANK as _RANK  # platform severity ranking SSOT (critical worst)
 
 
 def evaluate_gate(events: Optional[List[Dict]], *, fail_on: str = 'high') -> Dict:

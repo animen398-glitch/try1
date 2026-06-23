@@ -1488,6 +1488,21 @@ ruff чист, `test_dashboard_charts`/`test_tech_risk` (27 passed).
 `test_cve_store`/`test_findings_store`/`test_findings_store_migration`/
 `test_sqlite_migrations` (56 passed).
 
+**SSOT severity-rank — устранён дубль в 3 EPIC-16 модулях — `[ЗАКРЫТ 2026-06-23]`.**
+Backend-полировка. `ci_gate._RANK`, `compliance._SEVERITY_RANK`, `github_issues.
+_SEVERITY_RANK` несли байт-в-байт одинаковый `{'critical':4,'high':3,'medium':2,
+'low':1,'info':0}` — и комментарии у всех трёх буквально гласили «shared with the
+rest of the platform», но каждый скопировал словарь (классический дрейф-риск).
+Заведён чистый SSOT-модуль `core/severity.py` (прецедент `core/security_headers.py`):
+`SEVERITY_ORDER` (worst-first) + `RANK` **деривится** из него (descending: critical=4…
+info=0). Каждый модуль импортит `RANK as _RANK`/`as _SEVERITY_RANK` — **все
+call-sites целы** (`.get`/`.items()` поддерживаются импортированным dict). Домен-
+специфичные scoring-**веса** (intelligence `_SEV_BASE`/`_CRIT_SEV_PTS`/…, tech_risk
+`_SEV_POINTS`, findings_adapter `_SEVERITY`) НЕ тронуты — это не дубли ранга, а
+разные шкалы очков. Ascending-конвенция (correlation/timeline `_SEVERITY_RANK`
+critical=0, взаимосвязаны, intelligence их импортит) тоже не тронута — иная семантика.
+Поведение байт-в-байт. ruff чист, `test_ci_gate`/`test_compliance`/`test_github_issues`.
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)
