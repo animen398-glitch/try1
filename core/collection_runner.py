@@ -602,18 +602,13 @@ class CollectionRunner:
         # time). Derive-on-read, reuses timeline.build_series (I3) and the single
         # scan-entry flatten; best-effort so a failure never sinks the scan.
         try:
-            from core import trends as _trends
             from core.timeline import build_series
             entries = list(project.scans()) + [project._scan_entry(scan_dir, report)]
             report['trends'] = build_series(entries)
-            # EPIC 4: per-metric trend analytics over that series (direction /
-            # baseline / delta-since-first / peak) — derive-on-read, no new data.
-            report['trends_summary'] = _trends.trend_summary(report['trends'])
         except Exception as ex:  # noqa: BLE001 — trends are best-effort
             self._log(f'  ! trend series failed: {ex}')
             self._warn(report, 'trends', 'Trend series could not be built', ex)
             report['trends'] = []
-            report['trends_summary'] = {}
 
         self._attach_evidence_manifest(report, scan_dir)
 

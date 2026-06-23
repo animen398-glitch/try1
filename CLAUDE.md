@@ -1452,9 +1452,20 @@ query batching enabled` (Medium) из флагов endpoint'а, независи
 визуал отчёта не меняется; `trend_summary` (web `/timeline`) подхватывает новые
 метрики автоматом; старые проекты без этих ключей → `metric_trend` возвращает None →
 метрика опускается (graceful). Покрыто `test_timeline` (build_series несёт+gap),
-`test_trends` (детект-метрика трендится / отсутствующая опускается). (Побочно
-замечено: `report['trends_summary']` пишется, но нигде не читается — оба потребителя
-пересчитывают; кандидат на отдельную чистку.)
+`test_trends` (детект-метрика трендится / отсутствующая опускается).
+
+**Dead-write чистка `report['trends_summary']` — `[ЗАКРЫТ 2026-06-23]`.** Backend-полировка.
+Закрыт flagged-выше кандидат: `report['trends_summary']` персистился в каждый
+`report.json`, но НЕ читался никем — HTML-карточка `_render_trends_card`
+пересчитывает `trends.metric_trend` из уже переданной серии, web `_timeline_view`
+пересчитывает `trend_summary` из **живой** серии (снимок-времени-скана там и не
+годится). Персист derive-but-unread + дивергенция snapshot↔live = ровно тот долг,
+что был помечен. Убраны оба присваивания в `collection_runner.run` (success +
+except-fallback) и ставший лишним импорт `trends as _trends`; `report['trends']`
+(серия — читается карточкой) и функция `trends.trend_summary` (web) целы. report.json
+теряет неиспользуемый ключ; contract-тесты subset → не задеты, ни один тест его не
+читал. Покрыто прогоном `test_collection_runner`/`test_trends`/`test_contracts`/
+`test_web_timeline` (95 passed).
 
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
