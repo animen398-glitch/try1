@@ -16,10 +16,21 @@ a = Analysis(
     binaries=_fluent_bins,
     datas=[
         ('configs', 'configs'),   # settings.json, targets.json (значения по умолчанию)
+        # External tab/analyzer plugins are discovered at runtime from
+        # resource_root/plugins (== _MEIPASS/plugins when frozen). Bundle the dir
+        # or the frozen .exe loses them (e.g. the Scrapy tab) — see PluginManager.
+        ('plugins', 'plugins'),
     ] + _fluent_datas,
     hiddenimports=[
         'requests',
         'bs4',
+        # External plugins are loaded as DATA files at runtime, so PyInstaller's
+        # static analysis never sees their imports. The Scrapy tab plugin imports
+        # core.scrapy_crawler (reachable from nowhere else in the graph) — declare
+        # it here or the tab silently drops in the frozen build. scrapy itself is
+        # intentionally NOT bundled (heavy/optional); the crawl runs in a child
+        # process and the tab explains how to enable it.
+        'core.scrapy_crawler',
     ] + _fluent_hidden,
     hookspath=[],
     hooksconfig={},
