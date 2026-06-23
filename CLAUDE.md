@@ -1503,6 +1503,20 @@ call-sites целы** (`.get`/`.items()` поддерживаются импор
 critical=0, взаимосвязаны, intelligence их импортит) тоже не тронута — иная семантика.
 Поведение байт-в-байт. ruff чист, `test_ci_gate`/`test_compliance`/`test_github_issues`.
 
+**SSOT severity-order — продолжение (`SEVERITY_ORDER` в 3 модулях) — `[ЗАКРЫТ
+2026-06-23]`.** Backend-полировка, хвост предыдущего. Тот же worst-first кортеж
+`('critical','high','medium','low','info')` дублировался ещё в трёх местах:
+`correlation.SEVERITY_ORDER` (деривит свой ascending `_SEVERITY_RANK`),
+`findings_sla._SEVERITY_ORDER`, `findings_store.SEVERITY_ORDER`. Все переведены на
+импорт из `core.severity.SEVERITY_ORDER`. `findings_store` **ре-экспортит** его
+(`# noqa: F401`) — GUI Findings-вкладка импортит `SEVERITY_ORDER` именно оттуда, и
+контракт цел. `correlation` по-прежнему деривит свой ascending rank (critical=0)
+из общего кортежа — семантика не тронута, `intelligence` (импортит
+`correlation._SEVERITY_RANK`) не задет. `vuln_report._SEVERITY_ORDER` (другой,
+3-элементный high/medium/info) НЕ тронут — это иная шкала. Поведение байт-в-байт.
+ruff чист, `test_correlation`/`test_findings_sla`/`test_findings_store`/
+`test_findings_tab`/`test_intelligence` (119 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)

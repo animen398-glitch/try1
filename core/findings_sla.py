@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from core.findings_store import INACTIVE_STATUSES
+from core.severity import SEVERITY_ORDER as _SEVERITY_ORDER
 
 # Remediation window per severity, in days (DefectDojo defaults). ``info`` has no
 # SLA. A caller may override via ``settings['findings_sla']`` (same keys).
@@ -22,9 +23,6 @@ DEFAULT_SLA = {'critical': 7, 'high': 30, 'medium': 90, 'low': 120}
 # many days (or fewer) left is flagged so a breach can be pre-empted, not just
 # reported after the fact. Callers may pass their own ``warn_days``.
 SLA_WARN_DAYS = 7
-
-# Canonical severity scale (worst → least) for the aging / per-severity rollups.
-_SEVERITY_ORDER = ('critical', 'high', 'medium', 'low', 'info')
 
 
 def sla_days(severity: str, overrides: Optional[Dict] = None) -> Optional[int]:

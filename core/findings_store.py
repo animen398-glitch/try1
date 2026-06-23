@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Union
 
 from core.config import FINDINGS_DB
 from core.finding_fingerprint import scoped_id
+from core.severity import SEVERITY_ORDER  # noqa: F401 — re-exported for the GUI Findings tab
 from utils.sqlite_store import SQLiteStore, now_ts as _now
 
 # Finding lifecycle states. OPEN is the implicit state of a freshly created
@@ -39,9 +40,9 @@ from utils.sqlite_store import SQLiteStore, now_ts as _now
 # auto-reopened or alerted (anti-noise, the TruffleHog/DefectDojo idea).
 STATUSES = ('OPEN', 'IN_PROGRESS', 'FIXED', 'IGNORED', 'FALSE_POSITIVE')
 DEFAULT_STATUS = 'OPEN'
-# Canonical severity scale, highest first (mirrors findings_adapter._SEVERITY
-# targets) — used to order the GUI severity filter.
-SEVERITY_ORDER = ('critical', 'high', 'medium', 'low', 'info')
+# SEVERITY_ORDER (canonical scale, highest first) comes from core.severity and is
+# re-exported here — the GUI Findings tab imports it from this module to order its
+# severity filter.
 INACTIVE_STATUSES = frozenset({'FIXED', 'IGNORED', 'FALSE_POSITIVE'})
 SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 

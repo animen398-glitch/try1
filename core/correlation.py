@@ -25,9 +25,9 @@ store reader. Stores are global (project-keyed), so no projects ``base`` is need
 import ipaddress
 from typing import Dict, List, Optional
 
-# Canonical severity scale (worst → least). Mirrors findings_adapter's lowercase
-# scale; used to pick a "worst" severity and to bucket counts.
-SEVERITY_ORDER = ('critical', 'high', 'medium', 'low', 'info')
+from core.severity import SEVERITY_ORDER  # canonical severity scale (worst → least)
+
+# Ascending rank for this module's "worst-of" picks (index 0 = critical = worst).
 _SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITY_ORDER)}
 
 
