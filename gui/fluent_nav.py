@@ -1,30 +1,258 @@
-"""gui/fluent_nav.py — FluentWindow shell wiring for variant B (P3b).
+"""gui/fluent_nav.py — stable left-nav shell for the mixin-based GUI.
 
-The app's main window is a qfluentwidgets ``FluentWindow`` (frameless, Fluent side
-navigation built in). FluentWindow is *not* a QMainWindow — it has no ``menuBar``
-and no ``QStatusBar`` — so this module supplies the three pieces the existing
-mixin-based window expects, without changing call sites:
+The first PySide6/Fluent shell used qfluentwidgets ``FluentWindow``. It looked
+nice, but in the frozen Windows app the frameless title bar and navigation wheel
+events were brittle. This module keeps the public facade the rest of the app
+uses, but backs it with a native ``QMainWindow`` + ``QStackedWidget`` + a custom
+scrollable left rail. Native window chrome means minimize/maximize/close, drag
+and resize are handled by Windows itself.
 
   * ``FluentWindowBase`` — the base class MainWindow subclasses.
-  * ``FluentWindowTabs`` — a ``QTabWidget``-compatible facade over FluentWindow's
-    own ``stackedWidget`` + ``navigationInterface`` (the small subset the app uses:
+  * ``FluentWindowTabs`` — a ``QTabWidget``-compatible facade over the shell's
+    ``stackedWidget`` + ``navigationInterface`` (the small subset the app uses:
     ``addTab`` [plugin contract], ``widget`` [lazy-load], ``count``/``tabText``/
     ``widget`` [tests], ``currentChanged`` signal [lazy-load hook], plus
     ``currentIndex``/``setCurrentIndex``/``currentWidget``/``indexOf``).
-  * ``StatusBar`` — a thin bottom bar matching the ``QStatusBar`` API the app uses
-    (``showMessage``/``addPermanentWidget``), plus ``install_status_bar`` to mount
-    it below FluentWindow's nav+content row.
-
-Variant B is committed to PySide6 (the PyQt5/QTabWidget fallback was dropped in
-P3b), so qfluentwidgets is a hard dependency here.
+  * ``StatusBar`` — a thin bottom bar matching the ``QStatusBar`` subset the app
+    uses (``showMessage``/``addPermanentWidget``).
 """
 
+from dataclasses import dataclass
+
 from qtpy.QtCore import QObject, Qt, QTimer, Signal
-from qtpy.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from qtpy.QtWidgets import (
+    QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QScrollArea,
+    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+)
 
-from gui._fluent import FluentIcon, FluentWindow, NavigationItemPosition
+from gui._fluent import FluentIcon, NavigationItemPosition
 
-FluentWindowBase = FluentWindow
+_NAV_WIDTH = 280
+
+
+@dataclass
+class _NavigationItem:
+    routeKey: str
+    widget: QPushButton
+    selectable: bool = True
+
+
+class StableNavigationInterface(QFrame):
+    """Left navigation rail with a wheel-scrollable middle section."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.panel = self
+        self.items: dict[str, _NavigationItem] = {}
+        self._current_route = ""
+
+        self.setObjectName("stableNavigation")
+        self.setFixedWidth(_NAV_WIDTH)
+        self.setFrameShape(QFrame.NoFrame)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(4, 8, 4, 8)
+        root.setSpacing(4)
+
+        self.topLayout = QVBoxLayout()
+        self.topLayout.setContentsMargins(0, 0, 0, 0)
+        self.topLayout.setSpacing(4)
+        root.addLayout(self.topLayout, 0)
+
+        self.scrollArea = QScrollArea(self)
+        self.scrollArea.setWidgetResizable(True)
+        self.scrollArea.setFrameShape(QFrame.NoFrame)
+        self.scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scrollWidget = QWidget()
+        self.scrollLayout = QVBoxLayout(self.scrollWidget)
+        self.scrollLayout.setContentsMargins(0, 0, 0, 0)
+        self.scrollLayout.setSpacing(4)
+        self.scrollLayout.addStretch(1)
+        self.scrollArea.setWidget(self.scrollWidget)
+        root.addWidget(self.scrollArea, 1)
+
+        self.bottomLayout = QVBoxLayout()
+        self.bottomLayout.setContentsMargins(0, 0, 0, 0)
+        self.bottomLayout.setSpacing(4)
+        root.addLayout(self.bottomLayout, 0)
+
+        self.setStyleSheet("""
+            QFrame#stableNavigation {
+                background: #1f1f1f;
+                border-right: 1px solid #303030;
+            }
+            QPushButton[navItem="true"] {
+                background: transparent;
+                border: 0;
+                border-radius: 6px;
+                color: #f5f5f5;
+                font-size: 15px;
+                padding: 10px 12px;
+                text-align: left;
+            }
+            QPushButton[navItem="true"]:hover {
+                background: #2c2c2c;
+            }
+            QPushButton[navItem="true"]:checked {
+                background: #303030;
+                border-left: 3px solid #00a7ff;
+                padding-left: 9px;
+            }
+            QScrollArea {
+                background: transparent;
+                border: 0;
+            }
+        """)
+
+    def addItem(self, routeKey: str, icon, text: str, onClick=None,
+                selectable=True, position=NavigationItemPosition.TOP,
+                tooltip: str = None, parentRouteKey: str = None):
+        return self.insertItem(-1, routeKey, icon, text, onClick, selectable,
+                               position, tooltip, parentRouteKey)
+
+    def insertItem(self, index: int, routeKey: str, icon, text: str,
+                   onClick=None, selectable=True,
+                   position=NavigationItemPosition.TOP, tooltip: str = None,
+                   parentRouteKey: str = None):
+        if routeKey in self.items:
+            return self.items[routeKey].widget
+
+        button = QPushButton(text, self)
+        button.setProperty("navItem", True)
+        button.setCheckable(bool(selectable))
+        button.setCursor(Qt.PointingHandCursor)
+        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        button.setMinimumHeight(44)
+        button.setToolTip(tooltip or text)
+        qicon = _qicon(icon)
+        if not qicon.isNull():
+            try:
+                button.setIcon(qicon)
+            except TypeError:
+                # If this module is imported outside main.py before QT_API is
+                # pinned, qfluentwidgets can hand us a QIcon from a different
+                # Qt binding. Text navigation is still fully usable.
+                pass
+
+        if onClick is not None:
+            button.clicked.connect(lambda *_: onClick())
+        if selectable:
+            button.clicked.connect(lambda _checked=False, _rk=routeKey: self.setCurrentItem(_rk))
+
+        self.items[routeKey] = _NavigationItem(routeKey, button, selectable)
+        layout = self._layout_for(position)
+        if layout is self.scrollLayout:
+            insert_at = max(0, layout.count() - 1) if index < 0 else index
+            layout.insertWidget(insert_at, button)
+        else:
+            layout.insertWidget(index if index >= 0 else layout.count(), button)
+        return button
+
+    def addSeparator(self, position=NavigationItemPosition.TOP):
+        separator = QFrame(self)
+        separator.setFrameShape(QFrame.HLine)
+        separator.setStyleSheet("color: #343434; background: #343434;")
+        self._layout_for(position).insertWidget(
+            max(0, self.scrollLayout.count() - 1)
+            if position == NavigationItemPosition.SCROLL else -1,
+            separator,
+        )
+
+    def addWidget(self, routeKey: str, widget: QWidget, onClick=None,
+                  position=NavigationItemPosition.TOP, tooltip: str = None,
+                  parentRouteKey: str = None):
+        self.insertWidget(-1, routeKey, widget, onClick, position, tooltip,
+                          parentRouteKey)
+
+    def insertWidget(self, index: int, routeKey: str, widget: QWidget,
+                     onClick=None, position=NavigationItemPosition.TOP,
+                     tooltip: str = None, parentRouteKey: str = None):
+        if routeKey in self.items:
+            return
+        if tooltip:
+            widget.setToolTip(tooltip)
+        self.items[routeKey] = _NavigationItem(routeKey, widget, False)
+        self._layout_for(position).insertWidget(index, widget)
+
+    def widget(self, routeKey: str):
+        return self.items[routeKey].widget
+
+    def setCurrentItem(self, routeKey: str):
+        if routeKey not in self.items:
+            return
+        self._current_route = routeKey
+        for key, item in self.items.items():
+            if hasattr(item.widget, "setChecked"):
+                item.widget.setChecked(item.selectable and key == routeKey)
+
+    def removeWidget(self, routeKey: str):
+        item = self.items.pop(routeKey, None)
+        if item is not None:
+            item.widget.setParent(None)
+            item.widget.deleteLater()
+
+    def setMinimumHeight(self, height: int):
+        # Compatibility with qfluent NavigationInterface; QMainWindow layout owns
+        # the real sizing.
+        return super().setMinimumHeight(0)
+
+    def layoutMinHeight(self):
+        return self.minimumSizeHint().height()
+
+    def _layout_for(self, position):
+        if position == NavigationItemPosition.BOTTOM:
+            return self.bottomLayout
+        if position == NavigationItemPosition.TOP:
+            return self.topLayout
+        return self.scrollLayout
+
+
+class StableWindowBase(QMainWindow):
+    """Native-window shell with a left nav and stacked page area."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.navigationInterface = StableNavigationInterface(self)
+        self.stackedWidget = QStackedWidget(self)
+
+        root = QWidget(self)
+        self._outer_layout = QVBoxLayout(root)
+        self._outer_layout.setContentsMargins(0, 0, 0, 0)
+        self._outer_layout.setSpacing(0)
+        self.hBoxLayout = QHBoxLayout()
+        self.hBoxLayout.setContentsMargins(0, 0, 0, 0)
+        self.hBoxLayout.setSpacing(0)
+        self.hBoxLayout.addWidget(self.navigationInterface, 0)
+        self.hBoxLayout.addWidget(self.stackedWidget, 1)
+        self._outer_layout.addLayout(self.hBoxLayout, 1)
+        self.setCentralWidget(root)
+
+    def addSubInterface(self, interface: QWidget, icon, text: str,
+                        position=NavigationItemPosition.TOP, parent=None,
+                        isTransparent=False):
+        if not interface.objectName():
+            raise ValueError("The object name of `interface` can't be empty string.")
+        self.stackedWidget.addWidget(interface)
+        route_key = interface.objectName()
+        item = self.navigationInterface.addItem(
+            routeKey=route_key,
+            icon=icon,
+            text=text,
+            onClick=lambda *_: self.switchTo(interface),
+            position=position,
+            tooltip=text,
+        )
+        if self.stackedWidget.count() == 1:
+            self.switchTo(interface)
+        return item
+
+    def switchTo(self, interface: QWidget):
+        self.stackedWidget.setCurrentWidget(interface)
+        self.navigationInterface.setCurrentItem(interface.objectName())
+
+
+FluentWindowBase = StableWindowBase
 
 # Tab title → Fluent icon name (resolved with a safe fallback so an unknown name
 # never crashes). Keeps the nav readable without touching the plugin contract.
@@ -55,6 +283,12 @@ def _icon_for(title: str):
     return getattr(FluentIcon, _TAB_ICONS.get(title, ""), FluentIcon.TAG)
 
 
+def _qicon(icon):
+    if hasattr(icon, "icon"):
+        return icon.icon()
+    return icon
+
+
 class FluentWindowTabs(QObject):
     """QTabWidget-compatible facade over a FluentWindow's nav + stacked content.
 
@@ -64,7 +298,7 @@ class FluentWindowTabs(QObject):
 
     currentChanged = Signal(int)
 
-    def __init__(self, window: FluentWindow):
+    def __init__(self, window: StableWindowBase):
         super().__init__(window)
         self._win = window
         self._stack = window.stackedWidget
@@ -179,18 +413,7 @@ class StatusBar(QWidget):
         self._layout.addWidget(widget)
 
 
-def install_status_bar(window: FluentWindow, status_bar: StatusBar) -> None:
-    """Mount ``status_bar`` as a full-width bottom row of a FluentWindow.
-
-    FluentWindow lays its nav + content in ``window.hBoxLayout`` set directly on
-    the window. We move that row onto an inner widget and give the window a new
-    vertical layout: [nav|content] on top, the status bar beneath."""
-    row = window.hBoxLayout
-    inner = QWidget(window)
-    inner.setLayout(row)                     # detaches the row from the window
-    outer = QVBoxLayout(window)               # new top-level layout
-    outer.setContentsMargins(0, 0, 0, 0)
-    outer.setSpacing(0)
-    outer.addWidget(inner, 1)
+def install_status_bar(window: StableWindowBase, status_bar: StatusBar) -> None:
+    """Mount ``status_bar`` as a full-width bottom row."""
     status_bar.setMaximumHeight(28)
-    outer.addWidget(status_bar, 0, Qt.AlignBottom)
+    window._outer_layout.addWidget(status_bar, 0, Qt.AlignBottom)
