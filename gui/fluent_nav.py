@@ -88,33 +88,11 @@ class StableNavigationInterface(QFrame):
         self.bottomLayout.setSpacing(4)
         root.addLayout(self.bottomLayout, 0)
 
-        self.setStyleSheet("""
-            QFrame#stableNavigation {
-                background: #1f1f1f;
-                border-right: 1px solid #303030;
-            }
-            QPushButton[navItem="true"] {
-                background: transparent;
-                border: 0;
-                border-radius: 6px;
-                color: #f5f5f5;
-                font-size: 15px;
-                padding: 10px 12px;
-                text-align: left;
-            }
-            QPushButton[navItem="true"]:hover {
-                background: #2c2c2c;
-            }
-            QPushButton[navItem="true"]:checked {
-                background: #303030;
-                border-left: 3px solid #00a7ff;
-                padding-left: 9px;
-            }
-            QScrollArea {
-                background: transparent;
-                border: 0;
-            }
-        """)
+        # Rail palette lives in gui.theme (single source) so the sidebar tracks
+        # the active theme instead of hardcoding greys. The theme is applied on
+        # the QApplication before MainWindow is built, so is_dark() is correct here.
+        from gui import theme
+        self.setStyleSheet(theme.navigation_qss())
 
     def addItem(self, routeKey: str, icon, text: str, onClick=None,
                 selectable=True, position=NavigationItemPosition.TOP,
@@ -166,7 +144,8 @@ class StableNavigationInterface(QFrame):
     def addSeparator(self, position=NavigationItemPosition.TOP):
         separator = QFrame(self)
         separator.setFrameShape(QFrame.HLine)
-        separator.setStyleSheet("color: #343434; background: #343434;")
+        # Coloured by the rail stylesheet (gui.theme.navigation_qss), theme-aware.
+        separator.setProperty("navSep", True)
         self._layout_for(position).insertWidget(
             max(0, self.scrollLayout.count() - 1)
             if position == NavigationItemPosition.SCROLL else -1,

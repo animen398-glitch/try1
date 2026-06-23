@@ -104,6 +104,19 @@ def test_group_box_qss_border_adapts(qapp):
         assert '#3c3c3c' in theme.group_box_qss()
 
 
+def test_navigation_qss_is_theme_aware(qapp):
+    with _restore(qapp):
+        theme.apply_theme(qapp, 'dark')
+        dark = theme.navigation_qss()
+        assert 'QFrame#stableNavigation' in dark
+        assert theme.DARK['sidebar'] in dark          # recessed rail surface
+        assert theme.DARK['accent'] in dark           # selected accent bar
+        theme.apply_theme(qapp, 'system')
+        light = theme.navigation_qss()
+        assert '#f3f3f3' in light                      # light rail surface
+        assert dark != light
+
+
 def test_is_dark_and_chrome_track_palette(qapp):
     with _restore(qapp):
         theme.apply_theme(qapp, 'dark')

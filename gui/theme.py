@@ -223,6 +223,46 @@ def button_qss(style: str) -> str:
     )
 
 
+# Left navigation rail palette (gui/fluent_nav.py). Centralised here so the rail
+# matches the layered theme instead of carrying its own hardcoded greys: a
+# recessed surface, a clear hover, and an obvious selected item (accent left bar).
+_NAV = {
+    'dark': {
+        'bg': DARK['sidebar'], 'border': DARK['border'], 'text': DARK['text'],
+        'hover': DARK['hover'], 'selected_bg': DARK['card'],
+        'accent': DARK['accent'], 'sep': DARK['border'],
+    },
+    'light': {
+        'bg': '#f3f3f3', 'border': '#d6d6d6', 'text': '#1f1f1f',
+        'hover': '#e7e7e7', 'selected_bg': '#e4eef9',
+        'accent': '#0078d4', 'sep': '#d6d6d6',
+    },
+}
+
+
+def navigation_qss() -> str:
+    """Stylesheet for the left nav rail under the active theme.
+
+    Targets ``QFrame#stableNavigation`` / ``QPushButton[navItem]`` /
+    ``QFrame[navSep]`` so fluent_nav doesn't hardcode colours; selected items get
+    an accent left bar (kept obvious), hover a subtle lift."""
+    c = _NAV['dark'] if is_dark() else _NAV['light']
+    return f"""
+    QFrame#stableNavigation {{ background: {c['bg']};
+        border-right: 1px solid {c['border']}; }}
+    QPushButton[navItem="true"] {{ background: transparent; border: 0;
+        border-radius: 6px; color: {c['text']}; font-size: 14px;
+        padding: 10px 12px; text-align: left; }}
+    QPushButton[navItem="true"]:hover {{ background: {c['hover']}; }}
+    QPushButton[navItem="true"]:checked {{ background: {c['selected_bg']};
+        border-left: 3px solid {c['accent']}; padding-left: 9px;
+        font-weight: 600; }}
+    QFrame[navSep="true"] {{ color: {c['sep']}; background: {c['sep']};
+        max-height: 1px; border: 0; }}
+    QScrollArea {{ background: transparent; border: 0; }}
+    """
+
+
 def group_box_qss() -> str:
     """Stylesheet for a ``SectionGroupBox`` under the active theme."""
     ch = chrome()
