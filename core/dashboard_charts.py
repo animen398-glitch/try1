@@ -20,11 +20,6 @@ from typing import Optional, Sequence, Tuple
 Cell = Tuple[str, str]
 
 
-def _fmt(value: float) -> str:
-    v = float(value)
-    return str(int(v)) if v.is_integer() else f'{v:.1f}'
-
-
 def _empty(note: str) -> str:
     e = html.escape
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="120" height="24">'

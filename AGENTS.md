@@ -1467,6 +1467,15 @@ except-fallback) и ставший лишним импорт `trends as _trends`
 читал. Покрыто прогоном `test_collection_runner`/`test_trends`/`test_contracts`/
 `test_web_timeline` (95 passed).
 
+**Dead-code чистка `dashboard_charts._fmt` + `tech_risk.from_report` — `[ЗАКРЫТ
+2026-06-23]`.** Backend-полировка. Скан `core/` на нереференсные функции выявил две
+мёртвые: `dashboard_charts._fmt` (приватный форматтер — `sparkline`/`heatmap`
+форматируют числа инлайн, никто не звал) и `tech_risk.from_report` («public alias»,
+который ничего не вызывало — все идут через `build_technology_risk`; вдобавок имя не
+совпадает с реальным `*_from_report`-паттерном прочих хелперов). Обе удалены; публичные
+точки входа (`build_technology_risk`/`load_technology_risk`/`sparkline`/`heatmap`) целы.
+ruff чист, `test_dashboard_charts`/`test_tech_risk` (27 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)

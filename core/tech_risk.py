@@ -179,11 +179,6 @@ def build_technology_risk(report: Dict[str, Any]) -> Dict[str, Any]:
     return {"summary": summary, "items": items}
 
 
-def from_report(report: Dict[str, Any]) -> Dict[str, Any]:
-    """Public alias mirroring other derive-on-read core helpers."""
-    return build_technology_risk(report)
-
-
 def load_technology_risk(project) -> Dict[str, Any]:
     """Score a project's latest-scan technology risk (thin reader, EPIC 15).
 
