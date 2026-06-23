@@ -27,3 +27,14 @@ def test_fluent_window_controls_are_available(qapp):
     assert title_bar.maxBtn is not None
     assert title_bar.closeBtn is not None
     assert callable(window._toggle_maximized)
+
+
+def test_fluent_tab_items_live_in_scrollable_navigation_area(qapp):
+    from gui.main_window import MainWindow
+
+    window = MainWindow()
+    panel = window.navigationInterface.panel
+    dashboard_item = panel.items["tab0"].widget
+
+    assert dashboard_item.parent() is panel.scrollWidget
+    assert panel.scrollArea.widget() is panel.scrollWidget

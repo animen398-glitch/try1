@@ -86,8 +86,8 @@ class FluentWindowTabs(QObject):
         # FluentWindow keys interfaces by objectName — must be unique & set.
         container.setObjectName(f"tab{index}")
         pos = (NavigationItemPosition.BOTTOM if position == 'bottom'
-               else NavigationItemPosition.TOP)
-        if new_section and pos == NavigationItemPosition.TOP:
+               else NavigationItemPosition.SCROLL)
+        if new_section and pos == NavigationItemPosition.SCROLL:
             try:
                 self._win.navigationInterface.addSeparator(pos)
             except Exception:   # noqa: BLE001 — a separator is cosmetic
