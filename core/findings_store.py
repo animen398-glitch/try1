@@ -26,13 +26,12 @@ Design:
 """
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from core.config import FINDINGS_DB
 from core.finding_fingerprint import scoped_id
-from utils.sqlite_store import SQLiteStore
+from utils.sqlite_store import SQLiteStore, now_ts as _now
 
 # Finding lifecycle states. OPEN is the implicit state of a freshly created
 # finding; FIXED/IGNORED/FALSE_POSITIVE are inactive (excluded from risk);
@@ -56,9 +55,6 @@ STATUS_LABELS = {
     'OPEN': 'Открыто', 'IN_PROGRESS': 'В работе', 'FIXED': 'Исправлено',
     'IGNORED': 'Игнор', 'FALSE_POSITIVE': 'Ложное',
 }
-
-def _now() -> str:
-    return datetime.now().isoformat(timespec='seconds')
 
 
 class FindingsStore(SQLiteStore):

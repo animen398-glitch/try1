@@ -27,11 +27,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Union
 
 from core.config import CVE_CACHE_DB
-from utils.sqlite_store import SQLiteStore
-
-
-def _now() -> str:
-    return datetime.now().isoformat(timespec='seconds')
+from utils.sqlite_store import SQLiteStore, now_ts as _now
 
 
 def _age_seconds(fetched_at: Optional[str]) -> float:

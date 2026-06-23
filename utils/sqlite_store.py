@@ -1,8 +1,15 @@
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Union
+
+
+def now_ts() -> str:
+    """Local wall-clock timestamp (seconds resolution) — the single source the
+    project's SQLite stores stamp ``first_seen``/``last_seen``/event rows with."""
+    return datetime.now().isoformat(timespec='seconds')
 
 
 class SQLiteStore:

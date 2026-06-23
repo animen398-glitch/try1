@@ -1476,6 +1476,18 @@ except-fallback) и ставший лишним импорт `trends as _trends`
 точки входа (`build_technology_risk`/`load_technology_risk`/`sparkline`/`heatmap`) целы.
 ruff чист, `test_dashboard_charts`/`test_tech_risk` (27 passed).
 
+**SSOT timestamp `now_ts` — устранён дубль `_now` в 3 сторах — `[ЗАКРЫТ
+2026-06-23]`.** Backend-полировка. `asset_store`/`cve_store`/`findings_store` несли
+байт-в-байт одинаковый `_now()` (`datetime.now().isoformat(timespec='seconds')`).
+Вынесен в общий базовый `utils/sqlite_store.now_ts()` (естественный SSOT — все три
+стора и так наследуют `SQLiteStore` оттуда; EPIC NEXT F0 уже свёл их к одному
+паттерну). Каждый стор импортит `now_ts as _now` — **все call-sites `_now()` целы**
+(ноль изменений в телах методов), три дубль-определения удалены. `datetime`-импорт
+убран из asset/findings (использовался только `_now`-ом), в cve_store оставлен
+(нужен `_age_seconds`). Поведение байт-в-байт. ruff чист, `test_asset_store`/
+`test_cve_store`/`test_findings_store`/`test_findings_store_migration`/
+`test_sqlite_migrations` (56 passed).
+
 **Структурный per-CVE CWE → SARIF-теги (follow-up к NVD CWE) — `[ЗАКРЫТ]`.**
 Backend-фаза. Завершил отложенный follow-up: NVD-CWE из предыдущего инкремента жил
 только в `detail`-строке находки (human-display), машинные поверхности (SARIF)

@@ -21,13 +21,12 @@ by the ``project`` column, idempotent ``CREATE TABLE IF NOT EXISTS`` schema with
 ``PRAGMA user_version``. ``attrs`` is JSON (version/provider/source/…).
 """
 
-from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
 from core.config import ASSETS_DB
 from core.finding_fingerprint import scoped_id
-from utils.sqlite_store import SQLiteStore
+from utils.sqlite_store import SQLiteStore, now_ts as _now
 
 STATUSES = ('ACTIVE', 'GONE')
 ACTIVE_STATUS = 'ACTIVE'
@@ -35,10 +34,6 @@ GONE_STATUS = 'GONE'
 EVENT_TYPES = ('CREATED', 'SEEN', 'GONE', 'REAPPEARED')
 # Human-readable status labels — single source for the GUI tab and web console.
 STATUS_LABELS = {'ACTIVE': 'Активен', 'GONE': 'Исчез'}
-
-
-def _now() -> str:
-    return datetime.now().isoformat(timespec='seconds')
 
 
 class AssetStore(SQLiteStore):
