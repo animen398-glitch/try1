@@ -33,6 +33,19 @@ class SQLiteStore:
 
     Понижение версии не выполняется: БД с версией выше ``SCHEMA_VERSION``
     остаётся как есть (forward-only, защита от отката кода на старую сборку).
+
+    Долговечность/конкурентность (один контракт на все сторы): каждое
+    соединение открывается с durability-PRAGMA (:meth:`_apply_pragmas`).
+    ``journal_mode=WAL`` (persistent) позволяет читателям работать, пока
+    писатель держит блокировку — это убирает ``database is locked`` при
+    одновременной записи monitor-треда и чтении GUI/web-консоли из одного
+    стора. ``synchronous=NORMAL`` устойчив к крашу приложения; потеряться может
+    лишь последняя транзакция при сбое ОС/питания (приемлемо для локальной
+    аналитики, не финданных). ``busy_timeout`` заставляет конкурирующего
+    писателя подождать, а не падать сразу. WAL создаёт сайдкары ``-wal``/
+    ``-shm`` рядом с ``.db``; они восстанавливаются SQLite при открытии, а сырой
+    файл БД в проекте нигде не копируется (export/import — построчный, см.
+    :attr:`PROJECT_EXPORT`), поэтому на бэкап/упаковку это не влияет.
     """
 
     SCHEMA: str = ''
@@ -44,6 +57,11 @@ class SQLiteStore:
     # ``(main_table, events_table, events_fk_column)``. The faithful slice is the
     # main rows plus their event rows — ids/status/timestamps preserved verbatim.
     PROJECT_EXPORT: Optional[tuple] = None
+    # Durability/concurrency knobs (see class docstring + :meth:`_apply_pragmas`).
+    # ``WAL=False`` lets a store opt out (e.g. ``:memory:``); ``BUSY_TIMEOUT_MS``
+    # is the single source for both the connect timeout and ``PRAGMA busy_timeout``.
+    WAL: bool = True
+    BUSY_TIMEOUT_MS: int = 5000
 
     def __init__(self, db_path: Union[str, Path]):
         self.db_path = Path(db_path)
@@ -88,10 +106,21 @@ class SQLiteStore:
         conn.execute(f'ALTER TABLE {table} ADD COLUMN {column_def}')
         return True
 
+    def _apply_pragmas(self, conn: sqlite3.Connection) -> None:
+        """Durability/concurrency PRAGMA, применяемые к каждому соединению.
+        Контракт и обоснование — в docstring класса. ``busy_timeout`` и
+        ``synchronous`` per-connection; ``journal_mode=WAL`` persistent (no-op на
+        уже-WAL БД). Никогда не роняет соединение (PRAGMA — безопасные no-fail)."""
+        conn.execute(f'PRAGMA busy_timeout = {int(self.BUSY_TIMEOUT_MS)}')
+        conn.execute('PRAGMA synchronous = NORMAL')
+        if self.WAL:
+            conn.execute('PRAGMA journal_mode = WAL')
+
     @contextmanager
     def _connect(self):
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=self.BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
+        self._apply_pragmas(conn)
         try:
             yield conn
             conn.commit()
