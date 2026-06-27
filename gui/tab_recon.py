@@ -28,6 +28,21 @@ from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 class ReconTabMixin:
     """Builds and drives the Recon & Intel tab and the API dump action."""
 
+    @staticmethod
+    def _format_dynamic_endpoint(ep: dict) -> str:
+        ep = ep or {}
+        path = str(ep.get('path') or '/')[:48]
+        host = str(ep.get('host') or '')
+        method = str(ep.get('method') or 'GET')[:10]
+        status = ep.get('status')
+
+        if status is None or status == '':
+            code = '-'
+        else:
+            code = str(status)[:12]
+
+        return f"    {method:<5} {code:>3}  {path:<50}  {host}"
+
     def _build_recon_tab(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -268,13 +283,7 @@ class ReconTabMixin:
             if endpoints:
                 self.recon_results.append_info(f"  XHR / Fetch endpoints ({len(endpoints)}):")
                 for ep in endpoints[:25]:
-                    path   = ep.get('path', '/')[:48]
-                    host   = ep.get('host', '')
-                    method = ep.get('method', 'GET')
-                    code   = ep.get('status', 0)
-                    self.recon_results.append(
-                        f"    {method:<5} {code:>3}  {path:<50}  {host}"
-                    )
+                    self.recon_results.append(self._format_dynamic_endpoint(ep))
                 if len(endpoints) > 25:
                     self.recon_results.append_info(
                         f"    … и ещё {len(endpoints) - 25} endpoints"
