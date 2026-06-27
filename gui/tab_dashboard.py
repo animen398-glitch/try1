@@ -487,6 +487,8 @@ class DashboardTabMixin:
                 or result.get('endpoint') != self._endpoint_filter):
             return
         if result.get('error'):
+            self._populate_dashboard_table([])
+            self.dash_detail.clear()
             self.dash_status.setText(f"Ошибка загрузки таблицы: {result['error']}")
             return
         self._populate_dashboard_table(result.get('rows', []))

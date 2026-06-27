@@ -49,3 +49,24 @@ def test_clear_dashboard_clears_detail(qapp):
     w._clear_dashboard()
     assert w.dash_detail.toPlainText() == ""
     assert w._dashboard_records == []
+
+
+def test_table_load_error_clears_stale_activity_rows_and_detail(qapp):
+    w = _window(qapp)
+    w._populate_dashboard_table([
+        {"data_type": "subdomain", "source": "x", "content": "a.x.com",
+         "metadata": {}}],
+    )
+    w.dashboard_table.selectRow(0)
+    assert w.dash_detail.toPlainText()
+
+    w._on_dashboard_table_loaded({
+        "data_type": w.dash_filter.currentData(),
+        "endpoint": w._endpoint_filter,
+        "error": "boom",
+    })
+
+    assert w.dashboard_table.rowCount() == 0
+    assert w.dash_detail.toPlainText() == ""
+    assert w._dashboard_records == []
+    assert "boom" in w.dash_status.text()
