@@ -175,6 +175,37 @@ def test_sla_breach_events_merged_into_feed():
     assert types == ['new_finding', 'sla_breach']     # chronological by 'at'
 
 
+def test_audit_run_events_are_folded_into_timeline():
+    audit_runs = [{
+        'id': 'audit-shop-1',
+        'profile': 'client_safe',
+        'status': 'completed',
+        'created_at': '2026-03-01T10:00:00',
+        'updated_at': '2026-03-01T10:05:00',
+    }]
+    audit_events = [{
+        'run_id': 'audit-shop-1',
+        'type': 'finding_verified',
+        'phase': 'validation',
+        'finding_id': 'finding-1',
+        'at': '2026-03-01T10:03:00',
+    }]
+
+    events = timeline.build_events(
+        [],
+        audit_runs=audit_runs,
+        audit_events=audit_events,
+    )
+
+    assert [e['type'] for e in events] == [
+        'audit_run_started',
+        'audit_finding_verified',
+        'audit_run_completed',
+    ]
+    assert {e['section'] for e in events} == {'audit_runs'}
+    assert events[1]['title'] == 'audit-shop-1 finding_verified finding=finding-1'
+
+
 def test_events_are_deduped_and_time_ordered():
     a = _report('s1', '2026-01-01')
     b = _report('s2', '2026-01-02', risk=('High', 60))
@@ -232,3 +263,31 @@ def test_build_timeline_includes_asset_events(tmp_path):
     asset_events = [e for e in tl['events'] if e['section'] == 'assets']
     assert [e['type'] for e in asset_events] == ['new_asset']
     assert asset_events[0]['title'] == '[subdomain] api.x.com'
+
+
+def test_build_timeline_includes_audit_run_events(tmp_path):
+    from core.audit_store import AuditRunStore
+    from core.audit_workflow import advance_audit_phase, create_audit_run
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    run = create_audit_run(project.slug, phases=['validation'], run_id='audit-x')
+    store = AuditRunStore()
+    store.save_run(run, now='2026-03-01T10:00:00')
+    store.record_event(
+        'audit-x',
+        'quality_gate_passed',
+        phase='risk_business_impact',
+        at='2026-03-01T10:01:00',
+    )
+    run = advance_audit_phase(run, 'validation', {'validated_findings': []})
+    store.save_run(run, now='2026-03-01T10:05:00')
+
+    tl = timeline.build_timeline(project)
+
+    audit_events = [e for e in tl['events'] if e['section'] == 'audit_runs']
+    assert [e['type'] for e in audit_events] == [
+        'audit_run_started',
+        'audit_quality_gate_passed',
+        'audit_run_completed',
+    ]

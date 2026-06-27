@@ -90,7 +90,9 @@ def build_series(scan_entries: List[Dict]) -> List[Dict]:
 def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  finding_events: Optional[List[Dict]] = None,
                  asset_events: Optional[List[Dict]] = None,
-                 sla_events: Optional[List[Dict]] = None) -> List[Dict]:
+                 sla_events: Optional[List[Dict]] = None,
+                 audit_runs: Optional[List[Dict]] = None,
+                 audit_events: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -159,6 +161,41 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
         if isinstance(se, dict):
             events.append(se)
 
+    for run in audit_runs or []:
+        if not isinstance(run, dict):
+            continue
+        run_id = str(run.get('id') or run.get('run_id') or '').strip()
+        if not run_id:
+            continue
+        profile = str(run.get('profile') or 'client_safe')
+        status = str(run.get('status') or '').strip().lower()
+        events.append({'scan_id': None, 'at': run.get('created_at'),
+                       'type': 'audit_run_started',
+                       'title': f"[{profile}] {run_id} started",
+                       'severity': 'info', 'section': 'audit_runs'})
+        if status in {'completed', 'failed'}:
+            events.append({'scan_id': None, 'at': run.get('updated_at'),
+                           'type': f'audit_run_{status}',
+                           'title': f"[{profile}] {run_id} {status}",
+                           'severity': 'info' if status == 'completed' else 'medium',
+                           'section': 'audit_runs'})
+
+    for ae in audit_events or []:
+        if not isinstance(ae, dict):
+            continue
+        event_type = str(ae.get('type') or '').strip()
+        run_id = str(ae.get('run_id') or '').strip()
+        if not event_type or not run_id:
+            continue
+        finding = str(ae.get('finding_id') or '').strip()
+        phase = str(ae.get('phase') or '').strip()
+        suffix = f" finding={finding}" if finding else (f" phase={phase}" if phase else "")
+        severity = 'medium' if event_type in {'finding_rejected', 'quality_gate_failed'} else 'info'
+        events.append({'scan_id': None, 'at': ae.get('at'),
+                       'type': f'audit_{event_type}',
+                       'title': f"{run_id} {event_type}{suffix}",
+                       'severity': severity, 'section': 'audit_runs'})
+
     seen = set()
     deduped: List[Dict] = []
     for ev in events:
@@ -202,8 +239,26 @@ def build_timeline(project) -> Dict:
         asset_events = AssetStore().project_events(project.slug)
     except Exception:   # noqa: BLE001 — timeline must render even if assets fail
         asset_events = []
+    try:
+        from core.audit_store import AuditRunStore
+        audit_store = AuditRunStore()
+        audit_runs = audit_store.list_runs(project.slug)
+        audit_events = [
+            event
+            for run in audit_runs
+            for event in audit_store.events(run.get('id'))
+        ]
+    except Exception:   # noqa: BLE001 - timeline must render even if audit store fails
+        audit_runs, audit_events = [], []
     return {
         'project': project.slug,
         'series': build_series(entries),
-        'events': build_events(scans, finding_events, asset_events, sla_evts),
+        'events': build_events(
+            scans,
+            finding_events,
+            asset_events,
+            sla_evts,
+            audit_runs,
+            audit_events,
+        ),
     }
