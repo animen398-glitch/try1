@@ -1,6 +1,6 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-27 17:55:55  
+> Generated: 2026-06-27 17:59:36  
 > Total memories: **9**  
 > Breakdown: instruction: 2, decision: 1, preference: 1, context: 3, error: 2
 
@@ -90,17 +90,17 @@ Advanced Site Analyzer: desktop tool (Python 3.11+, PySide6/qtpy + Fluent-Widget
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T14:49:07 | Tags: `project-overview`, `asm`, `csm`, `security`*
 
+### Memanto setup for this project
+
+Memanto setup (this project): backend = cloud (Moorcheh); project agent = asa-claude (namespace memanto_agent_asa-claude); shared by TWO connected agents (Local): (1) claude-code - project-local CLAUDE.md managed block + .claude/settings.json SessionStart hook running memanto memory sync + env PYTHONIOENCODING=utf-8 + .claude/settings.local.json allow Bash(memanto:*) (gitignored) + .claude/skills/memanto/SKILL.md; (2) codex - AGENTS.md managed block + .agents/skills/memanto/SKILL.md, no SessionStart hook (Codex has no Claude hooks, sync manually). Both share the same MEMORY.md. API key in ~/.memanto/.env. Source code, .env and secrets intentionally NOT stored - only summaries, decisions, commands, known errors.
+
+*Confidence: 0.9 | Status: active | Created: 2026-06-27T14:49:23 | Tags: `memanto`, `setup`, `integration`, `claude-code`, `codex`*
+
 ### Key directories map
 
 Key directories: core/ = ALL business logic and engines (UI must not leak in); gui/ = thin mixin UI layer (tab_*.py mixins, background work via _start_task/_run_async only); utils/ = infra (sqlite_store, endpoint_index, subprocess_utils); plugins/ = external tab plugins; plugins/analyzers/ = analyzer plugins; tests/ = ~1794 offline/headless pytest. Project workspace layout: Projects/<domain>/scans/<ts>/ + metadata.json.
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T14:49:11 | Tags: `repo-structure`, `directories`, `architecture`*
-
-### Memanto setup for this project
-
-Memanto setup (this project): backend = cloud (Moorcheh); project agent = asa-claude (namespace memanto_agent_asa-claude); integration installed for claude-code (project-local: CLAUDE.md managed block + .claude/settings.json SessionStart hook running memanto memory sync + .claude/settings.local.json allow Bash(memanto:*) + .claude/skills/memanto-memory/SKILL.md). API key stored in ~/.memanto/.env. Source code, .env and secrets are intentionally NOT stored in memory - only summaries, decisions, commands, known errors.
-
-*Confidence: 0.9 | Status: active | Created: 2026-06-27T14:49:23 | Tags: `memanto`, `setup`, `integration`, `claude-code`*
 
 ---
 
