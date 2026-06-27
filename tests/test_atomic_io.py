@@ -59,3 +59,15 @@ def test_company_registry_writes_atomically(tmp_path):
     names = [p.name for p in tmp_path.iterdir()]
     assert 'companies.json' in names
     assert not any(n.endswith('.tmp') for n in names)
+
+
+def test_save_settings_writes_atomically(tmp_path, monkeypatch):
+    """Integration: config.save_settings routes through atomic_write_json."""
+    import core.config as config
+
+    monkeypatch.setattr(config, 'SETTINGS_FILE', tmp_path / 'settings.json')
+    assert config.save_settings({'a': 1}) is True
+
+    names = [p.name for p in tmp_path.iterdir()]
+    assert 'settings.json' in names
+    assert not any(n.endswith('.tmp') for n in names)
