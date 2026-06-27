@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from urllib.parse import urlparse
 
+from utils.atomic_io import atomic_write_json
+
 PROJECTS_DIRNAME = 'Projects'
 METADATA_NAME = 'metadata.json'
 _SUBDIRS = ('scans', 'reports', 'screenshots', 'exports', 'history')
@@ -82,9 +84,8 @@ class Project:
             return self._new_metadata()
 
     def _write_metadata(self, meta: Dict) -> None:
-        self.metadata_path.write_text(
-            json.dumps(meta, indent=2, ensure_ascii=False, default=str),
-            encoding='utf-8')
+        # Atomic: a crash mid-write must not corrupt the project's scan index.
+        atomic_write_json(self.metadata_path, meta)
 
     # ---------------------------------------------------------------- scans
     def start_scan(self, stamp: Optional[str] = None) -> Path:
@@ -169,10 +170,7 @@ class Project:
         self._write_metadata(meta)
         try:
             hist = self.root / 'history'
-            hist.mkdir(parents=True, exist_ok=True)
-            (hist / f"{entry['id']}.json").write_text(
-                json.dumps(entry, indent=2, ensure_ascii=False, default=str),
-                encoding='utf-8')
+            atomic_write_json(hist / f"{entry['id']}.json", entry)
         except Exception:
             pass   # a history snapshot is best-effort; never fail a scan over it
         return entry
