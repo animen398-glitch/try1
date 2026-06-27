@@ -169,6 +169,22 @@ def test_import_rejects_unsafe_manifest_slug(tmp_path, slug):
         project_io.import_project(bad, tmp_path / 'dst')
 
 
+def test_import_rejects_non_object_manifest(tmp_path):
+    bad = tmp_path / 'list-manifest.zip'
+    with zipfile.ZipFile(bad, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps(['not', 'an', 'object']))
+    with pytest.raises(ValueError):
+        project_io.import_project(bad, tmp_path / 'dst')
+
+
+def test_import_rejects_missing_manifest_slug(tmp_path):
+    bad = tmp_path / 'missing-slug.zip'
+    with zipfile.ZipFile(bad, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps({'format_version': 1}))
+    with pytest.raises(ValueError):
+        project_io.import_project(bad, tmp_path / 'dst')
+
+
 def test_import_rejects_wrong_format(tmp_path):
     bad = tmp_path / 'old.zip'
     with zipfile.ZipFile(bad, 'w') as zf:
@@ -187,3 +203,11 @@ def test_bundle_info_reads_manifest(tmp_path):
     info = project_io.bundle_info(bundle)
     assert info['slug'] == slug and info['format_version'] == 1
     assert project_io.bundle_info(tmp_path / 'nope.zip') is None
+
+
+def test_bundle_info_rejects_unsafe_preview_manifest(tmp_path):
+    bad = tmp_path / 'evil-preview.zip'
+    with zipfile.ZipFile(bad, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps(
+            {'format_version': 1, 'slug': '../escape'}))
+    assert project_io.bundle_info(bad) is None

@@ -47,6 +47,17 @@ def _validate_bundle_slug(slug: object) -> str:
     return slug
 
 
+def _read_manifest(zf: zipfile.ZipFile) -> Dict:
+    manifest = json.loads(zf.read(_MANIFEST))
+    if not isinstance(manifest, dict):
+        raise ValueError('not a project bundle: manifest.json must be an object')
+    fmt = manifest.get('format_version')
+    if fmt != FORMAT_VERSION:
+        raise ValueError(f'unsupported bundle format_version: {fmt!r}')
+    manifest['slug'] = _validate_bundle_slug(manifest.get('slug'))
+    return manifest
+
+
 def _stores(findings_db, assets_db):
     from core.asset_store import AssetStore
     from core.findings_store import FindingsStore
@@ -132,11 +143,8 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         names = set(zf.namelist())
         if _MANIFEST not in names:
             raise ValueError('not a project bundle: manifest.json missing')
-        manifest = json.loads(zf.read(_MANIFEST))
-        fmt = manifest.get('format_version')
-        if fmt != FORMAT_VERSION:
-            raise ValueError(f'unsupported bundle format_version: {fmt!r}')
-        slug = _validate_bundle_slug(manifest.get('slug'))
+        manifest = _read_manifest(zf)
+        slug = manifest['slug']
 
         store = ProjectStore(base)
         dest_dir = store.root / slug
@@ -163,6 +171,6 @@ def bundle_info(src: Union[str, Path]) -> Optional[Dict]:
     Returns None if the file is not a valid project bundle."""
     try:
         with zipfile.ZipFile(Path(src)) as zf:
-            return json.loads(zf.read(_MANIFEST))
-    except (zipfile.BadZipFile, KeyError, ValueError, OSError):
+            return _read_manifest(zf)
+    except (zipfile.BadZipFile, KeyError, ValueError, OSError, json.JSONDecodeError):
         return None
