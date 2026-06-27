@@ -94,6 +94,31 @@ def test_populate_table_rows_and_status_label(qapp):
 
 # ── selection wiring (threads stubbed) ─────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_detail_and_apply(qapp):
+    w = _window(qapp)
+    w._run_async = lambda *a, **k: None
+    w._on_findings_table_loaded({
+        'rows': [{'id': 'f-a', 'category': 'header', 'title': 'Weak CSP',
+                  'severity': 'high', 'status': 'OPEN',
+                  'first_seen_at': '2026-01-01T00:00:00',
+                  'last_seen_at': '2026-01-02T00:00:00'}],
+        'summary': {'total': 1, 'active': 1},
+        'finding_chains': {'f-a': {'host': 'x.com'}},
+        'project': 'p1',
+    })
+    w.findings_table.selectRow(0)
+    assert w.btn_findings_apply.isEnabled()
+
+    w._on_findings_table_loaded({'project': 'p1', 'error': 'boom'})
+
+    assert w.findings_table.rowCount() == 0
+    assert w.findings_detail.toPlainText() == ''
+    assert not w.btn_findings_apply.isEnabled()
+    assert w._findings_records == []
+    assert w._findings_chains == {}
+    assert 'boom' in w.findings_status.text()
+
+
 def test_selection_enables_apply_and_preselects_status(qapp):
     w = _window(qapp)
     w._run_async = lambda *a, **k: None     # don't spawn the events worker

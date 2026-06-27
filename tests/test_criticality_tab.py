@@ -97,6 +97,27 @@ def test_table_load_populates_rows_and_rollup(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_rollup_and_business(qapp):
+    w = _window(qapp)
+    w._on_crit_table_loaded({'project': 'p1', 'crit': {
+        'items': [{'id': 'a-1', 'fp': 'fp-1', 'type': 'domain', 'value': 'x.com',
+                   'criticality': 65, 'band': 'medium', 'factors': []}],
+        'summary': {'assets': 1, 'high_criticality': 0, 'top_criticality': 65},
+    }, 'business': {'default': {'criticality': 'high'}}})
+    w.crit_table.selectRow(0)
+    assert w.crit_table.rowCount() == 1
+
+    w._on_crit_table_loaded({'project': 'p1', 'error': 'boom'})
+
+    assert w.crit_table.rowCount() == 0
+    assert w.crit_detail.toPlainText() == ''
+    assert w.crit_rollup['assets'].text() == '0'
+    assert w._crit_records == []
+    assert w._crit_business == {}
+    assert w.biz_default_crit.currentData() == ''
+    assert 'boom' in w.crit_status.text()
+
+
 def test_selection_shows_factors(qapp):
     w = _window(qapp)
     w._populate_crit_table([{

@@ -240,6 +240,9 @@ class AssetsTabMixin:
             self._apply_assets_filter()
             return
         if result.get('error'):
+            self._assets_asset_findings = {}
+            self._populate_assets_rollup({})
+            self._populate_assets_table([])
             self.assets_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         summary = result.get('summary', {})

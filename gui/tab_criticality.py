@@ -275,10 +275,18 @@ class CriticalityTabMixin:
             self._apply_crit_filter()
             return
         if result.get('error'):
+            self._crit_business = {}
+            self._populate_crit_rollup({})
+            self._populate_crit_table([])
+            self._populate_biz_default(self._crit_business)
             self.crit_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         crit = result.get('crit') or {}
         if crit.get('error'):
+            self._crit_business = {}
+            self._populate_crit_rollup({})
+            self._populate_crit_table([])
+            self._populate_biz_default(self._crit_business)
             self.crit_status.setText(f"Ошибка загрузки: {crit['error']}")
             return
         summary = crit.get('summary') or {}

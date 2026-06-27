@@ -102,6 +102,31 @@ def test_rollup_cards_reflect_by_type(qapp):
 
 # ── selection wiring (threads stubbed) ─────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_rollup_and_detail(qapp):
+    w = _window(qapp)
+    w._on_assets_table_loaded({
+        'rows': [{'id': 'a-a', 'type': 'subdomain', 'value': 'api.x.com',
+                  'label': 'api.x.com', 'status': 'ACTIVE',
+                  'first_seen_at': '2026-01-01T00:00:00',
+                  'last_seen_at': '2026-01-02T00:00:00'}],
+        'summary': {'total': 1, 'active': 1,
+                    'by_type': {'subdomain': 1}},
+        'asset_findings': {'a-a': {'findings': [{'severity': 'high'}]}},
+        'project': 'p1',
+    })
+    w.assets_table.selectRow(0)
+    assert w.assets_table.rowCount() == 1
+
+    w._on_assets_table_loaded({'project': 'p1', 'error': 'boom'})
+
+    assert w.assets_table.rowCount() == 0
+    assert w.assets_detail.toPlainText() == ''
+    assert w.assets_rollup['subdomain'].text() == '0'
+    assert w._assets_records == []
+    assert w._assets_asset_findings == {}
+    assert 'boom' in w.assets_status.text()
+
+
 def test_selection_shows_detail(qapp):
     w = _window(qapp)
     w._run_async = lambda *a, **k: None     # don't spawn the events worker

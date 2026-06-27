@@ -275,6 +275,8 @@ class FindingsTabMixin:
             self._apply_findings_filter()
             return
         if result.get('error'):
+            self._findings_chains = {}
+            self._populate_findings_table([])
             self.findings_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         summary = result.get('summary', {})
