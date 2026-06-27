@@ -145,6 +145,9 @@ class IacTabMixin:
         self.btn_iac_scan.setEnabled(True)
         self._set_busy(False)
         if result.get('error'):
+            self._iac_result = {}
+            self._populate_iac(self._iac_result)
+            self.btn_iac_export.setEnabled(False)
             self.iac_status.setText(f"Scan error: {result['error']}")
             return
         data = result.get('data') or {}

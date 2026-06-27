@@ -57,6 +57,34 @@ def test_populate_iac_tables_and_rollup(qapp):
     assert w.iac_technologies.item(0, 0).text() == 'nginx'
 
 
+def test_scan_error_clears_stale_iac_tables_and_export(qapp):
+    w = _window(qapp)
+    data = {
+        'summary': {'files': 2, 'findings': 1, 'technologies': 1},
+        'findings': [{
+            'severity': 'High',
+            'rule_id': 'iac-compose-privileged',
+            'title': 'Privileged container',
+            'location': 'compose.yml',
+            'detail': 'service api runs privileged',
+        }],
+        'technologies': [{'name': 'nginx', 'version': 'latest'}],
+    }
+    w._iac_result = data
+    w._populate_iac(data)
+    w.btn_iac_export.setEnabled(True)
+
+    w._on_iac_scan_done({'path': 'compose.yml', 'error': 'boom'})
+
+    assert not w.btn_iac_export.isEnabled()
+    assert w.iac_findings.rowCount() == 0
+    assert w.iac_technologies.rowCount() == 0
+    assert w.iac_detail.toPlainText() == ''
+    assert w.iac_rollup['files'].text() == '0'
+    assert w._iac_result == {}
+    assert 'boom' in w.iac_status.text()
+
+
 def test_selection_shows_finding_detail(qapp):
     w = _window(qapp)
     data = {
