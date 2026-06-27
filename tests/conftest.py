@@ -60,6 +60,14 @@ def _isolate_cve_cache_db(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_audit_runs_db(tmp_path_factory, monkeypatch):
+    """Redirect the global audit-runs DB to a per-test temp file."""
+    import core.audit_store as astore
+    monkeypatch.setattr(astore, "AUDIT_RUNS_DB",
+                        tmp_path_factory.mktemp("audit-runs") / "audit_runs.db")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_companies_registry(tmp_path_factory, monkeypatch):
     """Redirect the global companies registry to a per-test temp file.
 

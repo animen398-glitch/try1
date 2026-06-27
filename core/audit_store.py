@@ -21,6 +21,9 @@ def _default_db_path() -> Path:
     return get_path_manager().get_db_path("audit_runs.db")
 
 
+AUDIT_RUNS_DB = _default_db_path()
+
+
 class AuditRunStore(SQLiteStore):
     """SQLite-backed persistence for audit runs + audit-level events."""
 
@@ -51,7 +54,7 @@ class AuditRunStore(SQLiteStore):
     """
 
     def __init__(self, db_path: Optional[Union[str, Path]] = None):
-        super().__init__(db_path or _default_db_path())
+        super().__init__(db_path or AUDIT_RUNS_DB)
 
     @staticmethod
     def _payload_json(run: Dict[str, Any]) -> Dict[str, Any]:

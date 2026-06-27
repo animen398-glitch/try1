@@ -31,6 +31,7 @@ def test_tab_builds_with_columns(qapp):
     assert hasattr(w, "_audit_widget")
     assert w.audit_findings.columnCount() == len(AuditRunsTabMixin.AUDIT_COLUMNS)
     assert w.audit_progress.maximum() > 0
+    assert not w.btn_audit_open.isEnabled()
 
 
 def test_audit_runs_registered_in_tab_bar(qapp):
@@ -62,6 +63,7 @@ def test_start_run_builds_deterministic_audit_payload(qapp):
     second = AuditRunsTabMixin._query_audit_run("shop.com")
 
     assert first["run"]["status"] == "completed"
+    assert first["saved"]["id"] == first["run"]["run_id"]
     assert len(first["rows"]) == 1
     finding = first["rows"][0]["finding"]
     assert finding["validation_status"] == "verified"
@@ -119,6 +121,34 @@ def test_populate_run_updates_phase_progress_rollup_and_table(qapp):
     assert w.audit_rollup["quality_failed"].text() == "1"
 
 
+def test_history_load_and_open_populates_saved_run(qapp):
+    w = _window(qapp)
+    result = AuditRunsTabMixin._query_audit_run("shop.com", run_id="audit-history")
+
+    history = AuditRunsTabMixin._query_audit_history("shop.com")
+    w._on_audit_history_loaded(history)
+
+    assert w.audit_history.count() == 1
+    assert w.audit_history.currentData() == "audit-history"
+    assert w.btn_audit_open.isEnabled()
+
+    opened = AuditRunsTabMixin._load_audit_run("audit-history")
+    assert opened["run"] == result["run"]
+    assert opened["rows"] == AuditRunsTabMixin._rows_from_run(result["run"])
+
+
+def test_open_handler_enables_exports(qapp):
+    w = _window(qapp)
+    run = AuditRunsTabMixin._query_audit_run("shop.com", run_id="audit-open")["run"]
+
+    w._on_audit_run_opened({"run": run, "rows": AuditRunsTabMixin._rows_from_run(run)})
+
+    assert w._audit_run["run_id"] == "audit-open"
+    assert w.btn_audit_export.isEnabled()
+    assert w.btn_audit_export_md.isEnabled()
+    assert w.btn_audit_export_html.isEnabled()
+
+
 def test_selection_shows_evidence_refs(qapp):
     w = _window(qapp)
     rows = [
@@ -148,3 +178,14 @@ def test_audit_json_payload_is_sorted_and_valid(qapp):
     payload = AuditRunsTabMixin._audit_json_payload(run)
     assert json.loads(payload)["project"] == "empty-project"
     assert payload == AuditRunsTabMixin._audit_json_payload(run)
+
+
+def test_markdown_and_html_payloads_render_current_run(qapp):
+    run = AuditRunsTabMixin._query_audit_run("shop.com", run_id="audit-render")["run"]
+
+    md = AuditRunsTabMixin._audit_markdown_payload(run)
+    html = AuditRunsTabMixin._audit_html_payload(run)
+
+    assert "# Audit Run audit-render" in md
+    assert "<html>" in html
+    assert "audit-render" in html

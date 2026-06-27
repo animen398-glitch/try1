@@ -8,6 +8,7 @@ It does not create a second findings store and does not perform active checks.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any, Dict, List
 
 from qtpy.QtGui import QColor
@@ -83,7 +84,26 @@ class AuditRunsTabMixin:
         self.btn_audit_export.setEnabled(False)
         self.btn_audit_export.clicked.connect(self._export_audit_json)
         ctrl.addWidget(self.btn_audit_export)
+        self.btn_audit_export_md = StyledButton("Export MD", style="secondary")
+        self.btn_audit_export_md.setEnabled(False)
+        self.btn_audit_export_md.clicked.connect(self._export_audit_markdown)
+        ctrl.addWidget(self.btn_audit_export_md)
+        self.btn_audit_export_html = StyledButton("Export HTML", style="secondary")
+        self.btn_audit_export_html.setEnabled(False)
+        self.btn_audit_export_html.clicked.connect(self._export_audit_html)
+        ctrl.addWidget(self.btn_audit_export_html)
         layout.addLayout(ctrl)
+
+        history_row = QHBoxLayout()
+        history_row.addWidget(QLabel("Audit history:"))
+        self.audit_history = QComboBox()
+        self.audit_history.setMinimumWidth(320)
+        history_row.addWidget(self.audit_history, stretch=1)
+        self.btn_audit_open = StyledButton("Open Run", style="secondary")
+        self.btn_audit_open.setEnabled(False)
+        self.btn_audit_open.clicked.connect(self._open_selected_audit_run)
+        history_row.addWidget(self.btn_audit_open)
+        layout.addLayout(history_row)
 
         progress_row = QHBoxLayout()
         self.audit_status = QLabel("Ready")
@@ -145,6 +165,7 @@ class AuditRunsTabMixin:
         self._audit_rows: List[Dict[str, Any]] = []
         self._audit_loading = False
         self._audit_running = False
+        self._audit_history_loading = False
         self._audit_widget = w
         return w
 
@@ -183,6 +204,7 @@ class AuditRunsTabMixin:
         if self.audit_project.count() == 0:
             self.audit_status.setText("No projects with findings")
             self.audit_scope.setText("Scope: no project")
+            self._populate_audit_history([])
             return
         self._on_audit_project_changed()
 
@@ -194,6 +216,46 @@ class AuditRunsTabMixin:
         self.audit_scope.setText(
             f"Scope: project findings only; active checks require ROE for {project}"
         )
+        self._refresh_audit_history(project)
+
+    def _refresh_audit_history(self, project: str):
+        if self._audit_history_loading:
+            return
+        self._audit_history_loading = True
+        self._run_async(
+            lambda p=project: self._query_audit_history(p),
+            self._on_audit_history_loaded,
+        )
+
+    @staticmethod
+    def _query_audit_history(project: str) -> dict:
+        try:
+            from core.audit_store import AuditRunStore
+            return {"project": project, "runs": AuditRunStore().list_runs(project)}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _on_audit_history_loaded(self, result: dict):
+        self._audit_history_loading = False
+        if result.get("error"):
+            self.audit_status.setText(f"History load error: {result['error']}")
+            self._populate_audit_history([])
+            return
+        self._populate_audit_history(result.get("runs") or [])
+
+    def _populate_audit_history(self, runs: List[Dict[str, Any]]):
+        current = self.audit_history.currentData()
+        self.audit_history.blockSignals(True)
+        self.audit_history.clear()
+        for row in runs:
+            self.audit_history.addItem(
+                f"{row.get('updated_at', '')}  {row.get('id', '')}  {row.get('status', '')}",
+                row.get("id"),
+            )
+        idx = self.audit_history.findData(current)
+        self.audit_history.setCurrentIndex(idx if idx >= 0 else 0)
+        self.audit_history.blockSignals(False)
+        self.btn_audit_open.setEnabled(self.audit_history.count() > 0)
 
     def _start_audit_run(self):
         project = self.audit_project.currentData()
@@ -204,17 +266,28 @@ class AuditRunsTabMixin:
             return
         self._audit_running = True
         self.btn_audit_start.setEnabled(False)
-        self.btn_audit_export.setEnabled(False)
+        self._set_audit_export_enabled(False)
         self._set_busy(True)
         self.audit_status.setText("Running client-safe audit workflow...")
-        self._run_async(lambda p=project: self._query_audit_run(p), self._on_audit_run_done)
+        run_id = self._new_audit_run_id(project)
+        self._run_async(
+            lambda p=project, rid=run_id: self._query_audit_run(p, run_id=rid),
+            self._on_audit_run_done,
+        )
 
     @staticmethod
-    def _query_audit_run(project: str) -> dict:
+    def _new_audit_run_id(project: str) -> str:
+        safe = "".join(ch if ch.isalnum() or ch in ".-" else "-" for ch in str(project))
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"audit-{safe}-{stamp}"
+
+    @staticmethod
+    def _query_audit_run(project: str, *, run_id: str | None = None) -> dict:
         try:
             from core.findings_store import FindingsStore
+            from core.audit_store import AuditRunStore
             findings = FindingsStore().active_findings(project)
-            run = create_audit_run(project)
+            run = create_audit_run(project, run_id=run_id)
             rows = AuditRunsTabMixin._build_audit_rows(findings)
             run = advance_audit_phase(
                 run,
@@ -246,9 +319,34 @@ class AuditRunsTabMixin:
                 "independent_verification",
                 {"evidence_refs": sorted({ref for row in rows for ref in row["evidence_refs"]})},
             )
-            return {"project": project, "run": audit_run_to_json(run), "rows": rows}
+            payload = audit_run_to_json(run)
+            saved = AuditRunStore().save_run(payload)
+            return {"project": project, "run": payload, "rows": rows, "saved": saved}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
+
+    @staticmethod
+    def _load_audit_run(run_id: str) -> dict:
+        try:
+            from core.audit_store import AuditRunStore
+            row = AuditRunStore().get_run(run_id)
+            if row is None:
+                return {"error": f"audit run not found: {run_id}"}
+            run = row.get("payload") or {}
+            return {"run": run, "rows": AuditRunsTabMixin._rows_from_run(run)}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    @staticmethod
+    def _rows_from_run(run: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return [
+            {
+                "finding": finding,
+                "evidence_refs": list(finding.get("evidence_refs") or []),
+            }
+            for finding in (run.get("findings") or [])
+            if isinstance(finding, dict)
+        ]
 
     @staticmethod
     def _build_audit_rows(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -322,7 +420,7 @@ class AuditRunsTabMixin:
             self._audit_rows = []
             self._populate_audit_run({}, [])
             self.audit_status.setText(f"Audit run error: {result['error']}")
-            self.btn_audit_export.setEnabled(False)
+            self._set_audit_export_enabled(False)
             return
         self._audit_run = result.get("run") or {}
         self._audit_rows = result.get("rows") or []
@@ -330,7 +428,29 @@ class AuditRunsTabMixin:
         self.audit_status.setText(
             f"Audit run completed: {len(self._audit_rows)} finding(s)"
         )
-        self.btn_audit_export.setEnabled(True)
+        self._set_audit_export_enabled(True)
+        project = result.get("project") or self.audit_project.currentData()
+        if project:
+            self._refresh_audit_history(project)
+
+    def _open_selected_audit_run(self):
+        run_id = self.audit_history.currentData()
+        if not run_id:
+            self.audit_status.setText("Select an audit run first")
+            return
+        self._set_busy(True)
+        self._run_async(lambda rid=run_id: self._load_audit_run(rid), self._on_audit_run_opened)
+
+    def _on_audit_run_opened(self, result: dict):
+        self._set_busy(False)
+        if result.get("error"):
+            self.audit_status.setText(f"Open error: {result['error']}")
+            return
+        self._audit_run = result.get("run") or {}
+        self._audit_rows = result.get("rows") or []
+        self._populate_audit_run(self._audit_run, self._audit_rows)
+        self.audit_status.setText(f"Opened audit run: {self._audit_run.get('run_id', '')}")
+        self._set_audit_export_enabled(True)
 
     def _populate_audit_run(self, run: dict, rows: List[Dict[str, Any]]):
         phases = run.get("phases") or []
@@ -413,6 +533,21 @@ class AuditRunsTabMixin:
     def _audit_json_payload(run: dict) -> str:
         return json.dumps(audit_run_to_json(run or {}), ensure_ascii=False, indent=2, sort_keys=True)
 
+    @staticmethod
+    def _audit_markdown_payload(run: dict) -> str:
+        from core.audit_report import render_markdown
+        return render_markdown(run or {})
+
+    @staticmethod
+    def _audit_html_payload(run: dict) -> str:
+        from core.audit_report import render_html
+        return render_html(run or {})
+
+    def _set_audit_export_enabled(self, enabled: bool):
+        self.btn_audit_export.setEnabled(enabled)
+        self.btn_audit_export_md.setEnabled(enabled)
+        self.btn_audit_export_html.setEnabled(enabled)
+
     def _export_audit_json(self):
         if not self._audit_run:
             self.audit_status.setText("Nothing to export")
@@ -429,3 +564,24 @@ class AuditRunsTabMixin:
             self.audit_status.setText(f"Export failed: {e}")
             return
         self.audit_status.setText(f"Exported audit run: {path}")
+
+    def _export_audit_markdown(self):
+        self._export_audit_report("Export Audit Markdown", "audit_run.md", "Markdown Files (*.md)", self._audit_markdown_payload)
+
+    def _export_audit_html(self):
+        self._export_audit_report("Export Audit HTML", "audit_run.html", "HTML Files (*.html)", self._audit_html_payload)
+
+    def _export_audit_report(self, title: str, default_name: str, file_filter: str, renderer):
+        if not self._audit_run:
+            self.audit_status.setText("Nothing to export")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, title, default_name, file_filter)
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(renderer(self._audit_run))
+        except Exception as e:  # noqa: BLE001
+            self.audit_status.setText(f"Export failed: {e}")
+            return
+        self.audit_status.setText(f"Exported audit report: {path}")
