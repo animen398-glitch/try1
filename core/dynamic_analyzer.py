@@ -121,7 +121,7 @@ def _scan_json_for_secrets(body: object, source_url: str) -> List[Dict]:
                 found.append({
                     'key': key,
                     'type': 'token-field',
-                    'preview': val[:24] + '...' if len(val) > 24 else val,
+                    'preview': val[:6] + '...' if len(val) > 6 else val,
                     'source_url': source_url,
                 })
         elif isinstance(val, dict):
@@ -264,7 +264,7 @@ class DynamicAnalyzer:
                     if key.lower() in _AUTH_HEADER_NAMES and val:
                         auth_headers.append({
                             'header': key,
-                            'preview': val[:16] + '...' if len(val) > 16 else val,
+                            'preview': val[:6] + '...' if len(val) > 6 else val,
                             'url': req_url,
                         })
 

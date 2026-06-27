@@ -78,8 +78,11 @@ RULES: List[SecretRule] = [
 ]
 
 
-def _preview(value: str, keep: int = 24) -> str:
-    """Truncated, non-leaking preview of a matched secret for display."""
+def _preview(value: str, keep: int = 6) -> str:
+    """Short, non-leaking preview of a matched secret for display: at most the
+    first ``keep`` characters (the vendor/prefix — enough to identify the key)
+    plus an ellipsis, never the secret body. Mirrors the masking level of
+    ``finding_fingerprint.mask_value`` (keep=6)."""
     return value[:keep] + '…' if len(value) > keep else value
 
 
