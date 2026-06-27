@@ -95,3 +95,54 @@ def test_roundtrip_still_works(store):
     store.add('b')
     assert store.count() == 2
     assert store.schema_version() == _Store.SCHEMA_VERSION
+
+
+# ── resilience: corrupt DB / malformed JSON ────────────────────────────────
+
+
+class _JsonStore(SQLiteStore):
+    SCHEMA = 'CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, meta TEXT)'
+    JSON_FIELDS = ('meta',)
+
+
+def test_corrupt_db_quarantined_and_recreated(tmp_path):
+    """A garbage DB file does not crash construction: it is quarantined and a
+    fresh, working store is recreated; the original bytes are preserved."""
+    db = tmp_path / 'items.db'
+    db.write_bytes(b'this is definitely not a sqlite database file')
+
+    store = _Store(db)  # must not raise
+    store.add('x')
+    assert store.count() == 1  # fresh DB works
+
+    quarantined = list(tmp_path.glob('items.db.corrupt-*'))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_bytes() == b'this is definitely not a sqlite database file'
+
+
+def test_is_corruption_classification():
+    """Corruption markers are recognized; a transient lock never is."""
+    assert _Store._is_corruption(sqlite3.DatabaseError('file is not a database'))
+    assert _Store._is_corruption(sqlite3.DatabaseError('database disk image is malformed'))
+    assert not _Store._is_corruption(sqlite3.OperationalError('database is locked'))
+    assert not _Store._is_corruption(sqlite3.DatabaseError('some unrelated error'))
+
+
+def test_corruption_optout_reraises(tmp_path):
+    """``QUARANTINE_CORRUPT=False`` keeps the hard failure (opt-out)."""
+    class _Strict(_Store):
+        QUARANTINE_CORRUPT = False
+
+    db = tmp_path / 'strict.db'
+    db.write_bytes(b'not a sqlite database')
+    with pytest.raises(sqlite3.DatabaseError):
+        _Strict(db)
+
+
+def test_malformed_json_field_left_raw(tmp_path):
+    """A malformed JSON field degrades softly — the raw string is kept."""
+    store = _JsonStore(tmp_path / 'json.db')
+    with store._connect() as conn:
+        row = conn.execute("SELECT 1 AS id, '{not json' AS meta").fetchone()
+    decoded = _JsonStore._row_to_dict(row)
+    assert decoded['meta'] == '{not json'
