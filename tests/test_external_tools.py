@@ -5,6 +5,7 @@ stubbed, matching how the scrapy subprocess is tested.
 """
 
 import json
+import subprocess
 
 import core.external_tools as ext
 from core.collection_runner import CollectionRunner
@@ -141,3 +142,58 @@ def test_collection_skips_nuclei_when_unavailable(monkeypatch):
 
 def test_default_collection_has_no_nuclei():
     assert CollectionRunner().nuclei is False
+
+
+# ── T11: run_command output cap / graceful degradation ──────────────────────
+
+
+class _Proc:
+    def __init__(self, stdout='', stderr='', rc=0):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = rc
+
+
+def test_run_command_caps_stdout(monkeypatch):
+    monkeypatch.setattr(ext, 'run_hidden', lambda *a, **k: _Proc(stdout='x' * 100))
+    out = ext.run_command(['tool'], timeout=1, max_output=10)
+    assert out['truncated'] is True
+    assert out['stdout'] == 'x' * 10
+    assert out['timed_out'] is False
+
+
+def test_run_command_no_truncation_under_cap(monkeypatch):
+    monkeypatch.setattr(ext, 'run_hidden',
+                        lambda *a, **k: _Proc(stdout='hi', stderr='e'))
+    out = ext.run_command(['tool'], timeout=1, max_output=10)
+    assert out['truncated'] is False
+    assert out['stdout'] == 'hi'
+
+
+def test_run_command_uses_default_cap(monkeypatch):
+    monkeypatch.setattr(ext, 'MAX_OUTPUT', 5)
+    monkeypatch.setattr(ext, 'run_hidden', lambda *a, **k: _Proc(stdout='abcdefgh'))
+    out = ext.run_command(['tool'], timeout=1)  # no max_output → module default
+    assert out['truncated'] is True
+    assert out['stdout'] == 'abcde'
+
+
+def test_run_command_timeout_caps_partial(monkeypatch):
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(cmd='tool', timeout=1, output='y' * 100)
+
+    monkeypatch.setattr(ext, 'run_hidden', boom)
+    out = ext.run_command(['tool'], timeout=1, max_output=10)
+    assert out['timed_out'] is True
+    assert out['truncated'] is True
+    assert out['stdout'] == 'y' * 10
+
+
+def test_run_command_missing_binary_graceful(monkeypatch):
+    def boom(*a, **k):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(ext, 'run_hidden', boom)
+    out = ext.run_command(['nope'], timeout=1)
+    assert out.get('error')
+    assert out['stdout'] == '' and out['truncated'] is False
