@@ -14,12 +14,14 @@ import pytest
 from core import project_io
 from core.asset_adapter import Asset
 from core.asset_store import AssetStore
+from core.audit_store import AuditRunStore
+from core.audit_workflow import advance_audit_phase, create_audit_run
 from core.findings_store import FindingsStore
 from core.project import ProjectStore
 from core.remediation import set_task
 
 
-def _seed(base, fdb, adb, slug_url='https://shop.io'):
+def _seed(base, fdb, adb, audit_db=None, slug_url='https://shop.io'):
     store = ProjectStore(str(base))
     proj = store.get_or_create(slug_url)
     slug = proj.slug
@@ -45,6 +47,18 @@ def _seed(base, fdb, adb, slug_url='https://shop.io'):
     AssetStore(db_path=adb).sync(slug, 's1',
                                  [Asset('domain', 'shop.io'),
                                   Asset('ip', '198.51.100.5')])
+    if audit_db:
+        run = create_audit_run(slug, phases=['validation'], run_id='audit-shop')
+        run = advance_audit_phase(run, 'validation', {'validated_findings': []})
+        audits = AuditRunStore(db_path=audit_db)
+        audits.save_run(run, now='2026-01-01T10:00:00')
+        audits.record_event(
+            'audit-shop',
+            'quality_gate_passed',
+            phase='risk_business_impact',
+            finding_id=fid,
+            at='2026-01-01T10:01:00',
+        )
     return slug, fid
 
 
@@ -53,21 +67,27 @@ def _seed(base, fdb, adb, slug_url='https://shop.io'):
 def test_export_then_import_restores_tree_and_lifecycle(tmp_path):
     src = tmp_path / 'src'
     src_f, src_a = src / 'findings.db', src / 'assets.db'
-    slug, fid = _seed(src, src_f, src_a)
+    src_audit = src / 'audit_runs.db'
+    slug, fid = _seed(src, src_f, src_a, src_audit)
 
     bundle = tmp_path / 'shop.io.zip'
     out = project_io.export_project(src, slug, bundle,
-                                    findings_db=src_f, assets_db=src_a)
+                                    findings_db=src_f, assets_db=src_a,
+                                    audit_db=src_audit)
     assert bundle.exists()
     assert out['findings'] == 2 and out['assets'] == 2 and out['scans'] == 1
+    assert out['audit_runs'] == 1 and out['audit_events'] == 1
 
     # fresh, empty destination
     dst = tmp_path / 'dst'
     dst_f, dst_a = dst / 'findings.db', dst / 'assets.db'
+    dst_audit = dst / 'audit_runs.db'
     res = project_io.import_project(bundle, dst,
-                                    findings_db=dst_f, assets_db=dst_a)
+                                    findings_db=dst_f, assets_db=dst_a,
+                                    audit_db=dst_audit)
     assert res['skipped'] is False
     assert res['findings'] == 2 and res['assets'] == 2
+    assert res['audit_runs'] == 1 and res['audit_events'] == 1
 
     # tree restored
     proj = ProjectStore(str(dst)).get(slug)
@@ -82,6 +102,10 @@ def test_export_then_import_restores_tree_and_lifecycle(tmp_path):
     assert FindingsStore(db_path=dst_f).get_remediation(fid)['owner'] == 'alice'
     # assets restored
     assert len(AssetStore(db_path=dst_a).list_assets(slug)) == 2
+    # audit runs restored
+    audits = AuditRunStore(db_path=dst_audit)
+    assert audits.get_run('audit-shop')['project'] == slug
+    assert audits.events('audit-shop')[0]['finding_id'] == fid
 
 
 def test_import_preserves_status_and_timestamps(tmp_path):

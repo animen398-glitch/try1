@@ -28,6 +28,7 @@ class AuditRunStore(SQLiteStore):
     """SQLite-backed persistence for audit runs + audit-level events."""
 
     JSON_FIELDS = ("payload",)
+    PROJECT_EXPORT = ("audit_runs", "audit_events", "run_id")
     SCHEMA_VERSION = 1
 
     SCHEMA = """

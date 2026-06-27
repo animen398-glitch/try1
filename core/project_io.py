@@ -31,6 +31,7 @@ FORMAT_VERSION = 1
 _MANIFEST = 'manifest.json'
 _FINDINGS = 'findings.json'
 _ASSETS = 'assets.json'
+_AUDIT_RUNS = 'audit_runs.json'
 _TREE_PREFIX = 'project/'
 
 
@@ -58,14 +59,15 @@ def _read_manifest(zf: zipfile.ZipFile) -> Dict:
     return manifest
 
 
-def _stores(findings_db, assets_db):
+def _stores(findings_db, assets_db, audit_db=None):
     from core.asset_store import AssetStore
+    from core.audit_store import AuditRunStore
     from core.findings_store import FindingsStore
-    return FindingsStore(findings_db), AssetStore(assets_db)
+    return FindingsStore(findings_db), AssetStore(assets_db), AuditRunStore(audit_db)
 
 
 def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
-                   findings_db=None, assets_db=None) -> Dict:
+                   findings_db=None, assets_db=None, audit_db=None) -> Dict:
     """Bundle project ``slug`` (under workspace ``base``) into the ``dest`` zip.
     Raises ``KeyError`` if the project does not exist."""
     from core.config import APP_VERSION
@@ -77,9 +79,10 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
     if proj is None:
         raise KeyError(f'project not found: {slug}')
 
-    findings_store, assets_store = _stores(findings_db, assets_db)
+    findings_store, assets_store, audit_store = _stores(findings_db, assets_db, audit_db)
     findings = findings_store.export_project(slug)
     assets = assets_store.export_project(slug)
+    audit_runs = audit_store.export_project(slug)
     meta = proj.load_metadata()
 
     manifest = {
@@ -94,6 +97,8 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
             'finding_events': len(findings['events']),
             'assets': len(assets['rows']),
             'asset_events': len(assets['events']),
+            'audit_runs': len(audit_runs['rows']),
+            'audit_events': len(audit_runs['events']),
             'scans': len(meta.get('scans') or []),
         },
     }
@@ -107,6 +112,7 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
         zf.writestr(_MANIFEST, json.dumps(manifest, ensure_ascii=False, indent=2))
         zf.writestr(_FINDINGS, json.dumps(findings, ensure_ascii=False))
         zf.writestr(_ASSETS, json.dumps(assets, ensure_ascii=False))
+        zf.writestr(_AUDIT_RUNS, json.dumps(audit_runs, ensure_ascii=False))
 
     return {'path': str(dest), 'slug': slug, **manifest['counts']}
 
@@ -132,7 +138,8 @@ def _safe_extract(zf: zipfile.ZipFile, dest_dir: Path) -> int:
 
 
 def import_project(src: Union[str, Path], base: Union[str, Path], *,
-                   findings_db=None, assets_db=None, replace: bool = False) -> Dict:
+                   findings_db=None, assets_db=None, audit_db=None,
+                   replace: bool = False) -> Dict:
     """Restore a bundle into workspace ``base``. If the project tree already
     exists it is skipped unless ``replace`` (which wipes the tree and the DB
     slice first). Returns a summary dict."""
@@ -156,14 +163,17 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         files = _safe_extract(zf, dest_dir)
         findings = json.loads(zf.read(_FINDINGS)) if _FINDINGS in names else {}
         assets = json.loads(zf.read(_ASSETS)) if _ASSETS in names else {}
+        audit_runs = json.loads(zf.read(_AUDIT_RUNS)) if _AUDIT_RUNS in names else {}
 
-    findings_store, assets_store = _stores(findings_db, assets_db)
+    findings_store, assets_store, audit_store = _stores(findings_db, assets_db, audit_db)
     fres = findings_store.import_project(slug, findings, replace=replace)
     ares = assets_store.import_project(slug, assets, replace=replace)
+    au_res = audit_store.import_project(slug, audit_runs, replace=replace)
 
     return {'slug': slug, 'skipped': False, 'files': files,
             'findings': fres['imported'], 'finding_events': fres['events'],
-            'assets': ares['imported'], 'asset_events': ares['events']}
+            'assets': ares['imported'], 'asset_events': ares['events'],
+            'audit_runs': au_res['imported'], 'audit_events': au_res['events']}
 
 
 def bundle_info(src: Union[str, Path]) -> Optional[Dict]:
