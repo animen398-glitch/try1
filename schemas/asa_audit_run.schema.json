@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Audit Run",
+  "type": "object",
+  "required": ["run_id", "project", "profile", "status", "phases"],
+  "properties": {
+    "run_id": {"type": "string"},
+    "project": {"type": "string"},
+    "profile": {"type": "string", "enum": ["client_safe"]},
+    "status": {"type": "string", "enum": ["pending", "running", "completed", "failed"]},
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "result"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "recon_snapshot",
+              "finding_hunt",
+              "validation",
+              "risk_business_impact",
+              "structured_output",
+              "independent_verification"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "completed", "failed", "skipped"]
+          },
+          "result": {"type": ["object", "array", "string", "number", "boolean", "null"]}
+        }
+      }
+    },
+    "findings": {"type": "array"},
+    "events": {"type": "array"}
+  }
+}

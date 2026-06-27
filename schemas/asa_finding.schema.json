@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Audit Finding",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "severity",
+    "asset",
+    "location",
+    "impact",
+    "remediation",
+    "confidence",
+    "validation_status",
+    "evidence_refs"
+  ],
+  "properties": {
+    "id": {"type": "string"},
+    "title": {"type": "string"},
+    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+    "asset": {"type": "string"},
+    "location": {"type": "string"},
+    "impact": {"type": "string"},
+    "remediation": {"type": "string"},
+    "confidence": {"type": "integer"},
+    "validation_status": {
+      "type": "string",
+      "enum": ["unverified", "verified", "rejected", "needs_review"]
+    },
+    "quality_gate": {"type": "string", "enum": ["passed", "failed"]},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

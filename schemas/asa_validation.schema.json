@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Finding Validation",
+  "type": "object",
+  "required": ["finding_id", "validation_status", "confidence", "evidence_refs"],
+  "properties": {
+    "finding_id": {"type": "string"},
+    "validation_status": {
+      "type": "string",
+      "enum": ["unverified", "verified", "rejected", "needs_review"]
+    },
+    "confidence": {"type": "integer"},
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "reasons": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}
