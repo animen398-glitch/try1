@@ -68,6 +68,8 @@ def test_start_run_builds_deterministic_audit_payload(qapp):
     finding = first["rows"][0]["finding"]
     assert finding["validation_status"] == "verified"
     assert finding["quality_gate"] == "passed"
+    verify = next(p for p in first["run"]["phases"] if p["name"] == "independent_verification")
+    assert verify["result"]["evidence_check"]["verified"] == ["capture/app-map.json"]
     assert json.dumps(first["run"], sort_keys=True) == json.dumps(second["run"], sort_keys=True)
 
 
@@ -183,10 +185,12 @@ def test_query_audit_run_embeds_roe_and_safe_check_results(qapp):
 
     recon = next(p for p in out["run"]["phases"] if p["name"] == "recon_snapshot")
     hunt = next(p for p in out["run"]["phases"] if p["name"] == "finding_hunt")
+    verify = next(p for p in out["run"]["phases"] if p["name"] == "independent_verification")
     assert recon["result"]["roe"]["allowed_domains"] == ["shop.com"]
     assert recon["result"]["roe_valid"] is True
     assert hunt["result"]["safe_checks"][0]["action"] == "headers_check"
     assert hunt["result"]["safe_checks"][0]["reason"] == "headers evidence is required"
+    assert verify["result"]["evidence_check"]["ok"] is True
 
 
 def test_selection_shows_evidence_refs(qapp):

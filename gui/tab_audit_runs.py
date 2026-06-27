@@ -331,6 +331,7 @@ class AuditRunsTabMixin:
             from core.findings_store import FindingsStore
             from core.audit_store import AuditRunStore
             from core.audit_checks import run_safe_checks
+            from core.audit_evidence import verify_evidence_refs
             from core.audit_scope import normalize_roe, validate_roe
             findings = FindingsStore().active_findings(project)
             normalized_roe = normalize_roe(roe)
@@ -379,7 +380,14 @@ class AuditRunsTabMixin:
             run = advance_audit_phase(
                 run,
                 "independent_verification",
-                {"evidence_refs": sorted({ref for row in rows for ref in row["evidence_refs"]})},
+                {
+                    "evidence_refs": sorted({ref for row in rows for ref in row["evidence_refs"]}),
+                    "evidence_check": verify_evidence_refs(
+                        (ref for row in rows for ref in row["evidence_refs"]),
+                        findings=[row["finding"] for row in rows],
+                        safe_checks=check_result.get("results", []),
+                    ),
+                },
             )
             payload = audit_run_to_json(run)
             saved = AuditRunStore().save_run(payload)
