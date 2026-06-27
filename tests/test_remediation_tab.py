@@ -87,6 +87,28 @@ def test_table_load_populates_rows_and_rollup(qapp):
     assert w.rem_rollup['total'].text() == '1'
 
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w._on_rem_table_loaded({'project': 'shop.com', 'data': {
+        'tasks': [{'finding_id': 'f1', 'title': 'V0', 'severity': 'high',
+                   'category': 'vuln', 'finding_status': 'OPEN', 'updated_at': 't',
+                   'task': {'status': 'open', 'owner': 'bob', 'due': '2026-07-01'},
+                   'overdue': False, 'status_label': 'Open'}],
+        'summary': {'total': 1, 'open': 1, 'in_progress': 0, 'done': 0, 'overdue': 0},
+    }})
+    w.rem_table.selectRow(0)
+    assert w.btn_rem_apply.isEnabled()
+
+    w._on_rem_table_loaded({'project': 'shop.com', 'error': 'boom'})
+
+    assert w.rem_table.rowCount() == 0
+    assert w.rem_detail.toPlainText() == ''
+    assert not w.btn_rem_apply.isEnabled()
+    assert w.rem_rollup['total'].text() == '0'
+    assert w._rem_records == []
+    assert 'boom' in w.rem_status.text()
+
+
 def test_selection_presets_edit_and_enables_apply(qapp):
     w = _window(qapp)
     w._populate_rem_table([{

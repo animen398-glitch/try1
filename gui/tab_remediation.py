@@ -204,6 +204,8 @@ class RemediationTabMixin:
             self._apply_rem_filter()
             return
         if result.get('error'):
+            self._populate_rem_rollup({})
+            self._populate_rem_table([])
             self.rem_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         data = result.get('data') or {}
