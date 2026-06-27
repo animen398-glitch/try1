@@ -61,6 +61,16 @@ def test_install_optional_pip_failure_surfaces_stderr():
     assert res['status'] == 'failed' and res['error'] == 'boom'
 
 
+def test_install_optional_reports_runner_exception():
+    def boom(cmd):
+        raise OSError('pip missing')
+
+    res = launcher.install_optional('scrapy', run=boom)
+
+    assert res['status'] == 'failed'
+    assert res['error'] == 'pip missing'
+
+
 def test_install_playwright_adds_browser_note():
     res = launcher.install_optional('playwright', run=lambda cmd, **k: _ok(cmd))
     assert res['status'] == 'ok' and 'chromium' in res['note']
@@ -94,6 +104,16 @@ def test_repair_runs_requirements_install():
     assert '-r' in calls[0] and any('requirements.txt' in str(p) for p in calls[0])
 
 
+def test_repair_reports_runner_exception():
+    def boom(cmd):
+        raise OSError('pip unavailable')
+
+    res = launcher.repair(run=boom)
+
+    assert res['status'] == 'failed'
+    assert res['error'] == 'pip unavailable'
+
+
 def test_update_pip_upgrade_only_even_when_git_requested():
     calls = []
     res = launcher.update(run=lambda cmd, **k: calls.append(cmd) or _ok(cmd),
@@ -108,6 +128,16 @@ def test_update_reports_failed_step():
     res = launcher.update(
         run=lambda cmd, **k: _ok(cmd, rc=1, stderr='x'), git=False)
     assert res['status'] == 'failed'
+
+
+def test_update_reports_runner_exception():
+    def boom(cmd):
+        raise OSError('upgrade failed')
+
+    res = launcher.update(run=boom)
+
+    assert res['status'] == 'failed'
+    assert res['steps'][0]['rc'] == 1
 
 
 # ── launch ───────────────────────────────────────────────────────────────────────

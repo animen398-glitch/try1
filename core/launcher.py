@@ -72,6 +72,13 @@ def _pip(*args: str) -> List[str]:
     return [sys.executable, '-m', 'pip', *args]
 
 
+def _call_run(run: Callable, cmd: List[str]) -> Dict:
+    try:
+        return run(cmd)
+    except Exception as e:  # noqa: BLE001 - launcher actions report failures
+        return {'rc': 1, 'error': str(e), 'stdout': '', 'stderr': ''}
+
+
 # ── health (Check Health / View Installed Components) ─────────────────────────
 
 def _data_root_writable() -> bool:
@@ -135,7 +142,7 @@ def install_optional(name: str, *, run: Optional[Callable] = None) -> Dict:
     run = run or _run
     if name in _PIP_INSTALL:
         pkgs = _PIP_INSTALL[name]
-        res = run(_pip('install', *pkgs))
+        res = _call_run(run, _pip('install', *pkgs))
         ok = res.get('rc') == 0
         out = {'name': name, 'method': 'pip', 'packages': pkgs,
                'status': 'ok' if ok else 'failed', 'rc': res.get('rc'),
@@ -156,7 +163,7 @@ def install_optional(name: str, *, run: Optional[Callable] = None) -> Dict:
 def repair(*, run: Optional[Callable] = None) -> Dict:
     """Reinstall the required dependencies (``pip install -r requirements.txt``)."""
     run = run or _run
-    res = run(_pip('install', '-r', str(_REQUIREMENTS)))
+    res = _call_run(run, _pip('install', '-r', str(_REQUIREMENTS)))
     ok = res.get('rc') == 0
     return {'action': 'repair', 'status': 'ok' if ok else 'failed',
             'rc': res.get('rc'),
@@ -173,7 +180,7 @@ def update(*, run: Optional[Callable] = None, git: bool = False) -> Dict:
     with older callers/tests, but ignored."""
     run = run or _run
     steps: List[Dict] = []
-    pip_res = run(_pip('install', '--upgrade', '-r', str(_REQUIREMENTS)))
+    pip_res = _call_run(run, _pip('install', '--upgrade', '-r', str(_REQUIREMENTS)))
     steps.append({'step': 'pip-upgrade', 'rc': pip_res.get('rc'),
                   'ok': pip_res.get('rc') == 0})
     ok = all(s['ok'] for s in steps)
