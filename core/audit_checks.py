@@ -37,7 +37,15 @@ def headers_check(target: str, roe: Dict[str, Any], *, evidence: Optional[Dict[s
     blocked = _blocked("headers_check", target, roe)
     if blocked:
         return blocked
-    headers = {str(k).lower(): str(v) for k, v in (evidence or {}).get("headers", {}).items()}
+    if not evidence or "headers" not in evidence:
+        return {
+            "action": "headers_check",
+            "target": target,
+            "allowed": True,
+            "findings": [],
+            "reason": "headers evidence is required",
+        }
+    headers = {str(k).lower(): str(v) for k, v in evidence.get("headers", {}).items()}
     findings = []
     if "strict-transport-security" not in headers:
         findings.append({

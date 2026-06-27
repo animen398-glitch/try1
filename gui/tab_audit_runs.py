@@ -14,11 +14,13 @@ from typing import Any, Dict, List
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QProgressBar,
     QTableWidget,
     QTableWidgetItem,
@@ -104,6 +106,36 @@ class AuditRunsTabMixin:
         self.btn_audit_open.clicked.connect(self._open_selected_audit_run)
         history_row.addWidget(self.btn_audit_open)
         layout.addLayout(history_row)
+
+        roe_grp = SectionGroupBox("Rules of Engagement")
+        roe_layout = FlowLayout()
+        roe_layout.addWidget(QLabel("Allowed:"))
+        self.audit_allowed_domains = QLineEdit()
+        self.audit_allowed_domains.setMinimumWidth(220)
+        roe_layout.addWidget(self.audit_allowed_domains)
+        self.audit_active_enabled = QCheckBox("Active")
+        roe_layout.addWidget(self.audit_active_enabled)
+        self.audit_passive_only = QCheckBox("Passive only")
+        self.audit_passive_only.setChecked(True)
+        roe_layout.addWidget(self.audit_passive_only)
+        roe_layout.addWidget(QLabel("Rate:"))
+        self.audit_rate_limit = QLineEdit()
+        self.audit_rate_limit.setPlaceholderText("1 rps")
+        self.audit_rate_limit.setMaximumWidth(90)
+        roe_layout.addWidget(self.audit_rate_limit)
+        self.audit_check_headers = QCheckBox("Headers")
+        self.audit_check_cookies = QCheckBox("Cookies")
+        self.audit_check_sourcemaps = QCheckBox("Source maps")
+        self.audit_check_probe = QCheckBox("Probe")
+        for cb in (
+            self.audit_check_headers,
+            self.audit_check_cookies,
+            self.audit_check_sourcemaps,
+            self.audit_check_probe,
+        ):
+            roe_layout.addWidget(cb)
+        roe_grp.setLayout(roe_layout)
+        layout.addWidget(roe_grp)
 
         progress_row = QHBoxLayout()
         self.audit_status = QLabel("Ready")
@@ -216,6 +248,8 @@ class AuditRunsTabMixin:
         self.audit_scope.setText(
             f"Scope: project findings only; active checks require ROE for {project}"
         )
+        if not self.audit_allowed_domains.text().strip():
+            self.audit_allowed_domains.setText(str(project))
         self._refresh_audit_history(project)
 
     def _refresh_audit_history(self, project: str):
@@ -270,8 +304,12 @@ class AuditRunsTabMixin:
         self._set_busy(True)
         self.audit_status.setText("Running client-safe audit workflow...")
         run_id = self._new_audit_run_id(project)
+        roe = self._current_audit_roe()
+        checks = self._selected_safe_checks()
         self._run_async(
-            lambda p=project, rid=run_id: self._query_audit_run(p, run_id=rid),
+            lambda p=project, rid=run_id, r=roe, c=checks: self._query_audit_run(
+                p, run_id=rid, roe=r, checks=c
+            ),
             self._on_audit_run_done,
         )
 
@@ -282,22 +320,46 @@ class AuditRunsTabMixin:
         return f"audit-{safe}-{stamp}"
 
     @staticmethod
-    def _query_audit_run(project: str, *, run_id: str | None = None) -> dict:
+    def _query_audit_run(
+        project: str,
+        *,
+        run_id: str | None = None,
+        roe: Dict[str, Any] | None = None,
+        checks: List[str] | None = None,
+    ) -> dict:
         try:
             from core.findings_store import FindingsStore
             from core.audit_store import AuditRunStore
+            from core.audit_checks import run_safe_checks
+            from core.audit_scope import normalize_roe, validate_roe
             findings = FindingsStore().active_findings(project)
+            normalized_roe = normalize_roe(roe)
+            roe_validation = validate_roe(normalized_roe)
+            check_result = {"results": [], "findings": []}
+            if checks:
+                target = AuditRunsTabMixin._target_from_roe(project, normalized_roe)
+                check_result = run_safe_checks(target, normalized_roe, checks=checks)
             run = create_audit_run(project, run_id=run_id)
-            rows = AuditRunsTabMixin._build_audit_rows(findings)
+            rows = AuditRunsTabMixin._build_audit_rows(
+                findings + list(check_result.get("findings") or [])
+            )
             run = advance_audit_phase(
                 run,
                 "recon_snapshot",
-                {"project": project, "active_findings": len(findings)},
+                {
+                    "project": project,
+                    "active_findings": len(findings),
+                    "roe": normalized_roe,
+                    "roe_valid": roe_validation["valid"],
+                },
             )
             run = advance_audit_phase(
                 run,
                 "finding_hunt",
-                {"findings": [row["finding"] for row in rows]},
+                {
+                    "findings": [row["finding"] for row in rows],
+                    "safe_checks": check_result.get("results", []),
+                },
             )
             run = advance_audit_phase(
                 run,
@@ -324,6 +386,12 @@ class AuditRunsTabMixin:
             return {"project": project, "run": payload, "rows": rows, "saved": saved}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
+
+    @staticmethod
+    def _target_from_roe(project: str, roe: Dict[str, Any]) -> str:
+        allowed = roe.get("allowed_domains") or []
+        host = allowed[0] if allowed else project
+        return f"https://{host}" if not str(host).startswith(("http://", "https://")) else str(host)
 
     @staticmethod
     def _load_audit_run(run_id: str) -> dict:
@@ -410,6 +478,32 @@ class AuditRunsTabMixin:
             if finding.get("quality_gate") == "failed":
                 out["quality_failed"] += 1
         return out
+
+    def _current_audit_roe(self) -> Dict[str, Any]:
+        allowed = [
+            item.strip()
+            for item in self.audit_allowed_domains.text().split(",")
+            if item.strip()
+        ]
+        return {
+            "profile": "client_safe",
+            "allowed_domains": allowed,
+            "active_scan_enabled": self.audit_active_enabled.isChecked(),
+            "passive_only": self.audit_passive_only.isChecked(),
+            "rate_limit": self.audit_rate_limit.text().strip() or None,
+        }
+
+    def _selected_safe_checks(self) -> List[str]:
+        checks = []
+        if self.audit_check_headers.isChecked():
+            checks.append("headers_check")
+        if self.audit_check_cookies.isChecked():
+            checks.append("cookie_flags_check")
+        if self.audit_check_sourcemaps.isChecked():
+            checks.append("source_map_detection")
+        if self.audit_check_probe.isChecked():
+            checks.append("non_destructive_endpoint_probe")
+        return checks
 
     def _on_audit_run_done(self, result: dict):
         self._audit_running = False

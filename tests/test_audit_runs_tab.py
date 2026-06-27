@@ -149,6 +149,46 @@ def test_open_handler_enables_exports(qapp):
     assert w.btn_audit_export_html.isEnabled()
 
 
+def test_current_roe_and_selected_safe_checks_from_controls(qapp):
+    w = _window(qapp)
+    w.audit_allowed_domains.setText("example.com, *.example.com")
+    w.audit_active_enabled.setChecked(True)
+    w.audit_passive_only.setChecked(False)
+    w.audit_rate_limit.setText("1 rps")
+    w.audit_check_headers.setChecked(True)
+    w.audit_check_probe.setChecked(True)
+
+    roe = w._current_audit_roe()
+
+    assert roe["allowed_domains"] == ["example.com", "*.example.com"]
+    assert roe["active_scan_enabled"] is True
+    assert roe["passive_only"] is False
+    assert w._selected_safe_checks() == [
+        "headers_check",
+        "non_destructive_endpoint_probe",
+    ]
+
+
+def test_query_audit_run_embeds_roe_and_safe_check_results(qapp):
+    out = AuditRunsTabMixin._query_audit_run(
+        "shop.com",
+        run_id="audit-roe",
+        roe={
+            "allowed_domains": ["shop.com"],
+            "active_scan_enabled": True,
+            "passive_only": False,
+        },
+        checks=["headers_check"],
+    )
+
+    recon = next(p for p in out["run"]["phases"] if p["name"] == "recon_snapshot")
+    hunt = next(p for p in out["run"]["phases"] if p["name"] == "finding_hunt")
+    assert recon["result"]["roe"]["allowed_domains"] == ["shop.com"]
+    assert recon["result"]["roe_valid"] is True
+    assert hunt["result"]["safe_checks"][0]["action"] == "headers_check"
+    assert hunt["result"]["safe_checks"][0]["reason"] == "headers evidence is required"
+
+
 def test_selection_shows_evidence_refs(qapp):
     w = _window(qapp)
     rows = [
