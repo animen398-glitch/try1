@@ -51,6 +51,19 @@ def test_summary_consistent_with_missing():
         assert (name in miss) == (not entry["available"])
 
 
+def test_summary_and_missing_treat_detector_errors_as_unavailable(monkeypatch):
+    def boom():
+        raise RuntimeError("broken local detector")
+
+    monkeypatch.setitem(features.OPTIONAL_FEATURES, "broken", ("Broken tool", boom))
+
+    assert features.summary()["broken"] == {
+        "available": False,
+        "enables": "Broken tool",
+    }
+    assert "broken" in features.missing()
+
+
 def test_stdlib_module_detected():
     # A guaranteed-present stdlib module resolves True via the helper.
     assert features._has_module("json") is True

@@ -152,10 +152,17 @@ OPTIONAL_FEATURES = {
 }
 
 
+def _detect_available(detect) -> bool:
+    try:
+        return bool(detect())
+    except Exception:
+        return False
+
+
 def summary() -> dict:
     """Map each optional feature to {available, enables}."""
     return {
-        name: {'available': detect(), 'enables': desc}
+        name: {'available': _detect_available(detect), 'enables': desc}
         for name, (desc, detect) in OPTIONAL_FEATURES.items()
     }
 
@@ -163,4 +170,4 @@ def summary() -> dict:
 def missing() -> list:
     """Names of optional features that are not currently available."""
     return [name for name, (_desc, detect) in OPTIONAL_FEATURES.items()
-            if not detect()]
+            if not _detect_available(detect)]

@@ -6,6 +6,7 @@ that constructing MainWindow inside the test process might mask. CI runs the
 same flag against the built .exe to catch PyInstaller-only regressions."""
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -13,11 +14,15 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_self_check_exits_zero_and_reports_tabs():
-    env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+def test_self_check_exits_zero_and_reports_tabs(tmp_path):
+    data_root = tmp_path / "self-check-data"
+    env = dict(os.environ, ASA_DATA_ROOT=str(data_root), QT_QPA_PLATFORM="offscreen")
     proc = subprocess.run(
         [sys.executable, str(_ROOT / "main.py"), "--self-check"],
         capture_output=True, text=True, timeout=180, env=env, cwd=str(_ROOT),
     )
     assert proc.returncode == 0, f"stderr:\n{proc.stderr}"
     assert "self-check OK" in proc.stdout
+    match = re.search(r"self-check OK.*?(\d+) tab", proc.stdout)
+    assert match, proc.stdout
+    assert int(match.group(1)) >= 20

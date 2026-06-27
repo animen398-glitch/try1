@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import shutil
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Optional, Union
 
 FORMAT_VERSION = 1
@@ -32,6 +32,19 @@ _MANIFEST = 'manifest.json'
 _FINDINGS = 'findings.json'
 _ASSETS = 'assets.json'
 _TREE_PREFIX = 'project/'
+
+
+def _validate_bundle_slug(slug: object) -> str:
+    """Return a manifest slug only if it is a single safe project directory name."""
+    if not isinstance(slug, str) or not slug:
+        raise ValueError('unsafe project slug in bundle')
+    posix = PurePosixPath(slug)
+    win = PureWindowsPath(slug)
+    if (posix.is_absolute() or win.is_absolute() or win.drive
+            or len(posix.parts) != 1 or len(win.parts) != 1
+            or posix.parts[0] in {'.', '..'}):
+        raise ValueError(f'unsafe project slug in bundle: {slug!r}')
+    return slug
 
 
 def _stores(findings_db, assets_db):
@@ -123,7 +136,7 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         fmt = manifest.get('format_version')
         if fmt != FORMAT_VERSION:
             raise ValueError(f'unsupported bundle format_version: {fmt!r}')
-        slug = manifest['slug']
+        slug = _validate_bundle_slug(manifest.get('slug'))
 
         store = ProjectStore(base)
         dest_dir = store.root / slug

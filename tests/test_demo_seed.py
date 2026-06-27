@@ -86,3 +86,34 @@ def test_seed_paths_match_pathmanager(tmp_path):
     # what the launched app (ASA_DATA_ROOT=root) would resolve == what we wrote.
     assert pm.get_db_path("findings.db").exists()
     assert pm.get_db_path("companies.json").exists()
+
+
+# ── CLI guardrails ───────────────────────────────────────────────────────────
+
+def test_main_rejects_non_empty_dir_without_force(tmp_path, capsys):
+    root = tmp_path / "demo"
+    root.mkdir()
+    marker = root / "keep.txt"
+    marker.write_text("do not wipe", encoding="utf-8")
+
+    rc = demo_seed.main(["--dir", str(root)])
+
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "exists and is not empty" in err
+    assert marker.read_text("utf-8") == "do not wipe"
+
+
+def test_main_force_wipes_and_seeds_demo_workspace(tmp_path, capsys):
+    root = tmp_path / "demo"
+    root.mkdir()
+    (root / "old.txt").write_text("old", encoding="utf-8")
+
+    rc = demo_seed.main(["--dir", str(root), "--force"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Demo workspace seeded" in out
+    assert not (root / "old.txt").exists()
+    assert (root / "Projects").is_dir()
+    assert (root / "data" / "findings.db").exists()

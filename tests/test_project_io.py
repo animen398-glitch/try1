@@ -158,6 +158,17 @@ def test_import_rejects_zip_slip(tmp_path):
         project_io.import_project(bad, tmp_path / 'dst')
 
 
+@pytest.mark.parametrize('slug', ['../escape', '/tmp/escape', r'C:\escape'])
+def test_import_rejects_unsafe_manifest_slug(tmp_path, slug):
+    bad = tmp_path / 'evil-slug.zip'
+    with zipfile.ZipFile(bad, 'w') as zf:
+        zf.writestr('manifest.json', json.dumps(
+            {'format_version': 1, 'slug': slug}))
+        zf.writestr('project/metadata.json', '{}')
+    with pytest.raises(ValueError):
+        project_io.import_project(bad, tmp_path / 'dst')
+
+
 def test_import_rejects_wrong_format(tmp_path):
     bad = tmp_path / 'old.zip'
     with zipfile.ZipFile(bad, 'w') as zf:
