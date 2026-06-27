@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-28 01:23:16  
-> Total memories: **39**  
-> Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 18, error: 3
+> Generated: 2026-06-28 01:51:49  
+> Total memories: **43**  
+> Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 22, error: 3
 
 ---
 
@@ -84,17 +84,17 @@ User approved implementation of the Client-Safe Pentest Workbench development pl
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T18:34:22 | Tags: `client-safe-workbench`, `w1`, `audit-store`, `approved`*
 
+### Backend release-hardening contracts (T1-T5)
+
+Backend release-hardening (branch backend/release-hardening, ~23 commits, full-diff self-reviewed, awaiting external review/merge; not pushed). SQLite/stores: (1) SQLiteStore: every connection WAL + synchronous=NORMAL + busy_timeout (no 'database is locked'); raw .db never copied so WAL sidecars safe. (2) Corrupt DB on init quarantined to <db>.corrupt-<ts>, recreated empty (never deletes data); transient lock != corruption. (3) FindingsStore.sync/AssetStore.sync = ONE transaction (atomic) via _upsert/_set_status/_list_* (conn) workers behind thin public wrappers. (4) OperationRegistry bounds operations.db (newest MAX_HISTORY, prune every PRUNE_EVERY inserts); DataRegistry user data NOT auto-pruned. (5) CVEStore.prune bounds cve_cache.db by age + row cap; cve_intel.correlate prunes once per run (own store only). Contracts/IO: (6) all 6 *_cli.py share core/cli_common.py (configure_stdout+CliError+run_main): expected failures -> stderr 'error: <msg>' + exit 2. (7) remote/web_app.py global FastAPI handler -> uniform {'error':...} JSON 500; _job_results FIFO-capped + _log_queue maxsize drop-oldest. (8) CollectionRunner._persist_error_report always leaves a readable report.json (status Error) on finalization failure. (9) external_tools.run_command caps stdout (MAX_OUTPUT head, truncated flag). (10) utils/atomic_io.py (temp+os.replace) for ALL durable-state JSON: metadata+history, report.json, company registry, evidence_manifest, settings/targets (transient per-phase artifacts left direct). (11) Project.start_scan unique scan dir (mkdir exist_ok=False + -2/-3 suffix); runner takes scan_id from scan_dir.name. (12) Secret previews are a non-leaking mask: secret_scanner._preview = prefix(6)+ellipsis+length (mirrors mask_value, never the body) + dynamic_analyzer previews aligned. IMPORTANT: the length suffix is required - findings_adapter derives the secret discriminator from key:preview, so a too-short preview (prefix only) would merge two distinct same-prefix keys (e.g. two sk_live_ keys) into one finding; the length restores that entropy (caught in self-review). Audits, NO code change (some pinned by guard tests): event ordering deterministic; report consumers tolerant of thin/legacy/Error reports (test_report_backcompat); migration-with-data tested (test_findings_store_migration); secret redaction OK (operations.db/logs carry no secrets; raw only in local artifacts + LAN console, by-design); timestamps consistently local-naive, ct_history isolated naive-UTC, no mixed comparison, UTC migration intentionally not done. Remaining optional/deferred: cross-process advisory locking; roadmap-out-of-scope (live threat feeds, live cloud API, new scanners).
+
+*Confidence: 0.9 | Status: active | Created: 2026-06-27T16:28:31 | Tags: `backend-hardening`, `sqlite-wal`, `atomic-sync`, `atomic-writes`, `cli-contract`, `web-error-envelope`, `retention`, `scan-dir-unique`, `secret-redaction`, `diff-reviewed`, `release-readiness`*
+
 ### Architecture invariants
 
 Architecture invariants (breaking them = regression): (1) UI thin, logic in core/utils; (2) single task runner _start_task/_run_async, no manual QThreads in tabs; (3) single sources of truth: paths/settings=core/config.py+core/paths.py PathManager, secret rules=core/secret_scanner.py RULES, project scans=core/project.py, endpoints=utils/endpoint_index.py; (4) plugins add tabs/analyzers WITHOUT editing core; (5) frozen-aware paths via PathManager; (6) optional deps degrade softly; (7) keep backward compat of Projects/ layout, metadata.json, report.json, runner contracts.
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T14:49:14 | Tags: `invariants`, `architecture`, `contracts`*
-
-### Backend release-hardening contracts (T1-T5)
-
-Backend release-hardening (branch backend/release-hardening, ~21 commits, awaiting review/merge; not pushed). SQLite/stores: (1) SQLiteStore: every connection WAL + synchronous=NORMAL + busy_timeout (no 'database is locked'); raw .db never copied so WAL sidecars safe. (2) Corrupt DB on init quarantined to <db>.corrupt-<ts>, recreated empty (never deletes data); transient lock != corruption. (3) FindingsStore.sync/AssetStore.sync run the whole lifecycle reconcile in ONE transaction (atomic) via _upsert/_set_status/_list_* (conn) workers behind thin public wrappers. (4) OperationRegistry bounds operations.db (newest MAX_HISTORY, prune every PRUNE_EVERY inserts); DataRegistry user data NOT auto-pruned. (5) CVEStore.prune bounds cve_cache.db by age (MAX_AGE_DAYS) + row cap; cve_intel.correlate prunes once per run (own store only). Contracts/IO: (6) all 6 *_cli.py share core/cli_common.py (configure_stdout+CliError+run_main): expected failures -> stderr 'error: <msg>' + exit 2. (7) remote/web_app.py global FastAPI handler -> uniform {'error':...} JSON 500; _job_results FIFO-capped + _log_queue maxsize drop-oldest. (8) CollectionRunner._persist_error_report always leaves a readable report.json (status Error) on finalization failure. (9) external_tools.run_command caps stdout (MAX_OUTPUT head, truncated flag); timeout already kills process. (10) utils/atomic_io.py (temp+os.replace) used for ALL durable-state JSON: metadata+history, report.json, company registry, evidence_manifest, settings.json/targets.json (transient per-phase artifacts left direct). (11) Project.start_scan creates a unique scan dir (mkdir exist_ok=False + -2/-3 suffix); runner takes scan_id from scan_dir.name. (12) Secret previews shortened to a short prefix mask: secret_scanner._preview keep=6 (was 24) + dynamic_analyzer inline previews aligned to 6 - report/web/GUI no longer show the secret body. Audits, NO code change (some pinned by guard tests): event ordering deterministic (stores ORDER BY id); report consumers tolerant of thin/legacy/Error reports (test_report_backcompat); migration-with-data already tested (test_findings_store_migration); secret redaction OK - findings carry only mask_value/discriminator, operations.db has no secrets, logs don't print secrets, raw values only in local artifacts + LAN console (by-design); timestamps consistently local-naive across lifecycle/schedules (coherent), ct_history isolated naive-UTC for cert dates - no mixed aware/naive comparison; UTC migration intentionally NOT done (backward-compat cost >> benefit). Remaining optional/deferred: cross-process advisory locking (monitor<->GUI, complex); roadmap-out-of-scope items (live KEV/EPSS/threat feeds, live cloud API, new scanners).
-
-*Confidence: 0.9 | Status: active | Created: 2026-06-27T16:28:31 | Tags: `backend-hardening`, `sqlite-wal`, `atomic-sync`, `atomic-writes`, `cli-contract`, `web-error-envelope`, `retention`, `scan-dir-unique`, `secret-redaction`, `timestamps-audit`, `release-readiness`*
 
 ---
 
@@ -172,11 +172,23 @@ Key directories: core/ = ALL business logic and engines (UI must not leak in); g
 
 *Important conversations, milestones, and temporal occurrences.*
 
+### Implemented Audit Runs GUI Rules of Engagement con...
+
+Implemented Audit Runs GUI Rules of Engagement controls and safe-check selection in commit 5039078. The GUI now passes client_safe ROE and selected safe checks into audit run creation; headers_check no longer emits findings without provided headers evidence. Verified with targeted pytest for audit GUI/checks/scope/store/report/policies, ruff on changed files, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:39:15 | Tags: `asa`, `client-safe`, `audit-gui`, `release-readiness`*
+
 ### Implemented W4 core audit report surface in commit...
 
 Implemented W4 core audit report surface in commit baf61e0: added core/audit_report.py with deterministic JSON/Markdown/HTML renderers over canonical audit-run payloads, client_findings/review_findings/audit_summary helpers, and tests/test_audit_report.py. Rejected or quality-failed findings remain in appendix, not client-facing critical claims. Verification: 21 audit report/store/schema/workflow tests passed; ruff changed files passed; python main.py --self-check = 29 tabs.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T18:37:52 | Tags: `client-safe-workbench`, `w4`, `audit-report`, `commit-baf61e0`, `tests`*
+
+### Implemented independent audit evidence verificatio...
+
+Implemented independent audit evidence verification in commit 8b4f111. Added core.audit_evidence.verify_evidence_refs for offline deterministic checking of finding refs, safe-check refs, and artifact paths with traversal protection; Audit Runs now stores evidence_check in the independent_verification phase. Verified with 84 targeted audit/timeline tests, ruff, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:47:31 | Tags: `asa`, `client-safe`, `evidence`, `release-readiness`*
 
 ### Completed Stage 1 Client-Safe Pentest Workbench co...
 
@@ -189,6 +201,12 @@ Completed Stage 1 Client-Safe Pentest Workbench contract hardening in commit 1c5
 Implemented W2/W3 core foundation in commit 69af61a: added core/audit_scope.py for ROE normalization/validation/summary/scope decisions and core/audit_checks.py for client-safe gated checks (headers, cookie flags, source map detection, non-destructive endpoint probe with injected fetcher only). Added tests/test_audit_scope.py and tests/test_audit_checks.py. Verification: 24 scope/check/action tests passed; ruff changed files passed; python main.py --self-check = 29 tabs.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T18:42:24 | Tags: `client-safe-workbench`, `w2`, `w3`, `roe`, `safe-checks`, `commit-69af61a`*
+
+### Release-readiness check for Client-Safe Pentest Wo...
+
+Release-readiness check for Client-Safe Pentest Workbench passed after commits 5039078 and 98be523: targeted audit pytest suite reports 65 passed, ruff check on changed audit/core/gui/tests passed, and python main.py --self-check reports 29 tabs.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:40:36 | Tags: `asa`, `client-safe`, `release-readiness`, `tests`*
 
 ### Stage 3 full release-readiness verification after ...
 
@@ -237,6 +255,12 @@ Final verification after Codex release-readiness commits: ruff check . passed; f
 Codex added Stage 1 Client-Safe Pentest Workbench edge-test harness files for audit workflow, scope/action policies, finding validation/quality, and audit schemas. Ruff on new tests passed. Targeted pytest is blocked at collection because core.audit_workflow, core.finding_validation, core.finding_quality, and core.audit_schema modules (and schemas/) are absent from current/local worktrees; Codex did not implement core contract due explicit boundary.
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T17:05:38 | Tags: `client-safe-workbench`, `edge-tests`, `blocked-contract`, `ruff`*
+
+### Implemented Client-Safe Pentest Workbench timeline...
+
+Implemented Client-Safe Pentest Workbench timeline integration in commit 9679915. core.timeline now folds persisted AuditRunStore runs/events into the derived timeline as audit_run_started/completed/failed and audit_* events without a second findings source of truth. Verified with 81 targeted audit/timeline tests, ruff on changed files, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:45:36 | Tags: `asa`, `client-safe`, `timeline`, `release-readiness`*
 
 ### GUI polish completed in commits 31094a23, b0ddfcc,...
 
