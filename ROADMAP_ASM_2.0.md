@@ -1381,7 +1381,28 @@ Dockerfile / docker-compose) → активы/находки.
 
 ---
 
-## EPIC FUTURE — Client-Safe Pentest Workbench
+## EPIC CLOSED — Client-Safe Pentest Workbench
+
+> Status 2026-06-28: implemented locally and release-checked. Final checkpoint:
+> `ruff check .` clean; full pytest 2020 passed with 1 existing Starlette/httpx
+> warning; `python main.py --self-check` = 29 tabs; PyInstaller build with
+> `QT_API=pyside6` passed; frozen `dist/SiteAnalyzer.exe --self-check` exited 0.
+> Remote git actions were not performed.
+
+Implemented surface:
+- Core contracts: `audit_workflow`, `scope_policy`, `action_policy`,
+  `finding_validation`, `finding_quality`, `audit_schema` and
+  `schemas/asa_*.schema.json`.
+- Persistence: `AuditRunStore` with `audit_runs` / `audit_events`, row-level
+  project export/import via `project_io` (`audit_runs.json`).
+- Reports: deterministic audit JSON, Markdown and HTML views over the canonical
+  audit-run payload.
+- GUI: thin `gui/tab_audit_runs.py` tab with project selector, ROE controls,
+  safe-check selection, phase progress, history/open, evidence refs and exports.
+- Integration: timeline audit-run events, granular finding/quality/confidence
+  audit events, independent evidence ref verification.
+- Safety: client_safe policy blocks destructive/bruteforce/stealth/exploit
+  actions; active checks are ROE/scope-gated, opt-in and offline-testable.
 
 > Цель: расширить ASA из ASM/CSM-платформы в **client-safe Authorized Pentest
 > Workbench**: управляемый, доказательный, повторяемый процесс аудита, который
@@ -1477,6 +1498,9 @@ vulnerability: они могут идти как informational / recommendation.
 
 ### GUI: Audit Runs
 
+Status 2026-06-28: implemented as `gui/tab_audit_runs.py`; registered in the
+main GUI, covered by headless tests, and verified by `main.py --self-check`.
+
 Будущая вкладка `gui/tab_audit_runs.py`:
 
 - selector project/scope profile;
@@ -1538,6 +1562,10 @@ vulnerability: они могут идти как informational / recommendation.
 подтвердить контракт.
 
 ### Definition of Done
+
+Status 2026-06-28: all items below are satisfied in the local worktree. The
+final verification checkpoint is recorded above; the remaining work is external
+review / user-side remote publication, not code completion.
 
 - Audit Run создаётся и проходит фазы offline/deterministic.
 - Validation может подтвердить, отклонить или отправить finding в needs_review.

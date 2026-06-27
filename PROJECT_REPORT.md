@@ -2,6 +2,9 @@
 
 > Снимок на 2026-06-13, обновлён 2026-06-23 (эпик ASM 2.0 F1–F6 + пост-эпик +
 > Advanced Intelligence Framework EPIC 8–16 + EPIC NEXT business-risk слой).
+> Update 2026-06-28: Client-Safe Pentest Workbench + backend release-hardening
+> post-merge checkpoint completed locally; full pytest 2020 passed, ruff clean,
+> GUI self-check 29 tabs, frozen SiteAnalyzer.exe self-check OK.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -12,7 +15,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **1794 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2020 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
@@ -20,6 +23,7 @@
 | Своих модулей / тест-файлов | 100+ модулей / 140+ test-файлов |
 | CI | GitHub Actions: lint + test (3.11/3.12) + Windows .exe build **+ smoke-run собранного .exe (`--self-check`)** |
 | Git | ветка `master`, синхронизирована с `origin/master` (push 2026-06-23, `21e88ac`); удалённые действия — только по явному разовому разрешению |
+| Локальный checkpoint | 2026-06-28: `master` ahead 70 local commits; remote git actions were not performed |
 
 Вывод: кодовая база в хорошем состоянии — статика чистая, тесты зелёные.
 Весь реализуемый роадмап закрыт (P1–P12 + TIER S/A/B + C1/C2 в безопасных
@@ -47,7 +51,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 безопасности (cookie, секреты, source-map, уязвимости).
 
 **Точки входа:**
-- `main.py` — GUI (PySide6/qfluent через qtpy), self-check: 28 вкладок.
+- `main.py` — GUI (PySide6/qfluent через qtpy), self-check: 29 вкладок.
 - `main_orchestrator.py` — CLI-пайплайн из 6 фаз (флаги `--dynamic/--paywall/--vulns/--dump-api/--web/--profile/--delay`).
 - `remote/web_app.py` — FastAPI LAN-консоль (:5000), 13 job'ов с паритетом GUI (+ отмена job'а, + управление мониторингом #8, + Alert Center #9).
 - `monitor_cli.py` — Continuous Monitoring (#8): `enable/disable/status/run/watch` над расписанием проектов.
@@ -299,3 +303,13 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 > context override в Criticality-вкладке (хранение прежнее: metadata.json →
 > business_context → assets; risk-вердикт не тронут). Final verification: ruff
 > clean; full pytest **1794 passed** с 1 существующим Starlette/httpx warning.
+> Update 2026-06-28: Client-Safe Pentest Workbench closed locally: audit
+> workflow/schema/validation/quality gates, safe ROE-gated checks, Audit Runs GUI,
+> persistent audit_runs/audit_events, deterministic JSON/MD/HTML reports,
+> timeline audit-run events, independent evidence verification, granular finding
+> audit events, and project bundle portability for audit-run history. Backend
+> release-hardening merge `fb862990` also verified. Final local checkpoint:
+> `ruff check .` clean; full pytest **2020 passed** with 1 existing
+> Starlette/httpx warning; `python main.py --self-check` = 29 tabs; PyInstaller
+> build with `QT_API=pyside6` and frozen `dist/SiteAnalyzer.exe --self-check`
+> passed. Remote git actions were not performed.
