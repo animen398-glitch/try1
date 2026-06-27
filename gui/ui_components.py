@@ -15,6 +15,7 @@ from gui import theme
 # tab re-implements it (Task 4). http(s) URLs are wrapped in anchors; everything
 # else is HTML-escaped so it can never inject markup.
 _URL_RE = re.compile(r'(https?://[^\s<>"\')]+)')
+_TRAILING_URL_PUNCT = '.,;:!'
 
 # Flags that make a QLabel's text selectable by mouse + keyboard and let links be
 # clicked — the standard "you can read, select, copy and open this" set.
@@ -29,8 +30,14 @@ def linkify(text, *, newlines_to_br: bool = True) -> str:
     value can never inject markup; newlines become ``<br>`` for rich-text widgets
     unless disabled.
     """
+    def _anchor(match):
+        url = match.group(1)
+        clean = url.rstrip(_TRAILING_URL_PUNCT)
+        suffix = url[len(clean):]
+        return f'<a href="{clean}">{clean}</a>{suffix}'
+
     escaped = html.escape(str(text))
-    out = _URL_RE.sub(lambda m: f'<a href="{m.group(1)}">{m.group(1)}</a>', escaped)
+    out = _URL_RE.sub(_anchor, escaped)
     if newlines_to_br:
         out = out.replace('\n', '<br>')
     return out
@@ -54,6 +61,7 @@ def make_link_label(url: str, text: str = None, parent=None) -> QLabel:
     label.setTextInteractionFlags(SELECTABLE_FLAGS)
     label.setOpenExternalLinks(True)
     label.setCursor(Qt.IBeamCursor)
+    label.setWordWrap(True)
     return label
 
 

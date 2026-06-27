@@ -18,6 +18,12 @@ def test_linkify_wraps_url_in_anchor():
     assert '<a href="https://shop.io/a?x=1">https://shop.io/a?x=1</a>' in out
 
 
+def test_linkify_keeps_trailing_punctuation_outside_anchor():
+    out = linkify("see https://shop.io/a.")
+    assert '<a href="https://shop.io/a">https://shop.io/a</a>.' in out
+    assert 'href="https://shop.io/a."' not in out
+
+
 def test_linkify_escapes_non_url_text():
     out = linkify('<script>alert(1)</script> https://x.io')
     assert '<script>' not in out                 # escaped, not raw markup
@@ -49,6 +55,7 @@ def test_make_link_label_is_clickable_link(qapp):
     assert '>Open<' in lbl.text()
     assert lbl.openExternalLinks() is True
     assert lbl.textInteractionFlags() & Qt.LinksAccessibleByMouse
+    assert lbl.wordWrap() is True
 
 
 def test_make_link_label_escapes_url(qapp):
