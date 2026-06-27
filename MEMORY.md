@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-28 01:51:49  
-> Total memories: **43**  
-> Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 22, error: 3
+> Generated: 2026-06-28 02:51:10  
+> Total memories: **46**  
+> Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 25, error: 3
 
 ---
 
@@ -208,6 +208,12 @@ Release-readiness check for Client-Safe Pentest Workbench passed after commits 5
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T22:40:36 | Tags: `asa`, `client-safe`, `release-readiness`, `tests`*
 
+### Implemented granular Client-Safe audit events in c...
+
+Implemented granular Client-Safe audit events in commit 2ff3485. Audit Runs now records idempotent finding_verified/rejected/needs_review, quality_gate_passed/failed, and confidence_changed events into AuditRunStore; timeline can surface these through the existing audit-run integration. Verified with 85 targeted audit/timeline tests, ruff, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T23:05:35 | Tags: `asa`, `client-safe`, `audit-events`, `timeline`, `release-readiness`*
+
 ### Stage 3 full release-readiness verification after ...
 
 Stage 3 full release-readiness verification after Client-Safe Pentest Workbench Stage 1/2 commits: full pytest run with '-p no:cacheprovider --basetemp .pytest-full-stage3' passed 1913 tests with 1 existing Starlette/httpx warning in 364.10s; temp basetemp removed; code worktree clean except MEMANTO-managed MEMORY.md.
@@ -220,11 +226,23 @@ Full release verification after GUI polish passed on 2026-06-27: ruff check . pa
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T16:14:27*
 
+### Final release-readiness after project bundle audit...
+
+Final release-readiness after project bundle audit-run portability commit 904dd43 passed on 2026-06-28: ruff check . passed; full pytest with -p no:cacheprovider --basetemp .pytest-full-project-audit-bundles reported 2020 passed, 1 known Starlette/httpx warning in 535.99s; python main.py --self-check reported 29 tabs; PyInstaller build with QT_API=pyside6 succeeded; frozen dist/SiteAnalyzer.exe --self-check exited 0. No remote git actions.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T23:49:12 | Tags: `asa`, `client-safe`, `project-io`, `release-readiness`, `full-pytest`, `frozen-smoke`*
+
 ### Overview/import-export UX audit completed in commi...
 
 Overview/import-export UX audit completed in commit 922aab27: Overview load errors now clear stale portfolio rows, totals, heatmap, trend selector, company roll-up, assign combo, and company filter; tests use a lightweight OverviewHost to avoid full MainWindow teardown quirks. Verified with overview/project_io/dashboard/timeline/criticality/osint targeted tests, ruff, and main.py --self-check.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T16:30:26*
+
+### Final release-readiness after audit event commit 2...
+
+Final release-readiness after audit event commit 2ff3485 passed on 2026-06-28: ruff check . passed; full pytest with -p no:cacheprovider --basetemp .pytest-full-audit-events reported 1948 passed, 1 known Starlette/httpx warning in 467.39s; python main.py --self-check reported 29 tabs; PyInstaller build with QT_API=pyside6 succeeded; frozen dist/SiteAnalyzer.exe --self-check exited 0. No remote git actions.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T23:16:21 | Tags: `asa`, `client-safe`, `audit-events`, `release-readiness`, `full-pytest`, `frozen-smoke`*
 
 ### Codex completed an internal polish/release-readine...
 
@@ -243,6 +261,24 @@ Frozen/PyInstaller smoke after Client-Safe Pentest Workbench Stage 1/2 passed on
 Integrated persistent audit history and report exports into Audit Runs GUI in commit 666f7d4: Audit Runs now saves runs to AuditRunStore, loads per-project history, opens saved runs, exports JSON/Markdown/HTML via core audit_report, and tests isolate default audit_runs.db. Verification: 24 GUI/store/report tests passed, 48 extended audit GUI/self-check tests passed, ruff changed files passed, python main.py --self-check = 29 tabs.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T18:40:28 | Tags: `client-safe-workbench`, `audit-history`, `gui`, `commit-666f7d4`, `tests`*
+
+### Final release-readiness after Client-Safe Pentest ...
+
+Final release-readiness after Client-Safe Pentest Workbench timeline/evidence work passed on 2026-06-28: ruff check . passed; full pytest with -p no:cacheprovider --basetemp .pytest-full-client-safe-final reported 1947 passed, 1 known Starlette/httpx warning in 564.43s; python main.py --self-check reported 29 tabs; PyInstaller build with QT_API=pyside6 succeeded and frozen dist/SiteAnalyzer.exe --self-check exited 0. Exe size 73,903,732 bytes. No remote git actions.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:59:46 | Tags: `asa`, `client-safe`, `release-readiness`, `full-pytest`, `frozen-smoke`*
+
+### Post-merge release-readiness after backend release...
+
+Post-merge release-readiness after backend release-hardening merge fb862990 and Client-Safe Workbench commits passed on 2026-06-28: targeted smoke 72 passed; ruff check . passed; full pytest with -p no:cacheprovider --basetemp .pytest-full-post-merge reported 2020 passed, 1 known Starlette/httpx warning in 543.27s; python main.py --self-check reported 29 tabs; PyInstaller build with QT_API=pyside6 succeeded; frozen dist/SiteAnalyzer.exe --self-check exited 0. No remote git actions.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T23:30:30 | Tags: `asa`, `post-merge`, `release-readiness`, `backend-hardening`, `client-safe`, `frozen-smoke`*
+
+### Implemented project bundle portability for Client-...
+
+Implemented project bundle portability for Client-Safe audit history in commit 904dd43. AuditRunStore now participates in row-level project export/import via PROJECT_EXPORT, and core.project_io includes audit_runs.json plus audit_run/audit_event counts. Round-trip tests now verify audit runs/events survive import with findings/assets/project tree. Verified with 73 targeted project/audit tests, ruff, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T23:37:43 | Tags: `asa`, `client-safe`, `project-io`, `audit-runs`, `release-readiness`*
 
 ### Final verification after Codex release-readiness c...
 
@@ -285,24 +321,6 @@ Final release-readiness sweep after Client-Safe Pentest Workbench work: full 'ru
 Final frozen smoke rerun used explicit QT_API=pyside6: 'pyinstaller build.spec --clean --noconfirm' selected PySide6 in hook-qtpy (no PyQt5 binding-selection warning), built dist/SiteAnalyzer.exe size 73,868,687 bytes, and frozen exe --self-check exited 0 with isolated ASA_DATA_ROOT. Temporary .frozen-smoke-data removed; build/ and dist/ remain ignored artifacts; code worktree clean except MEMANTO-managed MEMORY.md.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:44:37 | Tags: `client-safe-workbench`, `frozen-smoke`, `qt-api-pyside6`, `release-readiness`*
-
-### Implemented W1 Persistent Audit Runs core slice in...
-
-Implemented W1 Persistent Audit Runs core slice in commit 91ce78c: added core/audit_store.py backed by SQLiteStore with audit_runs/audit_events tables, schema-validated canonical payload save/load/list/delete/event/export APIs, default PathManager data/audit_runs.db without editing config.py, and tests/test_audit_store.py. Verification: pytest tests/test_audit_store.py tests/test_audit_workflow_edges.py tests/test_audit_schema_edges.py = 16 passed; ruff changed files passed; python main.py --self-check = 29 tabs.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T18:36:12 | Tags: `client-safe-workbench`, `w1`, `audit-store`, `commit-91ce78c`, `tests`*
-
-### Packaging smoke audit passed on 2026-06-27: PyInst...
-
-Packaging smoke audit passed on 2026-06-27: PyInstaller 6.20.0 built SiteAnalyzer.exe with 'pyinstaller build.spec --clean --noconfirm' under local Python 3.14.5; dist/SiteAnalyzer.exe size 71,602,118 bytes (68.29 MiB); frozen smoke 'dist/SiteAnalyzer.exe --self-check' with QT_QPA_PLATFORM=offscreen exited 0. Build log included qtpy multi-binding warning and optional missing-module warnings, but frozen self-check passed. build/ and dist/ are gitignored.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T16:24:53*
-
-### Second GUI polish wave completed in commits 0f02da...
-
-Second GUI polish wave completed in commits 0f02da7, d55dcc0, 3c0fda7: stale-state clearing for lifecycle tabs (Assets, Findings, Criticality), Timeline, OSINT Catalog, and Dashboard table errors; added Timeline/Criticality lightweight test hosts to avoid Windows/offscreen MainWindow teardown exit-code quirks. Targeted GUI smoke (139 tests), ruff, and main.py --self-check passed.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T16:01:40*
 
 ---
 
