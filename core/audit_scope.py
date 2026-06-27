@@ -56,8 +56,8 @@ def roe_summary(roe: Optional[Dict[str, Any]]) -> str:
     denied = ", ".join(normalized["denied_domains"]) or "none"
     rate = normalized["rate_limit"] or "unset"
     return (
-        f"profile={normalized['profile']} · {mode} · "
-        f"allowed={allowed} · denied={denied} · rate={rate}"
+        f"profile={normalized['profile']} | {mode} | "
+        f"allowed={allowed} | denied={denied} | rate={rate}"
     )
 
 
