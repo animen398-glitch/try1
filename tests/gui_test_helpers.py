@@ -18,6 +18,7 @@ from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_overview import OverviewTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_timeline import TimelineTabMixin
+from gui.tab_audit_runs import AuditRunsTabMixin
 
 
 class _Status:
@@ -142,3 +143,9 @@ class IacHost(_BaseHost, IacTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
         self._build_iac_tab()
+
+
+class AuditRunsHost(_BaseHost, AuditRunsTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._build_audit_runs_tab()
