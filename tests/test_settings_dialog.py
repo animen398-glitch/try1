@@ -83,6 +83,8 @@ def test_dialog_has_dependency_health_tab(qapp, isolated_config):
 
     assert "Зависимости" in names
     assert hasattr(dlg, "dependencies_text")
+    assert dlg.dependencies_hint.objectName() == "dependenciesHint"
+    assert dlg.dependencies_hint.wordWrap() is True
     assert "Python:" in dlg.dependencies_text.toPlainText()
     assert all(isinstance(tabs.widget(i), QScrollArea)
                for i in range(tabs.count()))

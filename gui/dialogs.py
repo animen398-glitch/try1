@@ -121,6 +121,10 @@ class SettingsDialog(QDialog):
             "Отсутствующие опциональные зависимости отключают только связанные функции."
         ))
 
+        self.dependencies_hint = layout.itemAt(layout.count() - 1).widget()
+        self.dependencies_hint.setObjectName("dependenciesHint")
+        self.dependencies_hint.setWordWrap(True)
+
         self.dependencies_text = QPlainTextEdit()
         self.dependencies_text.setReadOnly(True)
         self.dependencies_text.setMinimumHeight(260)
