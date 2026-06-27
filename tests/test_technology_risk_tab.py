@@ -127,6 +127,28 @@ def test_stale_result_is_discarded(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w.tr_project.addItem('x.com', 'x.com')
+    w._on_tr_table_loaded({'slug': 'x.com', 'items': [
+        {'kind': 'dependency', 'name': 'jquery', 'version': '1.7.0', 'score': 40,
+         'band': 'medium', 'category': 'JS dependency',
+         'reason': '1 known vulnerable advisory/advisories; worst=high',
+         'evidence': ['CVE-2020-11022']},
+    ], 'summary': {'items': 1, 'high': 0, 'vulnerable_dependencies': 1,
+                   'score': 40, 'band': 'medium'}})
+    w.tr_table.selectRow(0)
+    assert w.tr_table.rowCount() == 1
+
+    w._on_tr_table_loaded({'slug': 'x.com', 'error': 'boom'})
+
+    assert w.tr_table.rowCount() == 0
+    assert w.tr_detail.toPlainText() == ''
+    assert w.tr_rollup['items'].text() == '0'
+    assert w._tr_records == []
+    assert 'boom' in w.tr_status.text()
+
+
 def test_selection_shows_reason_and_evidence(qapp):
     w = _window(qapp)
     w._populate_tr_table([{

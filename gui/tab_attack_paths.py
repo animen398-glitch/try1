@@ -190,10 +190,14 @@ class AttackPathsTabMixin:
             self._apply_path_filter()
             return
         if result.get('error'):
+            self._populate_path_rollup({})
+            self._populate_path_table([])
             self.path_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         data = result.get('paths') or {}
         if data.get('error'):
+            self._populate_path_rollup({})
+            self._populate_path_table([])
             self.path_status.setText(f"Ошибка загрузки: {data['error']}")
             return
         summary = data.get('summary') or {}

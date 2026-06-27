@@ -95,6 +95,25 @@ def test_table_load_populates_rows_and_rollup(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w._on_exp_table_loaded({'project': 'p1', 'exp': {
+        'items': [{'id': 'a-1', 'type': 'subdomain', 'value': 'a.x.com',
+                   'exposure': 55, 'band': 'medium', 'factors': []}],
+        'summary': {'assets': 1, 'exposed_assets': 0, 'top_exposure': 55},
+    }})
+    w.exp_table.selectRow(0)
+    assert w.exp_table.rowCount() == 1
+
+    w._on_exp_table_loaded({'project': 'p1', 'error': 'boom'})
+
+    assert w.exp_table.rowCount() == 0
+    assert w.exp_detail.toPlainText() == ''
+    assert w.exp_rollup['assets'].text() == '0'
+    assert w._exp_records == []
+    assert 'boom' in w.exp_status.text()
+
+
 def test_selection_shows_factors(qapp):
     w = _window(qapp)
     w._populate_exp_table([{

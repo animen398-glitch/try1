@@ -99,6 +99,26 @@ def test_table_load_populates_rows_and_rollup(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w._on_intel_table_loaded({'project': 'p1', 'intel': {
+        'items': [{'priority': 73, 'confidence': 85, 'confidence_band': 'high',
+                   'severity': 'high', 'category': 'graphql',
+                   'title': 'GraphQL introspection'}],
+        'summary': {'findings': 1, 'high_confidence': 1, 'top_priority': 73},
+    }})
+    w.intel_table.selectRow(0)
+    assert w.intel_table.rowCount() == 1
+
+    w._on_intel_table_loaded({'project': 'p1', 'error': 'boom'})
+
+    assert w.intel_table.rowCount() == 0
+    assert w.intel_detail.toPlainText() == ''
+    assert w.intel_rollup['findings'].text() == '0'
+    assert w._intel_records == []
+    assert 'boom' in w.intel_status.text()
+
+
 def test_selection_shows_explanation_and_factors(qapp):
     w = _window(qapp)
     w._populate_intel_table([{

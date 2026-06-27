@@ -207,6 +207,8 @@ class TechnologyRiskTabMixin:
         if result.get('slug') != self.tr_project.currentData():
             return
         if result.get('error'):
+            self._populate_tr_rollup({})
+            self._populate_tr_table([])
             self.tr_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         summary = result.get('summary') or {}

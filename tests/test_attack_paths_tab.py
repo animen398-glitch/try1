@@ -95,6 +95,27 @@ def test_table_load_populates_rows_and_rollup(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w._on_path_table_loaded({'project': 'p1', 'paths': {
+        'paths': [{'score': 55, 'band': 'medium', 'entry': 'api.x.com',
+                   'entry_severity': 'high', 'pivot_type': 'ip',
+                   'pivot_node': '1.2.3.4', 'size': 3,
+                   'targets': ['a.x.com'], 'critical_targets': 1}],
+        'summary': {'paths': 1, 'critical_paths': 0, 'top_score': 55},
+    }})
+    w.path_table.selectRow(0)
+    assert w.path_table.rowCount() == 1
+
+    w._on_path_table_loaded({'project': 'p1', 'error': 'boom'})
+
+    assert w.path_table.rowCount() == 0
+    assert w.path_detail.toPlainText() == ''
+    assert w.path_rollup['paths'].text() == '0'
+    assert w._path_records == []
+    assert 'boom' in w.path_status.text()
+
+
 def test_selection_shows_chain(qapp):
     w = _window(qapp)
     w._populate_path_table([{

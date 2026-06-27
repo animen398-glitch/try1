@@ -207,6 +207,8 @@ class AccuracyTabMixin:
         if result.get('slug') != self.acc_project.currentData():
             return
         if result.get('error'):
+            self._populate_acc_rollup({})
+            self._populate_acc_table([])
             self.acc_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         summary = result.get('summary') or {}

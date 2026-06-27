@@ -188,10 +188,14 @@ class IntelligenceTabMixin:
             self._apply_intel_filter()
             return
         if result.get('error'):
+            self._populate_intel_rollup({})
+            self._populate_intel_table([])
             self.intel_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         intel = result.get('intel') or {}
         if intel.get('error'):
+            self._populate_intel_rollup({})
+            self._populate_intel_table([])
             self.intel_status.setText(f"Ошибка загрузки: {intel['error']}")
             return
         summary = intel.get('summary') or {}

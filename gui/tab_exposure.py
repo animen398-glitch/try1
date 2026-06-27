@@ -192,10 +192,14 @@ class ExposureTabMixin:
             self._apply_exp_filter()
             return
         if result.get('error'):
+            self._populate_exp_rollup({})
+            self._populate_exp_table([])
             self.exp_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         exp = result.get('exp') or {}
         if exp.get('error'):
+            self._populate_exp_rollup({})
+            self._populate_exp_table([])
             self.exp_status.setText(f"Ошибка загрузки: {exp['error']}")
             return
         summary = exp.get('summary') or {}

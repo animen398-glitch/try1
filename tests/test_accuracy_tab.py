@@ -140,6 +140,27 @@ def test_stale_result_is_discarded(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w.acc_project.addItem('x.com', 'x.com')
+    w._on_acc_table_loaded({'slug': 'x.com', 'items': [
+        {'entity_type': 'technology', 'label': 'nginx 1.18', 'score': 90,
+         'band': 'high', 'verification': 'header', 'source': ['header'],
+         'evidence': ['header:Server']},
+    ], 'summary': {'entities': 1, 'high_confidence': 1, 'avg_confidence': 90}})
+    w.acc_table.selectRow(0)
+    assert w.acc_table.rowCount() == 1
+
+    w._on_acc_table_loaded({'slug': 'x.com', 'error': 'boom'})
+
+    assert w.acc_table.rowCount() == 0
+    assert w.acc_detail.toPlainText() == ''
+    assert w.acc_rollup['entities'].text() == '0'
+    assert w.acc_rollup['avg_confidence'].text() == '0%'
+    assert w._acc_records == []
+    assert 'boom' in w.acc_status.text()
+
+
 def test_selection_shows_evidence_and_factors(qapp):
     w = _window(qapp)
     w._populate_acc_table([{
