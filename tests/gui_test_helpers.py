@@ -10,11 +10,13 @@ from qtpy.QtWidgets import QLabel, QProgressBar, QWidget
 
 from gui.tab_accuracy import AccuracyTabMixin
 from gui.tab_assets import AssetsTabMixin
+from gui.tab_criticality import CriticalityTabMixin
 from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_findings import FindingsTabMixin
 from gui.tab_iac import IacTabMixin
 from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
+from gui.tab_timeline import TimelineTabMixin
 
 
 class _Status:
@@ -61,6 +63,17 @@ class AssetsHost(_BaseHost, AssetsTabMixin, DashboardTabMixin):
         self._build_assets_tab()
 
 
+class CriticalityHost(_BaseHost, CriticalityTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._crit_loading = False
+        self._crit_loaded = False
+        self._crit_table_loading = False
+        self._crit_filter_pending = False
+        self._crit_reselect_fp = None
+        self._build_criticality_tab()
+
+
 class FindingsHost(_BaseHost, FindingsTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
@@ -89,6 +102,16 @@ class TechnologyRiskHost(_BaseHost, TechnologyRiskTabMixin, DashboardTabMixin):
         self._tr_table_loading = False
         self._tr_filter_pending = False
         self._build_technology_risk_tab()
+
+
+class TimelineHost(_BaseHost, TimelineTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._timeline_loading = False
+        self._timeline_loaded = False
+        self._timeline_data_loading = False
+        self._timeline_pending = False
+        self._build_timeline_tab()
 
 
 class OsintCatalogHost(_BaseHost, OsintCatalogTabMixin, DashboardTabMixin):

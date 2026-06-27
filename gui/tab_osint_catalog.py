@@ -203,6 +203,8 @@ class OsintCatalogTabMixin:
         if result.get('slug') != self.oc_project.currentData():
             return
         if result.get('error'):
+            self._populate_oc_rollup({})
+            self._populate_oc_table([])
             self.oc_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         summary = result.get('summary') or {}

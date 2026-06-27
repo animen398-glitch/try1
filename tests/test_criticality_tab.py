@@ -9,12 +9,13 @@ test share one store. Criticality is per-project, display-only and read-only.
 
 from core.asset_adapter import Asset
 from core.asset_store import AssetStore
+from gui.plugin_manager import default_manager
 from gui.tab_criticality import CriticalityTabMixin
+from tests.gui_test_helpers import CriticalityHost
 
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return CriticalityHost()
 
 
 def _seed():
@@ -33,8 +34,7 @@ def test_tab_builds_with_columns(qapp):
 
 
 def test_criticality_registered_in_tab_bar(qapp):
-    w = _window(qapp)
-    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    titles = [p.title for p in default_manager()]
     assert 'Asset Criticality' in titles
 
 

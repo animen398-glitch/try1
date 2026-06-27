@@ -128,6 +128,28 @@ def test_stale_result_is_discarded(qapp):
 
 # ── selection / detail ──────────────────────────────────────────────────────────
 
+def test_table_load_error_clears_stale_rows_and_rollup(qapp):
+    w = _window(qapp)
+    w.oc_project.addItem('x.com', 'x.com')
+    w._on_oc_table_loaded({'slug': 'x.com', 'workflows': [
+        {'id': 'infrastructure-recon', 'name': 'Infrastructure Recon',
+         'category': 'Digital Infrastructure', 'network': 'active',
+         'status': 'partial', 'goal': 'Map the external infrastructure.',
+         'engines': ['recon', 'subdomains', 'ct'], 'ran': ['recon', 'subdomains'],
+         'missing': ['ct'], 'optional': [], 'optional_ran': [], 'produces': []},
+    ], 'summary': {'total': 1, 'covered': 0, 'partial': 1, 'not_run': 0}})
+    w.oc_table.selectRow(0)
+    assert w.oc_table.rowCount() == 1
+
+    w._on_oc_table_loaded({'slug': 'x.com', 'error': 'boom'})
+
+    assert w.oc_table.rowCount() == 0
+    assert w.oc_detail.toPlainText() == ''
+    assert w.oc_rollup['total'].text() == '0'
+    assert w._oc_records == []
+    assert 'boom' in w.oc_status.text()
+
+
 def test_selection_shows_goal_and_engines(qapp):
     w = _window(qapp)
     w._populate_oc_table([{

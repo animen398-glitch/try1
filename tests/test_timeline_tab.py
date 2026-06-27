@@ -7,11 +7,12 @@ tmp base.
 """
 
 from gui.tab_timeline import TimelineTabMixin
+from gui.plugin_manager import default_manager
+from tests.gui_test_helpers import TimelineHost
 
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return TimelineHost()
 
 
 def _seed_project(base):
@@ -55,8 +56,7 @@ def test_tab_builds_with_two_tables(qapp):
 
 
 def test_timeline_registered_in_tab_bar(qapp):
-    w = _window(qapp)
-    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    titles = [p.title for p in default_manager()]
     assert 'Timeline' in titles
 
 
@@ -112,6 +112,29 @@ def test_empty_project_selection_clears(qapp):
     w._apply_timeline()        # no project selected → safe, clears
     assert w.timeline_events.rowCount() == 0
     assert 'Нет проектов' in w.timeline_status.text()
+
+
+def test_timeline_load_error_clears_stale_tables_and_export_source(qapp):
+    w = _window(qapp)
+    w.timeline_project.addItem('x.com', 'x.com')
+    w._on_timeline_loaded({
+        'slug': 'x.com',
+        'events': [{'at': '2026-01-02T00:00:00', 'scan_id': 's2',
+                    'type': 'risk_increase', 'severity': 'high',
+                    'title': 'Low 10 -> High 60'}],
+        'series': [{'scan_id': 's2', 'at': 's2', 'risk_score': 60,
+                    'secrets': 1, 'attack_surface': 9, 'high': 2,
+                    'medium': 3}],
+    })
+    assert w.timeline_events.rowCount() == 1
+    assert w.timeline_series.rowCount() == 1
+
+    w._on_timeline_loaded({'slug': 'x.com', 'error': 'boom'})
+
+    assert w.timeline_events.rowCount() == 0
+    assert w.timeline_series.rowCount() == 0
+    assert w._timeline_events_data == []
+    assert 'boom' in w.timeline_status.text()
 
 
 def test_event_labels_cover_all_event_types():

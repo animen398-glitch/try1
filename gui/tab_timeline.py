@@ -218,6 +218,9 @@ class TimelineTabMixin:
         if result.get('slug') != self.timeline_project.currentData():
             return
         if result.get('error'):
+            self._timeline_events_data = []
+            self._populate_timeline_events([])
+            self._populate_timeline_series([])
             self.timeline_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         events = result.get('events', [])
