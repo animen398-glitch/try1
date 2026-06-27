@@ -382,6 +382,15 @@ class OverviewTabMixin:
         self._set_busy(False)
         if result.get('error'):
             self._overview_loaded = False   # allow retry on next open/refresh
+            self._overview_rows = []
+            self._overview_companies = []
+            self._overview_company_filter = None
+            self._populate_overview_totals({})
+            self._populate_overview_table([])
+            self._render_overview_heatmap([])
+            self._populate_overview_projects([])
+            self._populate_overview_companies([])
+            self._populate_assign_combo([])
             self.overview_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         self._overview_loaded = True

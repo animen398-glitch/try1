@@ -15,6 +15,7 @@ from gui.tab_dashboard import DashboardTabMixin
 from gui.tab_findings import FindingsTabMixin
 from gui.tab_iac import IacTabMixin
 from gui.tab_osint_catalog import OsintCatalogTabMixin
+from gui.tab_overview import OverviewTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_timeline import TimelineTabMixin
 
@@ -122,6 +123,19 @@ class OsintCatalogHost(_BaseHost, OsintCatalogTabMixin, DashboardTabMixin):
         self._osint_table_loading = False
         self._osint_filter_pending = False
         self._build_osint_catalog_tab()
+
+
+class OverviewHost(_BaseHost, OverviewTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._overview_loading = False
+        self._overview_loaded = False
+        self._overview_series_loading = False
+        self._overview_series_pending = False
+        self._overview_graph_loading = False
+        self._overview_companies_loading = False
+        self._overview_assign_loading = False
+        self._build_overview_tab()
 
 
 class IacHost(_BaseHost, IacTabMixin, DashboardTabMixin):

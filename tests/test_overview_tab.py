@@ -9,12 +9,13 @@ base; no Qt threads, no network.
 import json
 
 from core.project import ProjectStore
+from gui.plugin_manager import default_manager
 from gui.tab_overview import OverviewTabMixin
+from tests.gui_test_helpers import OverviewHost
 
 
 def _window(qapp):
-    from gui.main_window import MainWindow
-    return MainWindow()
+    return OverviewHost()
 
 
 def _seed_project(base, slug_url='https://x.com', *, scores=(10, 60)):
@@ -60,8 +61,7 @@ def test_tab_builds(qapp):
 
 
 def test_overview_registered_in_tab_bar(qapp):
-    w = _window(qapp)
-    titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
+    titles = [p.title for p in default_manager()]
     assert 'Overview' in titles
 
 
@@ -141,6 +141,36 @@ def test_on_overview_loaded_error(qapp):
     w = _window(qapp)
     w._on_overview_loaded({'error': 'boom'})
     assert w._overview_loaded is False
+    assert 'boom' in w.overview_status.text()
+
+
+def test_overview_load_error_clears_stale_portfolio_state(qapp, tmp_path):
+    w = _window(qapp)
+    p = _portfolio(tmp_path)
+    companies = [{'slug': 'acme', 'name': 'Acme', 'project_count': 1,
+                  'risk_level': 'High', 'risk_score': 60, 'secrets': 1,
+                  'high': 2, 'medium': 1, 'warning_count': 1,
+                  'active_findings': 3, 'asset_total': 4,
+                  'project_slugs': ['x.com']}]
+    w._overview_companies = companies
+    w._populate_overview_companies(companies)
+    w._populate_assign_combo(companies)
+    w._on_overview_loaded(p)
+    assert w.overview_table.rowCount() == 1
+    assert w.overview_trend_project.count() == 1
+    assert w.overview_totals['projects'].text() == '1'
+
+    w._on_overview_loaded({'error': 'boom'})
+
+    assert w._overview_loaded is False
+    assert w._overview_rows == []
+    assert w._overview_companies == []
+    assert w._overview_company_filter is None
+    assert w.overview_table.rowCount() == 0
+    assert w.overview_companies_table.rowCount() == 0
+    assert w.overview_trend_project.count() == 0
+    assert w.overview_totals['projects'].text() == '0'
+    assert w.overview_assign_company.count() == 1
     assert 'boom' in w.overview_status.text()
 
 
