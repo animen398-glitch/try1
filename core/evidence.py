@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
+from utils.atomic_io import atomic_write_json
 
 MANIFEST_NAME = "evidence_manifest.json"
 _REPORT_FILES = {"report.json", "report.html", MANIFEST_NAME}
@@ -126,8 +127,7 @@ def write_manifest(scan_dir: Path, report: Optional[Dict[str, Any]] = None) -> D
     root = Path(scan_dir)
     manifest = build_manifest(root, report)
     path = root / MANIFEST_NAME
-    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
-                    encoding="utf-8")
+    atomic_write_json(path, manifest)
     return {
         "manifest": manifest,
         "path": MANIFEST_NAME,

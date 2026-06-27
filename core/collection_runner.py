@@ -66,6 +66,7 @@ from core.subdomain_scanner import SubdomainScanner
 from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
+from utils.atomic_io import atomic_write_json
 from utils.image_processor import ImageExtractor
 
 
@@ -340,9 +341,7 @@ class CollectionRunner:
                               datetime.now().isoformat(timespec='seconds'))
             path = Path(scan_dir) / 'report.json'
             report['report_json'] = str(path)
-            path.write_text(
-                json.dumps(report, indent=2, ensure_ascii=False, default=str),
-                encoding='utf-8')
+            atomic_write_json(path, report)
         except Exception:
             pass
 
@@ -660,19 +659,13 @@ class CollectionRunner:
             self._warn(report, 'markdown', 'Markdown report could not be written', e)
 
         html_path.write_text(self._render_html(report), encoding='utf-8')
-        json_path.write_text(
-            json.dumps(report, indent=2, ensure_ascii=False, default=str),
-            encoding='utf-8',
-        )
+        atomic_write_json(json_path, report)
 
         # Index this scan in the project (metadata.json + history snapshot) so
         # the project remembers its verdict/metrics across runs.
         try:
             report['project_scan'] = project.record_scan(scan_dir, report)
-            json_path.write_text(
-                json.dumps(report, indent=2, ensure_ascii=False, default=str),
-                encoding='utf-8',
-            )
+            atomic_write_json(json_path, report)
         except Exception as e:  # noqa: BLE001 — indexing must not fail the scan
             self._log(f'  ! project index failed: {e}')
             self._warn(report, 'project_index', 'Project metadata index could not be updated', e)

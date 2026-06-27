@@ -46,3 +46,16 @@ def test_failure_leaves_original_intact(tmp_path, monkeypatch):
     assert p.read_text(encoding='utf-8') == 'old'  # original untouched on failure
     # the partial temp file was cleaned up
     assert [q.name for q in tmp_path.iterdir() if q.name != 'f.txt'] == []
+
+
+def test_company_registry_writes_atomically(tmp_path):
+    """Integration: a consumer (company registry) routes writes through
+    atomic_write_json — valid output, no .tmp litter left behind."""
+    from core.company import CompanyRegistry
+
+    reg = CompanyRegistry(path=tmp_path / 'companies.json')
+    reg.create('Acme Corp')
+
+    names = [p.name for p in tmp_path.iterdir()]
+    assert 'companies.json' in names
+    assert not any(n.endswith('.tmp') for n in names)
