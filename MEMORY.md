@@ -1,6 +1,6 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-28 02:51:10  
+> Generated: 2026-06-28 02:53:18  
 > Total memories: **46**  
 > Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 25, error: 3
 
@@ -310,17 +310,17 @@ Completed Stage 2 Client-Safe Pentest Workbench GUI in commit 9326ded: added thi
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:20:51 | Tags: `client-safe-workbench`, `stage-2`, `gui`, `commit-9326ded`, `tests`*
 
+### Updated project status docs in commit b24d1a9 afte...
+
+Updated project status docs in commit b24d1a9 after Client-Safe Pentest Workbench closure: PROJECT_REPORT.md now reflects 2026-06-28 checkpoint, 2020 green tests, 29 GUI tabs, frozen self-check OK, and local ahead status; ROADMAP_ASM_2.0.md marks Client-Safe Pentest Workbench as EPIC CLOSED with implemented surfaces and Definition of Done status. No remote git actions.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T23:52:54 | Tags: `asa`, `docs`, `client-safe`, `roadmap`, `project-report`*
+
 ### Final release-readiness sweep after Client-Safe Pe...
 
 Final release-readiness sweep after Client-Safe Pentest Workbench work: full 'ruff check .' passed; build/ and dist/ are ignored artifacts; latest commits are 9326ded Add audit runs GUI tab and 1c5a5a1 Add client-safe audit contract hardening; git status clean for code with only MEMANTO-managed MEMORY.md modified.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:38:23 | Tags: `client-safe-workbench`, `release-readiness`, `ruff`, `git-status`*
-
-### Final frozen smoke rerun used explicit QT_API=pysi...
-
-Final frozen smoke rerun used explicit QT_API=pyside6: 'pyinstaller build.spec --clean --noconfirm' selected PySide6 in hook-qtpy (no PyQt5 binding-selection warning), built dist/SiteAnalyzer.exe size 73,868,687 bytes, and frozen exe --self-check exited 0 with isolated ASA_DATA_ROOT. Temporary .frozen-smoke-data removed; build/ and dist/ remain ignored artifacts; code worktree clean except MEMANTO-managed MEMORY.md.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T17:44:37 | Tags: `client-safe-workbench`, `frozen-smoke`, `qt-api-pyside6`, `release-readiness`*
 
 ---
 
