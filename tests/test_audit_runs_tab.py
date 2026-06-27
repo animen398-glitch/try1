@@ -73,6 +73,33 @@ def test_start_run_builds_deterministic_audit_payload(qapp):
     assert json.dumps(first["run"], sort_keys=True) == json.dumps(second["run"], sort_keys=True)
 
 
+def test_query_audit_run_records_finding_and_quality_events(qapp):
+    from core.audit_store import AuditRunStore
+
+    _seed_finding(
+        "shop.com",
+        evidence={
+            "location": "https://shop.com/app.js.map",
+            "asset": "https://shop.com",
+            "impact": "Source disclosure.",
+            "remediation": "Remove source maps.",
+            "reachability": "public",
+            "evidence_refs": ["capture/app-map.json"],
+            "confidence": 90,
+        },
+    )
+
+    first = AuditRunsTabMixin._query_audit_run("shop.com", run_id="audit-events")
+    AuditRunsTabMixin._query_audit_run("shop.com", run_id="audit-events")
+
+    events = AuditRunStore().events(first["run"]["run_id"])
+
+    assert [(event["type"], event["phase"]) for event in events] == [
+        ("finding_verified", "validation"),
+        ("quality_gate_passed", "risk_business_impact"),
+    ]
+
+
 def test_run_without_evidence_shows_rejected_and_failed_gate(qapp):
     _seed_finding("shop.com", evidence={})
 

@@ -390,10 +390,73 @@ class AuditRunsTabMixin:
                 },
             )
             payload = audit_run_to_json(run)
-            saved = AuditRunStore().save_run(payload)
+            store = AuditRunStore()
+            saved = store.save_run(payload)
+            AuditRunsTabMixin._record_audit_events(store, payload["run_id"], rows)
             return {"project": project, "run": payload, "rows": rows, "saved": saved}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
+
+    @staticmethod
+    def _record_audit_events(store, run_id: str, rows: List[Dict[str, Any]]) -> None:
+        def clean_confidence(value: Any) -> int | None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        existing = {
+            (
+                event.get("type"),
+                event.get("phase"),
+                event.get("finding_id"),
+                event.get("note"),
+            )
+            for event in store.events(run_id)
+        }
+
+        def record_once(event_type: str, *, phase: str, finding_id: str | None, note: Dict[str, Any]):
+            encoded_note = json.dumps(note, ensure_ascii=False, sort_keys=True)
+            key = (event_type, phase, finding_id, encoded_note)
+            if key not in existing:
+                store.record_event(run_id, event_type, phase=phase, finding_id=finding_id, note=note)
+                existing.add(key)
+
+        for row in rows:
+            finding = row.get("finding") or {}
+            source = row.get("source") or {}
+            finding_id = str(finding.get("finding_id") or finding.get("id") or "").strip() or None
+            status = str(finding.get("validation_status") or "").strip()
+            if status in {"verified", "rejected", "needs_review"}:
+                record_once(
+                    f"finding_{status}",
+                    phase="validation",
+                    finding_id=finding_id,
+                    note={"confidence": finding.get("confidence")},
+                )
+            gate = str(finding.get("quality_gate") or "").strip()
+            if gate in {"passed", "failed"}:
+                record_once(
+                    f"quality_gate_{gate}",
+                    phase="risk_business_impact",
+                    finding_id=finding_id,
+                    note={"reasons": finding.get("quality_reasons") or []},
+                )
+            source_confidence = source.get("confidence")
+            if isinstance(source.get("evidence"), dict):
+                source_confidence = source["evidence"].get("confidence", source_confidence)
+            before = clean_confidence(source_confidence)
+            after = clean_confidence(finding.get("confidence"))
+            if before is not None and after is not None and before != after:
+                record_once(
+                    "confidence_changed",
+                    phase="validation",
+                    finding_id=finding_id,
+                    note={
+                        "from": before,
+                        "to": after,
+                    },
+                )
 
     @staticmethod
     def _target_from_roe(project: str, roe: Dict[str, Any]) -> str:
