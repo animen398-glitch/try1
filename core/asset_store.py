@@ -97,31 +97,37 @@ class AssetStore(SQLiteStore):
 
         ``asset`` is an ``Asset.to_store()`` dict (``id`` = bare fingerprint). The
         stored row id is the project-scoped key. Returns ``{created, asset}``."""
+        with self._connect() as conn:
+            return self._upsert(conn, project, asset, scan_id=scan_id, now=now)
+
+    def _upsert(self, conn, project: str, asset: Dict, *,
+                scan_id: Optional[str] = None, now: Optional[str] = None) -> Dict:
+        """``upsert`` body over an existing connection — lets :meth:`sync` run the
+        whole reconcile in one transaction (atomic, all-or-nothing)."""
         now = now or _now()
         aid = scoped_id(project, asset['id'])
         attrs = self._attrs_json(asset.get('attrs'))
-        with self._connect() as conn:
-            row = conn.execute('SELECT * FROM assets WHERE id = ?',
-                               (aid,)).fetchone()
-            if row is None:
-                conn.execute(
-                    'INSERT INTO assets (id, project, type, value, label, attrs,'
-                    ' status, first_seen_at, last_seen_at, updated_at)'
-                    ' VALUES (?,?,?,?,?,?,?,?,?,?)',
-                    (aid, project, asset.get('type', ''), asset.get('value', ''),
-                     asset.get('label'), attrs, ACTIVE_STATUS, now, now, now))
-                self._log_event(conn, aid, 'CREATED', scan_id=scan_id, at=now)
-                created = True
-            else:
-                conn.execute(
-                    'UPDATE assets SET label = ?,'
-                    ' attrs = COALESCE(?, attrs), last_seen_at = ?,'
-                    ' updated_at = ? WHERE id = ?',
-                    (asset.get('label', row['label']), attrs, now, now, aid))
-                self._log_event(conn, aid, 'SEEN', scan_id=scan_id, at=now)
-                created = False
-            stored = conn.execute('SELECT * FROM assets WHERE id = ?',
-                                  (aid,)).fetchone()
+        row = conn.execute('SELECT * FROM assets WHERE id = ?',
+                           (aid,)).fetchone()
+        if row is None:
+            conn.execute(
+                'INSERT INTO assets (id, project, type, value, label, attrs,'
+                ' status, first_seen_at, last_seen_at, updated_at)'
+                ' VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (aid, project, asset.get('type', ''), asset.get('value', ''),
+                 asset.get('label'), attrs, ACTIVE_STATUS, now, now, now))
+            self._log_event(conn, aid, 'CREATED', scan_id=scan_id, at=now)
+            created = True
+        else:
+            conn.execute(
+                'UPDATE assets SET label = ?,'
+                ' attrs = COALESCE(?, attrs), last_seen_at = ?,'
+                ' updated_at = ? WHERE id = ?',
+                (asset.get('label', row['label']), attrs, now, now, aid))
+            self._log_event(conn, aid, 'SEEN', scan_id=scan_id, at=now)
+            created = False
+        stored = conn.execute('SELECT * FROM assets WHERE id = ?',
+                              (aid,)).fetchone()
         return {'created': created, 'asset': self._row_to_dict(stored)}
 
     def set_status(self, asset_id: str, status: str, *, event_type: str,
@@ -130,20 +136,26 @@ class AssetStore(SQLiteStore):
 
         Raises ``ValueError`` for an unknown status, ``KeyError`` for an unknown
         asset."""
+        with self._connect() as conn:
+            return self._set_status(conn, asset_id, status, event_type=event_type,
+                                    scan_id=scan_id, now=now)
+
+    def _set_status(self, conn, asset_id: str, status: str, *, event_type: str,
+                    scan_id: Optional[str] = None, now: Optional[str] = None) -> Dict:
+        """``set_status`` body over an existing connection (see :meth:`_upsert`)."""
         if status not in STATUSES:
             raise ValueError(f'unknown status: {status!r} (expected {STATUSES})')
         now = now or _now()
-        with self._connect() as conn:
-            row = conn.execute('SELECT status FROM assets WHERE id = ?',
-                               (asset_id,)).fetchone()
-            if row is None:
-                raise KeyError(asset_id)
-            if row['status'] != status:
-                conn.execute('UPDATE assets SET status = ?, updated_at = ?'
-                             ' WHERE id = ?', (status, now, asset_id))
-                self._log_event(conn, asset_id, event_type, scan_id=scan_id, at=now)
-            stored = conn.execute('SELECT * FROM assets WHERE id = ?',
-                                  (asset_id,)).fetchone()
+        row = conn.execute('SELECT status FROM assets WHERE id = ?',
+                           (asset_id,)).fetchone()
+        if row is None:
+            raise KeyError(asset_id)
+        if row['status'] != status:
+            conn.execute('UPDATE assets SET status = ?, updated_at = ?'
+                         ' WHERE id = ?', (status, now, asset_id))
+            self._log_event(conn, asset_id, event_type, scan_id=scan_id, at=now)
+        stored = conn.execute('SELECT * FROM assets WHERE id = ?',
+                              (asset_id,)).fetchone()
         return self._row_to_dict(stored)
 
     # ── lifecycle orchestration ───────────────────────────────────────────────
@@ -187,29 +199,32 @@ class AssetStore(SQLiteStore):
         Returns ``{new, recurring, reappeared, gone, summary}``.
         """
         now = now or _now()
-        seen_ids, new, recurring, reappeared = set(), [], [], []
-        for a in assets or []:
-            res = self.upsert(project, a.to_store(), scan_id=scan_id, now=now)
-            aid = res['asset']['id']
-            seen_ids.add(aid)
-            if res['created']:
-                new.append(res['asset'])
-            elif res['asset']['status'] == GONE_STATUS:
-                reappeared.append(self.set_status(
-                    aid, ACTIVE_STATUS, event_type='REAPPEARED',
-                    scan_id=scan_id, now=now))
-            else:
-                recurring.append(res['asset'])
+        seen_ids, new, recurring, reappeared, gone = set(), [], [], [], []
+        # One transaction for the whole reconcile: a crash/cancel mid-sync rolls
+        # back entirely (atomic, mirrors FindingsStore.sync).
+        with self._connect() as conn:
+            for a in assets or []:
+                res = self._upsert(conn, project, a.to_store(),
+                                   scan_id=scan_id, now=now)
+                aid = res['asset']['id']
+                seen_ids.add(aid)
+                if res['created']:
+                    new.append(res['asset'])
+                elif res['asset']['status'] == GONE_STATUS:
+                    reappeared.append(self._set_status(
+                        conn, aid, ACTIVE_STATUS, event_type='REAPPEARED',
+                        scan_id=scan_id, now=now))
+                else:
+                    recurring.append(res['asset'])
 
-        gone = []
-        for row in self.list_assets(project):
-            if row['id'] in seen_ids or row['status'] != ACTIVE_STATUS:
-                continue
-            if not self._gone_in_scope(row, in_scope, source_in_scope):
-                continue
-            self.set_status(row['id'], GONE_STATUS, event_type='GONE',
-                            scan_id=scan_id, now=now)
-            gone.append(row)
+            for row in self._list_assets(conn, project=project):
+                if row['id'] in seen_ids or row['status'] != ACTIVE_STATUS:
+                    continue
+                if not self._gone_in_scope(row, in_scope, source_in_scope):
+                    continue
+                self._set_status(conn, row['id'], GONE_STATUS, event_type='GONE',
+                                 scan_id=scan_id, now=now)
+                gone.append(row)
 
         return {'new': new, 'recurring': recurring, 'reappeared': reappeared,
                 'gone': gone, 'summary': self.summary(project)}
@@ -226,6 +241,14 @@ class AssetStore(SQLiteStore):
                     type: Optional[str] = None,
                     status: Optional[str] = None) -> List[Dict]:
         """Assets, newest-updated first, optionally filtered by project/type/status."""
+        with self._connect() as conn:
+            return self._list_assets(conn, project=project, type=type,
+                                     status=status)
+
+    def _list_assets(self, conn, project: Optional[str] = None,
+                     type: Optional[str] = None,
+                     status: Optional[str] = None) -> List[Dict]:
+        """``list_assets`` body over an existing connection (see :meth:`_upsert`)."""
         clauses, params = [], []
         if project is not None:
             clauses.append('project = ?'); params.append(project)
@@ -234,10 +257,9 @@ class AssetStore(SQLiteStore):
         if status is not None:
             clauses.append('status = ?'); params.append(status)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
-        with self._connect() as conn:
-            rows = conn.execute(
-                f'SELECT * FROM assets{where} ORDER BY updated_at DESC',
-                params).fetchall()
+        rows = conn.execute(
+            f'SELECT * FROM assets{where} ORDER BY updated_at DESC',
+            params).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def events(self, asset_id: str) -> List[Dict]:

@@ -29,29 +29,53 @@ from core.features import (
 from core.vuln_scanner import SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM
 
 
+# Defensive cap on captured stdout: a misbehaving/compromised tool could emit a
+# huge stream that we then hold and parse. The timeout already kills a runaway
+# process (subprocess.run); this bounds what flows downstream into our parsers and
+# report. We keep the HEAD (earliest JSONL findings) and flag truncation. Note:
+# subprocess.run still buffers the tool's full stdout before we cap — a true
+# peak-memory bound would need a streaming Popen rewrite, deliberately out of scope
+# (stability over a risky cross-platform change for a rare opt-in path).
+MAX_OUTPUT = 8_000_000  # characters (~8 MB of text)
+
+
+def _cap_output(text: Optional[str], limit: int) -> tuple:
+    """Return ``(text_capped_to_limit, was_truncated)`` keeping the head."""
+    text = text or ''
+    if len(text) > limit:
+        return text[:limit], True
+    return text, False
+
+
 def run_command(cmd: List[str], timeout: int,
-                input_text: Optional[str] = None) -> Dict:
+                input_text: Optional[str] = None,
+                max_output: Optional[int] = None) -> Dict:
     """Run an external command. Never raises — returns a structured result.
 
-    ``{rc, stdout, stderr, timed_out, error?}``. A missing binary or OS error is
-    reported via ``error``; a timeout returns ``timed_out=True`` with whatever
-    partial stdout was captured.
+    ``{rc, stdout, stderr, timed_out, truncated, error?}``. A missing binary or OS
+    error is reported via ``error``; a timeout returns ``timed_out=True`` with
+    whatever partial stdout was captured. ``stdout`` is capped to ``max_output``
+    (default :data:`MAX_OUTPUT`) characters, with ``truncated`` flagging a cap.
     """
+    limit = max_output if max_output is not None else MAX_OUTPUT
     try:
         proc = run_hidden(cmd, capture_output=True, text=True,
                           timeout=timeout, input=input_text)
-        return {'rc': proc.returncode, 'stdout': proc.stdout or '',
-                'stderr': (proc.stderr or '')[-1000:], 'timed_out': False}
+        stdout, truncated = _cap_output(proc.stdout, limit)
+        return {'rc': proc.returncode, 'stdout': stdout,
+                'stderr': (proc.stderr or '')[-1000:], 'timed_out': False,
+                'truncated': truncated}
     except subprocess.TimeoutExpired as e:
         partial = e.stdout if isinstance(e.stdout, str) else ''
-        return {'rc': None, 'stdout': partial or '', 'stderr': '',
-                'timed_out': True}
+        stdout, truncated = _cap_output(partial, limit)
+        return {'rc': None, 'stdout': stdout, 'stderr': '',
+                'timed_out': True, 'truncated': truncated}
     except FileNotFoundError:
         return {'rc': None, 'stdout': '', 'stderr': '', 'timed_out': False,
-                'error': 'binary not found on PATH'}
+                'truncated': False, 'error': 'binary not found on PATH'}
     except OSError as e:  # noqa: BLE001 — surface, don't crash
         return {'rc': None, 'stdout': '', 'stderr': '', 'timed_out': False,
-                'error': str(e)}
+                'truncated': False, 'error': str(e)}
 
 
 # nuclei severities → our three-level model.

@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 from typing import List
 
+from utils.atomic_io import atomic_write_json
+
 # PathManager is the frozen-build-aware authority for writable data vs bundled
 # resource locations; re-exported here so config stays the one place to reach
 # for filesystem locations. See core/paths.py.
@@ -95,10 +97,7 @@ def load_settings() -> dict:
 
 def save_settings(settings: dict) -> bool:
     try:
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SETTINGS_FILE.write_text(
-            json.dumps(settings, indent=2, ensure_ascii=False), encoding='utf-8'
-        )
+        atomic_write_json(SETTINGS_FILE, settings)  # crash-safe (temp + os.replace)
         return True
     except Exception:
         return False
@@ -124,10 +123,7 @@ def save_target(url: str) -> bool:
         if url not in targets:
             targets.insert(0, url)
             targets = targets[:MAX_TARGETS]
-        TARGETS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        TARGETS_FILE.write_text(
-            json.dumps(targets, indent=2, ensure_ascii=False), encoding='utf-8'
-        )
+        atomic_write_json(TARGETS_FILE, targets)  # crash-safe (temp + os.replace)
         return True
     except Exception:
         return False

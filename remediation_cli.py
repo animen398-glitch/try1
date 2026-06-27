@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from core.cli_common import configure_stdout, run_main
 from core.findings_store import FindingsStore
 from core.project import ProjectStore
 from core.remediation import (REMEDIATION_STATUSES, load_remediation,
@@ -75,10 +76,7 @@ def main(argv=None) -> int:
     p_set.add_argument("--note", help="Free note")
 
     opts = parser.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+    configure_stdout()
 
     slug = _slug(opts.output, opts.target)
     store = FindingsStore()
@@ -109,4 +107,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main))

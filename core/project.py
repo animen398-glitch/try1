@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from urllib.parse import urlparse
 
+from utils.atomic_io import atomic_write_json
+
 PROJECTS_DIRNAME = 'Projects'
 METADATA_NAME = 'metadata.json'
 _SUBDIRS = ('scans', 'reports', 'screenshots', 'exports', 'history')
@@ -82,18 +84,31 @@ class Project:
             return self._new_metadata()
 
     def _write_metadata(self, meta: Dict) -> None:
-        self.metadata_path.write_text(
-            json.dumps(meta, indent=2, ensure_ascii=False, default=str),
-            encoding='utf-8')
+        # Atomic: a crash mid-write must not corrupt the project's scan index.
+        atomic_write_json(self.metadata_path, meta)
 
     # ---------------------------------------------------------------- scans
     def start_scan(self, stamp: Optional[str] = None) -> Path:
-        """Create and return ``scans/<timestamp>/`` for a new run."""
+        """Create and return a fresh ``scans/<timestamp>/`` for a new run.
+
+        Guarantees a unique, empty directory: if one already exists for this
+        second-resolution timestamp (two runs in the same second, or a retry), a
+        ``-2``, ``-3`` … suffix is appended so a scan never overwrites or mixes
+        into another's artifacts. ``mkdir(exist_ok=False)`` is the atomic check,
+        so this is safe even across concurrent processes. The directory name is
+        the scan id — callers should read it from the returned path."""
         self.ensure()
-        stamp = stamp or datetime.now().strftime('%Y%m%d_%H%M%S')
-        scan_dir = self.root / 'scans' / stamp
-        scan_dir.mkdir(parents=True, exist_ok=True)
-        return scan_dir
+        base = stamp or datetime.now().strftime('%Y%m%d_%H%M%S')
+        scans = self.root / 'scans'
+        candidate, n = base, 1
+        while True:
+            scan_dir = scans / candidate
+            try:
+                scan_dir.mkdir(parents=True, exist_ok=False)
+                return scan_dir
+            except FileExistsError:
+                n += 1
+                candidate = f'{base}-{n}'
 
     @staticmethod
     def _warning_summary(warnings: List[object], limit: int = 10) -> List[Dict]:
@@ -169,10 +184,7 @@ class Project:
         self._write_metadata(meta)
         try:
             hist = self.root / 'history'
-            hist.mkdir(parents=True, exist_ok=True)
-            (hist / f"{entry['id']}.json").write_text(
-                json.dumps(entry, indent=2, ensure_ascii=False, default=str),
-                encoding='utf-8')
+            atomic_write_json(hist / f"{entry['id']}.json", entry)
         except Exception:
             pass   # a history snapshot is best-effort; never fail a scan over it
         return entry

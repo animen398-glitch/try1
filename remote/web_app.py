@@ -63,12 +63,25 @@ def _configured_report_base() -> Path:
 _REPORT_BASE = _configured_report_base()
 
 # ── Global state ──────────────────────────────────────────────────────────────
-_log_queue: asyncio.Queue = asyncio.Queue()
+# Bounds so a long-running console process can't grow unbounded: the SSE queue
+# drops its oldest entry when full (newest logs win), and only the most recent
+# job results are retained for the /results endpoint.
+_LOG_QUEUE_MAX = 1000
+_MAX_JOB_RESULTS = 200
+_log_queue: asyncio.Queue = asyncio.Queue(maxsize=_LOG_QUEUE_MAX)
 _job_results: Dict[str, dict] = {}
 _active_job: Optional[str] = None
 # The currently running job's cancellable engine, if it exposes ``cancel()``
 # (e.g. a CollectionRunner). Long jobs register one so /cancel can stop them.
 _active_cancellable: Optional[object] = None
+
+
+def _record_job_result(job_id: str, result: dict) -> None:
+    """Store a job result, evicting the oldest so ``_job_results`` stays bounded
+    (FIFO; dicts preserve insertion order)."""
+    _job_results[job_id] = result
+    while len(_job_results) > _MAX_JOB_RESULTS:
+        del _job_results[next(iter(_job_results))]
 
 
 class _EventCanceller:
@@ -109,7 +122,17 @@ async def _push(msg: str, level: str = 'info', msg_type: str = 'log', data: Opti
     payload: dict = {'type': msg_type, 'message': msg, 'level': level, 'ts': time.time()}
     if data:
         payload['data'] = data
-    await _log_queue.put(payload)
+    # Bound the queue: if no SSE consumer is draining it, drop the oldest entry
+    # so memory stays capped (newest log wins) instead of blocking/growing.
+    if _log_queue.full():
+        try:
+            _log_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    try:
+        _log_queue.put_nowait(payload)
+    except asyncio.QueueFull:
+        pass
 
 
 # ── Job registry ──────────────────────────────────────────────────────────────
@@ -1373,6 +1396,16 @@ if _FASTAPI_OK:
         allow_headers=['*'],
     )
 
+    @app.exception_handler(Exception)
+    async def _unhandled_error(request: Request, exc: Exception):
+        # Uniform JSON error envelope so every endpoint honours the console's
+        # ``response.json()`` contract even on an unexpected failure, instead of
+        # Starlette's plain-text 500. The traceback is logged server-side by
+        # Starlette; only the type+message reach the LAN client (mirrors the
+        # ``{'error': str(e)}`` shape the data wrappers already return).
+        return JSONResponse(
+            {'error': f'{type(exc).__name__}: {exc}'}, status_code=500)
+
     class TargetRequest(BaseModel):
         url: str
 
@@ -1415,7 +1448,7 @@ if _FASTAPI_OK:
             result = await loop.run_in_executor(
                 None, JOBS[name]['fn'], url, push_sync)
             compact = _strip_heavy(result)
-            _job_results[job_id] = compact
+            _record_job_result(job_id, compact)
             await _push(f'[{label}] complete', 'ok', 'result', compact)
         except Exception as e:
             await _push(f'[{label}] error: {e}', 'er', 'error')

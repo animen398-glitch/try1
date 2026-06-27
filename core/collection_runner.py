@@ -66,6 +66,7 @@ from core.subdomain_scanner import SubdomainScanner
 from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
+from utils.atomic_io import atomic_write_json
 from utils.image_processor import ImageExtractor
 
 
@@ -323,6 +324,27 @@ class CollectionRunner:
         except Exception:
             pass
 
+    @staticmethod
+    def _persist_error_report(report: Dict, error: Exception) -> None:
+        """Best-effort: write the partial report to the scan's ``report.json`` with
+        an ``Error`` status so a crash during finalization still leaves a readable
+        scan dir (never orphaned). Never raises — it must not mask the original
+        failure, and a scan that already wrote its report.json is simply re-stamped
+        as Error (the normal write only happens after finalization succeeds)."""
+        scan_dir = report.get('project_dir') if isinstance(report, dict) else None
+        if not scan_dir:
+            return
+        try:
+            report['status'] = 'Error'
+            report['error'] = str(error)
+            report.setdefault('finished_at',
+                              datetime.now().isoformat(timespec='seconds'))
+            path = Path(scan_dir) / 'report.json'
+            report['report_json'] = str(path)
+            atomic_write_json(path, report)
+        except Exception:
+            pass
+
     def _cancelled(self, report: Dict) -> bool:
         if self._cancel.is_set():
             report['cancelled'] = True
@@ -353,6 +375,10 @@ class CollectionRunner:
         except Exception as e:
             registry, op_id = getattr(self, '_active_operation', (None, None))
             report = getattr(self, '_active_report', None) or {}
+            # Always leave a readable report.json behind: if the failure happened
+            # during finalization (before the normal write), the scan dir would
+            # otherwise be orphaned and break downstream readers.
+            self._persist_error_report(report, e)
             self._finish_operation(registry, op_id, report, error=str(e))
             raise
         finally:
@@ -372,6 +398,9 @@ class CollectionRunner:
         # internal layout is unchanged, so every existing reader keeps working.
         project = ProjectStore(output_base).get_or_create(url)
         scan_dir = project.start_scan(stamp)
+        # start_scan may uniquify the dir (two runs in the same second) — the real
+        # scan id is the directory name, so report/op stay consistent with disk.
+        stamp = scan_dir.name
         scope = project.get_scope()
 
         report: Dict = {
@@ -633,19 +662,13 @@ class CollectionRunner:
             self._warn(report, 'markdown', 'Markdown report could not be written', e)
 
         html_path.write_text(self._render_html(report), encoding='utf-8')
-        json_path.write_text(
-            json.dumps(report, indent=2, ensure_ascii=False, default=str),
-            encoding='utf-8',
-        )
+        atomic_write_json(json_path, report)
 
         # Index this scan in the project (metadata.json + history snapshot) so
         # the project remembers its verdict/metrics across runs.
         try:
             report['project_scan'] = project.record_scan(scan_dir, report)
-            json_path.write_text(
-                json.dumps(report, indent=2, ensure_ascii=False, default=str),
-                encoding='utf-8',
-            )
+            atomic_write_json(json_path, report)
         except Exception as e:  # noqa: BLE001 — indexing must not fail the scan
             self._log(f'  ! project index failed: {e}')
             self._warn(report, 'project_index', 'Project metadata index could not be updated', e)

@@ -156,39 +156,45 @@ class FindingsStore(SQLiteStore):
         ``evidence``. The stored row id is the *project-scoped* key derived from
         it, so the same fingerprint in two projects yields two rows. Returns
         ``{'created': bool, 'finding': <row>}`` (the row carries the scoped id)."""
+        with self._connect() as conn:
+            return self._upsert(conn, project, finding, scan_id=scan_id, now=now)
+
+    def _upsert(self, conn, project: str, finding: Dict, *,
+                scan_id: Optional[str] = None, now: Optional[str] = None) -> Dict:
+        """``upsert`` body over an existing connection — lets :meth:`sync` run the
+        whole reconcile in one transaction (atomic, all-or-nothing)."""
         now = now or _now()
         fid = scoped_id(project, finding['id'])
         evidence = self._evidence_json(finding.get('evidence'))
-        with self._connect() as conn:
-            row = conn.execute('SELECT * FROM findings WHERE id = ?',
-                               (fid,)).fetchone()
-            if row is None:
-                conn.execute(
-                    'INSERT INTO findings (id, project, category, rule_id, title,'
-                    ' severity, status, evidence, first_seen_at, last_seen_at,'
-                    ' updated_at, status_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-                    (fid, project, finding.get('category', ''),
-                     finding.get('rule_id'), finding.get('title', ''),
-                     finding.get('severity', ''), DEFAULT_STATUS, evidence,
-                     now, now, now, 'auto'))
-                self._log_event(conn, fid, 'CREATED', scan_id=scan_id,
-                                to_status=DEFAULT_STATUS, at=now)
-                created = True
-            else:
-                # Refresh display fields to the latest wording; status untouched.
-                conn.execute(
-                    'UPDATE findings SET title = ?, severity = ?, category = ?,'
-                    ' rule_id = ?, evidence = COALESCE(?, evidence),'
-                    ' last_seen_at = ?, updated_at = ? WHERE id = ?',
-                    (finding.get('title', row['title']),
-                     finding.get('severity', row['severity']),
-                     finding.get('category', row['category']),
-                     finding.get('rule_id', row['rule_id']), evidence,
-                     now, now, fid))
-                self._log_event(conn, fid, 'SEEN', scan_id=scan_id, at=now)
-                created = False
-            stored = conn.execute('SELECT * FROM findings WHERE id = ?',
-                                  (fid,)).fetchone()
+        row = conn.execute('SELECT * FROM findings WHERE id = ?',
+                           (fid,)).fetchone()
+        if row is None:
+            conn.execute(
+                'INSERT INTO findings (id, project, category, rule_id, title,'
+                ' severity, status, evidence, first_seen_at, last_seen_at,'
+                ' updated_at, status_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                (fid, project, finding.get('category', ''),
+                 finding.get('rule_id'), finding.get('title', ''),
+                 finding.get('severity', ''), DEFAULT_STATUS, evidence,
+                 now, now, now, 'auto'))
+            self._log_event(conn, fid, 'CREATED', scan_id=scan_id,
+                            to_status=DEFAULT_STATUS, at=now)
+            created = True
+        else:
+            # Refresh display fields to the latest wording; status untouched.
+            conn.execute(
+                'UPDATE findings SET title = ?, severity = ?, category = ?,'
+                ' rule_id = ?, evidence = COALESCE(?, evidence),'
+                ' last_seen_at = ?, updated_at = ? WHERE id = ?',
+                (finding.get('title', row['title']),
+                 finding.get('severity', row['severity']),
+                 finding.get('category', row['category']),
+                 finding.get('rule_id', row['rule_id']), evidence,
+                 now, now, fid))
+            self._log_event(conn, fid, 'SEEN', scan_id=scan_id, at=now)
+            created = False
+        stored = conn.execute('SELECT * FROM findings WHERE id = ?',
+                              (fid,)).fetchone()
         return {'created': created, 'finding': self._row_to_dict(stored)}
 
     def set_status(self, finding_id: str, status: str, *,
@@ -201,25 +207,34 @@ class FindingsStore(SQLiteStore):
 
         Raises ``ValueError`` for an unknown status, ``KeyError`` for an unknown
         finding."""
+        with self._connect() as conn:
+            return self._set_status(conn, finding_id, status, note=note,
+                                    source=source, event_type=event_type,
+                                    scan_id=scan_id, now=now)
+
+    def _set_status(self, conn, finding_id: str, status: str, *,
+                    note: Optional[str] = None, source: str = 'user',
+                    event_type: str = 'STATUS_CHANGED',
+                    scan_id: Optional[str] = None, now: Optional[str] = None) -> Dict:
+        """``set_status`` body over an existing connection (see :meth:`_upsert`)."""
         if status not in STATUSES:
             raise ValueError(f'unknown status: {status!r} (expected {STATUSES})')
         now = now or _now()
-        with self._connect() as conn:
-            row = conn.execute('SELECT status FROM findings WHERE id = ?',
-                               (finding_id,)).fetchone()
-            if row is None:
-                raise KeyError(finding_id)
-            from_status = row['status']
-            if from_status != status:
-                conn.execute(
-                    'UPDATE findings SET status = ?, status_source = ?,'
-                    ' updated_at = ? WHERE id = ?',
-                    (status, source, now, finding_id))
-                self._log_event(conn, finding_id, event_type, scan_id=scan_id,
-                                from_status=from_status, to_status=status,
-                                note=note, at=now)
-            stored = conn.execute('SELECT * FROM findings WHERE id = ?',
-                                  (finding_id,)).fetchone()
+        row = conn.execute('SELECT status FROM findings WHERE id = ?',
+                           (finding_id,)).fetchone()
+        if row is None:
+            raise KeyError(finding_id)
+        from_status = row['status']
+        if from_status != status:
+            conn.execute(
+                'UPDATE findings SET status = ?, status_source = ?,'
+                ' updated_at = ? WHERE id = ?',
+                (status, source, now, finding_id))
+            self._log_event(conn, finding_id, event_type, scan_id=scan_id,
+                            from_status=from_status, to_status=status,
+                            note=note, at=now)
+        stored = conn.execute('SELECT * FROM findings WHERE id = ?',
+                              (finding_id,)).fetchone()
         return self._row_to_dict(stored)
 
     # ── lifecycle orchestration ───────────────────────────────────────────────
@@ -246,33 +261,36 @@ class FindingsStore(SQLiteStore):
         from core.findings_adapter import normalize
         now = now or _now()
         seen_ids = set()
-        new, recurring, reopened = [], [], []
-        for f in normalize(findings):
-            res = self.upsert(project, f.to_store(), scan_id=scan_id, now=now)
-            # The stored row is keyed by the project-scoped id; track and act on
-            # that, not the bare fingerprint, so "seen this scan" and REOPEN match.
-            sid = res['finding']['id']
-            seen_ids.add(sid)
-            if res['created']:
-                new.append(res['finding'])
-            elif res['finding']['status'] == 'FIXED':
-                reopened.append(self.set_status(
-                    sid, 'OPEN', source='auto', event_type='REOPENED',
-                    scan_id=scan_id, now=now))
-            else:
-                recurring.append(res['finding'])
+        new, recurring, reopened, resolved = [], [], [], []
+        # One transaction for the whole reconcile: a crash/cancel mid-sync rolls
+        # back entirely (no half-updated lifecycle, no spurious diff/alerts).
+        with self._connect() as conn:
+            for f in normalize(findings):
+                res = self._upsert(conn, project, f.to_store(),
+                                   scan_id=scan_id, now=now)
+                # The stored row is keyed by the project-scoped id; track and act
+                # on that, not the bare fingerprint, so "seen this scan"/REOPEN match.
+                sid = res['finding']['id']
+                seen_ids.add(sid)
+                if res['created']:
+                    new.append(res['finding'])
+                elif res['finding']['status'] == 'FIXED':
+                    reopened.append(self._set_status(
+                        conn, sid, 'OPEN', source='auto', event_type='REOPENED',
+                        scan_id=scan_id, now=now))
+                else:
+                    recurring.append(res['finding'])
 
-        resolved = []
-        for row in self.list_findings(project):
-            if row['id'] in seen_ids or row['status'] not in ('OPEN', 'IN_PROGRESS'):
-                continue
-            evidence = row.get('evidence')
-            source = evidence.get('source', '') if isinstance(evidence, dict) else ''
-            if in_scope is not None and not in_scope(source):
-                continue
-            self.set_status(row['id'], 'FIXED', source='auto',
-                            event_type='RESOLVED_AUTO', scan_id=scan_id, now=now)
-            resolved.append(row)
+            for row in self._list_findings(conn, project=project):
+                if row['id'] in seen_ids or row['status'] not in ('OPEN', 'IN_PROGRESS'):
+                    continue
+                evidence = row.get('evidence')
+                source = evidence.get('source', '') if isinstance(evidence, dict) else ''
+                if in_scope is not None and not in_scope(source):
+                    continue
+                self._set_status(conn, row['id'], 'FIXED', source='auto',
+                                 event_type='RESOLVED_AUTO', scan_id=scan_id, now=now)
+                resolved.append(row)
 
         return {'new': new, 'recurring': recurring, 'reopened': reopened,
                 'resolved': resolved, 'summary': self.summary(project)}
@@ -289,6 +307,14 @@ class FindingsStore(SQLiteStore):
                       status: Optional[str] = None,
                       severity: Optional[str] = None) -> List[Dict]:
         """Findings, newest-updated first, optionally filtered."""
+        with self._connect() as conn:
+            return self._list_findings(conn, project=project, status=status,
+                                       severity=severity)
+
+    def _list_findings(self, conn, project: Optional[str] = None,
+                       status: Optional[str] = None,
+                       severity: Optional[str] = None) -> List[Dict]:
+        """``list_findings`` body over an existing connection (see :meth:`_upsert`)."""
         clauses, params = [], []
         if project is not None:
             clauses.append('project = ?'); params.append(project)
@@ -297,10 +323,9 @@ class FindingsStore(SQLiteStore):
         if severity is not None:
             clauses.append('severity = ?'); params.append(severity)
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
-        with self._connect() as conn:
-            rows = conn.execute(
-                f'SELECT * FROM findings{where} ORDER BY updated_at DESC',
-                params).fetchall()
+        rows = conn.execute(
+            f'SELECT * FROM findings{where} ORDER BY updated_at DESC',
+            params).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def active_findings(self, project: Optional[str] = None) -> List[Dict]:

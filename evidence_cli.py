@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from core.cli_common import configure_stdout, run_main
 from core.evidence import audit_scan
 
 
@@ -57,10 +58,7 @@ def main(argv=None) -> int:
 
     opts = parser.parse_args(argv)
 
-    try:
-        sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+    configure_stdout()
 
     if opts.command == "verify":
         result = cmd_verify(opts.scan_dir)
@@ -72,4 +70,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main))

@@ -64,3 +64,40 @@ def test_clear_and_stats(tmp_path):
     assert s.stats() == {'lib_cves': 1, 'cve_details': 1}
     assert s.clear() == 2
     assert s.stats() == {'lib_cves': 0, 'cve_details': 0}
+
+
+# ── T14: retention / prune ──────────────────────────────────────────────────
+
+
+def test_prune_drops_stale_by_age(tmp_path):
+    s = _store(tmp_path)
+    s.put_lib_cves('PyPI', 'old', '1.0', [{'id': 'X'}], now='2000-01-01T00:00:00')
+    s.put_lib_cves('PyPI', 'new', '1.0', [{'id': 'Y'}])  # fresh (now)
+    assert s.prune(max_age_days=1) == 1
+    assert s.get_lib_cves('PyPI', 'old', '1.0') is None
+    assert s.get_lib_cves('PyPI', 'new', '1.0') is not None
+
+
+def test_prune_caps_rows_by_recency(tmp_path):
+    s = _store(tmp_path)
+    for i in range(5):  # fetched_at 2020-01-01 .. 2020-01-05
+        s.put_cve_detail(f'CVE-{i}', {'cvss': 1.0}, now=f'2020-01-0{i + 1}T00:00:00')
+    # age cutoff far in the past so only the row cap applies; keep newest 2.
+    assert s.prune(max_age_days=100000, max_rows=2) == 3
+    assert s.stats()['cve_details'] == 2
+    assert s.get_cve_detail('CVE-4') is not None   # newest kept
+    assert s.get_cve_detail('CVE-0') is None        # oldest dropped
+
+
+def test_prune_noop_within_bounds(tmp_path):
+    s = _store(tmp_path)
+    s.put_cve_detail('CVE-1', {'cvss': 9.8})
+    assert s.prune(max_age_days=100000, max_rows=100) == 0
+    assert s.stats()['cve_details'] == 1
+
+
+def test_prune_totals_across_both_tables(tmp_path):
+    s = _store(tmp_path)
+    s.put_lib_cves('PyPI', 'a', '1', [{'id': 'X'}], now='2000-01-01T00:00:00')
+    s.put_cve_detail('CVE-OLD', {'cvss': 1.0}, now='2000-01-01T00:00:00')
+    assert s.prune(max_age_days=1) == 2  # one stale row from each table

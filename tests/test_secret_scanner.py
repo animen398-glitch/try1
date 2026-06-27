@@ -46,7 +46,11 @@ def test_dedups_repeated_value_and_attaches_source():
 def test_preview_is_truncated_for_long_values():
     key = "ghp_" + "b" * 60
     f = scan_text(key)[0]
-    assert f["preview"].endswith("…") and len(f["preview"]) <= 25
+    assert "…" in f["preview"]
+    assert key not in f["preview"]            # the secret body is never exposed
+    assert f["preview"].startswith("ghp_b")   # short vendor/prefix only
+    assert f["preview"].endswith(str(len(key)))  # length suffix keeps identity entropy
+    assert len(f["preview"]) <= 12            # short mask, not a long slice
 
 
 def test_detects_harvested_secretfinder_formats():

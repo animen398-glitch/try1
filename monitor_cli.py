@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core import alerts, ci_gate, monitor
+from core.cli_common import configure_stdout, run_main
 from core.config import DEFAULT_SETTINGS, load_settings
 from core.project import ProjectStore
 
@@ -230,10 +231,7 @@ def main(argv=None):
     # Diff lines carry '→' and Russian text; a legacy Windows console (cp1251)
     # would otherwise raise UnicodeEncodeError mid-watch. Degrade unencodable
     # glyphs instead of crashing the loop.
-    try:
-        sys.stdout.reconfigure(errors='replace')   # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+    configure_stdout()
 
     base = Path(opts.output).expanduser() if opts.output else _default_base()
     store = ProjectStore(base)
@@ -321,4 +319,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(run_main(main))

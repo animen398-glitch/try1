@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from core.config import COMPANIES_REGISTRY
+from utils.atomic_io import atomic_write_json
 
 # Sentinel slug + label for projects with no company assigned. The slug is a
 # reserved value that ``company_slug`` can never produce (leading underscores are
@@ -68,10 +69,8 @@ class CompanyRegistry:
             return {}
 
     def _save(self, data: Dict[str, Dict]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False, default=str),
-            encoding='utf-8')
+        # Atomic: a crash mid-write must not corrupt the company registry.
+        atomic_write_json(self.path, data)
 
     # ----------------------------------------------------------- reads
     def list(self) -> List[Dict]:

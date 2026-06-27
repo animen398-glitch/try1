@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core.business_context import (CRITICALITY_TIERS, DATA_SENSITIVITY, describe,
                                    clear_business_context, set_business_context,
                                    show_business_context)
+from core.cli_common import configure_stdout, run_main
 from core.project import ProjectStore
 
 DEFAULT_BASE = Path.home() / "SiteAnalyzer"
@@ -89,10 +90,7 @@ def main(argv=None) -> int:
                          help="Asset value (clears just this override)")
 
     opts = parser.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+    configure_stdout()
 
     try:
         if opts.command == "show":
@@ -120,4 +118,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main))

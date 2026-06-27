@@ -1,9 +1,12 @@
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Union
+
+logger = logging.getLogger(__name__)
 
 
 def now_ts() -> str:
@@ -33,6 +36,29 @@ class SQLiteStore:
 
     Понижение версии не выполняется: БД с версией выше ``SCHEMA_VERSION``
     остаётся как есть (forward-only, защита от отката кода на старую сборку).
+
+    Долговечность/конкурентность (один контракт на все сторы): каждое
+    соединение открывается с durability-PRAGMA (:meth:`_apply_pragmas`).
+    ``journal_mode=WAL`` (persistent) позволяет читателям работать, пока
+    писатель держит блокировку — это убирает ``database is locked`` при
+    одновременной записи monitor-треда и чтении GUI/web-консоли из одного
+    стора. ``synchronous=NORMAL`` устойчив к крашу приложения; потеряться может
+    лишь последняя транзакция при сбое ОС/питания (приемлемо для локальной
+    аналитики, не финданных). ``busy_timeout`` заставляет конкурирующего
+    писателя подождать, а не падать сразу. WAL создаёт сайдкары ``-wal``/
+    ``-shm`` рядом с ``.db``; они восстанавливаются SQLite при открытии, а сырой
+    файл БД в проекте нигде не копируется (export/import — построчный, см.
+    :attr:`PROJECT_EXPORT`), поэтому на бэкап/упаковку это не влияет.
+
+    Резильентность (init): если файл БД **повреждён** (``not a database`` /
+    ``malformed`` / ``file is encrypted``), конструктор не роняет приложение —
+    он уносит битый файл (и WAL-сайдкары) в карантин ``<db>.corrupt-<ts>`` и
+    пересоздаёт пустой стор (:meth:`_quarantine_corrupt_db`, опт-аут
+    :attr:`QUARANTINE_CORRUPT`). Данные **никогда не удаляются**. Транзиентный
+    ``database is locked`` повреждением НЕ считается (его лечит ``busy_timeout``/
+    WAL), поэтому в карантин не уносится. Кривой JSON в строке деградирует мягко
+    (:meth:`_row_to_dict` оставляет сырую строку). Рантайм-коррупция вне init —
+    вне этого контракта.
     """
 
     SCHEMA: str = ''
@@ -44,6 +70,17 @@ class SQLiteStore:
     # ``(main_table, events_table, events_fk_column)``. The faithful slice is the
     # main rows plus their event rows — ids/status/timestamps preserved verbatim.
     PROJECT_EXPORT: Optional[tuple] = None
+    # Durability/concurrency knobs (see class docstring + :meth:`_apply_pragmas`).
+    # ``WAL=False`` lets a store opt out (e.g. ``:memory:``); ``BUSY_TIMEOUT_MS``
+    # is the single source for both the connect timeout and ``PRAGMA busy_timeout``.
+    WAL: bool = True
+    BUSY_TIMEOUT_MS: int = 5000
+    # Резильентность: при повреждённом файле БД на init его уносим в карантин
+    # (``.corrupt-<ts>``) и пересоздаём пустой. ``False`` — пробрасывать ошибку.
+    QUARANTINE_CORRUPT: bool = True
+    # Маркеры genuinely нечитаемого файла (НЕ транзиентный lock — см. _is_corruption).
+    _CORRUPTION_MARKERS: tuple = (
+        'not a database', 'malformed', 'file is encrypted', 'disk image is malformed')
 
     def __init__(self, db_path: Union[str, Path]):
         self.db_path = Path(db_path)
@@ -51,10 +88,48 @@ class SQLiteStore:
         self._init_schema()
 
     def _init_schema(self) -> None:
+        try:
+            self._build_schema()
+        except sqlite3.DatabaseError as exc:
+            if not (self.QUARANTINE_CORRUPT and self.db_path.exists()
+                    and self._is_corruption(exc)):
+                raise
+            self._quarantine_corrupt_db(exc)
+            self._build_schema()  # на свежем (пустом) файле
+
+    def _build_schema(self) -> None:
         with self._connect() as conn:
             if self.SCHEMA:
                 conn.executescript(self.SCHEMA)  # CREATE IF NOT EXISTS — idempotent
             self._apply_migrations(conn)
+
+    @classmethod
+    def _is_corruption(cls, exc: sqlite3.DatabaseError) -> bool:
+        """Genuinely нечитаемый файл БД — НЕ транзиентный lock. ``locked``/
+        ``busy`` (``OperationalError``) корруптом считать нельзя: он лечится
+        ретраем/``busy_timeout``, а не карантином."""
+        if isinstance(exc, sqlite3.OperationalError):
+            return False
+        msg = str(exc).lower()
+        return any(m in msg for m in cls._CORRUPTION_MARKERS)
+
+    def _quarantine_corrupt_db(self, exc: sqlite3.DatabaseError) -> None:
+        """Сохранить нечитаемый файл БД (и его WAL-сайдкары) под именем
+        ``.corrupt-<ts>``, чтобы приложение могло пересоздать пустой стор.
+        Данные пользователя НИКОГДА не удаляются. Если файл не переименовать
+        (например, занят другим процессом) — пробрасываем исходную ошибку."""
+        suffix = f".corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        try:
+            for path in (self.db_path,
+                         Path(f'{self.db_path}-wal'),
+                         Path(f'{self.db_path}-shm')):
+                if path.exists():
+                    path.rename(path.with_name(path.name + suffix))
+        except OSError:
+            raise exc
+        logger.warning(
+            'Quarantined corrupt SQLite DB %s (%s); recreated empty. '
+            'Original preserved as *%s', self.db_path, exc, suffix)
 
     def _apply_migrations(self, conn: sqlite3.Connection) -> None:
         """Привести БД к ``SCHEMA_VERSION``, выполнив недостающие миграции по
@@ -88,11 +163,24 @@ class SQLiteStore:
         conn.execute(f'ALTER TABLE {table} ADD COLUMN {column_def}')
         return True
 
+    def _apply_pragmas(self, conn: sqlite3.Connection) -> None:
+        """Durability/concurrency PRAGMA, применяемые к каждому соединению.
+        Контракт и обоснование — в docstring класса. ``busy_timeout`` и
+        ``synchronous`` per-connection; ``journal_mode=WAL`` persistent (no-op на
+        уже-WAL БД). Никогда не роняет соединение (PRAGMA — безопасные no-fail)."""
+        conn.execute(f'PRAGMA busy_timeout = {int(self.BUSY_TIMEOUT_MS)}')
+        conn.execute('PRAGMA synchronous = NORMAL')
+        if self.WAL:
+            conn.execute('PRAGMA journal_mode = WAL')
+
     @contextmanager
     def _connect(self):
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = sqlite3.connect(str(self.db_path), timeout=self.BUSY_TIMEOUT_MS / 1000)
         try:
+            conn.row_factory = sqlite3.Row
+            # Inside the try so a PRAGMA failure (e.g. a corrupt DB) still closes
+            # the connection — otherwise it leaks and locks the file on Windows.
+            self._apply_pragmas(conn)
             yield conn
             conn.commit()
         except Exception:

@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-27 20:47:34  
-> Total memories: **33**  
-> Breakdown: instruction: 8, decision: 3, goal: 1, preference: 1, context: 3, event: 14, error: 3
+> Generated: 2026-06-28 01:51:49  
+> Total memories: **43**  
+> Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 22, error: 3
 
 ---
 
@@ -78,11 +78,17 @@ Roadmap updated in commit 3af7604 with EPIC FUTURE — Client-Safe Pentest Workb
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T16:45:43*
 
+### User approved implementation of the Client-Safe Pe...
+
+User approved implementation of the Client-Safe Pentest Workbench development plan. Codex will start with W1 Persistent Audit Runs core slice: add audit_store and tests, no GUI yet, no protected project/config/path/findings/asset store edits.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T18:34:22 | Tags: `client-safe-workbench`, `w1`, `audit-store`, `approved`*
+
 ### Backend release-hardening contracts (T1-T5)
 
-Backend release-hardening contracts (branch backend/release-hardening, not yet merged): (1) SQLiteStore opens every connection with WAL journal_mode + synchronous=NORMAL + explicit busy_timeout (single const BUSY_TIMEOUT_MS) so concurrent monitor/GUI/web access no longer hits 'database is locked'; raw .db files are never copied (export/import is row-level) so WAL sidecars are safe. (2) A corrupt DB file on init is quarantined to <db>.corrupt-<ts> and recreated empty (never deletes data); a transient lock is NOT treated as corruption. (3) All 6 *_cli.py share core/cli_common.py (configure_stdout + CliError + run_main): expected failures become 'error: <msg>' on stderr + exit 2 instead of a traceback; in-process main(argv) unchanged. (4) remote/web_app.py has a global FastAPI exception handler returning a uniform JSON {'error': ...} 500 so the console's response.json() contract always holds. (5) Event ordering was audited and is already deterministic (findings/asset stores ORDER BY id; timeline stable sort) - no change made.
+Backend release-hardening (branch backend/release-hardening, ~23 commits, full-diff self-reviewed, awaiting external review/merge; not pushed). SQLite/stores: (1) SQLiteStore: every connection WAL + synchronous=NORMAL + busy_timeout (no 'database is locked'); raw .db never copied so WAL sidecars safe. (2) Corrupt DB on init quarantined to <db>.corrupt-<ts>, recreated empty (never deletes data); transient lock != corruption. (3) FindingsStore.sync/AssetStore.sync = ONE transaction (atomic) via _upsert/_set_status/_list_* (conn) workers behind thin public wrappers. (4) OperationRegistry bounds operations.db (newest MAX_HISTORY, prune every PRUNE_EVERY inserts); DataRegistry user data NOT auto-pruned. (5) CVEStore.prune bounds cve_cache.db by age + row cap; cve_intel.correlate prunes once per run (own store only). Contracts/IO: (6) all 6 *_cli.py share core/cli_common.py (configure_stdout+CliError+run_main): expected failures -> stderr 'error: <msg>' + exit 2. (7) remote/web_app.py global FastAPI handler -> uniform {'error':...} JSON 500; _job_results FIFO-capped + _log_queue maxsize drop-oldest. (8) CollectionRunner._persist_error_report always leaves a readable report.json (status Error) on finalization failure. (9) external_tools.run_command caps stdout (MAX_OUTPUT head, truncated flag). (10) utils/atomic_io.py (temp+os.replace) for ALL durable-state JSON: metadata+history, report.json, company registry, evidence_manifest, settings/targets (transient per-phase artifacts left direct). (11) Project.start_scan unique scan dir (mkdir exist_ok=False + -2/-3 suffix); runner takes scan_id from scan_dir.name. (12) Secret previews are a non-leaking mask: secret_scanner._preview = prefix(6)+ellipsis+length (mirrors mask_value, never the body) + dynamic_analyzer previews aligned. IMPORTANT: the length suffix is required - findings_adapter derives the secret discriminator from key:preview, so a too-short preview (prefix only) would merge two distinct same-prefix keys (e.g. two sk_live_ keys) into one finding; the length restores that entropy (caught in self-review). Audits, NO code change (some pinned by guard tests): event ordering deterministic; report consumers tolerant of thin/legacy/Error reports (test_report_backcompat); migration-with-data tested (test_findings_store_migration); secret redaction OK (operations.db/logs carry no secrets; raw only in local artifacts + LAN console, by-design); timestamps consistently local-naive, ct_history isolated naive-UTC, no mixed comparison, UTC migration intentionally not done. Remaining optional/deferred: cross-process advisory locking; roadmap-out-of-scope (live threat feeds, live cloud API, new scanners).
 
-*Confidence: 0.9 | Status: active | Created: 2026-06-27T16:28:31 | Tags: `backend-hardening`, `sqlite-wal`, `cli-contract`, `web-error-envelope`, `release-readiness`*
+*Confidence: 0.9 | Status: active | Created: 2026-06-27T16:28:31 | Tags: `backend-hardening`, `sqlite-wal`, `atomic-sync`, `atomic-writes`, `cli-contract`, `web-error-envelope`, `retention`, `scan-dir-unique`, `secret-redaction`, `diff-reviewed`, `release-readiness`*
 
 ### Architecture invariants
 
@@ -95,6 +101,12 @@ Architecture invariants (breaking them = regression): (1) UI thin, logic in core
 ## Goals
 
 *Objectives, targets, and milestones to track progress.*
+
+### User decided to continue developing Client-Safe Pe...
+
+User decided to continue developing Client-Safe Pentest Workbench while Claude Code rests. Codex should first prepare a plan/structure for persistent audit-run history, safe active checks, ROE/scope editor, audit report surface, and release packaging; wait for user approval before implementation.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T18:33:20 | Tags: `client-safe-workbench`, `planning`, `roadmap`, `approval-required`*
 
 ### User proposed adapting Cloudflare security-audit-s...
 
@@ -160,11 +172,41 @@ Key directories: core/ = ALL business logic and engines (UI must not leak in); g
 
 *Important conversations, milestones, and temporal occurrences.*
 
+### Implemented Audit Runs GUI Rules of Engagement con...
+
+Implemented Audit Runs GUI Rules of Engagement controls and safe-check selection in commit 5039078. The GUI now passes client_safe ROE and selected safe checks into audit run creation; headers_check no longer emits findings without provided headers evidence. Verified with targeted pytest for audit GUI/checks/scope/store/report/policies, ruff on changed files, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:39:15 | Tags: `asa`, `client-safe`, `audit-gui`, `release-readiness`*
+
+### Implemented W4 core audit report surface in commit...
+
+Implemented W4 core audit report surface in commit baf61e0: added core/audit_report.py with deterministic JSON/Markdown/HTML renderers over canonical audit-run payloads, client_findings/review_findings/audit_summary helpers, and tests/test_audit_report.py. Rejected or quality-failed findings remain in appendix, not client-facing critical claims. Verification: 21 audit report/store/schema/workflow tests passed; ruff changed files passed; python main.py --self-check = 29 tabs.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T18:37:52 | Tags: `client-safe-workbench`, `w4`, `audit-report`, `commit-baf61e0`, `tests`*
+
+### Implemented independent audit evidence verificatio...
+
+Implemented independent audit evidence verification in commit 8b4f111. Added core.audit_evidence.verify_evidence_refs for offline deterministic checking of finding refs, safe-check refs, and artifact paths with traversal protection; Audit Runs now stores evidence_check in the independent_verification phase. Verified with 84 targeted audit/timeline tests, ruff, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:47:31 | Tags: `asa`, `client-safe`, `evidence`, `release-readiness`*
+
 ### Completed Stage 1 Client-Safe Pentest Workbench co...
 
 Completed Stage 1 Client-Safe Pentest Workbench contract hardening in commit 1c5a5a1: added minimal pure/offline core contract modules audit_workflow, scope_policy, action_policy, finding_validation, finding_quality, audit_schema; added asa_audit_run/finding/validation schemas; added six edge-test files. Verification passed: 28 Stage 1 tests, 39 targeted scope+Stage tests, ruff on changed files, python main.py --self-check (28 tabs). Only MEMORY.md remains modified from MEMANTO.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:14:17 | Tags: `client-safe-workbench`, `stage-1`, `commit-1c5a5a1`, `tests`, `release-readiness`*
+
+### Implemented W2/W3 core foundation in commit 69af61...
+
+Implemented W2/W3 core foundation in commit 69af61a: added core/audit_scope.py for ROE normalization/validation/summary/scope decisions and core/audit_checks.py for client-safe gated checks (headers, cookie flags, source map detection, non-destructive endpoint probe with injected fetcher only). Added tests/test_audit_scope.py and tests/test_audit_checks.py. Verification: 24 scope/check/action tests passed; ruff changed files passed; python main.py --self-check = 29 tabs.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T18:42:24 | Tags: `client-safe-workbench`, `w2`, `w3`, `roe`, `safe-checks`, `commit-69af61a`*
+
+### Release-readiness check for Client-Safe Pentest Wo...
+
+Release-readiness check for Client-Safe Pentest Workbench passed after commits 5039078 and 98be523: targeted audit pytest suite reports 65 passed, ruff check on changed audit/core/gui/tests passed, and python main.py --self-check reports 29 tabs.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:40:36 | Tags: `asa`, `client-safe`, `release-readiness`, `tests`*
 
 ### Stage 3 full release-readiness verification after ...
 
@@ -196,6 +238,12 @@ Frozen/PyInstaller smoke after Client-Safe Pentest Workbench Stage 1/2 passed on
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:36:53 | Tags: `client-safe-workbench`, `frozen-smoke`, `pyinstaller`, `release-readiness`*
 
+### Integrated persistent audit history and report exp...
+
+Integrated persistent audit history and report exports into Audit Runs GUI in commit 666f7d4: Audit Runs now saves runs to AuditRunStore, loads per-project history, opens saved runs, exports JSON/Markdown/HTML via core audit_report, and tests isolate default audit_runs.db. Verification: 24 GUI/store/report tests passed, 48 extended audit GUI/self-check tests passed, ruff changed files passed, python main.py --self-check = 29 tabs.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T18:40:28 | Tags: `client-safe-workbench`, `audit-history`, `gui`, `commit-666f7d4`, `tests`*
+
 ### Final verification after Codex release-readiness c...
 
 Final verification after Codex release-readiness commits: ruff check . passed; full pytest summary reported 1862 passed, 1 known Starlette/httpx warning in 382.49s. Process still returned exit code 1 after green summary on Python 3.14/Windows, matching the observed shutdown/exit-code quirk rather than test failures. Commits created: 3afed1fd Harden release readiness checks; cd99bf09 Validate project bundle manifests; 696795d Report launcher runner failures.
@@ -207,6 +255,12 @@ Final verification after Codex release-readiness commits: ruff check . passed; f
 Codex added Stage 1 Client-Safe Pentest Workbench edge-test harness files for audit workflow, scope/action policies, finding validation/quality, and audit schemas. Ruff on new tests passed. Targeted pytest is blocked at collection because core.audit_workflow, core.finding_validation, core.finding_quality, and core.audit_schema modules (and schemas/) are absent from current/local worktrees; Codex did not implement core contract due explicit boundary.
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T17:05:38 | Tags: `client-safe-workbench`, `edge-tests`, `blocked-contract`, `ruff`*
+
+### Implemented Client-Safe Pentest Workbench timeline...
+
+Implemented Client-Safe Pentest Workbench timeline integration in commit 9679915. core.timeline now folds persisted AuditRunStore runs/events into the derived timeline as audit_run_started/completed/failed and audit_* events without a second findings source of truth. Verified with 81 targeted audit/timeline tests, ruff on changed files, and python main.py --self-check.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T22:45:36 | Tags: `asa`, `client-safe`, `timeline`, `release-readiness`*
 
 ### GUI polish completed in commits 31094a23, b0ddfcc,...
 
@@ -231,6 +285,12 @@ Final release-readiness sweep after Client-Safe Pentest Workbench work: full 'ru
 Final frozen smoke rerun used explicit QT_API=pyside6: 'pyinstaller build.spec --clean --noconfirm' selected PySide6 in hook-qtpy (no PyQt5 binding-selection warning), built dist/SiteAnalyzer.exe size 73,868,687 bytes, and frozen exe --self-check exited 0 with isolated ASA_DATA_ROOT. Temporary .frozen-smoke-data removed; build/ and dist/ remain ignored artifacts; code worktree clean except MEMANTO-managed MEMORY.md.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:44:37 | Tags: `client-safe-workbench`, `frozen-smoke`, `qt-api-pyside6`, `release-readiness`*
+
+### Implemented W1 Persistent Audit Runs core slice in...
+
+Implemented W1 Persistent Audit Runs core slice in commit 91ce78c: added core/audit_store.py backed by SQLiteStore with audit_runs/audit_events tables, schema-validated canonical payload save/load/list/delete/event/export APIs, default PathManager data/audit_runs.db without editing config.py, and tests/test_audit_store.py. Verification: pytest tests/test_audit_store.py tests/test_audit_workflow_edges.py tests/test_audit_schema_edges.py = 16 passed; ruff changed files passed; python main.py --self-check = 29 tabs.
+
+*Confidence: 1 | Status: active | Created: 2026-06-27T18:36:12 | Tags: `client-safe-workbench`, `w1`, `audit-store`, `commit-91ce78c`, `tests`*
 
 ### Packaging smoke audit passed on 2026-06-27: PyInst...
 

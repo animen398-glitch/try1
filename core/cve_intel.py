@@ -105,7 +105,15 @@ def correlate(libraries: List[Dict], *, store: Optional[CVEStore] = None,
     Returns ``{library_key: [unified CVE record]}`` for libraries with advisories.
     Each record is ``{id, cve:[…], severity, cvss, published, summary, source}``.
     Seams are injected in tests so nothing touches the network."""
+    own_store = store is None
     store = store or CVEStore()
+    if own_store:
+        # Self-bound the on-disk cache once per run (best-effort; never blocks a
+        # correlation). An injected store (tests) is left untouched.
+        try:
+            store.prune()
+        except Exception:
+            pass
     osv_post = osv_post or osv._post_json
     nvd_get = nvd_get or nvd._get_text
     out: Dict[str, List[Dict]] = {}
