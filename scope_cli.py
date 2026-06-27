@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from core.cli_common import configure_stdout, run_main
 from core.scope_management import clear_scope, set_scope, show_scope, store_from_base
 
 DEFAULT_BASE = Path.home() / "SiteAnalyzer"
@@ -88,10 +89,7 @@ def main(argv=None) -> int:
     p_clear.add_argument("target", help="Project slug or URL")
 
     opts = parser.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+    configure_stdout()
 
     try:
         if opts.command == "show":
@@ -122,4 +120,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main))

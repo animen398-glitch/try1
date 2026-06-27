@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from core.cli_common import configure_stdout, run_main
 from core.iac_scanner import scan_path
 
 
@@ -46,10 +47,7 @@ def main(argv=None) -> int:
     parser.add_argument("path", help="File or directory to scan")
     parser.add_argument("--json", action="store_true", help="Print result as JSON")
     opts = parser.parse_args(argv)
-    try:
-        sys.stdout.reconfigure(errors="replace")  # type: ignore[union-attr]
-    except (AttributeError, ValueError):
-        pass
+    configure_stdout()
 
     if not Path(opts.path).exists():
         print(f"path not found: {opts.path}", file=sys.stderr)
@@ -63,4 +61,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run_main(main))
