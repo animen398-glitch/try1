@@ -1373,6 +1373,16 @@ if _FASTAPI_OK:
         allow_headers=['*'],
     )
 
+    @app.exception_handler(Exception)
+    async def _unhandled_error(request: Request, exc: Exception):
+        # Uniform JSON error envelope so every endpoint honours the console's
+        # ``response.json()`` contract even on an unexpected failure, instead of
+        # Starlette's plain-text 500. The traceback is logged server-side by
+        # Starlette; only the type+message reach the LAN client (mirrors the
+        # ``{'error': str(e)}`` shape the data wrappers already return).
+        return JSONResponse(
+            {'error': f'{type(exc).__name__}: {exc}'}, status_code=500)
+
     class TargetRequest(BaseModel):
         url: str
 
