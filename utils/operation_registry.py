@@ -28,6 +28,14 @@ class OperationRegistry(SQLiteStore):
     CREATE INDEX IF NOT EXISTS idx_operations_status ON operations (status);
     """
 
+    # Bounded history so the audit log can't grow forever on a long-lived install:
+    # keep the newest ``MAX_HISTORY`` operations, pruning every ``PRUNE_EVERY``
+    # inserts (amortized — no COUNT per write). Only this operational audit log is
+    # bounded; the DataRegistry's user-collected records are never auto-pruned
+    # (it exposes an explicit ``clear()`` instead).
+    MAX_HISTORY: int = 5000
+    PRUNE_EVERY: int = 200
+
     def __init__(self, db_path: Union[str, Path] = None):
         # Default through PathManager (via core.config) instead of a CWD-relative
         # 'operations.db', mirroring DataRegistry -> REGISTRY_DB, so a frozen .exe
@@ -50,7 +58,11 @@ class OperationRegistry(SQLiteStore):
                  json.dumps(metadata, ensure_ascii=False, default=str)
                  if metadata is not None else None),
             )
-            return cur.lastrowid
+            op_id = cur.lastrowid
+            # Self-bound the log in the same transaction, amortized over inserts.
+            if self.PRUNE_EVERY and op_id % self.PRUNE_EVERY == 0:
+                self._prune(conn, self.MAX_HISTORY)
+            return op_id
 
     def finish(self, operation_id: int, status: str = 'success',
                error: Optional[str] = None,
@@ -116,3 +128,21 @@ class OperationRegistry(SQLiteStore):
                 params,
             ).fetchall()
             return [self._row_to_dict(r) for r in rows]
+
+    def prune(self, max_rows: Optional[int] = None) -> int:
+        """Drop the oldest operations, keeping the newest ``max_rows`` (default
+        :attr:`MAX_HISTORY`). Returns the number of rows deleted. For explicit
+        maintenance; ``start`` also prunes automatically. Bounds only this
+        operational audit log — never the DataRegistry's user-collected data."""
+        with self._connect() as conn:
+            return self._prune(
+                conn, max_rows if max_rows is not None else self.MAX_HISTORY)
+
+    @staticmethod
+    def _prune(conn, max_rows: int) -> int:
+        """``prune`` body over an open connection (keep newest ``max_rows`` by id)."""
+        cur = conn.execute(
+            'DELETE FROM operations WHERE id NOT IN '
+            '(SELECT id FROM operations ORDER BY id DESC LIMIT ?)',
+            (max(int(max_rows), 0),))
+        return cur.rowcount
