@@ -1379,6 +1379,176 @@ Dockerfile / docker-compose) → активы/находки.
 > **Отложено (осознанно, не блокеры):** live threat-feed (KEV/EPSS) для F2;
 > live cloud-API для F7; прямой path→task маппинг для F4.
 
+---
+
+## EPIC FUTURE — Client-Safe Pentest Workbench
+
+> Цель: расширить ASA из ASM/CSM-платформы в **client-safe Authorized Pentest
+> Workbench**: управляемый, доказательный, повторяемый процесс аудита, который
+> можно показывать клиентам, CISO и аудиторам. Это не автономный exploit-toolkit:
+> активные действия только в заданном scope, destructive/bruteforce/stealth/payload
+> execution запрещены.
+
+### Продуктовая рамка
+
+- **Client-safe by default.** Safe active checks, evidence collection, validation,
+  reports, remediation, audit log. Любая потенциально шумная/активная проверка
+  должна быть opt-in, rate-limited и scope-gated.
+- **Не копировать scanner/prompts из Cloudflare security-audit-skill.** Берём
+  методологию процесса: Collect/Recon → Hunt → Validate → Prioritize → Report →
+  Verify, адаптируя под desktop/local ASM.
+- **SQLite lifecycle остаётся source of truth.** JSON/schema — контракт экспорта
+  и машинной проверки, а не новое главное хранилище findings.
+- **Human-in-the-loop.** Workbench помогает оператору проводить легальный аудит,
+  но не делает stealth exploitation, credential attacks, brute force, auto-login,
+  persistence или payload execution.
+
+### Фазы Audit Run
+
+1. **Recon Snapshot** — зафиксировать входной срез проекта: assets, latest scans,
+   findings, scope/ROE, business context, existing unresolved issues.
+2. **Finding Hunt** — собрать кандидаты из существующих фаз ASA и safe active
+   checks; не дублировать существующие scanners.
+3. **Validation / False Positive Check** — отдельный validator проверяет evidence,
+   affected asset/location, reachability/context и снижает confidence при слабых
+   доказательствах.
+4. **Risk + Business Impact** — приоритизация через severity, confidence,
+   exposure, criticality, business context, remediation cost/urgency.
+5. **Structured Output** — audit_run JSON + findings JSON по схемам, плюс HTML/MD
+   report как view над теми же данными.
+6. **Independent Verification / Evidence Check** — финальная проверка, что заявленные
+   evidence_refs существуют в captured artifacts / project tree / findings store.
+
+### Новые core-контракты
+
+Предлагаемые файлы:
+
+- `core/audit_workflow.py` — Audit Run lifecycle, phases, additive runs.
+- `core/scope_policy.py` — scope/ROE, allowed targets, forbidden paths, rate limits.
+- `core/action_policy.py` — policy profiles (`client_safe`, later `operator_manual`).
+- `core/finding_validation.py` — deterministic/offline validation and confidence
+  adjustment.
+- `core/finding_quality.py` — quality gate before critical/client report.
+- `core/audit_schema.py` — JSON schema loading/validation helpers.
+- `schemas/asa_audit_run.schema.json`
+- `schemas/asa_finding.schema.json`
+- `schemas/asa_validation.schema.json`
+
+Минимальный API:
+
+```python
+create_audit_run(project: str, phases: list[str] | None = None, *, run_id: str | None = None) -> dict
+advance_audit_phase(run: dict, phase: str, result: dict | None = None) -> dict
+validate_finding(finding: dict, evidence: dict | None = None) -> dict
+apply_quality_gate(finding: dict, *, min_confidence: int = 70) -> dict
+audit_run_to_json(run: dict) -> dict
+validate_audit_payload(payload: dict, schema_name: str) -> dict
+```
+
+Минимальные статусы:
+
+- audit run: `pending` / `running` / `completed` / `failed`
+- phase: `pending` / `running` / `completed` / `failed` / `skipped`
+- validation: `unverified` / `verified` / `rejected` / `needs_review`
+- quality gate: `passed` / `failed`
+
+### Quality Gate
+
+Finding попадает в client-facing critical report только если:
+
+- есть affected asset/location;
+- есть evidence или evidence_refs;
+- есть impact/business impact;
+- есть remediation;
+- есть reachability/context или явное объяснение почему это конфигурационный риск;
+- `confidence >= threshold`;
+- `validation_status != rejected`.
+
+Defense-in-depth gaps и чистая теория не должны автоматически становиться
+vulnerability: они могут идти как informational / recommendation.
+
+### Additive Audit Runs
+
+- Повторные Audit Runs дополняют друг друга, а не перетирают lifecycle.
+- Known unresolved findings могут валидироваться повторно.
+- Новые runs должны уметь ссылаться на existing `finding_id`.
+- Timeline получает события audit-run уровня: run started/completed, finding
+  verified/rejected, confidence changed, quality-gate failed/passed.
+
+### GUI: Audit Runs
+
+Будущая вкладка `gui/tab_audit_runs.py`:
+
+- selector project/scope profile;
+- Start Audit Run;
+- phase progress по 6 этапам;
+- verified / rejected / needs_review findings;
+- confidence + quality gate status;
+- evidence refs;
+- export audit JSON/HTML;
+- все long-running actions через `_run_async` / `_start_task`;
+- GUI тонкий: без бизнес-логики, только вызовы core API.
+
+### Safe Active Checks (после базового workflow)
+
+Разрешённый client-safe контур:
+
+- headers/cookies/security config;
+- exposed files/source maps;
+- GraphQL introspection detection;
+- dependency/CVE correlation;
+- TLS/config checks;
+- non-destructive endpoint probing;
+- IaC/local config checks.
+
+Запрещено в client-safe profile:
+
+- brute force / credential attacks;
+- stealth/evasion;
+- exploit execution;
+- destructive payloads;
+- auto-login / auth bypass;
+- persistence;
+- запуск вне scope/ROE.
+
+### Разделение работ Claude Code / Codex
+
+**Claude Code** делает core contract и архитектуру:
+
+- `core/audit_workflow.py`
+- `core/scope_policy.py`
+- `core/action_policy.py`
+- `core/finding_validation.py`
+- `core/finding_quality.py`
+- `core/audit_schema.py`
+- `schemas/*.schema.json`
+- базовые contract tests.
+
+**Codex** делает hardening, tests, release-readiness и GUI после стабилизации
+контракта:
+
+- edge-case tests;
+- schema invalid-payload tests;
+- offline/headless regressions;
+- GUI `tab_audit_runs.py`;
+- self-check / full pytest / frozen smoke.
+
+Если core API недостаточен, Codex не импровизирует, а запрашивает контракт:
+какой файл нужен, зачем, минимальный API/структура данных, какие тесты должны
+подтвердить контракт.
+
+### Definition of Done
+
+- Audit Run создаётся и проходит фазы offline/deterministic.
+- Validation может подтвердить, отклонить или отправить finding в needs_review.
+- Quality Gate не пропускает finding без evidence/impact/remediation.
+- JSON exports валидируются схемами.
+- Повторный run additive и не ломает Findings lifecycle.
+- Timeline/report surfaces получают audit-run status без новой второй системы
+  findings.
+- GUI Audit Runs thin, headless tests зелёные.
+- `ruff`, targeted pytest, full pytest и `main.py --self-check` зелёные.
+
 ### Точки интеграции (существующие — переиспользовать, НЕ дублировать)
 
 - `core/intelligence.py` — priority / criticality / exposure / attack_paths.
