@@ -398,6 +398,9 @@ class CollectionRunner:
         # internal layout is unchanged, so every existing reader keeps working.
         project = ProjectStore(output_base).get_or_create(url)
         scan_dir = project.start_scan(stamp)
+        # start_scan may uniquify the dir (two runs in the same second) — the real
+        # scan id is the directory name, so report/op stay consistent with disk.
+        stamp = scan_dir.name
         scope = project.get_scope()
 
         report: Dict = {

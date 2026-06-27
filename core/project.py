@@ -89,12 +89,26 @@ class Project:
 
     # ---------------------------------------------------------------- scans
     def start_scan(self, stamp: Optional[str] = None) -> Path:
-        """Create and return ``scans/<timestamp>/`` for a new run."""
+        """Create and return a fresh ``scans/<timestamp>/`` for a new run.
+
+        Guarantees a unique, empty directory: if one already exists for this
+        second-resolution timestamp (two runs in the same second, or a retry), a
+        ``-2``, ``-3`` … suffix is appended so a scan never overwrites or mixes
+        into another's artifacts. ``mkdir(exist_ok=False)`` is the atomic check,
+        so this is safe even across concurrent processes. The directory name is
+        the scan id — callers should read it from the returned path."""
         self.ensure()
-        stamp = stamp or datetime.now().strftime('%Y%m%d_%H%M%S')
-        scan_dir = self.root / 'scans' / stamp
-        scan_dir.mkdir(parents=True, exist_ok=True)
-        return scan_dir
+        base = stamp or datetime.now().strftime('%Y%m%d_%H%M%S')
+        scans = self.root / 'scans'
+        candidate, n = base, 1
+        while True:
+            scan_dir = scans / candidate
+            try:
+                scan_dir.mkdir(parents=True, exist_ok=False)
+                return scan_dir
+            except FileExistsError:
+                n += 1
+                candidate = f'{base}-{n}'
 
     @staticmethod
     def _warning_summary(warnings: List[object], limit: int = 10) -> List[Dict]:
