@@ -1,0 +1,19 @@
+{
+  "env": {
+    "PYTHONIOENCODING": "utf-8"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memanto memory sync --project-dir .",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
