@@ -23,7 +23,7 @@ decide freshness; a stale row is still returned (with its age) so an offline run
 can fall back to it. Pure of network — the providers live elsewhere.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union
 
 from core.config import CVE_CACHE_DB
@@ -51,6 +51,10 @@ class CVEStore(SQLiteStore):
 
     JSON_FIELDS = ('vulns',)
     SCHEMA_VERSION = 1
+    # Bounded cache: drop entries older than MAX_AGE_DAYS (they re-fetch on the
+    # next online run) and cap each table to the newest MAX_ROWS by fetched_at.
+    MAX_AGE_DAYS = 90
+    MAX_ROWS = 50000
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS lib_cves (
@@ -142,6 +146,29 @@ class CVEStore(SQLiteStore):
             conn.execute('DELETE FROM lib_cves')
             conn.execute('DELETE FROM cve_details')
         return n
+
+    def prune(self, max_age_days: Optional[int] = None,
+              max_rows: Optional[int] = None) -> int:
+        """Bound the cache: drop rows older than ``max_age_days`` (default
+        :attr:`MAX_AGE_DAYS`), then trim each table to the newest ``max_rows``
+        (default :attr:`MAX_ROWS`) by ``fetched_at``. Returns rows deleted.
+
+        Safe by design — a dropped entry is a cache miss the providers refill on
+        the next online run; offline runs simply re-correlate what remains."""
+        age_days = self.MAX_AGE_DAYS if max_age_days is None else max_age_days
+        cap = max(int(self.MAX_ROWS if max_rows is None else max_rows), 0)
+        cutoff = (datetime.now() - timedelta(days=age_days)).isoformat(
+            timespec='seconds')
+        deleted = 0
+        with self._connect() as conn:
+            for table in ('lib_cves', 'cve_details'):
+                deleted += conn.execute(
+                    f'DELETE FROM {table} WHERE fetched_at < ?', (cutoff,)).rowcount
+                deleted += conn.execute(
+                    f'DELETE FROM {table} WHERE rowid NOT IN '
+                    f'(SELECT rowid FROM {table} ORDER BY fetched_at DESC LIMIT ?)',
+                    (cap,)).rowcount
+        return deleted
 
     def stats(self) -> Dict:
         """Row counts per table (for diagnostics / Settings display)."""
