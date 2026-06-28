@@ -242,10 +242,15 @@ class FindingsTabMixin:
     @staticmethod
     def _query_findings_table(project, status, severity) -> dict:
         try:
+            from core import threat_intel
             from core.findings_sla import annotate as annotate_sla
             store = FindingsStore()
             rows = store.list_findings(project=project, status=status,
                                        severity=severity)
+            # KEV/EPSS threat block from the offline cache first (cold cache =
+            # no-op), so the detail badge shows it and the SLA clock below is
+            # tightened for known-exploited findings — consistent with the report.
+            rows = threat_intel.annotate_offline(rows)
             # reopen-aware SLA clock (see FindingsStore.reopen_dates)
             annotate_sla(rows, reopened=store.reopen_dates(project))
             summary = store.summary(project)
@@ -304,6 +309,8 @@ class FindingsTabMixin:
                 (rec.get('last_seen_at') or '')[:10],
                 format_sla(sla),
             ]
+            threat = rec.get('threat') if isinstance(rec.get('threat'), dict) else {}
+            is_kev = bool(threat.get('kev'))
             for col, val in enumerate(values):
                 item = QTableWidgetItem(str(val))
                 if col == 0:
@@ -313,6 +320,10 @@ class FindingsTabMixin:
                 elif col == 6 and sla.get('breached'):
                     # Overdue findings stand out in the SLA column.
                     item.setForeground(QColor(theme.severity_color('critical')))
+                if is_kev and col == 2:
+                    # In-list cue for a known-exploited finding (full badge in detail).
+                    item.setForeground(QColor(theme.severity_color('critical')))
+                    item.setToolTip("⚠ KEV — известно эксплуатируется в реальных атаках")
                 self.findings_table.setItem(r, col, item)
         self.findings_detail.clear()
         self.btn_findings_apply.setEnabled(False)
@@ -368,8 +379,21 @@ class FindingsTabMixin:
             f"Rule:       {rec.get('rule_id', '')}",
             f"ID:         {rec.get('id', '')}",
             f"Обнаружено: {rec.get('first_seen_at', '')} → {rec.get('last_seen_at', '')}",
-            f"SLA:        {format_sla(rec.get('sla') or {})}",
         ]
+        # KEV/EPSS exploitability badge — the strongest "fix now" signal, shown
+        # before SLA because it is what tightened the deadline (single wording via
+        # threat_intel.threat_label). Absent for un-enriched / non-CVE findings.
+        from core.threat_intel import threat_label
+        badge = threat_label(rec.get('threat'))
+        if badge:
+            lines.append(f"⚠ Exploitability: {badge}")
+        sla = rec.get('sla') or {}
+        sla_line = f"SLA:        {format_sla(sla)}"
+        if sla.get('tightened_by'):
+            # Make the tightening explicit so the shorter deadline isn't a surprise.
+            sla_line += (f"  (ужесточено: {sla['tightened_by'].upper()}, "
+                         f"базовое {sla.get('base_sla_days')}д)")
+        lines.append(sla_line)
         # F-O3: the finding "object" — description / impact / remediation (catalog,
         # with any producer-supplied text winning). Always present (generic
         # fallback), so a triager always sees what it is and how to fix it.

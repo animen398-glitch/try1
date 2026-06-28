@@ -4778,3 +4778,18 @@ NEW_KEV TIMELINE EVENT + KEV ALERT RULE (2026-06-28)
   core/alerts.py, core/findings_store.py, core/monitor.py, gui/dialogs.py,
   gui/tab_timeline.py, tests/test_threat_intel.py/test_timeline.py/test_alerts.py.
   ruff clean; целевые+смежные тесты зелёные.
+
+------------------------------------------------------------------------------
+KEV/EPSS БЕЙДЖ В FINDINGS DETAIL (2026-06-28)
+------------------------------------------------------------------------------
+  gui/tab_findings.py: _query_findings_table теперь threat-annotate-ит строки из
+  offline-кэша (threat_intel.annotate_offline) ПЕРЕД SLA-annotate, поэтому
+  SLA-колонка в GUI тоже ужесточается для KEV-находок (консистентно с отчётом).
+  Detail-панель показывает бейдж "⚠ Exploitability: ..." (единая формулировка
+  через новый threat_intel.threat_label — KEV явно, EPSS-перцентиль) + пометку
+  "ужесточено: KEV/EPSS, базовое Nд" рядом с сокращённым SLA. KEV-строка
+  дополнительно помечается в списке (critical-цвет заголовка + tooltip).
+  Контракт колонок НЕ менялся; холодный кэш / не-CVE рендерятся как раньше.
+  Файлы: core/threat_intel.py (+threat_label), gui/tab_findings.py,
+  tests/test_threat_intel.py, tests/test_findings_tab.py. ruff clean; зелёные.
+  Этим закрыт весь хвост KEV/EPSS, кроме full EPSS daily-CSV ingestion.

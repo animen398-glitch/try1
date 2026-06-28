@@ -205,6 +205,54 @@ def test_finding_detail_prefers_producer_remediation(qapp):
     assert 'Patch to 2.0' in w.findings_detail.toPlainText()
 
 
+# ── KEV/EPSS exploitability badge (findings detail + in-list cue) ──────────────
+
+def test_finding_detail_shows_kev_badge_and_tightening(qapp):
+    w = _window(qapp)
+    w._show_finding_detail({
+        'id': 'f', 'title': 'Log4Shell', 'category': 'vuln', 'rule_id': 'CVE-2021-44228',
+        'severity': 'low', 'status': 'OPEN', 'evidence': {},
+        'threat': {'kev': True, 'epss_percentile': 0.99, 'tier': 'high'},
+        'sla': {'applicable': True, 'sla_days': 30, 'base_sla_days': 120,
+                'tightened_by': 'kev', 'breached': False, 'days_left': 25},
+    })
+    text = w.findings_detail.toPlainText()
+    assert 'Exploitability' in text and 'KEV' in text and 'EPSS 99%' in text
+    assert 'ужесточено: KEV' in text and '120' in text   # tightening explained
+
+
+def test_finding_detail_no_badge_without_threat(qapp):
+    w = _window(qapp)
+    w._show_finding_detail({'id': 'f', 'title': 'Weak CSP', 'category': 'header',
+                            'severity': 'high', 'status': 'OPEN', 'evidence': {}})
+    assert 'Exploitability' not in w.findings_detail.toPlainText()
+
+
+def test_populate_table_marks_kev_row_tooltip(qapp):
+    w = _window(qapp)
+    w._populate_findings_table([
+        {'id': 'f-a', 'category': 'vuln', 'title': 'Log4Shell', 'severity': 'high',
+         'status': 'OPEN', 'first_seen_at': '2026-01-01T00:00:00',
+         'last_seen_at': '2026-01-02T00:00:00', 'threat': {'kev': True}},
+    ])
+    assert 'KEV' in w.findings_table.item(0, 2).toolTip()
+
+
+def test_query_findings_table_annotates_threat_and_tightens_sla(qapp):
+    from core.cve_store import CVEStore
+    from core.finding_fingerprint import scoped_id
+    cve = 'CVE-2021-44228'
+    CVEStore().put_cve_threat(cve, {'kev': True})    # isolated per-test (conftest)
+    s = FindingsStore()
+    s.upsert('pk', {'id': 'f-kev', 'category': 'vuln', 'rule_id': cve,
+                    'title': 'Log4Shell', 'severity': 'high', 'evidence': None})
+    out = FindingsTabMixin._query_findings_table('pk', None, None)
+    row = next(r for r in out['rows'] if r['id'] == scoped_id('pk', 'f-kev'))
+    assert row['threat']['kev'] is True              # threat block attached for the badge
+    assert row['sla']['tightened_by'] == 'kev'       # SLA clock tightened (30 → 8)
+    assert row['sla']['sla_days'] == 8
+
+
 # ── SARIF export (EPIC 16 F1) ───────────────────────────────────────────────────
 
 def test_export_findings_sarif_writes_valid_file(qapp, tmp_path, monkeypatch):

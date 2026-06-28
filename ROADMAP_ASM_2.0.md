@@ -1753,8 +1753,19 @@ from the offline threat cache (no second table):
   Dispatched in `monitor._run` alongside the other finding-based channels; cold
   cache fires nothing. GUI labels added (`gui/dialogs`, `gui/tab_timeline`).
 
+### Follow-up — KEV/EPSS badge in findings detail (CLOSED 2026-06-28)
+
+`gui/tab_findings.py` now threat-annotates the loaded rows from the offline cache
+(`threat_intel.annotate_offline`) *before* the SLA annotate, so the GUI SLA column
+is tightened for known-exploited findings too (consistent with the report), and
+the detail panel shows an **⚠ Exploitability** badge (single wording via
+`threat_intel.threat_label` — KEV called out, EPSS percentile shown) plus an
+explicit "ужесточено: KEV/EPSS, базовое Nд" note next to the shortened SLA. A KEV
+row is also flagged in-list (critical-colour title + tooltip). No column-contract
+change; cold cache / non-CVE findings render exactly as before.
+
 ### Deferred (not blockers)
 
-Full EPSS daily-CSV ingestion (we query per-CVE); a GUI badge in the findings detail.
+Full EPSS daily-CSV ingestion (we query per-CVE).
 
 ---

@@ -160,6 +160,22 @@ def annotate_offline(findings: List[Dict], *,
         return findings
 
 
+def threat_label(threat: Optional[Dict]) -> str:
+    """Short human label for a finding's exploitability ``threat`` block (the
+    single wording source for GUI/console). ``''`` when there is no qualifying
+    signal. KEV (exploited in the wild) is called out explicitly; EPSS shows the
+    percentile so a high-probability non-KEV finding still reads clearly."""
+    if not isinstance(threat, dict):
+        return ''
+    parts: List[str] = []
+    if threat.get('kev'):
+        parts.append('KEV — известно эксплуатируется')
+    pct = threat.get('epss_percentile')
+    if isinstance(pct, (int, float)):
+        parts.append(f'EPSS {round(pct * 100)}%')
+    return ' · '.join(parts)
+
+
 def kev_events(findings: List[Dict]) -> List[Dict]:
     """Timeline-shaped events for active findings whose CVE is KEV-listed
     (known-exploited in the wild), derive-on-read like ``findings_sla.sla_events``.

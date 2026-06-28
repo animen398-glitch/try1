@@ -9,6 +9,7 @@ from core.threat_intel import (
     enrich_cves,
     kev_events,
     summarize,
+    threat_label,
     threat_tier_from,
 )
 
@@ -137,3 +138,14 @@ def test_kev_events_only_for_kev_annotated_findings(tmp_path):
 def test_kev_events_empty_without_threat_block():
     # Un-annotated findings (cold cache) produce nothing.
     assert kev_events([{"id": "a", "severity": "high", "title": "x"}]) == []
+
+
+# ── threat_label (single wording source for the GUI/console badge) ─────────────
+
+def test_threat_label_kev_and_epss():
+    assert threat_label({"kev": True, "epss_percentile": 0.99}) == (
+        "KEV — известно эксплуатируется · EPSS 99%")
+    assert threat_label({"kev": False, "epss_percentile": 0.5}) == "EPSS 50%"
+    assert threat_label({"kev": True}) == "KEV — известно эксплуатируется"
+    assert threat_label({"kev": False}) == ""        # no signal → no badge
+    assert threat_label(None) == ""
