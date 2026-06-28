@@ -4845,3 +4845,28 @@ MISSION CENTER M1 — CORE CONTRACT (2026-06-28)
   начато): MissionStore (по образцу AuditRunStore) + project_io export, read-
   поверхности mission<->audit_run/finding, timeline mission-события, GUI Mission
   Center вкладка, web read parity. Ни одна не вводит второй findings/asset/timeline.
+
+------------------------------------------------------------------------------
+MISSION CENTER M2 — MISSIONSTORE PERSISTENCE + PROJECT BUNDLE (2026-06-28)
+------------------------------------------------------------------------------
+  Персистентность миссий + участие в портативном project-bundle, БЕЗ второго
+  findings/asset/timeline источника. Новый core/mission_store.py:
+  MissionStore(SQLiteStore) по образцу AuditRunStore, но SINGLE-TABLE (у миссии
+  нет event-лога в M1-контракте) — таблица missions (id/project/profile/status/
+  payload/created_at/updated_at). save_mission нормализует+валидирует схему через
+  pentest_mission.mission_to_json ПЕРЕД записью (идемпотентно, created_at
+  сохраняется); get/list/delete/export_mission. База utils/sqlite_store.py
+  обобщена под events-less PROJECT_EXPORT (events_table=None) — single-table стор
+  участвует в bundle без фантомной events-таблицы; 3-tuple путь (findings/assets/
+  audit) НЕ изменён. core/project_io.py: bundle получил missions.json (зеркало
+  audit_runs.json) + счётчик missions; FORMAT_VERSION остался 1 (аддитивно —
+  старый bundle без missions.json импортируется как 0 миссий). Решения D1-D5 как
+  утверждены: D1 single-table без events; D2 генерализация базы (не фантомная
+  таблица, не дублирование export-логики); D3 формат 1; D4 колонки как audit
+  (+profile=client_safe); D5 GUI Overview Export/Import не тронут (summary +
+  аддитивный ключ missions). Файлы: core/mission_store.py, utils/sqlite_store.py,
+  core/project_io.py, tests/conftest.py (_isolate_missions_db),
+  tests/test_mission_store.py, tests/test_project_io.py. ruff clean;
+  целевые+смежные (findings/asset/sqlite store) зелёные; полный pytest 2177.
+  M3+ (отложено, не начато): timeline mission-события, GUI Mission Center вкладка,
+  web read parity.

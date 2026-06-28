@@ -1830,10 +1830,37 @@ or timeline (deferred to M2+); D2 the transition map above; D3 scope lives insid
 ROE (SSOT); D4 `link_finding` stores a reference only (no FindingsStore existence
 check in M1); D5 module name `core/pentest_mission.py`.
 
-### Deferred to M2+ (not started)
+### M2 — MissionStore persistence + project bundle export (CLOSED 2026-06-28)
 
-Persistence (`MissionStore` mirroring `AuditRunStore` + `project_io` export),
-mission ↔ audit-run/finding read surfaces, timeline mission events, GUI Mission
+Persist missions and carry them in the portable project bundle, with **no second
+findings/asset/timeline source**:
+
+- **`core/mission_store.py`** (new): `MissionStore(SQLiteStore)` mirroring
+  `AuditRunStore` but **single-table** (a mission has no event log in the M1
+  contract) — a `missions` table (`id/project/profile/status/payload/created_at/
+  updated_at`). `save_mission` normalizes + schema-validates via
+  `pentest_mission.mission_to_json` before persisting (idempotent, `created_at`
+  preserved); `get_mission`/`list_missions`/`delete_mission`/`export_mission`.
+- **`utils/sqlite_store.py`**: project-scoped export/import generalized to accept
+  an **events-less** `PROJECT_EXPORT` (`events_table=None`) so a single-table
+  store participates in bundles without a phantom events table; the 3-tuple path
+  (findings/assets/audit) is unchanged.
+- **`core/project_io.py`**: bundle gains `missions.json` (mirrors
+  `audit_runs.json`) + a `missions` count. `FORMAT_VERSION` stays **1** —
+  additive: an older bundle without `missions.json` imports cleanly (0 missions).
+- Tests: `tests/test_mission_store.py` (CRUD, idempotent save, schema-validated
+  export, events-less project slice), `tests/test_project_io.py` (mission
+  round-trip + legacy-bundle tolerance), `tests/conftest.py` isolates `missions.db`.
+
+**Decisions (M2):** D1 single-table store (no events); D2 generalize the base for
+events-less `PROJECT_EXPORT` (not a phantom table, not duplicated export logic);
+D3 `FORMAT_VERSION` stays 1; D4 columns mirror audit (`+profile`, always
+client_safe); D5 GUI Overview Export/Import untouched (summary gains an additive
+`missions` key).
+
+### Deferred to M3+ (not started)
+
+Mission ↔ audit-run/finding read surfaces, timeline mission events, GUI Mission
 Center tab, web read parity. None add a second findings/asset/timeline source.
 
 ---

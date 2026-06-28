@@ -132,6 +132,56 @@ def test_import_preserves_status_and_timestamps(tmp_path):
     assert dst_store.get_remediation(fid)['status'] == 'in_progress'
 
 
+def test_export_import_restores_missions(tmp_path):
+    from core import pentest_mission as pm
+    from core.mission_store import MissionStore
+
+    src = tmp_path / 'src'
+    src_f, src_a, src_m = src / 'findings.db', src / 'assets.db', src / 'missions.db'
+    slug, _fid = _seed(src, src_f, src_a)
+    mission = pm.create_mission(slug, 'Authorized external review',
+                                allowed_actions=['headers_check'])
+    MissionStore(src_m).save_mission(mission, now='2026-01-01T09:00:00')
+
+    bundle = tmp_path / 'b.zip'
+    out = project_io.export_project(src, slug, bundle, findings_db=src_f,
+                                    assets_db=src_a, missions_db=src_m)
+    assert out['missions'] == 1
+
+    dst = tmp_path / 'dst'
+    dst_m = dst / 'missions.db'
+    res = project_io.import_project(bundle, dst, findings_db=dst / 'f.db',
+                                    assets_db=dst / 'a.db', missions_db=dst_m)
+    assert res['missions'] == 1
+    restored = MissionStore(dst_m).get_mission(mission['mission_id'])
+    assert restored is not None
+    assert restored['payload'] == mission                 # canonical, verbatim
+    assert restored['created_at'] == '2026-01-01T09:00:00'
+
+
+def test_import_tolerates_bundle_without_missions(tmp_path):
+    """An older bundle (predating missions.json) imports cleanly with 0 missions."""
+    import zipfile
+
+    src = tmp_path / 'src'
+    slug, _fid = _seed(src, src / 'f.db', src / 'a.db')
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src / 'f.db',
+                              assets_db=src / 'a.db')
+
+    legacy = tmp_path / 'legacy.zip'
+    with zipfile.ZipFile(bundle) as zin, zipfile.ZipFile(legacy, 'w') as zout:
+        for item in zin.namelist():
+            if item != 'missions.json':                   # strip the new member
+                zout.writestr(item, zin.read(item))
+
+    dst = tmp_path / 'dst'
+    res = project_io.import_project(legacy, dst, findings_db=dst / 'f.db',
+                                    assets_db=dst / 'a.db', missions_db=dst / 'm.db')
+    assert res['skipped'] is False
+    assert res['missions'] == 0                           # absent section → empty
+
+
 # ── skip / replace ────────────────────────────────────────────────────────────
 
 def test_import_skips_existing_without_replace(tmp_path):

@@ -20,6 +20,13 @@
 > reused from `audit_scope`/`audit_templates`/`action_policy`. Persistence/GUI/web
 > deferred to M2+. Current scale: **full pytest 2162 passed**, ruff clean,
 > 1 existing Starlette/httpx warning.
+> Update 2026-06-28 (Mission Center M2): mission persistence + project bundle —
+> `core/mission_store.py` (`MissionStore`, single-table, no event log; mirrors
+> `AuditRunStore`), an events-less `PROJECT_EXPORT` generalization in
+> `utils/sqlite_store.py`, and `missions.json` in the `core/project_io` bundle
+> (`FORMAT_VERSION` unchanged, backward-compatible). No second findings/asset/
+> timeline source; GUI/web/timeline deferred to M3+. Current scale: **full pytest
+> 2177 passed**, ruff clean, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

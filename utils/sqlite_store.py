@@ -69,6 +69,8 @@ class SQLiteStore:
     # export/import (used by project bundles, core.project_io) by declaring
     # ``(main_table, events_table, events_fk_column)``. The faithful slice is the
     # main rows plus their event rows — ids/status/timestamps preserved verbatim.
+    # A single-table store with no event log declares ``events_table=None`` (and
+    # ``fk=None``); the slice is then just the main rows.
     PROJECT_EXPORT: Optional[tuple] = None
     # Durability/concurrency knobs (see class docstring + :meth:`_apply_pragmas`).
     # ``WAL=False`` lets a store opt out (e.g. ``:memory:``); ``BUSY_TIMEOUT_MS``
@@ -223,14 +225,15 @@ class SQLiteStore:
 
     def export_project(self, project: str) -> Dict[str, Any]:
         """The project's rows + their event rows (raw column values, JSON fields
-        left encoded so import is byte-faithful). Empty lists if none."""
+        left encoded so import is byte-faithful). Empty lists if none. A store
+        with ``events_table=None`` exports its main rows only (``events`` empty)."""
         main, ev_tbl, fk = self._project_export_spec()
         with self._connect() as conn:
             rows = [dict(r) for r in conn.execute(
                 f'SELECT * FROM {main} WHERE project = ?', (project,)).fetchall()]
             ids = [r['id'] for r in rows]
             events = []
-            if ids:
+            if ev_tbl and ids:
                 ph = ','.join('?' * len(ids))
                 events = [dict(r) for r in conn.execute(
                     f'SELECT * FROM {ev_tbl} WHERE {fk} IN ({ph})', ids).fetchall()]
@@ -252,18 +255,22 @@ class SQLiteStore:
                 return {'imported': 0, 'events': 0, 'skipped': True,
                         'reason': 'project exists'}
             if existing:
-                old = [r[0] for r in conn.execute(
-                    f'SELECT id FROM {main} WHERE project = ?', (project,)).fetchall()]
-                if old:
-                    ph = ','.join('?' * len(old))
-                    conn.execute(f'DELETE FROM {ev_tbl} WHERE {fk} IN ({ph})', old)
+                if ev_tbl:
+                    old = [r[0] for r in conn.execute(
+                        f'SELECT id FROM {main} WHERE project = ?',
+                        (project,)).fetchall()]
+                    if old:
+                        ph = ','.join('?' * len(old))
+                        conn.execute(f'DELETE FROM {ev_tbl} WHERE {fk} IN ({ph})', old)
                 conn.execute(f'DELETE FROM {main} WHERE project = ?', (project,))
             main_cols = self._columns(conn, main)
-            ev_cols = self._columns(conn, ev_tbl)
             n = self._insert_rows(conn, main, rows, allowed=main_cols)
-            ev_no_id = [{k: v for k, v in e.items() if k != 'id'} for e in events]
-            ne = self._insert_rows(conn, ev_tbl, ev_no_id, allowed=ev_cols,
-                                   replace=False)
+            ne = 0
+            if ev_tbl:
+                ev_cols = self._columns(conn, ev_tbl)
+                ev_no_id = [{k: v for k, v in e.items() if k != 'id'} for e in events]
+                ne = self._insert_rows(conn, ev_tbl, ev_no_id, allowed=ev_cols,
+                                       replace=False)
         return {'imported': n, 'events': ne, 'skipped': False}
 
     @classmethod

@@ -13,6 +13,8 @@ Bundle layout (``format_version`` 1):
     manifest.json     # format/app version, slug, url, company, counts, exported_at
     findings.json     # FindingsStore.export_project(slug) — rows + events, verbatim
     assets.json       # AssetStore.export_project(slug)    — rows + events, verbatim
+    audit_runs.json   # AuditRunStore.export_project(slug) — rows + events, verbatim
+    missions.json     # MissionStore.export_project(slug)  — rows (no event log)
     project/…         # the Projects/<slug>/ tree, paths relative to the project dir
 
 Offline, stdlib only (``zipfile``). Reuses ProjectStore / FindingsStore /
@@ -32,6 +34,7 @@ _MANIFEST = 'manifest.json'
 _FINDINGS = 'findings.json'
 _ASSETS = 'assets.json'
 _AUDIT_RUNS = 'audit_runs.json'
+_MISSIONS = 'missions.json'
 _TREE_PREFIX = 'project/'
 
 
@@ -59,15 +62,18 @@ def _read_manifest(zf: zipfile.ZipFile) -> Dict:
     return manifest
 
 
-def _stores(findings_db, assets_db, audit_db=None):
+def _stores(findings_db, assets_db, audit_db=None, missions_db=None):
     from core.asset_store import AssetStore
     from core.audit_store import AuditRunStore
     from core.findings_store import FindingsStore
-    return FindingsStore(findings_db), AssetStore(assets_db), AuditRunStore(audit_db)
+    from core.mission_store import MissionStore
+    return (FindingsStore(findings_db), AssetStore(assets_db),
+            AuditRunStore(audit_db), MissionStore(missions_db))
 
 
 def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
-                   findings_db=None, assets_db=None, audit_db=None) -> Dict:
+                   findings_db=None, assets_db=None, audit_db=None,
+                   missions_db=None) -> Dict:
     """Bundle project ``slug`` (under workspace ``base``) into the ``dest`` zip.
     Raises ``KeyError`` if the project does not exist."""
     from core.config import APP_VERSION
@@ -79,10 +85,12 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
     if proj is None:
         raise KeyError(f'project not found: {slug}')
 
-    findings_store, assets_store, audit_store = _stores(findings_db, assets_db, audit_db)
+    findings_store, assets_store, audit_store, mission_store = _stores(
+        findings_db, assets_db, audit_db, missions_db)
     findings = findings_store.export_project(slug)
     assets = assets_store.export_project(slug)
     audit_runs = audit_store.export_project(slug)
+    missions = mission_store.export_project(slug)
     meta = proj.load_metadata()
 
     manifest = {
@@ -99,6 +107,7 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
             'asset_events': len(assets['events']),
             'audit_runs': len(audit_runs['rows']),
             'audit_events': len(audit_runs['events']),
+            'missions': len(missions['rows']),
             'scans': len(meta.get('scans') or []),
         },
     }
@@ -113,6 +122,7 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
         zf.writestr(_FINDINGS, json.dumps(findings, ensure_ascii=False))
         zf.writestr(_ASSETS, json.dumps(assets, ensure_ascii=False))
         zf.writestr(_AUDIT_RUNS, json.dumps(audit_runs, ensure_ascii=False))
+        zf.writestr(_MISSIONS, json.dumps(missions, ensure_ascii=False))
 
     return {'path': str(dest), 'slug': slug, **manifest['counts']}
 
@@ -139,7 +149,7 @@ def _safe_extract(zf: zipfile.ZipFile, dest_dir: Path) -> int:
 
 def import_project(src: Union[str, Path], base: Union[str, Path], *,
                    findings_db=None, assets_db=None, audit_db=None,
-                   replace: bool = False) -> Dict:
+                   missions_db=None, replace: bool = False) -> Dict:
     """Restore a bundle into workspace ``base``. If the project tree already
     exists it is skipped unless ``replace`` (which wipes the tree and the DB
     slice first). Returns a summary dict."""
@@ -164,16 +174,20 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         findings = json.loads(zf.read(_FINDINGS)) if _FINDINGS in names else {}
         assets = json.loads(zf.read(_ASSETS)) if _ASSETS in names else {}
         audit_runs = json.loads(zf.read(_AUDIT_RUNS)) if _AUDIT_RUNS in names else {}
+        missions = json.loads(zf.read(_MISSIONS)) if _MISSIONS in names else {}
 
-    findings_store, assets_store, audit_store = _stores(findings_db, assets_db, audit_db)
+    findings_store, assets_store, audit_store, mission_store = _stores(
+        findings_db, assets_db, audit_db, missions_db)
     fres = findings_store.import_project(slug, findings, replace=replace)
     ares = assets_store.import_project(slug, assets, replace=replace)
     au_res = audit_store.import_project(slug, audit_runs, replace=replace)
+    mi_res = mission_store.import_project(slug, missions, replace=replace)
 
     return {'slug': slug, 'skipped': False, 'files': files,
             'findings': fres['imported'], 'finding_events': fres['events'],
             'assets': ares['imported'], 'asset_events': ares['events'],
-            'audit_runs': au_res['imported'], 'audit_events': au_res['events']}
+            'audit_runs': au_res['imported'], 'audit_events': au_res['events'],
+            'missions': mi_res['imported']}
 
 
 def bundle_info(src: Union[str, Path]) -> Optional[Dict]:
