@@ -145,6 +145,21 @@ def annotate(findings: List[Dict], *, store: Optional[object] = None) -> List[Di
     return out
 
 
+def annotate_offline(findings: List[Dict], *,
+                     store: Optional[object] = None) -> List[Dict]:
+    """Best-effort offline annotate: like :func:`annotate` but never raises — a
+    cold/missing cache or any error returns the findings unchanged.
+
+    The single read-side wrapper used by the SLA / alerts / timeline / priority
+    paths so each tightening site sees the ``threat`` block without
+    re-implementing the same guard (a cold cache is a genuine no-op, so an
+    un-enriched run is untouched)."""
+    try:
+        return annotate(findings, store=store)
+    except Exception:   # noqa: BLE001 — threat context is best-effort
+        return findings
+
+
 def summarize(findings: List[Dict]) -> Dict[str, int]:
     """Counts for the report/console card (operates on annotated findings)."""
     out = {'kev': 0, 'epss_high': 0, 'epss_medium': 0, 'enriched': 0}

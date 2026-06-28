@@ -579,12 +579,9 @@ def _annotate_threat(findings: List[Dict]) -> List[Dict]:
 
     Reads the per-CVE threat cache so a finding's exploitability tier reaches
     priority through ``_threat_tier``. A cold/empty cache is a no-op, so an
-    un-enriched run is unchanged."""
-    try:
-        from core import threat_intel
-        return threat_intel.annotate(findings)
-    except Exception:   # noqa: BLE001 — threat context is best-effort
-        return findings
+    un-enriched run is unchanged (delegates to the shared offline wrapper)."""
+    from core import threat_intel
+    return threat_intel.annotate_offline(findings)
 
 
 def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,

@@ -291,3 +291,34 @@ def test_build_timeline_includes_audit_run_events(tmp_path):
         'audit_quality_gate_passed',
         'audit_run_completed',
     ]
+
+
+def test_build_timeline_tightens_sla_breach_on_kev(tmp_path):
+    """A KEV finding surfaces an sla_breach on its tightened deadline even though
+    it is on-track on the plain severity window — the timeline threat-annotates
+    active findings from the offline cache before deriving SLA breaches."""
+    from datetime import datetime, timedelta
+
+    from core.cve_store import CVEStore
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    cve = 'CVE-2021-44228'
+    CVEStore().put_cve_threat(cve, {'kev': True})   # isolated per-test (conftest)
+    # 15 days old: on-track on the 30d high window, breached on the KEV 8d window.
+    seen = (datetime.now() - timedelta(days=15)).isoformat(timespec='seconds')
+    store = FindingsStore()
+    kev = {'id': fingerprint('vuln', cve, 'https://x.com/'), 'category': 'vuln',
+           'rule_id': cve, 'title': 'Log4Shell', 'severity': 'high', 'evidence': None}
+    plain = {'id': fingerprint('vuln', 'https', 'https://x.com/'), 'category': 'vuln',
+             'rule_id': 'https', 'title': 'Plain HTTP', 'severity': 'high',
+             'evidence': None}
+    store.upsert(project.slug, kev, now=seen)
+    store.upsert(project.slug, plain, now=seen)
+
+    tl = timeline.build_timeline(project)
+    breaches = [e for e in tl['events'] if e['type'] == 'sla_breach']
+    assert len(breaches) == 1                       # only the KEV finding breaches
+    assert 'Log4Shell' in breaches[0]['title']

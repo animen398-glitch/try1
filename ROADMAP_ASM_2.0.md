@@ -1728,8 +1728,13 @@ the *effective* `sla_days` plus `base_sla_days` + `tightened_by`
 reflects the shortened deadline. Self-gating: only the cached exploitability
 signal tightens — the static priority heuristic deliberately does not, and a
 finding with no `threat` block keeps its plain severity window (zero change for
-un-enriched runs). The collection report's `sla_summary` annotates active
-findings from the offline threat cache first (cold cache = no-op).
+un-enriched runs). Every breach surface annotates active findings from the
+offline threat cache first (cold cache = no-op): the collection report's
+`sla_summary`, the **Alert Center** `collect_sla_alerts` (a KEV finding fires its
+breach alert on the shortened deadline), and the **Timeline** `sla_events` (the
+`sla_breach` event lands at the tightened due date). The single best-effort
+read-side wrapper is `threat_intel.annotate_offline` (SSOT — the SLA/alerts/
+timeline/priority paths share it instead of each re-implementing the guard).
 
 ### Deferred (not blockers)
 

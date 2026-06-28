@@ -4749,3 +4749,13 @@ KEV->SLA TIGHTENING (follow-up, 2026-06-28)
   offline threat-кэша перед sla_summary (холодный кэш = no-op).
   Файлы: core/findings_sla.py, core/collection_runner.py, tests/test_findings_sla.py.
   Проверка: ruff clean; целевые+смежные тесты зелёные; полный pytest — см. CLAUDE.md.
+
+  Расширение (тот же день): KEV->SLA проведён и в Alert Center и Timeline.
+  Добавлен единый best-effort offline seam threat_intel.annotate_offline (SSOT):
+  alerts.collect_sla_alerts и timeline.build_timeline->sla_events теперь
+  annotate-ят активные находки из offline KEV/EPSS-кэша перед расчётом breach,
+  поэтому KEV-находка алертит/попадает в timeline по СОКРАЩЁННОМУ дедлайну.
+  Дубли inline-guard (collection_runner, intelligence._annotate_threat)
+  переведены на annotate_offline. Файлы: core/threat_intel.py, core/alerts.py,
+  core/timeline.py, core/collection_runner.py, core/intelligence.py,
+  tests/test_alerts.py, tests/test_timeline.py. ruff clean; тесты зелёные.

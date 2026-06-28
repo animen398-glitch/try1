@@ -224,6 +224,35 @@ def test_collect_sla_alerts_empty_when_within_window(tmp_path):
     assert alerts.collect_sla_alerts(s, 'proj') == []
 
 
+def test_collect_sla_alerts_tightens_on_kev():
+    """A KEV-known-exploited finding breaches on its tightened SLA window even
+    though it is still on-track on the plain severity window (the alert channel
+    threat-annotates from the offline cache before computing breaches)."""
+    from datetime import datetime, timedelta
+    from core.cve_store import CVEStore
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+
+    cve = 'CVE-2021-44228'
+    CVEStore().put_cve_threat(cve, {'kev': True})   # isolated per-test (conftest)
+    now = datetime(2026, 6, 15)
+    seen = (now - timedelta(days=15)).isoformat(timespec='seconds')  # 15 < 30, > 8
+    s = FindingsStore()
+    # KEV finding: high → 30d plain, tightened to 8d → breached at 15d.
+    kev = {'id': fingerprint('vuln', cve, 'https://x.com/'), 'category': 'vuln',
+           'rule_id': cve, 'title': 'Log4Shell', 'severity': 'high', 'evidence': None}
+    # Control: a plain high finding of the same age stays on-track (30d window).
+    plain = {'id': fingerprint('vuln', 'https', 'https://x.com/'), 'category': 'vuln',
+             'rule_id': 'https', 'title': 'Plain HTTP', 'severity': 'high',
+             'evidence': None}
+    s.upsert('proj', kev, now=seen)
+    s.upsert('proj', plain, now=seen)
+    out = alerts.collect_sla_alerts(s, 'proj', now=now)
+    assert len(out) == 1                       # only the KEV one breaches
+    assert out[0]['type'] == 'sla_breach'
+    assert 'Log4Shell' in out[0]['title']
+
+
 def test_notify_sla_dispatches_and_honors_types_filter(monkeypatch):
     monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
     events = [{'type': 'sla_breach', 'title': '[high] Plain HTTP — SLA просрочено',

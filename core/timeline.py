@@ -228,9 +228,11 @@ def build_timeline(project) -> Dict:
         store = FindingsStore()
         finding_events = store.project_events(project.slug)
         # Time-based SLA breaches of the still-active findings (reopen-aware).
-        from core import findings_sla
+        # Tighten via the offline KEV/EPSS cache first so known-exploited findings
+        # breach on their shortened deadline (cold cache = no-op).
+        from core import findings_sla, threat_intel
         sla_evts = findings_sla.sla_events(
-            store.active_findings(project.slug),
+            threat_intel.annotate_offline(store.active_findings(project.slug)),
             reopened=store.reopen_dates(project.slug))
     except Exception:   # noqa: BLE001 — timeline must render even if findings fail
         finding_events, sla_evts = finding_events, sla_evts

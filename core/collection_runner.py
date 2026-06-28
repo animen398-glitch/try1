@@ -1645,11 +1645,8 @@ class CollectionRunner:
             # Tighten SLA for known-exploited findings (KEV/EPSS): annotate from
             # the offline threat cache first so a warmed cache shortens deadlines.
             # A cold cache (threat phase not run) is a no-op — self-gating.
-            try:
-                from core import threat_intel
-                active = threat_intel.annotate(active)
-            except Exception:  # noqa: BLE001 — threat context is best-effort
-                pass
+            from core import threat_intel
+            active = threat_intel.annotate_offline(active)
             sla = sla_summary(active, reopened=store.reopen_dates(project.slug))
             report['findings'] = {
                 'project': project.slug, 'summary': result['summary'],

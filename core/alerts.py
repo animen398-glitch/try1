@@ -397,9 +397,13 @@ def collect_sla_alerts(store, project: str, *, now=None) -> List[Dict]:
     lean ``{type:'sla_breach', title, severity}`` dicts — empty when nothing newly
     breached. Pure of network; ``store`` is injected so tests use a temp DB."""
     from core.findings_sla import sla_events, sla_status
+    from core import threat_intel
     active = store.active_findings(project)
     if not active:
         return []
+    # Tighten SLA for known-exploited findings: annotate from the offline KEV/EPSS
+    # cache so a warmed cache shortens the breach deadline (cold cache = no-op).
+    active = threat_intel.annotate_offline(active)
     reopened = store.reopen_dates(project)
     breached = [f for f in active
                 if sla_status(f, now, None, reopened.get(f['id'])).get('breached')]
