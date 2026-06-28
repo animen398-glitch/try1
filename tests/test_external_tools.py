@@ -96,6 +96,19 @@ def test_scan_reports_run_error(monkeypatch):
     assert 'not found' in out['error']
 
 
+def test_scan_reports_nonzero_exit(monkeypatch):
+    monkeypatch.setattr(NucleiRunner, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(ext, 'run_command',
+                        lambda cmd, timeout, input_text=None: {
+                            'rc': 2, 'stdout': '', 'stderr': 'template parse failed',
+                            'timed_out': False})
+    out = NucleiRunner().scan('https://ex.com')
+    assert out['status'] == 'Error'
+    assert out['findings'] == []
+    assert 'code 2' in out['error']
+    assert 'template parse failed' in out['error']
+
+
 def test_scan_timeout_returns_partial(monkeypatch):
     monkeypatch.setattr(NucleiRunner, 'available', staticmethod(lambda: True))
     monkeypatch.setattr(ext, 'run_command',

@@ -6,7 +6,8 @@ import core.external_tools as ext
 from core.attack_surface import build_surface
 from core.collection_runner import CollectionRunner
 from core.external_tools import (
-    AmassRunner, KatanaRunner, parse_amass_lines, parse_katana_lines,
+    AmassRunner, HttpxRunner, KatanaRunner, SubfinderRunner,
+    parse_amass_lines, parse_katana_lines,
 )
 from core.subdomain_scanner import SubdomainScanner
 
@@ -148,3 +149,51 @@ def test_default_collection_has_no_katana():
 class _NullRegistry:
     def add_record(self, *a, **k):
         return 0
+
+
+def test_katana_nonzero_exit_is_error(monkeypatch):
+    monkeypatch.setattr(KatanaRunner, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(ext, 'run_command',
+                        lambda cmd, timeout, input_text=None: {
+                            'rc': 1, 'stdout': 'https://ex.com/partial',
+                            'stderr': 'crawl failed', 'timed_out': False})
+    out = KatanaRunner().crawl('https://ex.com')
+    assert out['status'] == 'Error'
+    assert out['endpoints'] == []
+    assert 'crawl failed' in out['error']
+
+
+def test_amass_nonzero_exit_is_error(monkeypatch):
+    monkeypatch.setattr(AmassRunner, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(ext, 'run_command',
+                        lambda cmd, timeout, input_text=None: {
+                            'rc': 1, 'stdout': '', 'stderr': 'config error',
+                            'timed_out': False})
+    out = AmassRunner().enumerate('ex.com')
+    assert out['status'] == 'Error'
+    assert out['subdomains'] == []
+    assert 'config error' in out['error']
+
+
+def test_subfinder_nonzero_exit_is_error(monkeypatch):
+    monkeypatch.setattr(SubfinderRunner, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(ext, 'run_command',
+                        lambda cmd, timeout, input_text=None: {
+                            'rc': 1, 'stdout': '', 'stderr': 'rate limited',
+                            'timed_out': False})
+    out = SubfinderRunner().enumerate('ex.com')
+    assert out['status'] == 'Error'
+    assert out['subdomains'] == []
+    assert 'rate limited' in out['error']
+
+
+def test_httpx_nonzero_exit_is_error(monkeypatch):
+    monkeypatch.setattr(HttpxRunner, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(ext, 'run_command',
+                        lambda cmd, timeout, input_text=None: {
+                            'rc': 1, 'stdout': '', 'stderr': 'bad input',
+                            'timed_out': False})
+    out = HttpxRunner().probe(['api.ex.com'])
+    assert out['status'] == 'Error'
+    assert out['results'] == []
+    assert 'bad input' in out['error']

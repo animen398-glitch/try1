@@ -47,6 +47,19 @@ def _cap_output(text: Optional[str], limit: int) -> tuple:
     return text, False
 
 
+def command_error(run: Dict, tool: str) -> Optional[str]:
+    """Return a concise user-facing error for a failed external tool run."""
+    if run.get('error'):
+        return str(run['error'])
+    rc = run.get('rc')
+    if rc not in (None, 0):
+        detail = (run.get('stderr') or run.get('stdout') or '').strip()
+        if detail:
+            return f'{tool} exited with code {rc}: {detail[-500:]}'
+        return f'{tool} exited with code {rc}'
+    return None
+
+
 def run_command(cmd: List[str], timeout: int,
                 input_text: Optional[str] = None,
                 max_output: Optional[int] = None) -> Dict:
@@ -167,9 +180,10 @@ class NucleiRunner:
                '-disable-update-check', '-timeout', '5'] + self.extra_args
         self._log(f'[nuclei] scanning {url}')
         run = run_command(cmd, self.timeout)
-        if run.get('error'):
-            result['error'] = run['error']
-            self._log(f'[nuclei] failed: {run["error"]}')
+        error = command_error(run, 'nuclei')
+        if error:
+            result['error'] = error
+            self._log(f'[nuclei] failed: {error}')
             return result
 
         findings = parse_nuclei_jsonl(run['stdout'])
@@ -245,8 +259,10 @@ class KatanaRunner:
                '-d', str(self.depth)] + self.extra_args
         self._log(f'[katana] crawling {url} (depth {self.depth})')
         run = run_command(cmd, self.timeout)
-        if run.get('error'):
-            result['error'] = run['error']
+        error = command_error(run, 'katana')
+        if error:
+            result['error'] = error
+            self._log(f'[katana] failed: {error}')
             return result
         result['endpoints'] = parse_katana_lines(run['stdout'])
         result['truncated'] = run.get('timed_out', False)
@@ -317,8 +333,10 @@ class AmassRunner:
                '-nocolor'] + self.extra_args
         self._log(f'[amass] passive enum {domain}')
         run = run_command(cmd, self.timeout)
-        if run.get('error'):
-            result['error'] = run['error']
+        error = command_error(run, 'amass')
+        if error:
+            result['error'] = error
+            self._log(f'[amass] failed: {error}')
             return result
         result['subdomains'] = parse_fqdn_lines(run['stdout'], domain)
         result['truncated'] = run.get('timed_out', False)
@@ -371,8 +389,10 @@ class SubfinderRunner:
                '-no-color'] + self.extra_args
         self._log(f'[subfinder] passive enum {domain}')
         run = run_command(cmd, self.timeout)
-        if run.get('error'):
-            result['error'] = run['error']
+        error = command_error(run, 'subfinder')
+        if error:
+            result['error'] = error
+            self._log(f'[subfinder] failed: {error}')
             return result
         result['subdomains'] = parse_fqdn_lines(run['stdout'], domain)
         result['truncated'] = run.get('timed_out', False)
@@ -466,8 +486,10 @@ class HttpxRunner:
                '-tech-detect'] + self.extra_args
         self._log(f'[httpx] probing {len(hosts)} host(s)')
         run = run_command(cmd, self.timeout, input_text='\n'.join(hosts) + '\n')
-        if run.get('error'):
-            result['error'] = run['error']
+        error = command_error(run, 'httpx')
+        if error:
+            result['error'] = error
+            self._log(f'[httpx] failed: {error}')
             return result
         result['results'] = parse_httpx_jsonl(run['stdout'])
         result['truncated'] = run.get('timed_out', False)

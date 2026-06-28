@@ -34,7 +34,7 @@ be confirmed against a real saved ``output.json`` without changing this shape).
 import json
 from typing import Callable, Dict, List, Optional
 
-from core.external_tools import run_command
+from core.external_tools import command_error, run_command
 from core.features import has_bbot
 from core.vuln_scanner import SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM
 
@@ -323,9 +323,10 @@ class BBOTRunner:
         self._log(f'[bbot] scanning {target} '
                   f'(preset={self.preset}, passive={self.passive})')
         run = self._runner(cmd, self.timeout)
-        if run.get('error'):
-            result['error'] = run['error']
-            self._log(f'[bbot] failed: {run["error"]}')
+        error = command_error(run, 'bbot')
+        if error:
+            result['error'] = error
+            self._log(f'[bbot] failed: {error}')
             return result
 
         data = parse_bbot_jsonl(run.get('stdout') or '')
