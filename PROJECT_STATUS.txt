@@ -4732,3 +4732,20 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
   NEXT: optional KEV->SLA tightening, timeline NEW_KEV event, KEV alert rule,
   findings-detail badge — all deferred, not blockers.
+
+------------------------------------------------------------------------------
+KEV->SLA TIGHTENING (follow-up, 2026-06-28)
+------------------------------------------------------------------------------
+  Одобрен отдельно (decision #2 эпика держал его на явное согласие). Находка с
+  реальным KEV/EPSS-блоком `threat` получает ужесточённое SLA-окно — множитель
+  по tier (high x0.25 / medium x0.5; THREAT_SLA_MULTIPLIER, per-tier override
+  через новый параметр threat_mult), floor-семантика (окно только сокращается,
+  никогда не растёт). sla_status отдаёт эффективное sla_days + base_sla_days +
+  tightened_by (kev/epss/None) -> due/breach/days_left/bucket/summary считаются
+  по сокращённому дедлайну. Самогейтинг: ужесточает ТОЛЬКО кэш-сигнал KEV/EPSS;
+  статическая priority-эвристика (intelligence._threat_tier) дедлайн НЕ режет;
+  нет threat-блока -> обычное severity-окно (ноль изменений для не-enriched
+  прогонов). collection_runner._sync_findings annotate-ит активные находки из
+  offline threat-кэша перед sla_summary (холодный кэш = no-op).
+  Файлы: core/findings_sla.py, core/collection_runner.py, tests/test_findings_sla.py.
+  Проверка: ruff clean; целевые+смежные тесты зелёные; полный pytest — см. CLAUDE.md.

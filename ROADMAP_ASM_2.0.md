@@ -1713,9 +1713,27 @@ scope-gated; off by default; soft-degrades offline; monitor + GUI parity.
    active-gated (no target traffic).
 4. Cache TTL 24h for KEV + EPSS, pruned by age in `CVEStore`.
 
+### Follow-up — KEV→SLA tightening (CLOSED 2026-06-28)
+
+> Approved as a separate unit (decision #2 above held it for explicit sign-off,
+> which the user gave). Implemented in `core/findings_sla.py` (pure derive-on-read,
+> no schema change) + one backend wiring in `core/collection_runner._sync_findings`.
+
+A finding carrying a real KEV/EPSS ``threat`` block has its severity SLA window
+**multiplied down** (a floor — it can only shrink): tier `high` (KEV or
+EPSS≥0.90) ×0.25, tier `medium` (EPSS≥0.50) ×0.5 (`THREAT_SLA_MULTIPLIER`, named,
+per-tier overridable via the new `threat_mult` param). `sla_status` now returns
+the *effective* `sla_days` plus `base_sla_days` + `tightened_by`
+(`kev`/`epss`/`None`), so every derived value (due/breach/days_left/bucket/summary)
+reflects the shortened deadline. Self-gating: only the cached exploitability
+signal tightens — the static priority heuristic deliberately does not, and a
+finding with no `threat` block keeps its plain severity window (zero change for
+un-enriched runs). The collection report's `sla_summary` annotates active
+findings from the offline threat cache first (cold cache = no-op).
+
 ### Deferred (not blockers)
 
-KEV→SLA tightening; full EPSS daily-CSV ingestion (we query per-CVE); a timeline
-NEW_KEV event; a KEV alert rule; a GUI badge in the findings detail.
+Full EPSS daily-CSV ingestion (we query per-CVE); a timeline NEW_KEV event; a KEV
+alert rule; a GUI badge in the findings detail.
 
 ---
