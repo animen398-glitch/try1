@@ -70,6 +70,31 @@ def _refs(finding: Dict[str, Any]) -> str:
     return ", ".join(str(ref) for ref in refs) if refs else "-"
 
 
+def _scenario_lines(payload: Dict[str, Any]) -> List[str]:
+    """Additive scenario/context bullets, only for keys present on the run."""
+    lines: List[str] = []
+    if payload.get("template"):
+        lines.append(f"- Scenario: {payload.get('template')}")
+    if "auth_context" in payload:
+        lines.append(f"- Authenticated context: {'yes' if payload.get('auth_context') else 'no'}")
+    if payload.get("baseline_run_id"):
+        lines.append(f"- Baseline run: {payload.get('baseline_run_id')}")
+    roe = payload.get("roe")
+    if isinstance(roe, dict) and roe:
+        from core.audit_scope import roe_summary
+
+        lines.append(f"- ROE: {roe_summary(roe)}")
+    return lines
+
+
+def _scenario_html(payload: Dict[str, Any]) -> str:
+    lines = _scenario_lines(payload)
+    if not lines:
+        return ""
+    items = "".join(f"<li>{html.escape(line[2:])}</li>" for line in lines)
+    return f"<ul>{items}</ul>"
+
+
 def _md_table(rows: Iterable[Dict[str, Any]]) -> str:
     lines = [
         "| Severity | Title | Validation | Confidence | Evidence |",
@@ -102,6 +127,7 @@ def render_markdown(run: Dict[str, Any]) -> str:
         f"- Findings: {summary['findings']}",
         f"- Client-facing: {summary['client_facing']}",
         f"- Review appendix: {summary['review']}",
+        *_scenario_lines(payload),
         "",
         "## Phase Summary",
         "",
@@ -165,6 +191,7 @@ def render_html(run: Dict[str, Any]) -> str:
         f"<p><b>Project:</b> {html.escape(str(payload.get('project', '')))}"
         f" | <b>Profile:</b> {html.escape(str(payload.get('profile', '')))}"
         f" | <b>Status:</b> {html.escape(str(payload.get('status', '')))}</p>"
+        f"{_scenario_html(payload)}"
         f"<p><b>Findings:</b> {summary['findings']} | "
         f"<b>Client-facing:</b> {summary['client_facing']} | "
         f"<b>Review appendix:</b> {summary['review']}</p>"
@@ -184,3 +211,118 @@ def render_json(run: Dict[str, Any]) -> str:
     payload = audit_run_to_json(run)
     validate_audit_payload(payload, "asa_audit_run")
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+# --- A/B comparison surfaces (F5) — views over the same compare payload --------
+
+_COMPARE_BUCKETS = ("new", "resolved", "regressed", "improved", "unchanged")
+
+
+def _compare_rows(diff: Dict[str, Any], bucket: str) -> List[Dict[str, Any]]:
+    rows = diff.get(bucket) or []
+    return [item for item in rows if isinstance(item, dict)]
+
+
+def _compare_md_table(rows: Iterable[Dict[str, Any]]) -> str:
+    lines = [
+        "| Finding | Severity | Baseline | Validation |",
+        "|---|---|---|---|",
+    ]
+    for ref in rows:
+        lines.append(
+            "| {fid} | {sev} | {base} | {val} |".format(
+                fid=str(ref.get("finding_id", "")).replace("|", "\\|"),
+                sev=str(ref.get("severity", "")),
+                base=str(ref.get("baseline_severity", "-")),
+                val=str(ref.get("validation_status", "")),
+            )
+        )
+    return "\n".join(lines)
+
+
+def render_compare_markdown(diff: Dict[str, Any]) -> str:
+    validate_audit_payload(diff, "asa_audit_compare")
+    summary = diff.get("summary") or {}
+    gate = diff.get("gate") or {}
+    gate_state = "PASS" if gate.get("passed") else "FAIL"
+    lines = [
+        f"# Audit Compare {diff.get('candidate_run_id', '')} vs {diff.get('baseline_run_id', '')}",
+        "",
+        f"- Project: {diff.get('project', '')}",
+        f"- Baseline run: {diff.get('baseline_run_id', '')}",
+        f"- Candidate run: {diff.get('candidate_run_id', '')}",
+        f"- Inconclusive: {'yes' if diff.get('inconclusive') else 'no'}",
+        f"- Gate: {gate_state}",
+    ]
+    for reason in gate.get("reasons") or []:
+        lines.append(f"  - reason: {reason}")
+    for note in gate.get("notes") or []:
+        lines.append(f"  - note: {note}")
+    lines.extend(["", "## Summary", "", "| Bucket | Count |", "|---|---:|"])
+    for bucket in _COMPARE_BUCKETS:
+        lines.append(f"| {bucket} | {int(summary.get(bucket, 0))} |")
+    for bucket in ("regressed", "new", "resolved"):
+        rows = _compare_rows(diff, bucket)
+        lines.extend(["", f"## {bucket.capitalize()}", ""])
+        lines.append(_compare_md_table(rows) if rows else f"No {bucket} findings.")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_compare_html(diff: Dict[str, Any]) -> str:
+    markdown = render_compare_markdown(diff)
+    summary = diff.get("summary") or {}
+    gate = diff.get("gate") or {}
+    gate_state = "PASS" if gate.get("passed") else "FAIL"
+
+    def table(rows: List[Dict[str, Any]]) -> str:
+        body = []
+        for ref in rows:
+            body.append(
+                "<tr>"
+                f"<td>{html.escape(str(ref.get('finding_id', '')))}</td>"
+                f"<td>{html.escape(str(ref.get('severity', '')))}</td>"
+                f"<td>{html.escape(str(ref.get('baseline_severity', '-')))}</td>"
+                f"<td>{html.escape(str(ref.get('validation_status', '')))}</td>"
+                "</tr>"
+            )
+        if not body:
+            body.append("<tr><td colspan=\"4\">None</td></tr>")
+        return (
+            "<table><thead><tr><th>Finding</th><th>Severity</th>"
+            "<th>Baseline</th><th>Validation</th></tr></thead><tbody>"
+            + "".join(body)
+            + "</tbody></table>"
+        )
+
+    rows = "".join(
+        f"<tr><td>{bucket}</td><td>{int(summary.get(bucket, 0))}</td></tr>"
+        for bucket in _COMPARE_BUCKETS
+    )
+    sections = "".join(
+        f"<h2>{bucket.capitalize()}</h2>{table(_compare_rows(diff, bucket))}"
+        for bucket in ("regressed", "new", "resolved")
+    )
+    return (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        "<title>ASA Audit Compare</title>"
+        "<style>body{font-family:Arial,sans-serif;margin:24px}"
+        "table{border-collapse:collapse;width:100%;margin:12px 0}"
+        "td,th{border:1px solid #bbb;padding:6px;text-align:left}"
+        "th{background:#eee}</style></head><body>"
+        f"<h1>Audit Compare {html.escape(str(diff.get('candidate_run_id', '')))}"
+        f" vs {html.escape(str(diff.get('baseline_run_id', '')))}</h1>"
+        f"<p><b>Project:</b> {html.escape(str(diff.get('project', '')))}"
+        f" | <b>Inconclusive:</b> {'yes' if diff.get('inconclusive') else 'no'}"
+        f" | <b>Gate:</b> {gate_state}</p>"
+        "<h2>Summary</h2>"
+        "<table><thead><tr><th>Bucket</th><th>Count</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table>"
+        f"{sections}"
+        f"<!-- markdown-sha={sha1(markdown.encode('utf-8')).hexdigest()} -->"
+        "</body></html>"
+    )
+
+
+def render_compare_json(diff: Dict[str, Any]) -> str:
+    validate_audit_payload(diff, "asa_audit_compare")
+    return json.dumps(diff, ensure_ascii=False, indent=2, sort_keys=True)
