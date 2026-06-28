@@ -1762,7 +1762,9 @@ the detail panel shows an **⚠ Exploitability** badge (single wording via
 `threat_intel.threat_label` — KEV called out, EPSS percentile shown) plus an
 explicit "ужесточено: KEV/EPSS, базовое Nд" note next to the shortened SLA. A KEV
 row is also flagged in-list (critical-colour title + tooltip). No column-contract
-change; cold cache / non-CVE findings render exactly as before.
+change; cold cache / non-CVE findings render exactly as before. The LAN web
+console (`remote/web_app._findings_list`) was reordered to match — threat-annotate
+before SLA-annotate — so its `/findings` SLA is tightened for KEV too.
 
 ### Deferred (not blockers)
 

@@ -50,6 +50,22 @@ def test_findings_list_enriches_with_knowledge():
     assert 'ротируйте' in f['remediation']               # secret remediation
 
 
+def test_findings_list_threat_block_tightens_sla():
+    # A KEV finding carries the threat block and its SLA is tightened (the threat
+    # annotate runs before the SLA annotate — consistent with the GUI/report).
+    from core.cve_store import CVEStore
+    cve = 'CVE-2021-44228'
+    CVEStore().put_cve_threat(cve, {'kev': True})        # isolated per-test (conftest)
+    s = FindingsStore()
+    s.upsert('pk', {'id': 'f-kev', 'category': 'vuln', 'rule_id': cve,
+                    'title': 'Log4Shell', 'severity': 'high', 'evidence': None})
+    f = next(x for x in wa._findings_list(project='pk')['findings']
+             if x['id'] == scoped_id('pk', 'f-kev'))
+    assert f['threat']['kev'] is True
+    assert f['sla']['tightened_by'] == 'kev'
+    assert f['sla']['sla_days'] == 8                     # 30 → round(30 × 0.25)
+
+
 def test_findings_set_status_ok():
     s = _seed()
     fid = scoped_id('p1', 'f-a')        # the id GET /findings would return

@@ -383,16 +383,19 @@ def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
                    severity: Optional[str] = None) -> dict:
     """Findings (optionally filtered) + the project list + a status summary."""
     try:
+        from core import threat_intel
         from core.finding_knowledge import annotate as annotate_knowledge
         from core.findings_sla import annotate as annotate_sla
         store = FindingsStore()
         findings = store.list_findings(project=project, status=status,
                                        severity=severity)
+        # KEV/EPSS threat block first (offline; cold cache = no-op), so the SLA
+        # clock below is tightened for known-exploited findings — consistent with
+        # the GUI/report.
+        findings = threat_intel.annotate_offline(findings)
         # SLA clock is reopen-aware → pass the latest reopen date per finding.
         annotate_sla(findings, reopened=store.reopen_dates(project))
         annotate_knowledge(findings)  # + description/impact/remediation (F-O4)
-        from core import threat_intel
-        findings = threat_intel.annotate(findings)  # + KEV/EPSS threat block
         return {'projects': store.projects(),
                 'findings': findings,
                 'summary': store.summary(project)}
