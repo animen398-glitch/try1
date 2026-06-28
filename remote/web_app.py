@@ -731,6 +731,47 @@ def _timeline_view(project: Optional[str] = None) -> dict:
         return {'series': [], 'events': [], 'error': str(e)}
 
 
+# ── Audit Runs (Workbench v2) ───────────────────────────────────────────────
+# Read-only parity with the GUI Audit Runs tab. The AuditRunStore is the
+# persistence for audit-run payloads; comparison is derived on read from two
+# stored runs (no second findings source, no new table).
+
+def _audit_runs_list(project: Optional[str] = None) -> dict:
+    try:
+        from core.audit_store import AuditRunStore
+        runs = AuditRunStore().list_runs(project)
+        return {'project': project, 'runs': [
+            {'run_id': r.get('id'), 'project': r.get('project'),
+             'status': r.get('status'), 'profile': r.get('profile'),
+             'updated_at': r.get('updated_at')}
+            for r in runs
+        ]}
+    except Exception as e:
+        return {'project': project, 'runs': [], 'error': str(e)}
+
+
+def _audit_run_view(run_id: str) -> dict:
+    try:
+        from core.audit_store import AuditRunStore
+        payload = AuditRunStore().export_run(str(run_id))
+        return {'run': payload}
+    except KeyError:
+        return {'error': f'audit run not found: {run_id}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
+    try:
+        from core.audit_store import AuditRunStore
+        from core.audit_compare import compare_stored
+        return compare_stored(AuditRunStore(), str(baseline_id), str(candidate_id))
+    except KeyError as e:
+        return {'error': f'audit run not found: {e}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 # ── Continuous Monitoring (#8) ─────────────────────────────────────────────────
 # Thin wrappers over core.monitor (single source of truth, shared with the CLI
 # and GUI). All bound to the same project store the jobs use.
@@ -1640,6 +1681,22 @@ if _FASTAPI_OK:
     @app.get('/timeline')
     async def timeline(project: Optional[str] = None):
         return JSONResponse(_timeline_view(project))
+
+    @app.get('/audit-runs')
+    async def audit_runs(project: Optional[str] = None):
+        return JSONResponse(_audit_runs_list(project))
+
+    @app.get('/audit-runs/{run_id}')
+    async def audit_run(run_id: str):
+        out = _audit_run_view(run_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.get('/audit-compare')
+    async def audit_compare(baseline: str, candidate: str):
+        out = _audit_compare_view(baseline, candidate)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
 
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):

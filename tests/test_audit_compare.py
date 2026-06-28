@@ -4,6 +4,7 @@ from core.audit_compare import (
     compare_gate,
     compare_runs,
     compare_stored,
+    record_comparison,
     resolve_baseline_id,
 )
 from core.audit_schema import validate_audit_payload
@@ -105,3 +106,27 @@ def test_compare_stored_via_audit_run_store(tmp_path):
     diff = compare_stored(store, "audit-base", "audit-cand")
     assert [f["finding_id"] for f in diff["resolved"]] == ["x"]
     validate_audit_payload(diff, "asa_audit_compare")
+
+
+def test_record_comparison_logs_event_on_candidate(tmp_path):
+    store = AuditRunStore(tmp_path / "audit.db")
+    base = create_audit_run("example.com", phases=["validation"], run_id="audit-base")
+    base = advance_audit_phase(base, "validation", {"validated_findings": [
+        {"finding_id": "x", "severity": "high", "validation_status": "verified"}]})
+    cand = create_audit_run("example.com", phases=["validation"], run_id="audit-cand")
+    cand = advance_audit_phase(cand, "validation", {"validated_findings": []})
+    store.save_run(base)
+    store.save_run(cand)
+
+    diff = compare_stored(store, "audit-base", "audit-cand")
+    event = record_comparison(store, diff)
+    assert event is not None and event["type"] == "compared"
+    events = store.events("audit-cand")
+    assert any(e["type"] == "compared" for e in events)
+
+
+def test_record_comparison_never_raises_on_missing_run(tmp_path):
+    store = AuditRunStore(tmp_path / "audit.db")
+    diff = compare_runs(_run("missing-base", []), _run("missing-cand", []))
+    # candidate run was never saved → write fails softly, returns None
+    assert record_comparison(store, diff) is None

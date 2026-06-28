@@ -171,3 +171,32 @@ def resolve_baseline_id(run: Dict[str, Any]) -> Optional[str]:
     """Baseline run id linked on a candidate run, if any."""
     value = str(run.get("baseline_run_id") or "").strip()
     return value or None
+
+
+def record_comparison(
+    store: Any,
+    diff: Dict[str, Any],
+    *,
+    at: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Append a ``compared`` event to the candidate run for the audit trail.
+
+    Comparison itself stays derive-on-read; this only records that a comparison
+    happened (summary + gate), never a second findings copy. Never raises: a
+    failed write returns ``None`` so the comparison result is unaffected.
+    """
+    candidate_id = str(diff.get("candidate_run_id") or "").strip()
+    if not candidate_id:
+        return None
+    summary = diff.get("summary") if isinstance(diff.get("summary"), dict) else {}
+    gate = diff.get("gate") if isinstance(diff.get("gate"), dict) else {}
+    note = {
+        "baseline_run_id": str(diff.get("baseline_run_id") or ""),
+        "summary": summary,
+        "gate_passed": bool(gate.get("passed")),
+        "inconclusive": bool(diff.get("inconclusive")),
+    }
+    try:
+        return store.record_event(candidate_id, "compared", note=note, at=at)
+    except Exception:
+        return None

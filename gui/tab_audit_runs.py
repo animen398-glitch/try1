@@ -28,6 +28,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from core.audit_templates import list_templates
 from core.audit_workflow import (
     AUDIT_PHASES,
     advance_audit_phase,
@@ -69,6 +70,14 @@ class AuditRunsTabMixin:
         self.audit_project.currentIndexChanged.connect(self._on_audit_project_changed)
         ctrl.addWidget(self.audit_project)
 
+        ctrl.addWidget(QLabel("Scenario:"))
+        self.audit_template = QComboBox()
+        self.audit_template.setMinimumWidth(180)
+        self.audit_template.addItem("Full (v1)", "")
+        for tpl in list_templates():
+            self.audit_template.addItem(tpl.get("label", tpl["name"]), tpl["name"])
+        ctrl.addWidget(self.audit_template)
+
         self.audit_profile = QLabel("Profile: client_safe")
         ctrl.addWidget(self.audit_profile)
         self.audit_scope = QLabel("Scope: select a project")
@@ -106,6 +115,21 @@ class AuditRunsTabMixin:
         self.btn_audit_open.clicked.connect(self._open_selected_audit_run)
         history_row.addWidget(self.btn_audit_open)
         layout.addLayout(history_row)
+
+        compare_row = QHBoxLayout()
+        compare_row.addWidget(QLabel("Compare baseline:"))
+        self.audit_baseline = QComboBox()
+        self.audit_baseline.setMinimumWidth(320)
+        compare_row.addWidget(self.audit_baseline, stretch=1)
+        self.btn_audit_compare = StyledButton("Compare to current", style="secondary")
+        self.btn_audit_compare.setEnabled(False)
+        self.btn_audit_compare.clicked.connect(self._compare_audit_runs)
+        compare_row.addWidget(self.btn_audit_compare)
+        self.btn_audit_compare_export = StyledButton("Export Compare", style="secondary")
+        self.btn_audit_compare_export.setEnabled(False)
+        self.btn_audit_compare_export.clicked.connect(self._export_audit_compare)
+        compare_row.addWidget(self.btn_audit_compare_export)
+        layout.addLayout(compare_row)
 
         roe_grp = SectionGroupBox("Rules of Engagement")
         roe_layout = FlowLayout()
@@ -194,6 +218,7 @@ class AuditRunsTabMixin:
         layout.addWidget(detail_grp)
 
         self._audit_run: Dict[str, Any] = {}
+        self._audit_compare: Dict[str, Any] = {}
         self._audit_rows: List[Dict[str, Any]] = []
         self._audit_loading = False
         self._audit_running = False
@@ -291,6 +316,24 @@ class AuditRunsTabMixin:
         self.audit_history.blockSignals(False)
         self.btn_audit_open.setEnabled(self.audit_history.count() > 0)
 
+        baseline_current = self.audit_baseline.currentData()
+        self.audit_baseline.blockSignals(True)
+        self.audit_baseline.clear()
+        for row in runs:
+            self.audit_baseline.addItem(
+                f"{row.get('updated_at', '')}  {row.get('id', '')}  {row.get('status', '')}",
+                row.get("id"),
+            )
+        b_idx = self.audit_baseline.findData(baseline_current)
+        self.audit_baseline.setCurrentIndex(b_idx if b_idx >= 0 else 0)
+        self.audit_baseline.blockSignals(False)
+        self._update_compare_enabled()
+
+    def _update_compare_enabled(self):
+        has_baseline = self.audit_baseline.count() > 0
+        has_current = bool(self._audit_run.get("run_id"))
+        self.btn_audit_compare.setEnabled(has_baseline and has_current)
+
     def _start_audit_run(self):
         project = self.audit_project.currentData()
         if not project:
@@ -306,9 +349,10 @@ class AuditRunsTabMixin:
         run_id = self._new_audit_run_id(project)
         roe = self._current_audit_roe()
         checks = self._selected_safe_checks()
+        template = self.audit_template.currentData() or None
         self._run_async(
-            lambda p=project, rid=run_id, r=roe, c=checks: self._query_audit_run(
-                p, run_id=rid, roe=r, checks=c
+            lambda p=project, rid=run_id, r=roe, c=checks, t=template: self._query_audit_run(
+                p, run_id=rid, roe=r, checks=c, template=t
             ),
             self._on_audit_run_done,
         )
@@ -326,6 +370,7 @@ class AuditRunsTabMixin:
         run_id: str | None = None,
         roe: Dict[str, Any] | None = None,
         checks: List[str] | None = None,
+        template: str | None = None,
     ) -> dict:
         try:
             from core.findings_store import FindingsStore
@@ -340,12 +385,28 @@ class AuditRunsTabMixin:
             if checks:
                 target = AuditRunsTabMixin._target_from_roe(project, normalized_roe)
                 check_result = run_safe_checks(target, normalized_roe, checks=checks)
-            run = create_audit_run(project, run_id=run_id)
+            if template:
+                run = create_audit_run(
+                    project, template=template, roe=normalized_roe, run_id=run_id
+                )
+            else:
+                run = create_audit_run(project, run_id=run_id)
+            present = {
+                phase.get("name")
+                for phase in (run.get("phases") or [])
+                if isinstance(phase, dict)
+            }
             rows = AuditRunsTabMixin._build_audit_rows(
                 findings + list(check_result.get("findings") or [])
             )
-            run = advance_audit_phase(
-                run,
+
+            def advance(name: str, result: dict):
+                # Templates may select a phase subset; only advance present phases.
+                nonlocal run
+                if name in present:
+                    run = advance_audit_phase(run, name, result)
+
+            advance(
                 "recon_snapshot",
                 {
                     "project": project,
@@ -354,31 +415,26 @@ class AuditRunsTabMixin:
                     "roe_valid": roe_validation["valid"],
                 },
             )
-            run = advance_audit_phase(
-                run,
+            advance(
                 "finding_hunt",
                 {
                     "findings": [row["finding"] for row in rows],
                     "safe_checks": check_result.get("results", []),
                 },
             )
-            run = advance_audit_phase(
-                run,
+            advance(
                 "validation",
                 {"validated_findings": [row["finding"] for row in rows]},
             )
-            run = advance_audit_phase(
-                run,
+            advance(
                 "risk_business_impact",
                 {"quality": AuditRunsTabMixin._rollup(rows)},
             )
-            run = advance_audit_phase(
-                run,
+            advance(
                 "structured_output",
                 {"schema": "asa_audit_run", "export": "json"},
             )
-            run = advance_audit_phase(
-                run,
+            advance(
                 "independent_verification",
                 {
                     "evidence_refs": sorted({ref for row in rows for ref in row["evidence_refs"]}),
@@ -594,6 +650,7 @@ class AuditRunsTabMixin:
             f"Audit run completed: {len(self._audit_rows)} finding(s)"
         )
         self._set_audit_export_enabled(True)
+        self._update_compare_enabled()
         project = result.get("project") or self.audit_project.currentData()
         if project:
             self._refresh_audit_history(project)
@@ -616,6 +673,84 @@ class AuditRunsTabMixin:
         self._populate_audit_run(self._audit_run, self._audit_rows)
         self.audit_status.setText(f"Opened audit run: {self._audit_run.get('run_id', '')}")
         self._set_audit_export_enabled(True)
+        self._update_compare_enabled()
+
+    def _compare_audit_runs(self):
+        candidate_id = str(self._audit_run.get("run_id") or "")
+        baseline_id = self.audit_baseline.currentData()
+        if not candidate_id or not baseline_id:
+            self.audit_status.setText("Select a baseline and run/open a candidate first")
+            return
+        if baseline_id == candidate_id:
+            self.audit_status.setText("Baseline and candidate are the same run")
+            return
+        self._set_busy(True)
+        self._run_async(
+            lambda b=baseline_id, c=candidate_id: self._query_audit_compare(b, c),
+            self._on_audit_compare_done,
+        )
+
+    @staticmethod
+    def _query_audit_compare(baseline_id: str, candidate_id: str) -> dict:
+        try:
+            from core.audit_store import AuditRunStore
+            from core.audit_compare import compare_stored, record_comparison
+            store = AuditRunStore()
+            diff = compare_stored(store, baseline_id, candidate_id)
+            # Deliberate user action → log a 'compared' event for the audit trail.
+            record_comparison(store, diff)
+            return {"diff": diff}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _on_audit_compare_done(self, result: dict):
+        self._set_busy(False)
+        if result.get("error"):
+            self.audit_status.setText(f"Compare error: {result['error']}")
+            return
+        diff = result.get("diff") or {}
+        self._audit_compare = diff
+        summary = diff.get("summary") or {}
+        gate = diff.get("gate") or {}
+        gate_state = "PASS" if gate.get("passed") else "FAIL"
+        self.audit_status.setText(
+            "Compare {cand} vs {base}: "
+            "new={new} resolved={resolved} regressed={regressed} "
+            "improved={improved} | gate={gate}{inc}".format(
+                cand=diff.get("candidate_run_id", ""),
+                base=diff.get("baseline_run_id", ""),
+                new=summary.get("new", 0),
+                resolved=summary.get("resolved", 0),
+                regressed=summary.get("regressed", 0),
+                improved=summary.get("improved", 0),
+                gate=gate_state,
+                inc=" (inconclusive)" if diff.get("inconclusive") else "",
+            )
+        )
+        try:
+            from core.audit_report import render_compare_markdown
+            self.audit_detail.setPlainText(render_compare_markdown(diff))
+        except Exception:  # noqa: BLE001
+            pass
+        self.btn_audit_compare_export.setEnabled(True)
+
+    def _export_audit_compare(self):
+        if not self._audit_compare:
+            self.audit_status.setText("Nothing to export")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Audit Compare JSON", "audit_compare.json", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            from core.audit_report import render_compare_json
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(render_compare_json(self._audit_compare))
+        except Exception as e:  # noqa: BLE001
+            self.audit_status.setText(f"Export failed: {e}")
+            return
+        self.audit_status.setText(f"Exported audit compare: {path}")
 
     def _populate_audit_run(self, run: dict, rows: List[Dict[str, Any]]):
         phases = run.get("phases") or []
