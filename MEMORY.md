@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-28 03:19:14  
-> Total memories: **49**  
-> Breakdown: instruction: 8, decision: 5, goal: 3, preference: 1, context: 3, event: 25, error: 4
+> Generated: 2026-06-28 14:10:00  
+> Total memories: **58**  
+> Breakdown: instruction: 8, decision: 11, goal: 4, preference: 1, context: 3, event: 25, artifact: 2, error: 4
 
 ---
 
@@ -72,6 +72,12 @@ User instructed for this project: work only inside the current git worktree; nev
 
 *Architectural choices, approach selections, and their rationale.*
 
+### Workbench v2 plan APPROVED by user (2026-06-28). 4...
+
+Workbench v2 plan APPROVED by user (2026-06-28). 4 open decisions RESOLVED: (1) create_audit_run without template keeps v1 behavior = full 6 phases, payload identical, templates opt-in (backward-compat). (2) authenticated_review allows ONLY safe active checks (headers/cookies/TLS/sourcemaps/graphql-introspection/non-destructive probe/dependency-CVE); ZERO credential collection/brute/auto-login/auth-bypass/persistence; operator brings authorized session out-of-band as context, tool never acquires it; still gated by action_policy/scope_policy/ROE. (3) A/B compare is DERIVE-ON-READ from two stored run payloads, NO new SQLite table; only a lightweight 'compared' event with summary written to existing audit_events. (4) release compare_gate treats a FAILED candidate phase as inconclusive (not regression/resolved); never fails release solely due to a failed phase (mirrors Scan Diff). Implementation order F1 templates -> F2 ROE -> F3 revalidation -> F4 compare -> F5 reports, one feature at a time with tests + section-7 report. Code not yet started; awaiting user 'go' to begin F1.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T00:29:56*
+
 ### Roadmap updated in commit 3af7604 with EPIC FUTURE...
 
 Roadmap updated in commit 3af7604 with EPIC FUTURE — Client-Safe Pentest Workbench: product frame, 6 Audit Run phases, core contracts, quality gate, additive runs, GUI Audit Runs, safe active checks, forbidden client-safe actions, Claude/Codex split, and DoD.
@@ -90,17 +96,47 @@ Planning direction proposed for Advanced Site Analyzer: evolve from ASM/CSM + Cl
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-28T00:15:32*
 
+### Workbench v2 epic COMPLETE + committed locally (ma...
+
+Workbench v2 epic COMPLETE + committed locally (master, commits 86e473f1 F1, 859d8249 F2, 3175fcfa F3, 98b0fcc5 F4, ab7ce310 F5, roadmap doc). All 5 features implemented with tests: F1 core/audit_templates.py (4 scenarios), F2 ROE templates in core/audit_scope.py, F3 core/audit_revalidation.py (overlay, no lifecycle writes), F4 core/audit_compare.py + schemas/asa_audit_compare.schema.json (derive-on-read, failed phase=inconclusive), F5 compare+scenario renderers in core/audit_report.py. Verified: ruff clean, full pytest 2064 passed (1 known Starlette warning), main.py --self-check 29 tabs. Single FindingsStore SoT preserved, schema growth additive/optional, all client-safe. DEFERRED to Codex (contract-only): GUI selectors/buttons in gui/tab_audit_runs.py, remote/web_app.py read parity, optional persisted 'compared' event. Roadmap section 'EPIC CLOSED - Workbench v2' added. CLAUDE.md/AGENTS.md/PROJECT_STATUS.txt status banners NOT yet synced.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T01:04:26*
+
 ### Backend release-hardening contracts (T1-T5)
 
 Backend release-hardening (branch backend/release-hardening, ~23 commits, full-diff self-reviewed, awaiting external review/merge; not pushed). SQLite/stores: (1) SQLiteStore: every connection WAL + synchronous=NORMAL + busy_timeout (no 'database is locked'); raw .db never copied so WAL sidecars safe. (2) Corrupt DB on init quarantined to <db>.corrupt-<ts>, recreated empty (never deletes data); transient lock != corruption. (3) FindingsStore.sync/AssetStore.sync = ONE transaction (atomic) via _upsert/_set_status/_list_* (conn) workers behind thin public wrappers. (4) OperationRegistry bounds operations.db (newest MAX_HISTORY, prune every PRUNE_EVERY inserts); DataRegistry user data NOT auto-pruned. (5) CVEStore.prune bounds cve_cache.db by age + row cap; cve_intel.correlate prunes once per run (own store only). Contracts/IO: (6) all 6 *_cli.py share core/cli_common.py (configure_stdout+CliError+run_main): expected failures -> stderr 'error: <msg>' + exit 2. (7) remote/web_app.py global FastAPI handler -> uniform {'error':...} JSON 500; _job_results FIFO-capped + _log_queue maxsize drop-oldest. (8) CollectionRunner._persist_error_report always leaves a readable report.json (status Error) on finalization failure. (9) external_tools.run_command caps stdout (MAX_OUTPUT head, truncated flag). (10) utils/atomic_io.py (temp+os.replace) for ALL durable-state JSON: metadata+history, report.json, company registry, evidence_manifest, settings/targets (transient per-phase artifacts left direct). (11) Project.start_scan unique scan dir (mkdir exist_ok=False + -2/-3 suffix); runner takes scan_id from scan_dir.name. (12) Secret previews are a non-leaking mask: secret_scanner._preview = prefix(6)+ellipsis+length (mirrors mask_value, never the body) + dynamic_analyzer previews aligned. IMPORTANT: the length suffix is required - findings_adapter derives the secret discriminator from key:preview, so a too-short preview (prefix only) would merge two distinct same-prefix keys (e.g. two sk_live_ keys) into one finding; the length restores that entropy (caught in self-review). Audits, NO code change (some pinned by guard tests): event ordering deterministic; report consumers tolerant of thin/legacy/Error reports (test_report_backcompat); migration-with-data tested (test_findings_store_migration); secret redaction OK (operations.db/logs carry no secrets; raw only in local artifacts + LAN console, by-design); timestamps consistently local-naive, ct_history isolated naive-UTC, no mixed comparison, UTC migration intentionally not done. Remaining optional/deferred: cross-process advisory locking; roadmap-out-of-scope (live threat feeds, live cloud API, new scanners).
 
 *Confidence: 0.9 | Status: active | Created: 2026-06-27T16:28:31 | Tags: `backend-hardening`, `sqlite-wal`, `atomic-sync`, `atomic-writes`, `cli-contract`, `web-error-envelope`, `retention`, `scan-dir-unique`, `secret-redaction`, `diff-reviewed`, `release-readiness`*
 
+### KEV/EPSS Threat Intelligence Feed epic COMPLETE + ...
+
+KEV/EPSS Threat Intelligence Feed epic COMPLETE + committed locally (master). Commits: 3017251f F1 (core/threat_feed.py KEV+EPSS parsers + CVEStore.cve_threat table), c80c98af F2 (core/threat_intel.py enrich_cves/annotate/tier), 08acba60 F3 (intelligence._threat_tier enrichment-first + build_intelligence offline annotate, priority formula UNCHANGED), 888c292b F4 (opt-in _phase_threat not scope-gated + monitor/GUI parity), e9e8d90f F5 (report card + web /findings threat block + CSV columns), 64535490 doc sync. Single CVEStore cache (no new DB), derive-on-read enrichment, soft-degrade offline, client-safe (metadata about CVEs, no target traffic). Decisions: tier KEV->high/EPSS pct>=0.90->high/>=0.50->medium; priority only (KEV->SLA deferred); opt-in not under Scope Guard; TTL 24h. Verified: ruff clean, full pytest 2101 passed (1 Starlette warning), self-check 29 tabs. DEFERRED (not blockers): KEV->SLA tightening, timeline NEW_KEV event, KEV alert rule, findings-detail GUI badge.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T02:25:54*
+
 ### Architecture invariants
 
 Architecture invariants (breaking them = regression): (1) UI thin, logic in core/utils; (2) single task runner _start_task/_run_async, no manual QThreads in tabs; (3) single sources of truth: paths/settings=core/config.py+core/paths.py PathManager, secret rules=core/secret_scanner.py RULES, project scans=core/project.py, endpoints=utils/endpoint_index.py; (4) plugins add tabs/analyzers WITHOUT editing core; (5) frozen-aware paths via PathManager; (6) optional deps degrade softly; (7) keep backward compat of Projects/ layout, metadata.json, report.json, runner contracts.
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T14:49:14 | Tags: `invariants`, `architecture`, `contracts`*
+
+### KEV/EPSS Threat Intelligence Feed epic APPROVED by...
+
+KEV/EPSS Threat Intelligence Feed epic APPROVED by user (2026-06-28). 4 decisions RESOLVED: (1) threat_tier mapping: kev=True->high; epss_percentile>=0.90->high; >=0.50->medium; else fallback to existing static _threat_tier (no regression); thresholds as named module constants. (2) MVP feeds PRIORITY only via threat_tier; KEV->SLA tightening DEFERRED (touches risk/SLA verdict, needs separate approval). (3) threat_feed phase = opt-in network metadata like osv/asn, NOT Scope-Guard active-gated (no target traffic; queries CISA KEV catalog + FIRST EPSS per-CVE). (4) cache TTL 24h for KEV catalog and EPSS, pruned by age in CVEStore. Architecture: NO new data model - cache extends existing CVEStore (data/cve_cache.db, CVE-keyed get/put_cve_threat), finding enrichment is derive-on-read via core/threat_intel.annotate; priority formula UNCHANGED (only feeds existing threat_tier input). KEV=CISA public domain, EPSS=FIRST.org free keyless; injectable transport like nvd_provider; offline-first, soft-degrade. Impl order F1 core/threat_feed.py (KEV+EPSS parsers+cache) -> F2 core/threat_intel.py (orchestrator+annotate+tier) -> F3 intelligence._threat_tier seam -> F4 opt-in _phase_threat in collection_runner + monitor parity -> F5 surfaces (report card/web/CSV/badge/opt alert). One feature at a time with tests + section-7 report. Code not started; awaiting 'go' for F1.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T02:03:44*
+
+### Workbench v2 FULLY COMPLETE incl. GUI+web+docs (al...
+
+Workbench v2 FULLY COMPLETE incl. GUI+web+docs (all 3 follow-up items done after user override 'да делай'). Commits: edb9853c (GUI scenario selector + baseline compare/export in gui/tab_audit_runs.py + web read-parity /audit-runs,/audit-runs/{id},/audit-compare in remote/web_app.py + record_comparison 'compared' event in core/audit_compare.py), 821f4520 (doc sync CLAUDE.md/AGENTS.md/PROJECT_STATUS.txt/PROJECT_REPORT.md). GUI template-run advances only the template's phase subset; web read endpoints are pure derive-on-read (no event writes), only the GUI compare action logs 'compared'. Final verification: ruff clean, full pytest 2074 passed (1 Starlette warning), main.py --self-check 29 tabs. Whole Workbench v2 epic (F1-F5 + surfaces + docs) closed locally on master; no remote git. CLAUDE.md/AGENTS.md/PROJECT_STATUS/PROJECT_REPORT now reflect v1+v2 and count 2074.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T01:24:08*
+
+### KEV->SLA tightening follow-up IMPLEMENTED (approve...
+
+KEV->SLA tightening follow-up IMPLEMENTED (approved separately by user; was decision #2 deferred from KEV/EPSS epic). core/findings_sla.py: THREAT_SLA_MULTIPLIER {high:0.25, medium:0.5}, floor semantics (window only shrinks), reads ONLY the cached KEV/EPSS threat block (NOT the static intelligence._threat_tier heuristic). sla_status now returns effective sla_days + base_sla_days + tightened_by (kev/epss/None); new optional threat_mult param threaded through sla_status/annotate/breached_count/sla_summary/sla_events. Self-gating: no threat block => plain severity window (zero change for un-enriched runs). Wiring: collection_runner._sync_findings threat_intel.annotate(active) before sla_summary (offline, cold cache = no-op). Tests added in tests/test_findings_sla.py (21 pass). ruff clean. Docs updated: ROADMAP closed section, CLAUDE.md + AGENTS.md status, PROJECT_STATUS.txt. NOT yet committed; full pytest running.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T08:49:20*
 
 ---
 
@@ -119,6 +155,12 @@ User wants to move Advanced Site Analyzer toward pentesting with Codex and Claud
 User decided to continue developing Client-Safe Pentest Workbench while Claude Code rests. Codex should first prepare a plan/structure for persistent audit-run history, safe active checks, ROE/scope editor, audit report surface, and release packaging; wait for user approval before implementation.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T18:33:20 | Tags: `client-safe-workbench`, `planning`, `roadmap`, `approval-required`*
+
+### User assigned Codex release + UX hardening after C...
+
+User assigned Codex release + UX hardening after Client-Safe Pentest Workbench: suppress noisy external CLI consoles, surface CLI errors in GUI/status/log, harden cookies.txt UX with format errors and secret masking, keep GUI thin via _run_async/_start_task, add targeted offline/headless tests, verify ruff/targeted pytest/self-check, and commit locally; protected core/project/config/paths/findings_store/asset_store files remain off-limits.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T00:19:55 | Tags: `release-hardening`, `client-safe`, `gui-ux`, `external-tools`, `cookies`*
 
 ### User proposed adapting Cloudflare security-audit-s...
 
@@ -298,6 +340,18 @@ Final verification after Codex release-readiness commits: ruff check . passed; f
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T15:36:21 | Tags: `release-readiness`, `verification`, `commits`, `pytest`*
 
+### Started Authorized Pentest Multitool / Mission Cen...
+
+Started Authorized Pentest Multitool / Mission Center M1 foundation: updated ROADMAP_ASM_2.0.md with EPIC FUTURE, added pure/offline core/pentest_mission.py mission contract, added schemas/asa_pentest_mission.schema.json and audit_schema alias, added tests/test_pentest_mission.py. Verification: pytest tests/test_pentest_mission.py tests/test_audit_schema_edges.py = 12 passed; ruff check changed core/test files passed. Current folder lacks .git, so Codex could not create a local commit.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T00:21:45*
+
+### User asked Codex to prepare a direct Claude Code p...
+
+User asked Codex to prepare a direct Claude Code prompt so Claude deeply understands the Authorized Pentest Multitool / Mission Center task and starts implementation without open-ended reasoning.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T00:23:00*
+
 ### Codex added Stage 1 Client-Safe Pentest Workbench ...
 
 Codex added Stage 1 Client-Safe Pentest Workbench edge-test harness files for audit workflow, scope/action policies, finding validation/quality, and audit schemas. Ruff on new tests passed. Targeted pytest is blocked at collection because core.audit_workflow, core.finding_validation, core.finding_quality, and core.audit_schema modules (and schemas/) are absent from current/local worktrees; Codex did not implement core contract due explicit boundary.
@@ -310,29 +364,17 @@ Implemented Client-Safe Pentest Workbench timeline integration in commit 9679915
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T22:45:36 | Tags: `asa`, `client-safe`, `timeline`, `release-readiness`*
 
+### Finalized Codex's uncommitted work in this worktre...
+
+Finalized Codex's uncommitted work in this worktree (user authorized: Codex inactive). Two coherent complete units committed: c51c1ba2 external_tools.command_error SSOT (rc+stderr tail) wired into nuclei/katana/amass/subfinder/httpx/bbot; d988da0f cookies.txt validation in core/cookie_auditor.py (read/validate/describe_cookies_txt + CookieFileError + mask_cookie_value, never exposes raw values) + GUI preflight in tab_collection/tab_media. Verified: ruff clean, targeted tests green, full pytest already 2074 green with these present, self-check 29 tabs. Working tree now clean (only auto-synced MEMORY.md). My Workbench v2 commits stayed scoped; these Codex commits are separate.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T01:29:56*
+
 ### GUI polish completed in commits 31094a23, b0ddfcc,...
 
 GUI polish completed in commits 31094a23, b0ddfcc, 977e6e6, 47ab784, c2fe4f6: link helpers, settings dependency hint wrapping, and stale-state clearing for IaC, Remediation, Attack Paths, Exposure, Priorities, Technology Risk, and Scan Accuracy tabs. Targeted GUI tests, ruff, and main.py --self-check passed.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T15:48:35*
-
-### Completed Stage 2 Client-Safe Pentest Workbench GU...
-
-Completed Stage 2 Client-Safe Pentest Workbench GUI in commit 9326ded: added thin gui/tab_audit_runs.py, registered Audit Runs tab in PluginManager/MainWindow, added AuditRunsHost and tests/test_audit_runs_tab.py. UI includes project selector, client_safe/scope display, Start Audit Run via _run_async, phase progress, validation/quality/confidence/evidence refs table, detail panel, deterministic JSON export. Verification passed: 36 Stage1+Audit GUI tests, 41 GUI/wiring tests, ruff changed files, python main.py --self-check (29 tabs).
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T17:20:51 | Tags: `client-safe-workbench`, `stage-2`, `gui`, `commit-9326ded`, `tests`*
-
-### Updated project status docs in commit b24d1a9 afte...
-
-Updated project status docs in commit b24d1a9 after Client-Safe Pentest Workbench closure: PROJECT_REPORT.md now reflects 2026-06-28 checkpoint, 2020 green tests, 29 GUI tabs, frozen self-check OK, and local ahead status; ROADMAP_ASM_2.0.md marks Client-Safe Pentest Workbench as EPIC CLOSED with implemented surfaces and Definition of Done status. No remote git actions.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T23:52:54 | Tags: `asa`, `docs`, `client-safe`, `roadmap`, `project-report`*
-
-### Final release-readiness sweep after Client-Safe Pe...
-
-Final release-readiness sweep after Client-Safe Pentest Workbench work: full 'ruff check .' passed; build/ and dist/ are ignored artifacts; latest commits are 9326ded Add audit runs GUI tab and 1c5a5a1 Add client-safe audit contract hardening; git status clean for code with only MEMANTO-managed MEMORY.md modified.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T17:38:23 | Tags: `client-safe-workbench`, `release-readiness`, `ruff`, `git-status`*
 
 ---
 
@@ -356,7 +398,17 @@ Final release-readiness sweep after Client-Safe Pentest Workbench work: full 'ru
 
 *Tool outputs, files, reports, and external references.*
 
-*No memories of this type.*
+### Workbench v2 plan DRAFTED (awaiting human approval...
+
+Workbench v2 plan DRAFTED (awaiting human approval, no code). Extends the CLOSED Client-Safe Pentest Workbench, never duplicates. Features: F1 audit scenario templates (core/audit_templates.py: light_client_safe/authenticated_review/evidence_refresh/release_regression; create_audit_run gains template/roe/baseline_run_id/auth_context, additive optional schema fields). F2 ROE/scope templates in core/audit_scope.py (passive_external/authenticated_internal/evidence_only/release_gate). F3 re-validation of unresolved findings (core/audit_revalidation.py: reads FindingsStore OPEN/IN_PROGRESS, excludes FIXED/IGNORED/FP, validation overlay only, lifecycle untouched). F4 Audit Run A/B compare (core/audit_compare.py + schemas/asa_audit_compare.schema.json: new/resolved/regressed/improved by finding_id, compare_gate, failed-phase=inconclusive, derive-on-read). F5 report surfaces JSON/MD/HTML extend core/audit_report.py, NO second findings source. Hard invariants: client_safe only, no exploit/bruteforce/auth-collection, single FindingsStore SoT, additive optional schema. 4 open decisions pending: default template, authenticated active scope, compare persistence (derive-on-read recommended), release-gate inconclusive rule.
+
+*Confidence: 0.7 | Status: active | Created: 2026-06-28T00:26:32*
+
+### Workbench v2 F1 DONE + committed (local, master). ...
+
+Workbench v2 F1 DONE + committed (local, master). core/audit_templates.py = pure registry of 4 client-safe scenarios (light_client_safe/authenticated_review/evidence_refresh/release_regression) with list_templates/get_template/resolve_template. create_audit_run extended with keyword-only template/roe/baseline_run_id; bare call stays byte-identical to v1 (decision 1 honored), v2 keys recorded only when provided, ROE normalized via audit_scope.normalize_roe, lazy imports avoid circular dep. schemas/asa_audit_run.schema.json gained optional template/auth_context/baseline_run_id/roe/config. Decision: template selects a phase SUBSET (v1-consistent), not all-6-with-skipped. ROE-template name->dict binding deferred to F2. Verified: ruff clean, 55 targeted tests green (templates/workflow/store/schema/report/tab/timeline/project_io/scope/checks). NEXT: F2 ROE/scope templates in core/audit_scope.py.
+
+*Confidence: 0.9 | Status: active | Created: 2026-06-28T00:34:25*
 
 ---
 
