@@ -19,6 +19,7 @@ _FINDINGS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('category', 'Category'), ('title', 'Title'), ('rule_id', 'Rule'),
     ('description', 'Description'), ('impact', 'Impact'),
     ('remediation', 'Remediation'), ('evidence_artifacts', 'Evidence Artifacts'),
+    ('kev', 'KEV'), ('epss', 'EPSS'), ('epss_percentile', 'EPSS %ile'),
     ('first_seen_at', 'First seen'), ('last_seen_at', 'Last seen'), ('id', 'ID'),
 )
 
@@ -148,9 +149,14 @@ def findings_csv(findings: Optional[List[Dict]]) -> str:
     finding_knowledge catalog (F-O3) so the export carries the full finding
     object, DefectDojo-style."""
     from core.finding_knowledge import annotate
+    from core import threat_intel
     rows = []
-    for row in annotate(list(findings or [])):
-        rows.append({**row, 'evidence_artifacts': _evidence_artifacts(row)})
+    for row in threat_intel.annotate(annotate(list(findings or []))):
+        threat = row.get('threat') if isinstance(row.get('threat'), dict) else {}
+        kev = '' if not threat else ('yes' if threat.get('kev') else 'no')
+        rows.append({**row, 'evidence_artifacts': _evidence_artifacts(row),
+                     'kev': kev, 'epss': threat.get('epss'),
+                     'epss_percentile': threat.get('epss_percentile')})
     return _rows_to_csv(rows, _FINDINGS_COLUMNS)
 
 

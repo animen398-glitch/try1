@@ -25,7 +25,8 @@ def test_findings_csv_header_and_row():
     table = _parse(rx.findings_csv(rows))
     assert table[0] == ['Project', 'Severity', 'Status', 'Category', 'Title',
                         'Rule', 'Description', 'Impact', 'Remediation',
-                        'Evidence Artifacts', 'First seen', 'Last seen', 'ID']
+                        'Evidence Artifacts', 'KEV', 'EPSS', 'EPSS %ile',
+                        'First seen', 'Last seen', 'ID']
     row = table[1]
     assert row[rx_idx('Project')] == 'a.com'
     assert row[rx_idx('Title')] == 'Weak CSP'

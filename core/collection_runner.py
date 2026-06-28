@@ -2663,6 +2663,24 @@ class CollectionRunner:
                 asn_phase.get('status', '—'),
             ))
 
+        # Exploitability (KEV/EPSS, opt-in) — how many of this scan's CVEs are
+        # known-exploited or high-EPSS (drives priority, not the risk verdict).
+        threat_phase = phases.get('threat')
+        if isinstance(threat_phase, dict) and threat_phase.get('status') == 'Success':
+            ts = (threat_phase.get('data') or {}).get('summary') or {}
+            threat_body = (
+                f'<p style="font-size:13px;margin:4px 0;">'
+                f'Обогащено CVE: {e(str(ts.get("enriched", 0)))} · '
+                f'<b style="color:#c62828;">KEV: {e(str(ts.get("kev", 0)))}</b> · '
+                f'EPSS high: {e(str(ts.get("epss_high", 0)))} · '
+                f'EPSS medium: {e(str(ts.get("epss_medium", 0)))}</p>'
+                f'<p style="font-size:11px;color:#888;margin:0;">'
+                f'KEV — CISA Known Exploited Vulnerabilities; '
+                f'EPSS — FIRST Exploit Prediction Scoring System.</p>'
+            )
+            body_parts.append(card('Exploitability (KEV/EPSS)', threat_body,
+                                   threat_phase.get('status', '—')))
+
         # External recon (BBOT, opt-in) — in-scope event counts + contribution.
         bbot_phase = phases.get('bbot')
         if isinstance(bbot_phase, dict) and bbot_phase.get('status') == 'Success':

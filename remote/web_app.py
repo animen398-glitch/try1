@@ -391,6 +391,8 @@ def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
         # SLA clock is reopen-aware → pass the latest reopen date per finding.
         annotate_sla(findings, reopened=store.reopen_dates(project))
         annotate_knowledge(findings)  # + description/impact/remediation (F-O4)
+        from core import threat_intel
+        findings = threat_intel.annotate(findings)  # + KEV/EPSS threat block
         return {'projects': store.projects(),
                 'findings': findings,
                 'summary': store.summary(project)}
