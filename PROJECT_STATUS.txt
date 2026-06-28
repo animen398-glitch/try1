@@ -4798,3 +4798,20 @@ KEV/EPSS БЕЙДЖ В FINDINGS DETAIL (2026-06-28)
   threat-annotate (annotate_offline) ПЕРЕД SLA-annotate — поэтому web /findings
   SLA тоже ужесточается для KEV (паритет с GUI/отчётом). Покрыто
   tests/test_web_findings.py. ruff clean; зелёные.
+
+------------------------------------------------------------------------------
+EPSS DAILY-CSV BULK INGESTION (2026-06-28) — последний хвост KEV/EPSS закрыт
+------------------------------------------------------------------------------
+  Opt-in альтернативный источник EPSS: вместо per-CVE API — полный дневной
+  датасет FIRST одним gzip-CSV. core/threat_feed.py: parse_epss_csv (чистый;
+  пропускает #-комменты + header) + fetch_epss_csv (одна загрузка; _get_text
+  разжимает gzip по magic-number, отдельный bytes-seam НЕ нужен; таймаут 30с).
+  threat_intel.enrich_cves(..., epss_csv=True, epss_csv_get=...) тянет CSV один
+  раз и берёт нужные CVE; персистятся ТОЛЬКО нужные (footprint кэша тот же);
+  сбой CSV -> fallback на per-CVE API (EPSS не теряется). Провязка opt-in
+  под-флагом threat_epss_bulk (off by default): CollectionRunner (ctor+configure+
+  _phase_threat), monitor opts, GUI-под-чекбокс под KEV/EPSS в tab_collection.
+  Дефолтный путь (per-CVE) НЕ менялся. Файлы: core/threat_feed.py,
+  core/threat_intel.py, core/collection_runner.py, core/monitor.py,
+  gui/tab_collection.py, tests/test_threat_feed.py, tests/test_threat_intel.py.
+  ruff clean; целевые+смежные зелёные. Этим эпик KEV/EPSS закрыт полностью.

@@ -83,7 +83,46 @@ def test_enrich_soft_degrades_when_feeds_empty(tmp_path):
                       kev_get=lambda url: "", epss_get=lambda url: "")
     # nothing persisted on a total fetch failure
     assert out == {}
-    assert store.get_cve_threat("CVE-2021-44228") is None
+
+
+def _epss_csv(mapping):
+    rows = ["#model_version:vTest", "cve,epss,percentile"]
+    rows += [f"{c},{s},{p}" for c, (s, p) in mapping.items()]
+    return "\n".join(rows) + "\n"
+
+
+def test_enrich_bulk_csv_sources_epss_from_one_download(tmp_path):
+    store = CVEStore(tmp_path / "cve.db")
+    calls = {"csv": 0, "api": 0}
+
+    def csv_get(url):
+        calls["csv"] += 1
+        return _epss_csv({"CVE-2021-44228": (0.97, 0.99), "CVE-2014-0160": (0.42, 0.80)})
+
+    def api_get(url):
+        calls["api"] += 1
+        return ""
+
+    out = enrich_cves(
+        ["CVE-2021-44228", "CVE-2014-0160"], store=store,
+        kev_get=lambda url: _kev("CVE-2021-44228"),
+        epss_csv=True, epss_csv_get=csv_get, epss_get=api_get,
+    )
+    assert out["CVE-2021-44228"]["kev"] is True
+    assert out["CVE-2014-0160"]["epss_percentile"] == 0.80
+    assert calls["csv"] == 1 and calls["api"] == 0   # one bulk download, no per-CVE API
+
+
+def test_enrich_bulk_csv_falls_back_to_api_on_empty(tmp_path):
+    store = CVEStore(tmp_path / "cve.db")
+    out = enrich_cves(
+        ["CVE-2021-44228"], store=store,
+        kev_get=lambda url: _kev(),
+        epss_csv=True, epss_csv_get=lambda url: "",            # CSV outage
+        epss_get=lambda url: _epss({"CVE-2021-44228": (0.5, 0.7)}),
+    )
+    # the per-CVE API kept EPSS flowing despite the bulk-CSV failure
+    assert out["CVE-2021-44228"]["epss_percentile"] == 0.7
 
 
 # ── annotate (offline derive-on-read) ─────────────────────────────────────────

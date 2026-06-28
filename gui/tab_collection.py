@@ -209,6 +209,18 @@ class FinalReportTabMixin:
             "доп. сетевые запросы к публичным KEV/EPSS; мягкая деградация офлайн.")
         opt_row.addWidget(self.collect_threat)
 
+        # Sub-option of KEV/EPSS: pull EPSS from the full daily CSV (one gzipped
+        # download for every CVE) instead of the per-CVE API. Only matters when the
+        # KEV/EPSS feed is on; off by default.
+        self.collect_threat_bulk = QCheckBox("EPSS bulk (дневной CSV)")
+        self.collect_threat_bulk.setToolTip(
+            "Брать EPSS из полного дневного датасета FIRST одним gzip-CSV "
+            "(~5–8 МБ) вместо запросов по каждому CVE — полезно, когда CVE много "
+            "/ нужен единый авторитетный снимок. Работает только при включённом "
+            "KEV/EPSS; в кэш кладутся только CVE из находок; мягкая деградация на "
+            "per-CVE при сбое загрузки.")
+        opt_row.addWidget(self.collect_threat_bulk)
+
         # Opt-in security audit (SecurityAuditor) — JS secrets, leaking source
         # maps, reachable GraphQL endpoints; feeds risk + attack-surface graph.
         self.collect_security = QCheckBox("Security audit (JS/maps/GraphQL)")
@@ -373,6 +385,7 @@ class FinalReportTabMixin:
             'asn_intel': self.collect_asn_intel.isChecked(),
             'osv': self.collect_osv.isChecked(),
             'threat_feed': self.collect_threat.isChecked(),
+            'threat_epss_bulk': self.collect_threat_bulk.isChecked(),
             'security': self.collect_security.isChecked(),
             'bbot': self.collect_bbot.isChecked(),
             'documents': self.collect_documents.isChecked(),

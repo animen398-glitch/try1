@@ -3,7 +3,22 @@
 import json
 
 from core.cve_store import CVEStore
-from core.threat_feed import fetch_epss, fetch_kev, parse_epss, parse_kev
+from core.threat_feed import (
+    fetch_epss,
+    fetch_epss_csv,
+    fetch_kev,
+    parse_epss,
+    parse_epss_csv,
+    parse_kev,
+)
+
+
+EPSS_CSV_SAMPLE = (
+    "#model_version:v2024.01.01,score_date:2024-01-01T00:00:00+0000\n"
+    "cve,epss,percentile\n"
+    "CVE-2021-44228,0.97500,0.99000\n"
+    "cve-2014-0160,0.42000,0.80000\n"
+)
 
 
 KEV_SAMPLE = json.dumps({
@@ -43,6 +58,18 @@ def test_parsers_degrade_on_malformed_or_empty():
         assert parse_epss(bad) == {}
 
 
+def test_parse_epss_csv_skips_comments_and_normalizes():
+    out = parse_epss_csv(EPSS_CSV_SAMPLE)
+    assert set(out) == {"CVE-2021-44228", "CVE-2014-0160"}     # cve upper-cased
+    assert out["CVE-2021-44228"] == {"score": 0.975, "percentile": 0.99}
+    assert out["CVE-2014-0160"]["score"] == 0.42
+
+
+def test_parse_epss_csv_degrades_on_empty_or_comments_only():
+    assert parse_epss_csv("") == {}
+    assert parse_epss_csv("#only a comment line\n") == {}
+
+
 # ── fetchers with injected transport (no network) ─────────────────────────────
 
 def test_fetch_kev_uses_injected_get():
@@ -66,6 +93,22 @@ def test_fetch_epss_batches_and_dedupes():
     # 2 unique CVEs, batch=1 → two requests; result merged
     assert len(seen) == 2
     assert set(out) == {"CVE-2021-44228", "CVE-2014-0160"}
+
+
+def test_fetch_epss_csv_one_download_for_all_cves():
+    seen = []
+
+    def fake_get(url):
+        seen.append(url)
+        return EPSS_CSV_SAMPLE
+
+    out = fetch_epss_csv(get=fake_get)
+    assert len(seen) == 1                       # the whole dataset in one request
+    assert set(out) == {"CVE-2021-44228", "CVE-2014-0160"}
+
+
+def test_fetch_epss_csv_soft_degrades_when_transport_empty():
+    assert fetch_epss_csv(get=lambda url: "") == {}
 
 
 # ── CVEStore threat cache ─────────────────────────────────────────────────────

@@ -110,7 +110,7 @@ class CollectionRunner:
                  osv: bool = False, security: bool = False,
                  bbot: bool = False, documents: bool = False,
                  iac: bool = False, iac_path: Optional[str] = None,
-                 threat_feed: bool = False):
+                 threat_feed: bool = False, threat_epss_bulk: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -165,6 +165,9 @@ class CollectionRunner:
         # metadata about CVEs (no target traffic) → not scope-gated; off by
         # default; soft-degrades to a skip when offline. (KEV/EPSS F4.)
         self.threat_feed = threat_feed
+        # Opt-in: source EPSS from the full daily CSV (one gzipped download) instead
+        # of the per-CVE API. Only matters when threat_feed is on; off by default.
+        self.threat_epss_bulk = threat_epss_bulk
         # Opt-in security audit (SecurityAuditor) — secrets in served JS,
         # leaking source maps, and reachable GraphQL endpoints. Feeds the risk
         # engine (source-map leaks + GraphQL introspection) and the attack-
@@ -215,7 +218,8 @@ class CollectionRunner:
                   documents: Optional[bool] = None,
                   iac: Optional[bool] = None,
                   iac_path: Optional[str] = None,
-                  threat_feed: Optional[bool] = None):
+                  threat_feed: Optional[bool] = None,
+                  threat_epss_bulk: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -254,6 +258,8 @@ class CollectionRunner:
             self.osv = osv
         if threat_feed is not None:
             self.threat_feed = threat_feed
+        if threat_epss_bulk is not None:
+            self.threat_epss_bulk = threat_epss_bulk
         if security is not None:
             self.security = security
         if bbot is not None:
@@ -1389,7 +1395,8 @@ class CollectionRunner:
                 self._log('  KEV/EPSS — CVE в находках нет')
                 return {'status': 'No CVEs', 'data': {'summary':
                         threat_intel.summarize([])}}
-            enriched = threat_intel.enrich_cves(cves)
+            enriched = threat_intel.enrich_cves(
+                cves, epss_csv=self.threat_epss_bulk)
             annotated = threat_intel.annotate(findings or [])
             summary = threat_intel.summarize(annotated)
             self._log(f"  KEV/EPSS: {len(enriched)}/{len(cves)} CVE обогащено, "

@@ -6,8 +6,10 @@ Two keyless, public feeds key findings' CVEs to real-world exploitability:
   * **CISA KEV** (Known Exploited Vulnerabilities) — a single catalog JSON; a CVE
     in it is being exploited in the wild. Public domain.
   * **FIRST EPSS** (Exploit Prediction Scoring System) — a per-CVE probability
-    (0–1) + percentile of exploitation in the next 30 days. Free, keyless;
-    queried per-CVE (comma-batched) so we never download the full daily dataset.
+    (0–1) + percentile of exploitation in the next 30 days. Free, keyless.
+    Two sources: the per-CVE API (comma-batched, the default), or the full daily
+    dataset as one gzipped CSV (``fetch_epss_csv``) — opt-in for when a scan has
+    many CVEs / you want a single authoritative snapshot instead of N API calls.
 
 Follows the established provider pattern (``nvd_provider`` / ``osv_correlation``):
 the network is one injectable seam (``_get_text``), parsing is pure and
@@ -17,6 +19,7 @@ empty result rather than aborting. Persistence + orchestration live in
 module only fetches and parses.
 """
 
+import csv
 import json
 from typing import Callable, Dict, List, Optional
 
@@ -27,7 +30,14 @@ from utils.http_retry import urlopen_text
 KEV_URL = ('https://www.cisa.gov/sites/default/files/feeds/'
            'known_exploited_vulnerabilities.json')
 EPSS_URL = 'https://api.first.org/data/v1/epss?cve={cves}'
+# FIRST's full daily dataset as one gzipped CSV (all CVEs). ``_get_text`` already
+# gunzips transparently (http_retry.decompress keys off the gzip magic number), so
+# this is fetched the same way as the JSON feeds — no separate bytes seam needed.
+EPSS_CSV_URL = 'https://epss.cyentia.com/epss_scores-current.csv.gz'
 _FETCH_TIMEOUT = 12.0
+# The full CSV is multi-MB (gzipped), so it gets a more generous timeout than the
+# small JSON feeds.
+_CSV_TIMEOUT = 30.0
 # KEV/EPSS both refresh daily, so a day of cache freshness is plenty and keeps
 # offline runs cheap (one fetch per day). Overridable by the orchestrator.
 DEFAULT_FRESH_SECONDS = 24 * 3600
@@ -99,6 +109,29 @@ def parse_epss(text: str) -> Dict[str, Dict]:
     return out
 
 
+def parse_epss_csv(text: str) -> Dict[str, Dict]:
+    """FIRST EPSS daily CSV → ``{CVE-ID: {'score': float, 'percentile': float}}``.
+
+    The file leads with one or more ``#``-comment lines (model version / score
+    date) followed by a ``cve,epss,percentile`` header; both are skipped. Pure and
+    offline-testable (same shape as :func:`parse_epss`); empty on any problem."""
+    if not text:
+        return {}
+    rows = [ln for ln in text.splitlines() if ln and not ln.startswith('#')]
+    if not rows:
+        return {}
+    out: Dict[str, Dict] = {}
+    for item in csv.DictReader(rows):
+        cve = _norm_cve(item.get('cve'))
+        if not cve:
+            continue
+        out[cve] = {
+            'score': _to_float(item.get('epss')),
+            'percentile': _to_float(item.get('percentile')),
+        }
+    return out
+
+
 # ── network fetchers (injectable ``get``) ──────────────────────────────────────
 
 def fetch_kev(*, get: Optional[Callable[[str], str]] = None) -> Dict[str, str]:
@@ -120,3 +153,14 @@ def fetch_epss(cve_ids: List[str], *,
         url = EPSS_URL.format(cves=','.join(chunk))
         out.update(parse_epss(getter(url)))
     return out
+
+
+def fetch_epss_csv(*, get: Optional[Callable[[str], str]] = None) -> Dict[str, Dict]:
+    """Fetch + parse the full EPSS daily CSV (one gzipped download → every CVE).
+
+    The whole dataset in a single request; the caller picks out the CVEs it needs.
+    ``{}`` on any failure (soft-degrade). ``get`` is injectable for tests; the
+    default getter gunzips transparently and uses a longer timeout than the small
+    JSON feeds."""
+    getter = get or (lambda url: _get_text(url, _CSV_TIMEOUT))
+    return parse_epss_csv(getter(EPSS_CSV_URL))

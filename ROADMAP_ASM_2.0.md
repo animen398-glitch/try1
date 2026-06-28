@@ -1766,8 +1766,22 @@ change; cold cache / non-CVE findings render exactly as before. The LAN web
 console (`remote/web_app._findings_list`) was reordered to match — threat-annotate
 before SLA-annotate — so its `/findings` SLA is tightened for KEV too.
 
+### Follow-up — EPSS daily-CSV bulk ingestion (CLOSED 2026-06-28)
+
+Opt-in alternative EPSS source: instead of the per-CVE API, pull FIRST's full
+daily dataset as one gzipped CSV. `core/threat_feed.py` adds `parse_epss_csv`
+(pure; skips the `#`-comment + header lines) and `fetch_epss_csv` (one download;
+`_get_text` gunzips transparently via the gzip magic number, so no separate bytes
+seam). `threat_intel.enrich_cves(..., epss_csv=True, epss_csv_get=...)` fetches the
+CSV once and picks the wanted CVEs from it; **only the wanted CVEs are persisted**
+(identical cache footprint), and a CSV outage **falls back to the per-CVE API** so
+EPSS never silently drops. Wired as an opt-in sub-flag `threat_epss_bulk`
+(off by default) through `CollectionRunner` (ctor + `configure` + `_phase_threat`),
+`monitor` opts, and a GUI sub-checkbox under the KEV/EPSS option. Default path
+(per-CVE) unchanged.
+
 ### Deferred (not blockers)
 
-Full EPSS daily-CSV ingestion (we query per-CVE).
+*(KEV/EPSS epic fully closed across all surfaces.)*
 
 ---

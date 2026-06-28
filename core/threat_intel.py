@@ -18,7 +18,12 @@ cache is :class:`CVEStore`, the finding ``threat`` block is derive-on-read.
 from typing import Callable, Dict, List, Optional
 
 from core.findings_adapter import extract_cve
-from core.threat_feed import DEFAULT_FRESH_SECONDS, fetch_epss, fetch_kev
+from core.threat_feed import (
+    DEFAULT_FRESH_SECONDS,
+    fetch_epss,
+    fetch_epss_csv,
+    fetch_kev,
+)
 
 
 # threat_tier thresholds (decision, 2026-06-28). KEV (exploited in the wild) is
@@ -67,12 +72,21 @@ def enrich_cves(cve_ids: List[str], *,
                 store: Optional[object] = None,
                 kev_get: Optional[Callable[[str], str]] = None,
                 epss_get: Optional[Callable[[str], str]] = None,
+                epss_csv: bool = False,
+                epss_csv_get: Optional[Callable[[str], str]] = None,
                 fresh_seconds: int = DEFAULT_FRESH_SECONDS) -> Dict[str, Dict]:
     """Fetch+persist KEV/EPSS for stale/missing CVEs; return per-CVE threat rows.
 
     Network is opt-in and soft-degrading: if the KEV catalog comes back empty
     (a real catalog is never empty → treat as a fetch failure) and EPSS is empty
-    too, nothing is persisted and the existing cache is left intact."""
+    too, nothing is persisted and the existing cache is left intact.
+
+    EPSS source: per-CVE API by default; with ``epss_csv=True`` the full daily CSV
+    is fetched once (one gzipped download for every CVE) and the wanted ones are
+    picked from it — useful when a scan carries many CVEs. Only the wanted CVEs are
+    persisted either way (the cache footprint is identical). If the bulk CSV comes
+    back empty (fetch failure), it falls back to the per-CVE API so a transient CSV
+    outage never silently drops EPSS."""
     active = store
     if active is None:
         from core.cve_store import CVEStore
@@ -87,7 +101,12 @@ def enrich_cves(cve_ids: List[str], *,
 
     if stale:
         kev_catalog = fetch_kev(get=kev_get)
-        epss_map = fetch_epss(stale, get=epss_get)
+        epss_map: Dict[str, Dict] = {}
+        if epss_csv:
+            full = fetch_epss_csv(get=epss_csv_get)
+            epss_map = {c: full[c] for c in stale if c in full} if full else {}
+        if not epss_map:   # per-CVE API (default, or bulk-CSV fallback on failure)
+            epss_map = fetch_epss(stale, get=epss_get)
         # A non-empty KEV catalog means the fetch worked → membership is reliable.
         if kev_catalog or epss_map:
             for cve in stale:
