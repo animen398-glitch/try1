@@ -12,8 +12,9 @@ read when pointed there via the ``ASA_DATA_ROOT`` env override:
 
     <demo-dir>/
       configs/settings.json          # output_dir -> <demo-dir>
-      data/{findings,assets,operations}.db, companies.json
+      data/{findings,assets,audit_runs,operations}.db, companies.json
       Projects/<slug>/scans/.../report.json, metadata.json
+      demo_iac/                     # small local IaC sample for the IaC tab
 
 Run, then launch the app against it (nothing else needs configuring):
 
@@ -151,6 +152,101 @@ def _portfolio() -> List[Dict]:
     ]
 
 
+def _seed_audit_run(store, project: str, active_findings: List[Dict]) -> str:
+    """Persist one completed client-safe audit run for the demo project."""
+    from core.audit_workflow import advance_audit_phase, create_audit_run
+
+    slug = project.replace('.', '-')
+    run = create_audit_run(
+        project,
+        template='light_client_safe',
+        run_id=f'audit-demo-{slug}',
+    )
+    findings = [
+        {
+            'finding_id': row['id'],
+            'title': row.get('title', ''),
+            'severity': row.get('severity', 'info'),
+            'validation_status': 'verified',
+            'quality_gate': 'passed' if row.get('severity') in {'critical', 'high'} else 'failed',
+            'client_facing': row.get('severity') in {'critical', 'high'},
+            'confidence': 86 if row.get('severity') in {'critical', 'high'} else 68,
+            'evidence_refs': [f'findings/{row["id"]}.json'],
+        }
+        for row in active_findings[:3]
+    ]
+    phase_results = {
+        'recon_snapshot': {
+            'active_findings': len(active_findings),
+            'scope': {'project': project, 'profile': 'client_safe'},
+        },
+        'finding_hunt': {
+            'candidates': len(active_findings),
+            'sources': ['findings_store', 'latest_scan'],
+        },
+        'validation': {'validated_findings': findings},
+        'structured_output': {
+            'client_findings': sum(1 for item in findings if item['client_facing']),
+            'review_findings': sum(1 for item in findings if not item['client_facing']),
+        },
+    }
+    for phase in [item['name'] for item in run['phases']]:
+        run = advance_audit_phase(run, phase, phase_results.get(phase, {}))
+    store.save_run(run, now='2026-06-28T10:00:00')
+    for item in findings:
+        store.record_event(
+            run['run_id'],
+            'finding_verified',
+            phase='validation',
+            finding_id=item['finding_id'],
+            at='2026-06-28T10:05:00',
+        )
+        if item['quality_gate'] == 'passed':
+            store.record_event(
+                run['run_id'],
+                'quality_gate_passed',
+                phase='structured_output',
+                finding_id=item['finding_id'],
+                at='2026-06-28T10:06:00',
+            )
+    return run['run_id']
+
+
+def _seed_iac_sample(data_root: Path) -> Path:
+    sample = data_root / 'demo_iac'
+    sample.mkdir(parents=True, exist_ok=True)
+    (sample / 'main.tf').write_text(
+        '\n'.join([
+            'resource "aws_security_group" "web" {',
+            '  ingress {',
+            '    from_port   = 443',
+            '    to_port     = 443',
+            '    protocol    = "tcp"',
+            '    cidr_blocks = ["0.0.0.0/0"]',
+            '  }',
+            '}',
+            '',
+            'resource "aws_s3_bucket_acl" "logs" {',
+            '  bucket = "acme-demo-logs"',
+            '  acl    = "public-read"',
+            '}',
+            '',
+        ]),
+        encoding='utf-8',
+    )
+    (sample / 'Dockerfile').write_text(
+        '\n'.join([
+            'FROM python:latest',
+            'WORKDIR /app',
+            'COPY . .',
+            'CMD ["python", "app.py"]',
+            '',
+        ]),
+        encoding='utf-8',
+    )
+    return sample
+
+
 def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     """Build the demo workspace under ``data_root`` (must be empty/new). Uses
     explicit, PathManager-derived paths so nothing touches the global config."""
@@ -158,18 +254,21 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     from core.asset_store import AssetStore
     from core.business_context import set_business_context
     from core.company import CompanyRegistry
+    from core.audit_store import AuditRunStore
     from core.findings_store import FindingsStore
+    from core.findings_store import INACTIVE_STATUSES
     from core.project import ProjectStore
     from core.remediation import set_task
 
     pm = PathManager(data_root=data_root)
     findings = FindingsStore(db_path=pm.get_db_path('findings.db'))
     assets = AssetStore(db_path=pm.get_db_path('assets.db'))
+    audits = AuditRunStore(db_path=pm.get_db_path('audit_runs.db'))
     companies = CompanyRegistry(path=pm.get_db_path('companies.json'))
     store = ProjectStore(str(data_root))            # projects -> data_root/Projects
 
     company_slug = companies.create(company_name)
-    n_proj = n_scan = n_find = n_rem = 0
+    n_proj = n_scan = n_find = n_rem = n_audit = 0
 
     for spec in _portfolio():
         proj = store.get_or_create(spec['url'])
@@ -198,6 +297,15 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
             if fid:
                 set_task(findings, fid, status=status, owner=owner, due=due)
                 n_rem += 1
+        active_rows = [
+            row for row in findings.list_findings(slug)
+            if row.get('status') not in INACTIVE_STATUSES
+        ]
+        if active_rows:
+            _seed_audit_run(audits, slug, active_rows)
+            n_audit += 1
+
+    _seed_iac_sample(data_root)
 
     # settings.json so the app reads this workspace verbatim when launched with
     # ASA_DATA_ROOT pointed here (output_dir == data_root -> Projects/ below it).
@@ -211,7 +319,8 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
         json.dumps(settings, ensure_ascii=False, indent=2), encoding='utf-8')
 
     return {'company': company_name, 'projects': n_proj, 'scans': n_scan,
-            'findings': n_find, 'remediation': n_rem, 'data_root': str(data_root)}
+            'findings': n_find, 'remediation': n_rem, 'audit_runs': n_audit,
+            'data_root': str(data_root)}
 
 
 def main(argv=None) -> int:
@@ -233,7 +342,7 @@ def main(argv=None) -> int:
 
     summary = seed(root)
     print('Demo workspace seeded:')
-    for k in ('company', 'projects', 'scans', 'findings', 'remediation'):
+    for k in ('company', 'projects', 'scans', 'findings', 'remediation', 'audit_runs'):
         print(f'  {k:12}: {summary[k]}')
     print(f'  location    : {summary["data_root"]}')
     print('\nLaunch the app against it:')

@@ -9,6 +9,7 @@ through its opt-in ``iac`` phase.
 """
 
 import json
+from pathlib import Path
 
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
@@ -40,6 +41,9 @@ class IacTabMixin:
         ctrl.addWidget(QLabel("Path:"))
         self.iac_path = QLineEdit()
         self.iac_path.setPlaceholderText("Select a repo folder, Dockerfile, Terraform file, or manifest")
+        demo_iac = Path(self.settings.get('output_dir', '')) / 'demo_iac'
+        if demo_iac.exists():
+            self.iac_path.setText(str(demo_iac))
         ctrl.addWidget(self.iac_path, stretch=1)
 
         btn_browse = StyledButton("Browse...", style='secondary')
@@ -64,7 +68,10 @@ class IacTabMixin:
             rollup_row.addWidget(card)
         layout.addLayout(rollup_row)
 
-        self.iac_status = QLabel("Ready - local/offline scan, no cloud API calls")
+        status = "Ready - local/offline scan, no cloud API calls"
+        if demo_iac.exists():
+            status = "Demo IaC sample selected - click Scan IaC"
+        self.iac_status = QLabel(status)
         layout.addWidget(self.iac_status)
 
         findings_grp = SectionGroupBox("IaC findings")

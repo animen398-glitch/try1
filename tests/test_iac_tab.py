@@ -33,6 +33,23 @@ def test_query_iac_scan_reads_local_folder(qapp, tmp_path):
                for f in data['findings'])
 
 
+def test_demo_iac_path_is_preselected_without_autoscan(qapp, tmp_path):
+    demo = tmp_path / 'demo_iac'
+    demo.mkdir()
+
+    class Host(IacHost):
+        def __init__(self):
+            super(IacHost, self).__init__()
+            self.settings = {'output_dir': str(tmp_path)}
+            self._build_iac_tab()
+
+    w = Host()
+
+    assert w.iac_path.text() == str(demo)
+    assert 'Demo IaC sample selected' in w.iac_status.text()
+    assert w.iac_findings.rowCount() == 0
+
+
 def test_populate_iac_tables_and_rollup(qapp):
     w = _window(qapp)
     data = {

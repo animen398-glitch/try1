@@ -9,8 +9,10 @@ import json
 
 import demo_seed
 from core.asset_store import AssetStore
+from core.audit_store import AuditRunStore
 from core.company import CompanyRegistry
 from core.findings_store import FindingsStore
+from core.iac_scanner import scan_path
 from core.paths import PathManager
 from core.project import ProjectStore
 
@@ -30,6 +32,7 @@ def test_seed_returns_portfolio_summary(tmp_path):
     assert s["scans"] == 7
     assert s["findings"] == 17
     assert s["remediation"] == 4
+    assert s["audit_runs"] == 3
     assert s["company"] == "Acme Corp"
 
 
@@ -37,8 +40,10 @@ def test_seed_writes_self_contained_layout(tmp_path):
     root, _ = _seed(tmp_path)
     assert (root / "data" / "findings.db").exists()
     assert (root / "data" / "assets.db").exists()
+    assert (root / "data" / "audit_runs.db").exists()
     assert (root / "data" / "companies.json").exists()
     assert (root / "Projects").is_dir()
+    assert (root / "demo_iac" / "main.tf").exists()
     settings = json.loads((root / "configs" / "settings.json").read_text("utf-8"))
     # output_dir points back at the workspace so the app reads it verbatim.
     assert settings["output_dir"] == str(root)
@@ -76,6 +81,21 @@ def test_assets_and_business_context(tmp_path):
                               "data_sensitivity": "restricted"}
     assets = AssetStore(db_path=root / "data" / "assets.db")
     assert len(assets.list_assets("shop.acme.com")) == 5
+
+
+def test_audit_runs_and_iac_demo_content(tmp_path):
+    root, _ = _seed(tmp_path)
+
+    audits = AuditRunStore(db_path=root / "data" / "audit_runs.db")
+    runs = audits.list_runs("api.acme.com")
+    assert len(runs) == 1
+    assert runs[0]["status"] == "completed"
+    assert runs[0]["payload"]["findings"]
+    assert audits.events(runs[0]["id"])
+
+    iac = scan_path(root / "demo_iac")
+    rule_ids = {row["rule_id"] for row in iac["findings"]}
+    assert {"iac-tf-open-ingress", "iac-tf-public-bucket", "iac-docker-root"} <= rule_ids
 
 
 # ── PathManager-derived paths match the override layout ──────────────────────────
