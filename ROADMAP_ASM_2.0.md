@@ -1602,3 +1602,68 @@ review / user-side remote publication, not code completion.
 - `remote/web_app.py` — read-поверхности (паритет с GUI).
 
 ---
+
+## EPIC CLOSED — Workbench v2 (Audit Scenarios, Re-validation & A/B Comparison)
+
+> Status 2026-06-28: core contract implemented locally and verified. Checkpoint:
+> `ruff` clean on the changed set; full `pytest` = 2064 passed, 1 existing
+> Starlette/httpx warning; `python main.py --self-check` = 29 tabs. Remote git
+> actions were not performed. GUI/web parity is contract-only (left to Codex).
+
+Extends the closed Client-Safe Pentest Workbench; reuses its contracts, never
+duplicates them. Single `FindingsStore` source of truth kept; all new payloads
+derive from it; schema growth is additive/optional; everything client-safe,
+pure, deterministic and offline.
+
+**F1 — Audit scenario templates** (`core/audit_templates.py`): pure registry of
+four scenarios (`light_client_safe`, `authenticated_review`, `evidence_refresh`,
+`release_regression`). `create_audit_run` gains keyword-only
+`template`/`roe`/`baseline_run_id`; a bare call stays byte-identical to v1. A
+template selects an ordered phase subset, a safe-check subset, a ROE-template
+name, a confidence floor and client-safe flags. `auth_context` means an
+operator-supplied authorized session — never credential acquisition.
+
+**F2 — ROE/scope templates** (`core/audit_scope.py`): `ROE_TEMPLATES`
+(`passive_external`, `authenticated_internal`, `evidence_only`, `release_gate`)
++ `list_roe_templates`/`roe_template`/`apply_roe_template`. Passive templates
+validate clean; `authenticated_internal` stays invalid until the operator fills
+allowed_domains + authorized_by. `create_audit_run` resolves a scenario's
+roe_template into a normalized ROE when no explicit roe is passed.
+
+**F3 — Re-validation of unresolved findings** (`core/audit_revalidation.py`):
+re-checks OPEN/IN_PROGRESS findings via `FindingsStore.active_findings`
+(FIXED/IGNORED/FALSE_POSITIVE excluded → sticky suppression holds), reusing
+`finding_validation` + `finding_quality`. Output is a validation overlay shaped
+for `advance_audit_phase(run, "validation", result)`; lifecycle status in the
+store is never mutated.
+
+**F4 — Audit Run A/B comparison** (`core/audit_compare.py` +
+`schemas/asa_audit_compare.schema.json`): compares two run payloads by
+`finding_id` into new/resolved/regressed/improved/unchanged with severity and
+validation movement; deterministic `compare_gate`. A failed candidate phase is
+inconclusive and never fails the gate alone (mirrors Scan Diff). Derive-on-read;
+no new table; `compare_stored` resolves runs from `AuditRunStore`.
+
+**F5 — Report surfaces** (`core/audit_report.py`): run JSON/MD/HTML show an
+additive scenario block (template/auth/baseline/ROE) only when present; new
+`render_compare_json/markdown/html` are views over the compare payload — no
+second findings source.
+
+### Decisions locked (2026-06-28)
+
+1. Bare `create_audit_run` keeps v1 behavior (full 6 phases); templates opt-in.
+2. `authenticated_review` enables only safe active checks; zero credential work;
+   operator brings the session out-of-band.
+3. A/B compare is derive-on-read (no new table); only a `compared` event may be
+   logged for the audit trail.
+4. A failed candidate phase = inconclusive, not regression; the release gate
+   never fails on that alone.
+
+### Deferred (not blockers, contract-only here)
+
+GUI selectors/buttons in `gui/tab_audit_runs.py` (template + ROE-template,
+Re-validate unresolved, Compare with…), `remote/web_app.py` read parity, and an
+optional opt-in `compared` event persisted on the run. Left to Codex after the
+contract stabilizes.
+
+---
