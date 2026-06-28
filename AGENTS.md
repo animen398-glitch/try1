@@ -413,7 +413,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
-- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-28 — 2101 offline/headless теста (зелёные, 1 Starlette/httpx warning).
+- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-28 (после KEV/EPSS follow-ups) — 2127 offline/headless тестов (зелёные, 1 Starlette/httpx warning).
 - Перед релизной пометкой обязательно прогонять `pytest` и, если менялся GUI/frozen-контур, self-check окна/PyInstaller smoke.
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 

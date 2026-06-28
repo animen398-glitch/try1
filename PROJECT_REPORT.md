@@ -7,6 +7,12 @@
 > annotation, opt-in collection phase, report/web/CSV surfaces) closed locally on
 > top of Workbench v2; full pytest 2101 passed, ruff clean, GUI self-check 29
 > tabs. The priority/risk formula was not changed.
+> Update 2026-06-28 (KEV/EPSS follow-ups, epic fully closed): KEV→SLA tightening
+> (exploitability shortens the remediation window; floor-only) wired into the
+> report, Alert Center, Timeline, GUI and web; NEW_KEV timeline event + KEV alert
+> rule; KEV/EPSS exploitability badge in the findings detail; opt-in EPSS
+> daily-CSV bulk ingestion. Current scale: **full pytest 2127 passed**, ruff
+> clean, 1 existing Starlette/httpx warning. Priority/risk formula still unchanged.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
