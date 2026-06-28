@@ -199,6 +199,16 @@ class FinalReportTabMixin:
             "остаётся запасной). Доп. сетевые запросы к публичному API OSV.")
         opt_row.addWidget(self.collect_osv)
 
+        # Opt-in KEV/EPSS exploitability feed — warms the per-CVE threat cache so
+        # priority reflects real-world exploitation (no target traffic).
+        self.collect_threat = QCheckBox("KEV/EPSS (эксплуатируемость)")
+        self.collect_threat.setToolTip(
+            "Обогащение CVE из находок данными CISA KEV (эксплуатируется в дикой "
+            "природе) и FIRST EPSS (вероятность эксплуатации). Поднимает приоритет "
+            "реально опасных находок. Метаданные о CVE (без обращений к цели); "
+            "доп. сетевые запросы к публичным KEV/EPSS; мягкая деградация офлайн.")
+        opt_row.addWidget(self.collect_threat)
+
         # Opt-in security audit (SecurityAuditor) — JS secrets, leaking source
         # maps, reachable GraphQL endpoints; feeds risk + attack-surface graph.
         self.collect_security = QCheckBox("Security audit (JS/maps/GraphQL)")
@@ -362,6 +372,7 @@ class FinalReportTabMixin:
             'ct': self.collect_ct.isChecked(),
             'asn_intel': self.collect_asn_intel.isChecked(),
             'osv': self.collect_osv.isChecked(),
+            'threat_feed': self.collect_threat.isChecked(),
             'security': self.collect_security.isChecked(),
             'bbot': self.collect_bbot.isChecked(),
             'documents': self.collect_documents.isChecked(),

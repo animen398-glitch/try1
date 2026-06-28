@@ -82,6 +82,7 @@ ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
     'ct',
     'asn_intel',
     'osv',
+    'threat',
     'bbot',
     'katana',
     'screenshot',
@@ -108,7 +109,8 @@ class CollectionRunner:
                  ct: bool = False, asn_intel: bool = False,
                  osv: bool = False, security: bool = False,
                  bbot: bool = False, documents: bool = False,
-                 iac: bool = False, iac_path: Optional[str] = None):
+                 iac: bool = False, iac_path: Optional[str] = None,
+                 threat_feed: bool = False):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -157,6 +159,12 @@ class CollectionRunner:
         # library; supersedes the bundled dependency-audit table (extra network;
         # off by default).
         self.osv = osv
+        # Opt-in KEV/EPSS exploitability feed — for the CVEs already in this
+        # scan's findings, warm the per-CVE threat cache (CISA KEV + FIRST EPSS)
+        # so priority reflects real-world exploitability via threat_intel. Pure
+        # metadata about CVEs (no target traffic) → not scope-gated; off by
+        # default; soft-degrades to a skip when offline. (KEV/EPSS F4.)
+        self.threat_feed = threat_feed
         # Opt-in security audit (SecurityAuditor) — secrets in served JS,
         # leaking source maps, and reachable GraphQL endpoints. Feeds the risk
         # engine (source-map leaks + GraphQL introspection) and the attack-
@@ -206,7 +214,8 @@ class CollectionRunner:
                   bbot: Optional[bool] = None,
                   documents: Optional[bool] = None,
                   iac: Optional[bool] = None,
-                  iac_path: Optional[str] = None):
+                  iac_path: Optional[str] = None,
+                  threat_feed: Optional[bool] = None):
         if profile:
             self.profile = profile
         if max_pages is not None:
@@ -243,6 +252,8 @@ class CollectionRunner:
             self.asn_intel = asn_intel
         if osv is not None:
             self.osv = osv
+        if threat_feed is not None:
+            self.threat_feed = threat_feed
         if security is not None:
             self.security = security
         if bbot is not None:
@@ -568,6 +579,13 @@ class CollectionRunner:
         # store keeps a single merged finding. Done after every findings-producing
         # phase, before the F1 sync + risk summary below.
         self._dedup_vuln_findings(report)
+
+        # KEV/EPSS exploitability feed (opt-in) → warm the per-CVE threat cache
+        # for this scan's (now deduped) CVEs so priority reflects real-world
+        # exploitability via threat_intel. Metadata about CVEs (no target
+        # traffic) → not scope-gated; soft-degrades to a skip when offline.
+        if self.threat_feed and not self._cancelled(report):
+            report['phases']['threat'] = self._phase_threat(report)
 
         # Findings Management (F1): persist findings + run the lifecycle, and
         # stamp this scan's findings with their stored status — BEFORE the
@@ -1352,6 +1370,35 @@ class CollectionRunner:
                     'data': {'correlated': correlated, 'cve_summary': cve_summary}}
         except Exception as e:
             self._log(f'  CVE correlation failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    def _phase_threat(self, report: Dict) -> Dict:
+        """KEV/EPSS exploitability feed (opt-in). Collects the CVEs in this scan's
+        findings, fetches CISA KEV + FIRST EPSS for the stale ones and persists
+        per-CVE results in the shared CVE cache, so priority reflects real-world
+        exploitability via ``threat_intel`` (derive-on-read). Pure metadata about
+        CVEs (no target traffic); guarded and never fatal — soft-degrades to a
+        skip when offline."""
+        self._log('[+] Эксплуатируемость (KEV/EPSS)…')
+        try:
+            from core import threat_intel
+            vulns = report.get('phases', {}).get('vulns')
+            findings = vulns.get('findings') if isinstance(vulns, dict) else None
+            cves = threat_intel.cve_ids_from_findings(findings or [])
+            if not cves:
+                self._log('  KEV/EPSS — CVE в находках нет')
+                return {'status': 'No CVEs', 'data': {'summary':
+                        threat_intel.summarize([])}}
+            enriched = threat_intel.enrich_cves(cves)
+            annotated = threat_intel.annotate(findings or [])
+            summary = threat_intel.summarize(annotated)
+            self._log(f"  KEV/EPSS: {len(enriched)}/{len(cves)} CVE обогащено, "
+                      f"KEV={summary['kev']}")
+            return {'status': 'Success',
+                    'data': {'summary': summary, 'enriched': len(enriched),
+                             'cves': len(cves)}}
+        except Exception as e:   # noqa: BLE001 — threat feed is best-effort
+            self._log(f'  KEV/EPSS feed failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_bbot(self, url: str, project_dir: Path, report: Dict) -> Dict:
