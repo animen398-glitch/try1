@@ -82,9 +82,13 @@ def read_cookies_txt(path: str) -> List[Dict]:
 
     for line_no, line in enumerate(lines, start=1):
         stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
+        http_only = stripped.startswith('#HttpOnly_')
+        if not stripped or (stripped.startswith('#') and not http_only):
             continue
-        cookies.append(_parse_netscape_cookie_line(line, line_no))
+        cookie_line = line.replace('#HttpOnly_', '', 1) if http_only else line
+        cookie = _parse_netscape_cookie_line(cookie_line, line_no)
+        cookie['http_only'] = http_only
+        cookies.append(cookie)
     if not cookies:
         raise CookieFileError('cookies.txt does not contain any cookie rows')
     return cookies

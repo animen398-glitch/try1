@@ -68,6 +68,21 @@ def test_cookies_txt_validation_masks_values(tmp_path):
     assert describe_cookies_txt(str(path)) == "1 cookie(s) for example.com"
 
 
+def test_cookies_txt_accepts_httponly_prefix(tmp_path):
+    path = tmp_path / "cookies.txt"
+    path.write_text(
+        "#HttpOnly_.example.com\tTRUE\t/\tTRUE\t0\tsid\tSECRET_VALUE\n",
+        encoding="utf-8",
+    )
+
+    result = validate_cookies_txt(str(path))
+
+    assert result["status"] == "Success"
+    assert result["cookies"][0]["domain"] == ".example.com"
+    assert result["cookies"][0]["http_only"] is True
+    assert "SECRET_VALUE" not in repr(result)
+
+
 def test_cookies_txt_reports_format_error_without_secret(tmp_path):
     path = tmp_path / "cookies.txt"
     path.write_text("example.com\tbad\tline\tSECRET_VALUE\n", encoding="utf-8")

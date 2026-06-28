@@ -166,3 +166,18 @@ def test_runner_error_path():
     r = bbot_adapter.BBOTRunner(detector=lambda: True, runner=fake_run)
     res = r.run("evilcorp.com")
     assert res["status"] == "Error" and "binary not found" in res["error"]
+
+
+def test_runner_nonzero_exit_is_error():
+    logs = []
+
+    def fake_run(cmd, timeout, input_text=None):
+        return {"rc": 2, "stdout": "", "stderr": "invalid preset",
+                "timed_out": False}
+
+    r = bbot_adapter.BBOTRunner(detector=lambda: True, runner=fake_run)
+    r.set_progress_callback(logs.append)
+    res = r.run("evilcorp.com")
+    assert res["status"] == "Error"
+    assert "invalid preset" in res["error"]
+    assert any("failed" in line and "invalid preset" in line for line in logs)

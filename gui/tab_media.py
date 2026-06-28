@@ -191,18 +191,18 @@ class ImageTabMixin:
         domain = self._domain_slug(url)
         out_path = LIVE_TEST_OUTPUT / f"{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_images"
 
+        cookies = self.image_cookies.text().strip() or None
+        try:
+            cookie_summary = describe_cookies_txt(cookies) if cookies else None
+        except CookieFileError as e:
+            QMessageBox.warning(self, "Invalid cookies.txt", str(e))
+            return
+
         self.image_results.clear()
         self.image_results.append_info(f"Сканирую: {url}")
         self.image_results.append_info(f"Директория: {out_path}")
         self._set_busy(True)
 
-        cookies = self.image_cookies.text().strip() or None
-        try:
-            cookie_summary = describe_cookies_txt(cookies) if cookies else None
-        except CookieFileError as e:
-            self._set_busy(False)
-            QMessageBox.warning(self, "Invalid cookies.txt", str(e))
-            return
         if cookie_summary:
             self.image_results.append_info(f"Cookies: {cookie_summary}")
         ex = ImageExtractor(

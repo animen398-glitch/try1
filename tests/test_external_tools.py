@@ -109,6 +109,18 @@ def test_scan_reports_nonzero_exit(monkeypatch):
     assert 'template parse failed' in out['error']
 
 
+def test_nonzero_exit_does_not_expose_stdout(monkeypatch):
+    monkeypatch.setattr(NucleiRunner, 'available', staticmethod(lambda: True))
+    monkeypatch.setattr(ext, 'run_command',
+                        lambda cmd, timeout, input_text=None: {
+                            'rc': 2, 'stdout': 'SECRET_OUTPUT', 'stderr': '',
+                            'timed_out': False})
+    out = NucleiRunner().scan('https://ex.com')
+    assert out['status'] == 'Error'
+    assert out['error'] == 'nuclei exited with code 2'
+    assert 'SECRET_OUTPUT' not in repr(out)
+
+
 def test_scan_timeout_returns_partial(monkeypatch):
     monkeypatch.setattr(NucleiRunner, 'available', staticmethod(lambda: True))
     monkeypatch.setattr(ext, 'run_command',

@@ -53,7 +53,7 @@ def command_error(run: Dict, tool: str) -> Optional[str]:
         return str(run['error'])
     rc = run.get('rc')
     if rc not in (None, 0):
-        detail = (run.get('stderr') or run.get('stdout') or '').strip()
+        detail = (run.get('stderr') or '').strip()
         if detail:
             return f'{tool} exited with code {rc}: {detail[-500:]}'
         return f'{tool} exited with code {rc}'
