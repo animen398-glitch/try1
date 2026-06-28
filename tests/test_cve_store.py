@@ -61,9 +61,9 @@ def test_clear_and_stats(tmp_path):
     s = _store(tmp_path)
     s.put_lib_cves('npm', 'vue', '2.0.0', [{'id': 'X'}])
     s.put_cve_detail('CVE-1', {'cvss': 5.0})
-    assert s.stats() == {'lib_cves': 1, 'cve_details': 1}
+    assert s.stats() == {'lib_cves': 1, 'cve_details': 1, 'cve_threat': 0}
     assert s.clear() == 2
-    assert s.stats() == {'lib_cves': 0, 'cve_details': 0}
+    assert s.stats() == {'lib_cves': 0, 'cve_details': 0, 'cve_threat': 0}
 
 
 # ── T14: retention / prune ──────────────────────────────────────────────────

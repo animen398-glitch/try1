@@ -71,6 +71,14 @@ class CVEStore(SQLiteStore):
         source     TEXT,
         fetched_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS cve_threat (
+        cve_id          TEXT PRIMARY KEY,
+        kev             INTEGER NOT NULL DEFAULT 0,
+        kev_date        TEXT,
+        epss            REAL,
+        epss_percentile REAL,
+        fetched_at      TEXT NOT NULL
+    );
     """
 
     def __init__(self, db_path: Optional[Union[str, object]] = None):
@@ -135,6 +143,39 @@ class CVEStore(SQLiteStore):
                 (str(cve_id), d.get('cvss'), d.get('severity'), d.get('published'),
                  d.get('summary'), d.get('source'), now or _now()))
 
+    # ── cve_id → threat exploitability (KEV / EPSS) ────────────────────────────
+
+    def get_cve_threat(self, cve_id: str) -> Optional[Dict]:
+        """Cached KEV/EPSS exploitability for one CVE, or ``None``. Adds ``age``.
+
+        ``kev`` is returned as a bool; a stale row is still returned (with its
+        age) so an offline run can fall back to it."""
+        with self._connect() as conn:
+            row = conn.execute('SELECT * FROM cve_threat WHERE cve_id = ?',
+                               (str(cve_id),)).fetchone()
+        if row is None:
+            return None
+        data = dict(row)
+        data['kev'] = bool(data.get('kev'))
+        data['age'] = _age_seconds(data.pop('fetched_at', None))
+        return data
+
+    def put_cve_threat(self, cve_id: str, threat: Dict, *,
+                       now: Optional[str] = None) -> None:
+        """Store (or refresh) the KEV/EPSS exploitability for one CVE."""
+        t = threat or {}
+        with self._connect() as conn:
+            conn.execute(
+                'INSERT INTO cve_threat'
+                ' (cve_id, kev, kev_date, epss, epss_percentile, fetched_at)'
+                ' VALUES (?,?,?,?,?,?)'
+                ' ON CONFLICT(cve_id) DO UPDATE SET kev = excluded.kev,'
+                ' kev_date = excluded.kev_date, epss = excluded.epss,'
+                ' epss_percentile = excluded.epss_percentile,'
+                ' fetched_at = excluded.fetched_at',
+                (str(cve_id), 1 if t.get('kev') else 0, t.get('kev_date'),
+                 t.get('epss'), t.get('epss_percentile'), now or _now()))
+
     # ── maintenance ────────────────────────────────────────────────────────────
 
     def clear(self) -> int:
@@ -142,9 +183,11 @@ class CVEStore(SQLiteStore):
         'clear cache' action, like ``osv_correlation.clear_cache``)."""
         with self._connect() as conn:
             n = (conn.execute('SELECT COUNT(*) FROM lib_cves').fetchone()[0]
-                 + conn.execute('SELECT COUNT(*) FROM cve_details').fetchone()[0])
+                 + conn.execute('SELECT COUNT(*) FROM cve_details').fetchone()[0]
+                 + conn.execute('SELECT COUNT(*) FROM cve_threat').fetchone()[0])
             conn.execute('DELETE FROM lib_cves')
             conn.execute('DELETE FROM cve_details')
+            conn.execute('DELETE FROM cve_threat')
         return n
 
     def prune(self, max_age_days: Optional[int] = None,
@@ -161,7 +204,7 @@ class CVEStore(SQLiteStore):
             timespec='seconds')
         deleted = 0
         with self._connect() as conn:
-            for table in ('lib_cves', 'cve_details'):
+            for table in ('lib_cves', 'cve_details', 'cve_threat'):
                 deleted += conn.execute(
                     f'DELETE FROM {table} WHERE fetched_at < ?', (cutoff,)).rowcount
                 deleted += conn.execute(
@@ -177,4 +220,6 @@ class CVEStore(SQLiteStore):
                 'lib_cves': conn.execute('SELECT COUNT(*) FROM lib_cves').fetchone()[0],
                 'cve_details': conn.execute(
                     'SELECT COUNT(*) FROM cve_details').fetchone()[0],
+                'cve_threat': conn.execute(
+                    'SELECT COUNT(*) FROM cve_threat').fetchone()[0],
             }
