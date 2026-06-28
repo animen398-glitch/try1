@@ -1785,3 +1785,55 @@ EPSS never silently drops. Wired as an opt-in sub-flag `threat_epss_bulk`
 *(KEV/EPSS epic fully closed across all surfaces.)*
 
 ---
+
+## EPIC FUTURE — Mission Center / Authorized Pentest Multitool
+
+> Strategic next layer (after KEV/EPSS): turn the mature ASM/CSM + Client-Safe
+> Workbench into an operator-facing **Mission Center** — an authorized,
+> evidence-first, client-safe pentest multitool. Built strictly on the existing
+> machinery (Audit Runs / FindingsStore / Scope / ROE), never a second store.
+
+### M1 — Mission core contract (CLOSED 2026-06-28)
+
+A deterministic, offline **core contract** for a "mission" — the envelope that
+ties an authorized objective to the existing client-safe machinery — modelled on
+`core/audit_workflow.py` (pure payload, no state, no I/O, no FindingsStore
+writes, no network/subprocess).
+
+- **`core/pentest_mission.py`** (new, pure): a mission dict carries `mission_id`
+  (stable sha1 of project|objective), `project`, `objective`, fixed
+  `profile=client_safe`, optional scenario `template`, a normalized `roe` (the
+  **single source of truth that already embeds scope** — no separate scope
+  field), client-safe `allowed_actions`, `status`, `report_orientation`
+  (`evidence_first`), and `linked_audit_run_ids` / `linked_finding_ids`. API:
+  `create_mission`, `normalize_mission` (idempotent canonical form),
+  `validate_mission`, `advance_mission_status`, `link_audit_run`, `link_finding`,
+  `mission_to_json`.
+- **Status lifecycle** (deterministic state machine): `draft → {ready, archived}`,
+  `ready → {running, draft, archived}`, `running → {completed, failed, archived}`,
+  `completed → {archived}`, `failed → {ready, archived}`, `archived` terminal;
+  moving to `ready` requires a valid mission.
+- **Guardrails reused, not re-implemented**: ROE via `core/audit_scope`
+  (`normalize_roe`/`validate_roe`/`apply_roe_template`), scenario via
+  `core/audit_templates` (`get_template`), and every `allowed_actions` entry is
+  gated by `core/action_policy` — so exploit / bruteforce / stealth / auto-login /
+  auth-bypass / persistence are forbidden **by class**, not by name.
+- **`schemas/asa_pentest_mission.schema.json`** (new) + a one-line
+  `asa_pentest_mission` alias in `core/audit_schema.SCHEMA_ALIASES`;
+  `mission_to_json` validates the canonical export against it.
+- Tests: `tests/test_pentest_mission.py` (offline/headless): shape, normalize
+  idempotence, forbidden-action-class rejection, ROE propagation, the status
+  state machine, linking de-dup/purity, and schema-validated export.
+
+**Decisions (M1):** D1 pure-contract only — **no** MissionStore/SQLite, GUI, web
+or timeline (deferred to M2+); D2 the transition map above; D3 scope lives inside
+ROE (SSOT); D4 `link_finding` stores a reference only (no FindingsStore existence
+check in M1); D5 module name `core/pentest_mission.py`.
+
+### Deferred to M2+ (not started)
+
+Persistence (`MissionStore` mirroring `AuditRunStore` + `project_io` export),
+mission ↔ audit-run/finding read surfaces, timeline mission events, GUI Mission
+Center tab, web read parity. None add a second findings/asset/timeline source.
+
+---

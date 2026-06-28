@@ -13,6 +13,13 @@
 > rule; KEV/EPSS exploitability badge in the findings detail; opt-in EPSS
 > daily-CSV bulk ingestion. Current scale: **full pytest 2127 passed**, ruff
 > clean, 1 existing Starlette/httpx warning. Priority/risk formula still unchanged.
+> Update 2026-06-28 (Mission Center M1): new strategic layer started — a pure,
+> offline, deterministic mission core contract (`core/pentest_mission.py` +
+> `schemas/asa_pentest_mission.schema.json`) over the existing Audit Runs /
+> FindingsStore / Scope / ROE, with no second store and client-safe guardrails
+> reused from `audit_scope`/`audit_templates`/`action_policy`. Persistence/GUI/web
+> deferred to M2+. Current scale: **full pytest 2162 passed**, ruff clean,
+> 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

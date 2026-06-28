@@ -16,6 +16,7 @@ SCHEMA_ALIASES = {
     "asa_finding": "asa_finding.schema.json",
     "asa_validation": "asa_validation.schema.json",
     "asa_audit_compare": "asa_audit_compare.schema.json",
+    "asa_pentest_mission": "asa_pentest_mission.schema.json",
 }
 
 

@@ -4815,3 +4815,33 @@ EPSS DAILY-CSV BULK INGESTION (2026-06-28) — последний хвост KEV
   core/threat_intel.py, core/collection_runner.py, core/monitor.py,
   gui/tab_collection.py, tests/test_threat_feed.py, tests/test_threat_intel.py.
   ruff clean; целевые+смежные зелёные. Этим эпик KEV/EPSS закрыт полностью.
+
+------------------------------------------------------------------------------
+MISSION CENTER M1 — CORE CONTRACT (2026-06-28)
+------------------------------------------------------------------------------
+  Стартовал стратегический слой Mission Center / Authorized Pentest Multitool.
+  M1 = чистый детерминированный offline-контракт "миссии" (аналог
+  core/audit_workflow.py: без состояния, IO, сети, записи в FindingsStore).
+  Новый core/pentest_mission.py. Миссия: mission_id (sha1 project|objective),
+  project, objective, фикс. profile=client_safe, опц. template (сценарий из
+  audit_templates), нормализованный roe (SSOT, ВКЛЮЧАЕТ scope — отдельного
+  scope-поля НЕТ), client-safe allowed_actions, status, report_orientation=
+  evidence_first, linked_audit_run_ids/linked_finding_ids. API: create_mission/
+  normalize_mission/validate_mission/advance_mission_status/link_audit_run/
+  link_finding/mission_to_json. Статус-машина: draft->{ready,archived},
+  ready->{running,draft,archived}, running->{completed,failed,archived},
+  completed->{archived}, failed->{ready,archived}, archived терминальный;
+  ->ready требует валидной миссии. Guardrails ПЕРЕИСПОЛЬЗОВАНЫ, не продублированы:
+  ROE = audit_scope, сценарий = audit_templates, каждое allowed_actions гейтится
+  action_policy (exploit/bruteforce/stealth/auto-login/auth-bypass/persistence
+  запрещены по классу). Новая schemas/asa_pentest_mission.schema.json + 1-строчный
+  alias asa_pentest_mission в core/audit_schema.SCHEMA_ALIASES. Решения: D1 только
+  pure-contract (MissionStore/GUI/web/timeline -> M2+); D2 карта переходов; D3
+  scope внутри ROE; D4 link_finding без проверки в FindingsStore; D5 имя модуля.
+  M1-файлы в репозитории ОТСУТСТВОВАЛИ (черновик Codex был в отдельном worktree
+  без git). Файлы: core/pentest_mission.py, schemas/asa_pentest_mission.schema.json,
+  tests/test_pentest_mission.py (35 offline/headless), core/audit_schema.py (alias).
+  ruff clean; целевые+смежные зелёные; полный pytest 2162. M2+ (отложено, не
+  начато): MissionStore (по образцу AuditRunStore) + project_io export, read-
+  поверхности mission<->audit_run/finding, timeline mission-события, GUI Mission
+  Center вкладка, web read parity. Ни одна не вводит второй findings/asset/timeline.
