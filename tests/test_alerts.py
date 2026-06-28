@@ -253,6 +253,37 @@ def test_collect_sla_alerts_tightens_on_kev():
     assert 'Log4Shell' in out[0]['title']
 
 
+def test_collect_kev_alerts_one_shot_and_cold_cache():
+    """The KEV alert channel fires once per known-exploited finding (one-shot via
+    the store) and is empty when the threat cache is cold."""
+    from core.cve_store import CVEStore
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+
+    s = FindingsStore()
+    cve = 'CVE-2021-44228'
+    kev = {'id': fingerprint('vuln', cve, 'https://x.com/'), 'category': 'vuln',
+           'rule_id': cve, 'title': 'Log4Shell', 'severity': 'high', 'evidence': None}
+    plain = {'id': fingerprint('vuln', 'https', 'https://x.com/'), 'category': 'vuln',
+             'rule_id': 'https', 'title': 'Plain HTTP', 'severity': 'high',
+             'evidence': None}
+    s.upsert('proj', kev, now='2026-01-01T00:00:00')
+    s.upsert('proj', plain, now='2026-01-01T00:00:00')
+
+    # Cold cache → nothing is flagged KEV yet.
+    assert alerts.collect_kev_alerts(s, 'proj') == []
+
+    # Warm the cache: the CVE is now KEV-listed.
+    CVEStore().put_cve_threat(cve, {'kev': True})
+    first = alerts.collect_kev_alerts(s, 'proj')
+    assert len(first) == 1                      # only the KEV finding, not the plain one
+    assert first[0]['type'] == 'new_kev'
+    assert first[0]['severity'] == 'high'
+    assert 'Log4Shell' in first[0]['title']
+    # Second run: already alerted for this episode → nothing new (one-shot).
+    assert alerts.collect_kev_alerts(s, 'proj') == []
+
+
 def test_notify_sla_dispatches_and_honors_types_filter(monkeypatch):
     monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
     events = [{'type': 'sla_breach', 'title': '[high] Plain HTTP — SLA просрочено',

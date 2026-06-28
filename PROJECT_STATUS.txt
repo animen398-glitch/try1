@@ -4759,3 +4759,22 @@ KEV->SLA TIGHTENING (follow-up, 2026-06-28)
   переведены на annotate_offline. Файлы: core/threat_intel.py, core/alerts.py,
   core/timeline.py, core/collection_runner.py, core/intelligence.py,
   tests/test_alerts.py, tests/test_timeline.py. ruff clean; тесты зелёные.
+
+------------------------------------------------------------------------------
+NEW_KEV TIMELINE EVENT + KEV ALERT RULE (2026-06-28)
+------------------------------------------------------------------------------
+  Известно-эксплуатируемые (CISA KEV) находки стали first-class сигналами,
+  derive-on-read из offline threat-кэша (без второй таблицы).
+  Timeline: threat_intel.kev_events(findings) отдаёт строку new_kev на каждую
+  активную KEV-находку (at = first_seen_at, severity high, базовая severity в
+  заголовке); провязка через новый параметр kev_events в timeline.build_events
+  поверх ТОГО ЖЕ annotate-списка активных находок, что и SLA (annotate один раз).
+  Alert rule: alerts.collect_kev_alerts + notify_kev (тип new_kev добавлен в
+  ALERT_TYPES) — finding-based one-shot канал как SLA/secret/generic
+  (FindingsStore.record_kev_alerts, маркер KEV_ALERTED, reopen-resetting),
+  диспатч в monitor._run рядом с прочими finding-based каналами; холодный кэш =
+  ничего. GUI-метки добавлены (gui/dialogs._ALERT_TYPE_LABELS,
+  gui/tab_timeline._EVENT_LABELS). Файлы: core/threat_intel.py, core/timeline.py,
+  core/alerts.py, core/findings_store.py, core/monitor.py, gui/dialogs.py,
+  gui/tab_timeline.py, tests/test_threat_intel.py/test_timeline.py/test_alerts.py.
+  ruff clean; целевые+смежные тесты зелёные.

@@ -7,6 +7,7 @@ from core.threat_intel import (
     annotate,
     cve_ids_from_findings,
     enrich_cves,
+    kev_events,
     summarize,
     threat_tier_from,
 )
@@ -108,3 +109,31 @@ def test_summarize_counts_kev_and_epss(tmp_path):
                          _f("c", cve="CVE-2021-0003")], store=store)
     s = summarize(findings)
     assert s == {"kev": 1, "epss_high": 1, "epss_medium": 1, "enriched": 3}
+
+
+# ── kev_events (timeline-shaped KEV rows, derive-on-read) ──────────────────────
+
+def test_kev_events_only_for_kev_annotated_findings(tmp_path):
+    store = CVEStore(tmp_path / "cve.db")
+    store.put_cve_threat("CVE-2021-44228", {"kev": True})
+    store.put_cve_threat("CVE-2021-0002", {"kev": False, "epss_percentile": 0.95})
+    kev = {**_f("a", rule_id="CVE-2021-44228", title="Log4Shell"),
+           "severity": "medium", "first_seen_at": "2026-02-01T00:00:00"}
+    epss = {**_f("b", rule_id="CVE-2021-0002", title="High EPSS"),
+            "severity": "high", "first_seen_at": "2026-03-01T00:00:00"}
+    plain = {**_f("c", title="no cve"), "severity": "high",
+             "first_seen_at": "2026-04-01T00:00:00"}
+    events = kev_events(annotate([kev, epss, plain], store=store))
+    assert len(events) == 1                       # only the KEV one (not EPSS-high)
+    ev = events[0]
+    assert ev["type"] == "new_kev"
+    assert ev["severity"] == "high"               # fixed urgency, base sev in title
+    assert ev["section"] == "findings"
+    assert ev["scan_id"] is None
+    assert ev["at"] == "2026-02-01T00:00:00"      # finding's first_seen_at
+    assert "[medium]" in ev["title"] and "KEV" in ev["title"]
+
+
+def test_kev_events_empty_without_threat_block():
+    # Un-annotated findings (cold cache) produce nothing.
+    assert kev_events([{"id": "a", "severity": "high", "title": "x"}]) == []

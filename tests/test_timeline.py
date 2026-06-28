@@ -322,3 +322,33 @@ def test_build_timeline_tightens_sla_breach_on_kev(tmp_path):
     breaches = [e for e in tl['events'] if e['type'] == 'sla_breach']
     assert len(breaches) == 1                       # only the KEV finding breaches
     assert 'Log4Shell' in breaches[0]['title']
+
+
+def test_build_timeline_emits_new_kev_event(tmp_path):
+    """A finding whose CVE is KEV-listed surfaces a new_kev timeline event,
+    derived from the offline threat cache (a plain finding produces none)."""
+    from datetime import datetime, timedelta
+
+    from core.cve_store import CVEStore
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    cve = 'CVE-2021-44228'
+    CVEStore().put_cve_threat(cve, {'kev': True})   # isolated per-test (conftest)
+    seen = (datetime.now() - timedelta(days=3)).isoformat(timespec='seconds')
+    store = FindingsStore()
+    kev = {'id': fingerprint('vuln', cve, 'https://x.com/'), 'category': 'vuln',
+           'rule_id': cve, 'title': 'Log4Shell', 'severity': 'medium', 'evidence': None}
+    plain = {'id': fingerprint('vuln', 'https', 'https://x.com/'), 'category': 'vuln',
+             'rule_id': 'https', 'title': 'Plain HTTP', 'severity': 'high',
+             'evidence': None}
+    store.upsert(project.slug, kev, now=seen)
+    store.upsert(project.slug, plain, now=seen)
+
+    tl = timeline.build_timeline(project)
+    kevs = [e for e in tl['events'] if e['type'] == 'new_kev']
+    assert len(kevs) == 1
+    assert kevs[0]['severity'] == 'high'
+    assert 'Log4Shell' in kevs[0]['title'] and 'KEV' in kevs[0]['title']

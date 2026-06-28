@@ -63,6 +63,7 @@ _EVENT_LABELS = {
     'asset_reappeared':    'Актив вернулся',
     'asset_gone':          'Актив исчез',
     'sla_breach':          'Просрочка SLA',
+    'new_kev':             'Эксплуатируется (KEV)',
 }
 
 

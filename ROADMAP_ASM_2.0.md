@@ -1736,9 +1736,25 @@ breach alert on the shortened deadline), and the **Timeline** `sla_events` (the
 read-side wrapper is `threat_intel.annotate_offline` (SSOT — the SLA/alerts/
 timeline/priority paths share it instead of each re-implementing the guard).
 
+### Follow-up — NEW_KEV timeline event + KEV alert rule (CLOSED 2026-06-28)
+
+Surface known-exploited findings as first-class change/alert signals, derive-on-read
+from the offline threat cache (no second table):
+
+* **Timeline `new_kev` event** — `threat_intel.kev_events(findings)` emits one
+  timeline-shaped row per active finding whose CVE is KEV-listed (dated at the
+  finding's `first_seen_at`, severity `high`, base severity in the title). Wired
+  through `timeline.build_events` (new `kev_events` param) off the *same* annotated
+  active-findings list already used for SLA (annotate once). De-dup/order via the
+  existing builder.
+* **KEV alert rule** — `alerts.collect_kev_alerts` + `notify_kev` (type `new_kev`
+  added to `ALERT_TYPES`), a finding-based one-shot channel like SLA/secret/generic
+  (`FindingsStore.record_kev_alerts`, marker `KEV_ALERTED`, reopen-resetting).
+  Dispatched in `monitor._run` alongside the other finding-based channels; cold
+  cache fires nothing. GUI labels added (`gui/dialogs`, `gui/tab_timeline`).
+
 ### Deferred (not blockers)
 
-Full EPSS daily-CSV ingestion (we query per-CVE); a timeline NEW_KEV event; a KEV
-alert rule; a GUI badge in the findings detail.
+Full EPSS daily-CSV ingestion (we query per-CVE); a GUI badge in the findings detail.
 
 ---

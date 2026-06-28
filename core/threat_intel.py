@@ -160,6 +160,34 @@ def annotate_offline(findings: List[Dict], *,
         return findings
 
 
+def kev_events(findings: List[Dict]) -> List[Dict]:
+    """Timeline-shaped events for active findings whose CVE is KEV-listed
+    (known-exploited in the wild), derive-on-read like ``findings_sla.sla_events``.
+
+    One event per active finding carrying a ``kev=True`` threat block (so the
+    caller must ``annotate``/``annotate_offline`` first), dated at the finding's
+    ``first_seen_at`` — when it entered the inventory; KEV membership itself is
+    re-derived each build, with no second table to record "when we learned KEV".
+    Shape matches ``timeline.build_events`` rows: ``{scan_id: None, at, type:
+    'new_kev', title, severity, section}``. Severity is fixed ``high`` — a
+    known-exploited finding is a 'fix now' signal regardless of its base severity,
+    which is preserved in the title. De-dup/ordering are handled by the builder."""
+    out: List[Dict] = []
+    for f in findings or []:
+        if not isinstance(f, dict):
+            continue
+        threat = f.get('threat')
+        if not isinstance(threat, dict) or not threat.get('kev'):
+            continue
+        sev = str(f.get('severity') or 'info').strip().lower() or 'info'
+        title = (f"[{sev}] {f.get('title') or ''} — "
+                 f"известно эксплуатируется (KEV)").strip()
+        out.append({'scan_id': None, 'at': f.get('first_seen_at'),
+                    'type': 'new_kev', 'title': title,
+                    'severity': 'high', 'section': 'findings'})
+    return out
+
+
 def summarize(findings: List[Dict]) -> Dict[str, int]:
     """Counts for the report/console card (operates on annotated findings)."""
     out = {'kev': 0, 'epss_high': 0, 'epss_medium': 0, 'enriched': 0}

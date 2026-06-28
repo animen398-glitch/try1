@@ -65,11 +65,14 @@ from core.scan_diff import diff_events
 # ``dns_email_auth_weakened`` (a removed SPF/DMARC record or a downgraded DMARC
 # policy between scans) is alertable too — an anti-spoofing regression, distinct
 # from dns_intel's steady-state No-SPF/No-DMARC findings.
+# ``new_kev`` is the KEV (known-exploited) channel: a finding whose CVE is in the
+# CISA KEV catalog — the strongest 'fix now' signal — learned from the offline
+# threat cache, not the diff, so it has its own finding-based one-shot channel.
 ALERT_TYPES = ('new_secret', 'new_secret_generic', 'new_subdomain', 'takeover',
                'new_technology', 'cert_change', 'cert_expired', 'risk_increase',
                'graphql_introspection', 'new_sourcemap', 'cookie_weakened',
                'new_vulnerable_dependency', 'dependency_vulnerable',
-               'security_header_removed', 'sla_breach', 'new_finding',
+               'security_header_removed', 'sla_breach', 'new_finding', 'new_kev',
                'dns_email_auth_weakened', 'new_attack_path',
                'attack_path_escalated', 'attack_surface_drift',
                'exposure_drift', 'criticality_drift')
@@ -417,6 +420,32 @@ def collect_sla_alerts(store, project: str, *, now=None) -> List[Dict]:
             for e in sla_events(new_breached, now=now, reopened=reopened)]
 
 
+def collect_kev_alerts(store, project: str) -> List[Dict]:
+    """New KEV (known-exploited) finding alert events for a project (one-shot,
+    deduped via ``store``).
+
+    A finding whose CVE is in the CISA KEV catalog is exploited in the wild — the
+    strongest 'fix this now' signal — but KEV membership is learned from the
+    offline threat cache, not a Scan Diff, so it needs its own finding-based
+    channel with the same one-shot, reopen-resetting guard as the SLA / secret /
+    generic-finding channels. Detected from the persisted findings annotated
+    against the offline KEV/EPSS cache (cold cache = nothing), narrowed to those
+    not yet alerted for their current open episode (``FindingsStore.record_kev_alerts``).
+    Returns lean ``{type:'new_kev', title, severity}`` dicts — empty when nothing
+    new. Pure of network; ``store`` is injected so tests use a temp DB."""
+    from core import threat_intel
+    active = threat_intel.annotate_offline(store.active_findings(project))
+    kev = [f for f in active
+           if isinstance(f.get('threat'), dict) and f['threat'].get('kev')]
+    if not kev:
+        return []
+    by_id = {f['id']: f for f in kev}
+    new_ids = store.record_kev_alerts(project, list(by_id))
+    fresh = [by_id[i] for i in new_ids if i in by_id]
+    return [{'type': e['type'], 'title': e['title'], 'severity': e['severity']}
+            for e in threat_intel.kev_events(fresh)]
+
+
 def _notify_collected(config: Optional[Dict], slug: str,
                       events: List[Dict], kind: str) -> Dict:
     """Dispatch already-collected alert events over the configured channels (shared
@@ -458,6 +487,16 @@ def notify_findings(config: Optional[Dict], slug: str,
     high/critical vuln findings). These have no dedicated diff alert, so this is their
     only targeted alert path."""
     return _notify_collected(config, slug, finding_alerts, 'finding')
+
+
+def notify_kev(config: Optional[Dict], slug: str,
+               kev_alerts: List[Dict]) -> Dict:
+    """Dispatch already-collected KEV (known-exploited) alerts (finding-triggered).
+
+    ``kev_alerts`` come from :func:`collect_kev_alerts` (already deduped to NEW
+    KEV-listed findings). KEV membership has no Scan Diff representation, so this
+    is its only alert path."""
+    return _notify_collected(config, slug, kev_alerts, 'kev')
 
 
 def send_test(config: Optional[Dict]) -> Dict:

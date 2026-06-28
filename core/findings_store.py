@@ -459,6 +459,24 @@ class FindingsStore(SQLiteStore):
         return self._record_oneshot(finding_ids, 'FINDING_ALERTED',
                                      scan_id=scan_id, now=now)
 
+    def record_kev_alerts(self, project: str, finding_ids: List[str], *,
+                          scan_id: Optional[str] = None,
+                          now: Optional[str] = None) -> List[str]:
+        """Mark KEV (known-exploited) findings as alerted *once* and return the
+        newly-marked ids.
+
+        A finding whose CVE enters the CISA KEV catalog is exploited in the wild —
+        learned from the offline threat cache, not a Scan Diff, so the alert path
+        needs the same one-shot, reopen-resetting guard as the SLA / secret /
+        generic-finding channels (fire per appearance exactly once across monitor
+        runs; re-eligible after a ``REOPENED``). See ``_record_oneshot``.
+
+        ``finding_ids`` are the project-scoped stored ids of the KEV findings (from
+        ``active_findings``). Returns the not-yet-alerted subset (now marked), in
+        input order."""
+        return self._record_oneshot(finding_ids, 'KEV_ALERTED',
+                                     scan_id=scan_id, now=now)
+
     def untracked_for_issue(self, project: str,
                             finding_ids: List[str]) -> List[str]:
         """Of ``finding_ids``, the ones with no *current* GitHub issue (read-only).

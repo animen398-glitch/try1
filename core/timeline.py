@@ -92,7 +92,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  asset_events: Optional[List[Dict]] = None,
                  sla_events: Optional[List[Dict]] = None,
                  audit_runs: Optional[List[Dict]] = None,
-                 audit_events: Optional[List[Dict]] = None) -> List[Dict]:
+                 audit_events: Optional[List[Dict]] = None,
+                 kev_events: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -101,8 +102,10 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     ``finding_events`` are the F1 store rows (see ``FindingsStore.project_events``);
     ``asset_events`` are the Asset Inventory store rows (see
     ``AssetStore.project_events``); ``sla_events`` are already-shaped SLA-breach
-    rows (see ``findings_sla.sla_events``) — time-based, not scan-based. Events
-    are de-duplicated by ``(scan_id, type, title)`` and ordered chronologically.
+    rows (see ``findings_sla.sla_events``) and ``kev_events`` already-shaped
+    KEV (known-exploited) rows (see ``threat_intel.kev_events``) — both time-based,
+    not scan-based. Events are de-duplicated by ``(scan_id, type, title)`` and
+    ordered chronologically.
     Each event is ``{scan_id, at, type, title, severity, section}``.
     """
     events: List[Dict] = []
@@ -160,6 +163,10 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     for se in sla_events or []:
         if isinstance(se, dict):
             events.append(se)
+
+    for ke in kev_events or []:
+        if isinstance(ke, dict):
+            events.append(ke)
 
     for run in audit_runs or []:
         if not isinstance(run, dict):
@@ -224,18 +231,20 @@ def build_timeline(project) -> Dict:
              for s in entries if s.get('id')]
     finding_events: List[Dict] = []
     sla_evts: List[Dict] = []
+    kev_evts: List[Dict] = []
     try:
         store = FindingsStore()
         finding_events = store.project_events(project.slug)
-        # Time-based SLA breaches of the still-active findings (reopen-aware).
-        # Tighten via the offline KEV/EPSS cache first so known-exploited findings
-        # breach on their shortened deadline (cold cache = no-op).
+        # Annotate the still-active findings against the offline KEV/EPSS cache
+        # once (cold cache = no-op), then derive both time-based feeds from it:
+        # SLA breaches on the (tightened) deadline, and KEV known-exploited flags.
         from core import findings_sla, threat_intel
+        active = threat_intel.annotate_offline(store.active_findings(project.slug))
         sla_evts = findings_sla.sla_events(
-            threat_intel.annotate_offline(store.active_findings(project.slug)),
-            reopened=store.reopen_dates(project.slug))
+            active, reopened=store.reopen_dates(project.slug))
+        kev_evts = threat_intel.kev_events(active)
     except Exception:   # noqa: BLE001 — timeline must render even if findings fail
-        finding_events, sla_evts = finding_events, sla_evts
+        finding_events, sla_evts, kev_evts = finding_events, sla_evts, kev_evts
     try:
         from core.asset_store import AssetStore
         asset_events = AssetStore().project_events(project.slug)
@@ -262,5 +271,6 @@ def build_timeline(project) -> Dict:
             sla_evts,
             audit_runs,
             audit_events,
+            kev_evts,
         ),
     }
