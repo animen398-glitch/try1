@@ -34,6 +34,20 @@
       }
     },
     "findings": {"type": "array"},
-    "events": {"type": "array"}
+    "events": {"type": "array"},
+    "template": {"type": "string"},
+    "auth_context": {"type": "boolean"},
+    "baseline_run_id": {"type": "string"},
+    "roe": {"type": "object"},
+    "config": {
+      "type": "object",
+      "properties": {
+        "min_confidence": {"type": "integer"},
+        "safe_checks": {"type": "array", "items": {"type": "string"}},
+        "roe_template": {"type": "string"},
+        "revalidate_unresolved": {"type": "boolean"},
+        "compare_to_baseline": {"type": "boolean"}
+      }
+    }
   }
 }

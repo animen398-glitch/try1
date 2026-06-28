@@ -59,15 +59,41 @@ def create_audit_run(
     project: str,
     phases: Optional[List[str]] = None,
     *,
+    template: Optional[str] = None,
+    roe: Optional[Dict[str, Any]] = None,
+    baseline_run_id: Optional[str] = None,
     run_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a deterministic audit-run payload."""
+    """Create a deterministic audit-run payload.
+
+    A bare call (no ``template``/``roe``/``baseline_run_id``) is byte-identical
+    to v1 so existing projects, stored runs and tests are unaffected. Scenario
+    configuration is purely additive and opt-in:
+
+    - ``template`` selects an :mod:`core.audit_templates` scenario; its phase
+      list is used unless ``phases`` overrides it, and the scenario config
+      (min confidence, safe checks, flags) is recorded on the run.
+    - ``roe`` is an explicit Rules-of-Engagement dict, normalized on the run.
+    - ``baseline_run_id`` links this run to an A/B comparison baseline.
+    """
     clean_project = str(project or "").strip()
     if not clean_project:
         raise ValueError("project is required")
-    phase_names = _validate_phases(phases or list(AUDIT_PHASES))
+
+    template_cfg: Optional[Dict[str, Any]] = None
+    if template is not None:
+        from core.audit_templates import resolve_template
+
+        template_cfg = resolve_template(
+            str(template).strip(), phases=phases, roe=roe
+        )
+        phase_source = template_cfg["phases"]
+    else:
+        phase_source = phases or list(AUDIT_PHASES)
+
+    phase_names = _validate_phases(phase_source)
     clean_run_id = str(run_id or "").strip() or _stable_id(clean_project, phase_names)
-    return {
+    run: Dict[str, Any] = {
         "run_id": clean_run_id,
         "project": clean_project,
         "profile": "client_safe",
@@ -79,6 +105,26 @@ def create_audit_run(
         "findings": [],
         "events": [],
     }
+
+    if template_cfg is not None:
+        run["template"] = template_cfg["name"]
+        run["auth_context"] = template_cfg["auth_context"]
+        run["config"] = {
+            "min_confidence": template_cfg["min_confidence"],
+            "safe_checks": list(template_cfg["safe_checks"]),
+            "roe_template": template_cfg["roe_template"],
+            "revalidate_unresolved": template_cfg["revalidate_unresolved"],
+            "compare_to_baseline": template_cfg["compare_to_baseline"],
+        }
+    if roe is not None:
+        from core.audit_scope import normalize_roe
+
+        run["roe"] = normalize_roe(roe)
+    if baseline_run_id is not None:
+        clean_baseline = str(baseline_run_id).strip()
+        if clean_baseline:
+            run["baseline_run_id"] = clean_baseline
+    return run
 
 
 def _phase_index(run: Dict[str, Any], phase: str) -> int:
