@@ -120,6 +120,10 @@ def create_audit_run(
         from core.audit_scope import normalize_roe
 
         run["roe"] = normalize_roe(roe)
+    elif template_cfg is not None:
+        from core.audit_scope import apply_roe_template
+
+        run["roe"] = apply_roe_template(template_cfg["roe_template"])
     if baseline_run_id is not None:
         clean_baseline = str(baseline_run_id).strip()
         if clean_baseline:

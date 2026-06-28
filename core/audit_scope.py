@@ -21,6 +21,83 @@ DEFAULT_ROE: Dict[str, Any] = {
 }
 
 
+# ROE/scope templates (Workbench v2 F2). Each template is a partial ROE merged
+# onto DEFAULT_ROE; the operator still fills authorization fields. Active
+# templates only enable *safe active checks* — never credential or exploit work.
+ROE_TEMPLATES: Dict[str, Dict[str, Any]] = {
+    "passive_external": {
+        "label": "Passive External",
+        "description": "Passive-only recon against an external target.",
+        "active_scan_enabled": False,
+        "passive_only": True,
+        "rate_limit": "1/s",
+    },
+    "authenticated_internal": {
+        "label": "Authenticated Internal",
+        "description": (
+            "Safe active checks with an operator-supplied authorized session. "
+            "Requires allowed_domains and authorized_by; no credential work."
+        ),
+        "active_scan_enabled": True,
+        "passive_only": False,
+        "rate_limit": "1/s",
+    },
+    "evidence_only": {
+        "label": "Evidence Only",
+        "description": "Passive re-check of existing findings and their evidence.",
+        "active_scan_enabled": False,
+        "passive_only": True,
+        "rate_limit": None,
+    },
+    "release_gate": {
+        "label": "Release Gate",
+        "description": "Passive pre-release comparison against a baseline run.",
+        "active_scan_enabled": False,
+        "passive_only": True,
+        "rate_limit": None,
+    },
+}
+
+
+def list_roe_templates() -> list[Dict[str, Any]]:
+    """Return all ROE templates as a stable, name-sorted list of copies."""
+    out: list[Dict[str, Any]] = []
+    for name in sorted(ROE_TEMPLATES):
+        tpl = dict(ROE_TEMPLATES[name])
+        tpl["name"] = name
+        out.append(tpl)
+    return out
+
+
+def roe_template(name: str) -> Dict[str, Any]:
+    """Return one ROE template (copy, with ``name``); raise on unknown."""
+    key = str(name or "").strip()
+    if key not in ROE_TEMPLATES:
+        raise ValueError(f"unknown ROE template: {key}")
+    tpl = dict(ROE_TEMPLATES[key])
+    tpl["name"] = key
+    return tpl
+
+
+def apply_roe_template(
+    name: str,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Resolve a ROE template into a normalized ROE dict.
+
+    ``overrides`` (e.g. allowed_domains, authorized_by) win over the template;
+    the result is normalized but not asserted valid — callers use
+    :func:`validate_roe` when authorization completeness matters.
+    """
+    tpl = roe_template(name)
+    merged = {key: value for key, value in tpl.items() if key != "name"}
+    merged.pop("label", None)
+    merged.pop("description", None)
+    if isinstance(overrides, dict):
+        merged.update(overrides)
+    return normalize_roe(merged)
+
+
 def normalize_roe(roe: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     src = roe if isinstance(roe, dict) else {}
     scope = normalize_scope({**DEFAULT_ROE, **src})
