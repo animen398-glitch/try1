@@ -529,11 +529,19 @@ _THREAT_HIGH_KEYWORDS = ('rce', 'sqli', 'sql-injection', 'sql_injection', 'ssrf'
 
 
 def _threat_tier(finding: Dict) -> Optional[str]:
-    """Static threat tier for a finding (high / medium / None), phase-1 F2.
+    """Threat tier for a finding (high / medium / None).
+
+    Enrichment-first: a KEV/EPSS ``threat`` block (added by ``threat_intel``)
+    carries the real-world exploitability tier and wins when present. Otherwise
+    fall back to the static class heuristic (phase-1 F2), so an un-enriched
+    finding behaves exactly as before:
 
     High = a class abused in the wild as an entry point (takeover, leaked secret,
     or an injection/RCE-style rule). Medium = exposure / known-vuln classes
     (graphql / source maps / a CVE-bearing dependency). Else None."""
+    threat = finding.get('threat')
+    if isinstance(threat, dict) and threat.get('tier') in ('high', 'medium'):
+        return threat['tier']
     cat = str(finding.get('category') or '').lower()
     rule = str(finding.get('rule_id') or '').lower()
     hay = f"{rule} {str(finding.get('title') or '').lower()}"
@@ -566,6 +574,19 @@ def _sla_bucket_of(finding: Dict, now) -> Optional[str]:
         return None
 
 
+def _annotate_threat(findings: List[Dict]) -> List[Dict]:
+    """Best-effort KEV/EPSS enrichment from the local cache (offline, no network).
+
+    Reads the per-CVE threat cache so a finding's exploitability tier reaches
+    priority through ``_threat_tier``. A cold/empty cache is a no-op, so an
+    un-enriched run is unchanged."""
+    try:
+        from core import threat_intel
+        return threat_intel.annotate(findings)
+    except Exception:   # noqa: BLE001 — threat context is best-effort
+        return findings
+
+
 def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
                        asset_graph: Optional[Dict] = None, *,
                        criticality: Optional[Dict] = None, now=None) -> Dict:
@@ -578,6 +599,7 @@ def build_intelligence(findings: List[Dict], correlation: Optional[Dict] = None,
     when given, a finding on a high/medium-criticality asset gets a priority bonus
     (EPIC 10) and carries the band. Returns ``{items (priority desc), top, summary}``."""
     findings = [f for f in (findings or []) if isinstance(f, dict)]
+    findings = _annotate_threat(findings)
     chains = (correlation or {}).get('finding_chains') or {}
     cluster_hosts = set()
     for c in (asset_graph or {}).get('shared_infra') or []:
