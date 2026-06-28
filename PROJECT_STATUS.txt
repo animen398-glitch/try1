@@ -4693,3 +4693,42 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
 
   NEXT: optional PyInstaller frozen smoke on user side; remote publish is the
   user's call (no remote git performed).
+
+================================================================================
+2026-06-28 — KEV/EPSS THREAT INTELLIGENCE FEED
+================================================================================
+  Rank findings by real-world exploitability, not just severity. CVE-bearing
+  findings are enriched from CISA KEV (known-exploited) + FIRST EPSS (probability)
+  and the signal feeds the EXISTING priority via threat_tier. No new data model:
+  cache extends CVEStore; finding enrichment is derive-on-read; priority/risk
+  formula UNCHANGED.
+
+  F1 core/threat_feed.py — pure KEV/EPSS parsers + one injectable network seam
+     (_get_text, soft-degrade to empty). CVEStore gains a cve_threat table
+     (kev/kev_date/epss/epss_percentile) + get/put_cve_threat, folded into
+     clear/prune/stats; added via idempotent CREATE IF NOT EXISTS (no migration).
+  F2 core/threat_intel.py — enrich_cves (network: fetch KEV once + EPSS for stale
+     CVEs, persist; soft-degrades when both feeds empty, never writes false
+     negatives), annotate (offline derive-on-read → threat block + tier),
+     threat_tier_from (KEV->high; EPSS pct >=0.90->high, >=0.50->medium, named
+     constants), cve_of/cve_ids_from_findings (reuse extract_cve), summarize.
+  F3 intelligence._threat_tier — enrichment-first, static fallback (no
+     regression); build_intelligence += best-effort offline annotate (cold cache
+     = no-op) so a KEV finding outranks an equal non-KEV one.
+  F4 collection_runner._phase_threat — opt-in, after cross-scanner dedup; warms
+     the threat cache for the scan's CVEs. Metadata about CVEs (no target
+     traffic) => NOT scope-gated; off by default; soft-degrades offline. Monitor
+     (_build_run_fn) + Collection-tab checkbox parity.
+  F5 surfaces — report.html "Exploitability (KEV/EPSS)" card; web /findings
+     threat block; findings CSV KEV/EPSS/EPSS-%ile columns.
+
+  DECISIONS LOCKED: tier thresholds (KEV/0.90/0.50); priority only (KEV->SLA
+  deferred); opt-in network metadata NOT under Scope Guard; cache TTL 24h.
+
+  VERIFICATION: ruff clean; full pytest 2101 passed (1 Starlette warning);
+  main.py --self-check 29 tabs.
+  Commits (local, master): 3017251f F1, c80c98af F2, 08acba60 F3, 888c292b F4,
+  e9e8d90f F5, + roadmap/doc sync.
+
+  NEXT: optional KEV->SLA tightening, timeline NEW_KEV event, KEV alert rule,
+  findings-detail badge — all deferred, not blockers.

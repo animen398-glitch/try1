@@ -1667,3 +1667,55 @@ optional opt-in `compared` event persisted on the run. Left to Codex after the
 contract stabilizes.
 
 ---
+
+## EPIC CLOSED — KEV/EPSS Threat Intelligence Feed
+
+> Status 2026-06-28: implemented locally and verified. Checkpoint: `ruff` clean
+> on the changed set; full `pytest` = 2101 passed, 1 existing Starlette/httpx
+> warning; `python main.py --self-check` = 29 tabs. Remote git not performed.
+
+Rank findings by real-world exploitability, not just severity. Findings carrying
+a CVE are enriched from two keyless public feeds — CISA KEV (known-exploited) and
+FIRST EPSS (exploitation probability) — and that signal feeds the existing
+priority via `threat_tier`. No new data model: the cache extends `CVEStore`,
+finding enrichment is derive-on-read; the priority/risk formula is unchanged.
+
+**F1 — Feed parsers + cache** (`core/threat_feed.py` + `CVEStore.cve_threat`):
+pure KEV/EPSS parsers + one injectable network seam (soft-degrade to empty); a
+`cve_threat` table (kev/kev_date/epss/epss_percentile) added via the idempotent
+schema, folded into clear/prune/stats.
+
+**F2 — Orchestrator + annotation** (`core/threat_intel.py`): `enrich_cves`
+(network: fetch KEV once + EPSS for stale CVEs, persist; soft-degrade when both
+feeds are empty — never write false negatives) and `annotate` (offline
+derive-on-read: attach a `threat` block + deterministic `tier`). Thresholds:
+KEV→high; EPSS percentile ≥0.90→high, ≥0.50→medium (named constants).
+
+**F3 — Priority seam** (`core/intelligence.py`): `_threat_tier` prefers the
+enrichment block, falls back to the static heuristic (no regression);
+`build_intelligence` gains a best-effort offline annotate (cold cache = no-op),
+so a KEV finding outranks an equal non-KEV one through the unchanged formula.
+
+**F4 — Opt-in phase + parity** (`core/collection_runner.py` `_phase_threat`,
+`core/monitor.py`, `gui/tab_collection.py`): after cross-scanner dedup, warm the
+threat cache for the scan's CVEs. Metadata about CVEs (no target traffic) → not
+scope-gated; off by default; soft-degrades offline; monitor + GUI parity.
+
+**F5 — Surfaces**: report.html "Exploitability (KEV/EPSS)" card, web
+`/findings` threat block, findings CSV KEV/EPSS columns.
+
+### Decisions locked (2026-06-28)
+
+1. tier mapping: KEV→high; EPSS percentile ≥0.90→high, ≥0.50→medium; else static
+   fallback. Thresholds are named constants.
+2. MVP feeds priority only; KEV→SLA tightening deferred (touches the verdict).
+3. `threat_feed` is opt-in network metadata (like osv/asn), not Scope-Guard
+   active-gated (no target traffic).
+4. Cache TTL 24h for KEV + EPSS, pruned by age in `CVEStore`.
+
+### Deferred (not blockers)
+
+KEV→SLA tightening; full EPSS daily-CSV ingestion (we query per-CVE); a timeline
+NEW_KEV event; a KEV alert rule; a GUI badge in the findings detail.
+
+---

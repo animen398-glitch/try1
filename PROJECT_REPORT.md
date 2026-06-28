@@ -2,11 +2,11 @@
 
 > Снимок на 2026-06-13, обновлён 2026-06-23 (эпик ASM 2.0 F1–F6 + пост-эпик +
 > Advanced Intelligence Framework EPIC 8–16 + EPIC NEXT business-risk слой).
-> Update 2026-06-28: Workbench v2 (audit scenario templates, ROE/scope
-> templates, re-validation of unresolved findings, Audit Run A/B comparison,
-> template+compare report surfaces, GUI scenario/compare controls, web
-> read-parity) closed locally on top of the Client-Safe Pentest Workbench; full
-> pytest 2074 passed, ruff clean, GUI self-check 29 tabs.
+> Update 2026-06-28: KEV/EPSS Threat Intelligence Feed (CISA KEV + FIRST EPSS
+> per-CVE enrichment → priority via threat_tier; cache in CVEStore, derive-on-read
+> annotation, opt-in collection phase, report/web/CSV surfaces) closed locally on
+> top of Workbench v2; full pytest 2101 passed, ruff clean, GUI self-check 29
+> tabs. The priority/risk formula was not changed.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -17,7 +17,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2074 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2101 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

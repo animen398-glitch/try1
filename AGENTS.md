@@ -372,6 +372,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - GUI-хвосты закрыты: Criticality business editor, per-asset business override, Remediation tab, IaC Config tab.
 - Client-Safe Pentest Workbench (v1) закрыт: audit-run workflow/phases, ROE/scope+action policy, finding validation/quality gate, schemas, AuditRunStore, report JSON/MD/HTML, тонкая вкладка Audit Runs.
 - Workbench v2 закрыт: audit scenario templates, ROE/scope templates, re-validation unresolved findings, Audit Run A/B compare (+gate), template+compare report surfaces, GUI scenario/compare controls, web read-parity (`/audit-runs`, `/audit-compare`).
+- KEV/EPSS Threat Intelligence Feed закрыт: `core/threat_feed.py` (KEV+EPSS парсеры+seam) + `CVEStore.cve_threat`, `core/threat_intel.py` (enrich/annotate/tier derive-on-read), seam в `intelligence._threat_tier` (priority-формула не менялась), opt-in `_phase_threat` (не scope-gated) + monitor/GUI parity, поверхности report-card/web/CSV. KEV→SLA отложено.
 
 **Ключевые рабочие модули:**
 - `core/project.py` — единственный источник правды по проектам/сканам/metadata.
@@ -383,7 +384,10 @@ Dashboard и Reporting, риски и точки интеграции описа
 - `remote/web_app.py` — LAN web-console, parity через тонкие helpers/JOBS.
 - `core/audit_workflow.py`, `core/audit_templates.py`, `core/audit_scope.py` (ROE+ROE-templates), `core/audit_checks.py`, `core/scope_policy.py`, `core/action_policy.py`, `core/finding_validation.py`, `core/finding_quality.py`, `core/audit_revalidation.py`, `core/audit_compare.py`, `core/audit_report.py`, `core/audit_store.py`, `core/audit_schema.py` + `schemas/asa_audit_*.schema.json` — Client-Safe Pentest Workbench (v1+v2). Единый `FindingsStore` SoT; compare derive-on-read; всё client-safe.
 
-**Последние важные изменения на 2026-06-28 (Workbench v1+v2):**
+**Последние важные изменения на 2026-06-28 (KEV/EPSS Threat Feed):**
+- Закрыт эпик KEV/EPSS (roadmap «EPIC CLOSED — KEV/EPSS Threat Intelligence Feed»): ранжирование находок по реальной эксплуатируемости. F1 `core/threat_feed.py` (парсеры CISA KEV + FIRST EPSS, injectable seam) + таблица `cve_threat` в `CVEStore`. F2 `core/threat_intel.py`: `enrich_cves` (network: KEV раз + EPSS per-CVE, persist, soft-degrade без false-negatives), `annotate` (offline derive-on-read → блок `threat`+`tier`), пороги KEV→high/EPSS≥0.90→high/≥0.50→medium (именованные константы). F3 seam в `intelligence._threat_tier` (enrichment-first, fallback на статику — ноль регресса; `build_intelligence` += best-effort offline annotate; priority-формула НЕ менялась). F4 opt-in `_phase_threat` в CollectionRunner (после dedup, не scope-gated — метаданные о CVE без трафика к цели, off by default, soft-degrade) + monitor/GUI parity. F5 поверхности: report-card «Exploitability (KEV/EPSS)», web `/findings` threat-блок, CSV-колонки. Decisions: tier-пороги; только priority (KEV→SLA отложено); opt-in не под Scope Guard; TTL 24ч. Проверено: ruff clean, full pytest 2101 passed, self-check 29 вкладок.
+
+**Ранее на 2026-06-28 (Workbench v1+v2):**
 - Client-Safe Pentest Workbench v1 закрыт (audit-run workflow, ROE/scope/action policy, validation/quality gate, schemas, store, report JSON/MD/HTML, тонкая вкладка).
 - Workbench v2 закрыт (эпик в `ROADMAP_ASM_2.0.md` «EPIC CLOSED — Workbench v2»): F1 `core/audit_templates.py` (4 сценария; `create_audit_run` += opt-in `template`/`roe`/`baseline_run_id`, bare-вызов = v1), F2 ROE/scope-шаблоны в `core/audit_scope.py`, F3 `core/audit_revalidation.py` (overlay по unresolved, lifecycle не трогаем, липкость соблюдена), F4 `core/audit_compare.py` + `schemas/asa_audit_compare.schema.json` (A/B по finding_id, gate, упавшая фаза=inconclusive, derive-on-read, опц. `compared`-событие), F5 compare+scenario рендеры в `core/audit_report.py`. GUI: scenario-селектор + baseline-compare + export в `gui/tab_audit_runs.py`. Web read-parity: `/audit-runs`, `/audit-runs/{id}`, `/audit-compare`. Decisions locked: bare=v1; authenticated=только safe checks; compare derive-on-read; failed phase=inconclusive. Проверено: ruff clean, full pytest 2074 passed (1 Starlette warning), self-check 29 вкладок.
 
@@ -397,7 +401,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
-- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-28 — 2074 offline/headless теста (зелёные, 1 Starlette/httpx warning).
+- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-28 — 2101 offline/headless теста (зелёные, 1 Starlette/httpx warning).
 - Перед релизной пометкой обязательно прогонять `pytest` и, если менялся GUI/frozen-контур, self-check окна/PyInstaller smoke.
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 
