@@ -12,6 +12,7 @@ from qtpy.QtWidgets import (
     QComboBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QVBoxLayout, QWidget,
 )
 
+from core.cookie_auditor import CookieFileError, describe_cookies_txt
 from gui.constants import LIVE_TEST_OUTPUT
 from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 from utils.image_processor import ImageExtractor
@@ -85,6 +86,11 @@ class VideoTabMixin:
 
         quality = self.video_quality.currentText()
         cookies = self.video_cookies.text().strip() or None
+        try:
+            cookie_summary = describe_cookies_txt(cookies) if cookies else None
+        except CookieFileError as e:
+            QMessageBox.warning(self, "Invalid cookies.txt", str(e))
+            return
 
         self.video_results.clear()
         if not VideoDownloader.is_available():
@@ -95,8 +101,8 @@ class VideoTabMixin:
             return
         self.video_results.append_info(f"Загружаю [{quality}]: {url}")
         self.video_results.append_info(f"Директория: {out_path}")
-        if cookies:
-            self.video_results.append_info(f"Cookies: {cookies}")
+        if cookie_summary:
+            self.video_results.append_info(f"Cookies: {cookie_summary}")
         if quality in ('4k', '1440p', '1080p') and not VideoDownloader.has_ffmpeg():
             self.video_results.append_warning(
                 "ffmpeg не найден — будет использован прогрессивный поток "
@@ -191,8 +197,14 @@ class ImageTabMixin:
         self._set_busy(True)
 
         cookies = self.image_cookies.text().strip() or None
-        if cookies:
-            self.image_results.append_info(f"Cookies: {cookies}")
+        try:
+            cookie_summary = describe_cookies_txt(cookies) if cookies else None
+        except CookieFileError as e:
+            self._set_busy(False)
+            QMessageBox.warning(self, "Invalid cookies.txt", str(e))
+            return
+        if cookie_summary:
+            self.image_results.append_info(f"Cookies: {cookie_summary}")
         ex = ImageExtractor(
             profile=self.settings.get('user_agent_profile', 'chrome_windows'),
             cookies=cookies,

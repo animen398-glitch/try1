@@ -15,6 +15,7 @@ from qtpy.QtWidgets import (
 
 from core import config, monitor
 from core.collection_runner import CollectionRunner
+from core.cookie_auditor import CookieFileError, describe_cookies_txt
 from core.executive_summary import RISK_COLORS
 from core.features import has_katana, has_nuclei, has_playwright
 from core.project import ProjectStore
@@ -373,8 +374,17 @@ class FinalReportTabMixin:
             QMessageBox.warning(self, "Ошибка", "Укажите URL и папку")
             return
 
+        cookies = self.collect_cookies.text().strip() or None
+        try:
+            cookie_summary = describe_cookies_txt(cookies) if cookies else None
+        except CookieFileError as e:
+            QMessageBox.warning(self, "Invalid cookies.txt", str(e))
+            return
+
         self.collect_log.clear()
         self.collect_log.append_info(f"Запускаю Full Collection: {url}")
+        if cookie_summary:
+            self.collect_log.append_info(f"Cookies: {cookie_summary}")
         self.collect_progress.setRange(0, 0)
         self.collect_progress.setVisible(True)
         self.btn_collect_run.setEnabled(False)

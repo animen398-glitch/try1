@@ -6,6 +6,7 @@ flag weak configurations at a glance.
 """
 
 import gzip
+from pathlib import Path
 import ssl
 import urllib.error
 import urllib.request
@@ -17,6 +18,108 @@ from utils.browser_utils import BROWSER_HEADERS
 
 # SameSite values that actually provide CSRF protection.
 _SAFE_SAMESITE = {'strict', 'lax'}
+
+
+class CookieFileError(ValueError):
+    """Raised when a cookies.txt file is missing or not Netscape-formatted."""
+
+
+def mask_cookie_value(value: str) -> str:
+    """Mask a cookie value while keeping enough context for UX diagnostics."""
+    value = str(value or '')
+    if not value:
+        return ''
+    return f'{value[:4]}...len={len(value)}'
+
+
+def _parse_netscape_cookie_line(line: str, line_no: int) -> Dict:
+    parts = line.rstrip('\n').split('\t')
+    if len(parts) != 7:
+        raise CookieFileError(
+            f'cookies.txt line {line_no}: expected Netscape format with '
+            '7 tab-separated columns'
+        )
+    domain, include_subdomains, path, secure, expires, name, value = parts
+    if not domain or not path or not name:
+        raise CookieFileError(
+            f'cookies.txt line {line_no}: domain, path and cookie name are required'
+        )
+    flag = include_subdomains.upper()
+    secure_flag = secure.upper()
+    if flag not in {'TRUE', 'FALSE'} or secure_flag not in {'TRUE', 'FALSE'}:
+        raise CookieFileError(
+            f'cookies.txt line {line_no}: include-subdomains and secure '
+            'columns must be TRUE or FALSE'
+        )
+    if expires and not expires.isdigit():
+        raise CookieFileError(
+            f'cookies.txt line {line_no}: expiration must be a Unix timestamp or 0'
+        )
+    return {
+        'domain': domain,
+        'include_subdomains': flag == 'TRUE',
+        'path': path,
+        'secure': secure_flag == 'TRUE',
+        'expires': expires,
+        'name': name,
+        'value_masked': mask_cookie_value(value),
+    }
+
+
+def read_cookies_txt(path: str) -> List[Dict]:
+    """Read a Netscape cookies.txt file and return only masked cookie values."""
+    cookie_path = Path(path).expanduser()
+    if not cookie_path.exists():
+        raise CookieFileError(f'cookies.txt not found: {cookie_path}')
+    if not cookie_path.is_file():
+        raise CookieFileError(f'cookies.txt is not a file: {cookie_path}')
+
+    cookies: List[Dict] = []
+    try:
+        lines = cookie_path.read_text(encoding='utf-8').splitlines()
+    except UnicodeDecodeError as exc:
+        raise CookieFileError('cookies.txt must be UTF-8 text') from exc
+
+    for line_no, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        cookies.append(_parse_netscape_cookie_line(line, line_no))
+    if not cookies:
+        raise CookieFileError('cookies.txt does not contain any cookie rows')
+    return cookies
+
+
+def validate_cookies_txt(path: Optional[str]) -> Dict:
+    """Validate cookies.txt for GUI preflight without exposing raw values."""
+    if not path:
+        return {'status': 'Skipped', 'cookies': [], 'total': 0, 'domains': []}
+    try:
+        cookies = read_cookies_txt(path)
+    except CookieFileError as exc:
+        return {'status': 'Error', 'error': str(exc), 'cookies': []}
+    domains = sorted({c['domain'].lstrip('.') for c in cookies})
+    return {
+        'status': 'Success',
+        'path': str(Path(path).expanduser()),
+        'cookies': cookies,
+        'total': len(cookies),
+        'domains': domains,
+    }
+
+
+def describe_cookies_txt(path: Optional[str]) -> str:
+    """Return a short, secret-safe summary for status/log output."""
+    result = validate_cookies_txt(path)
+    if result.get('status') != 'Success':
+        raise CookieFileError(result.get('error', 'invalid cookies.txt'))
+    domains = result.get('domains') or []
+    domain_text = ', '.join(domains[:3])
+    if len(domains) > 3:
+        domain_text += f' +{len(domains) - 3}'
+    return f'{result.get("total", 0)} cookie(s)' + (
+        f' for {domain_text}' if domain_text else ''
+    )
 
 
 def _parse_set_cookie(line: str) -> Dict:
