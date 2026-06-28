@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-28 02:53:18  
-> Total memories: **46**  
-> Breakdown: instruction: 8, decision: 4, goal: 2, preference: 1, context: 3, event: 25, error: 3
+> Generated: 2026-06-28 03:19:14  
+> Total memories: **49**  
+> Breakdown: instruction: 8, decision: 5, goal: 3, preference: 1, context: 3, event: 25, error: 4
 
 ---
 
@@ -84,6 +84,12 @@ User approved implementation of the Client-Safe Pentest Workbench development pl
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T18:34:22 | Tags: `client-safe-workbench`, `w1`, `audit-store`, `approved`*
 
+### Planning direction proposed for Advanced Site Anal...
+
+Planning direction proposed for Advanced Site Analyzer: evolve from ASM/CSM + Client-Safe Audit Runs into an Authorized Pentest Workbench by adding mission/scenario orchestration, tool adapters, evidence-first validation, ROE-gated active checks, operator profiles, lab mode, reporting, and plugin SDK; avoid stealth, brute force, destructive exploitation, and unscoped automation by default.
+
+*Confidence: 0.95 | Status: active | Created: 2026-06-28T00:15:32*
+
 ### Backend release-hardening contracts (T1-T5)
 
 Backend release-hardening (branch backend/release-hardening, ~23 commits, full-diff self-reviewed, awaiting external review/merge; not pushed). SQLite/stores: (1) SQLiteStore: every connection WAL + synchronous=NORMAL + busy_timeout (no 'database is locked'); raw .db never copied so WAL sidecars safe. (2) Corrupt DB on init quarantined to <db>.corrupt-<ts>, recreated empty (never deletes data); transient lock != corruption. (3) FindingsStore.sync/AssetStore.sync = ONE transaction (atomic) via _upsert/_set_status/_list_* (conn) workers behind thin public wrappers. (4) OperationRegistry bounds operations.db (newest MAX_HISTORY, prune every PRUNE_EVERY inserts); DataRegistry user data NOT auto-pruned. (5) CVEStore.prune bounds cve_cache.db by age + row cap; cve_intel.correlate prunes once per run (own store only). Contracts/IO: (6) all 6 *_cli.py share core/cli_common.py (configure_stdout+CliError+run_main): expected failures -> stderr 'error: <msg>' + exit 2. (7) remote/web_app.py global FastAPI handler -> uniform {'error':...} JSON 500; _job_results FIFO-capped + _log_queue maxsize drop-oldest. (8) CollectionRunner._persist_error_report always leaves a readable report.json (status Error) on finalization failure. (9) external_tools.run_command caps stdout (MAX_OUTPUT head, truncated flag). (10) utils/atomic_io.py (temp+os.replace) for ALL durable-state JSON: metadata+history, report.json, company registry, evidence_manifest, settings/targets (transient per-phase artifacts left direct). (11) Project.start_scan unique scan dir (mkdir exist_ok=False + -2/-3 suffix); runner takes scan_id from scan_dir.name. (12) Secret previews are a non-leaking mask: secret_scanner._preview = prefix(6)+ellipsis+length (mirrors mask_value, never the body) + dynamic_analyzer previews aligned. IMPORTANT: the length suffix is required - findings_adapter derives the secret discriminator from key:preview, so a too-short preview (prefix only) would merge two distinct same-prefix keys (e.g. two sk_live_ keys) into one finding; the length restores that entropy (caught in self-review). Audits, NO code change (some pinned by guard tests): event ordering deterministic; report consumers tolerant of thin/legacy/Error reports (test_report_backcompat); migration-with-data tested (test_findings_store_migration); secret redaction OK (operations.db/logs carry no secrets; raw only in local artifacts + LAN console, by-design); timestamps consistently local-naive, ct_history isolated naive-UTC, no mixed comparison, UTC migration intentionally not done. Remaining optional/deferred: cross-process advisory locking; roadmap-out-of-scope (live threat feeds, live cloud API, new scanners).
@@ -101,6 +107,12 @@ Architecture invariants (breaking them = regression): (1) UI thin, logic in core
 ## Goals
 
 *Objectives, targets, and milestones to track progress.*
+
+### User wants to move Advanced Site Analyzer toward p...
+
+User wants to move Advanced Site Analyzer toward pentesting with Codex and Claude Code and create a fully working pentest multitool program; needs analysis, structure, roadmap, required tools, and implementation plan.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T00:15:05*
 
 ### User decided to continue developing Client-Safe Pe...
 
@@ -363,6 +375,12 @@ Full release-readiness verification after Codex internal polish: ruff check . pa
 Known trap: pytest may exit 127 on Python 3.14 at interpreter shutdown and drop the summary line. This is NOT a test failure - read the real pass/fail counts above the shutdown noise. For a clean run use a unique --basetemp and -p no:cacheprovider on Windows (temp/cache teardown quirks).
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T14:49:18 | Tags: `pytest`, `python3.14`, `windows`, `false-failure`*
+
+### Observed and fixed Recon GUI crash: dynamic endpoi...
+
+Observed and fixed Recon GUI crash: dynamic endpoint status may be None; gui.tab_recon now formats missing status as '-' and tests cover None/empty/non-numeric endpoint status.
+
+*Confidence: 0.95 | Status: active | Created: 2026-06-27T23:59:49*
 
 ### memanto cp1251 UnicodeEncodeError workaround
 
