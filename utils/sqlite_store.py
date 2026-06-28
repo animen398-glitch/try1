@@ -239,11 +239,50 @@ class SQLiteStore:
                     f'SELECT * FROM {ev_tbl} WHERE {fk} IN ({ph})', ids).fetchall()]
         return {'rows': rows, 'events': events}
 
+    def validate_project_import(self, project: str, payload: Dict[str, Any]) -> None:
+        """Validate an untrusted project slice before any local mutation.
+
+        Main rows must belong to the requested project, and event rows may only
+        reference ids carried by that same slice. This prevents a tampered
+        bundle from inserting rows into, or attaching events to, another
+        project's records.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError('project slice must be an object')
+        rows = payload.get('rows') or []
+        events = payload.get('events') or []
+        if not isinstance(rows, list) or not isinstance(events, list):
+            raise ValueError('project slice rows/events must be arrays')
+
+        main, ev_tbl, fk = self._project_export_spec()
+        del main  # the trusted table name is used by import_project itself
+        row_ids = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError('project slice row must be an object')
+            if str(row.get('project') or '') != str(project):
+                raise ValueError('project slice contains a foreign project row')
+            row_id = str(row.get('id') or '')
+            if not row_id:
+                raise ValueError('project slice row is missing id')
+            row_ids.add(row_id)
+
+        if not ev_tbl:
+            if events:
+                raise ValueError('single-table project slice cannot contain events')
+            return
+        for event in events:
+            if not isinstance(event, dict):
+                raise ValueError('project slice event must be an object')
+            if str(event.get(fk) or '') not in row_ids:
+                raise ValueError('project slice event references a foreign row')
+
     def import_project(self, project: str, payload: Dict[str, Any], *,
                        replace: bool = False) -> Dict[str, Any]:
         """Insert an exported slice for ``project``. If the project already has
         rows: skipped unless ``replace`` (then its rows+events are deleted first).
         Event ``id`` (autoincrement) is dropped so it re-generates locally."""
+        self.validate_project_import(project, payload)
         main, ev_tbl, fk = self._project_export_spec()
         rows = payload.get('rows') or []
         events = payload.get('events') or []

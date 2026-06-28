@@ -168,16 +168,26 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         if dest_dir.exists():
             if not replace:
                 return {'slug': slug, 'skipped': True, 'reason': 'project exists'}
-            shutil.rmtree(dest_dir)
 
-        files = _safe_extract(zf, dest_dir)
         findings = json.loads(zf.read(_FINDINGS)) if _FINDINGS in names else {}
         assets = json.loads(zf.read(_ASSETS)) if _ASSETS in names else {}
         audit_runs = json.loads(zf.read(_AUDIT_RUNS)) if _AUDIT_RUNS in names else {}
         missions = json.loads(zf.read(_MISSIONS)) if _MISSIONS in names else {}
 
-    findings_store, assets_store, audit_store, mission_store = _stores(
-        findings_db, assets_db, audit_db, missions_db)
+        findings_store, assets_store, audit_store, mission_store = _stores(
+            findings_db, assets_db, audit_db, missions_db)
+        for db_store, payload in (
+            (findings_store, findings),
+            (assets_store, assets),
+            (audit_store, audit_runs),
+            (mission_store, missions),
+        ):
+            db_store.validate_project_import(slug, payload)
+
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir)
+        files = _safe_extract(zf, dest_dir)
+
     fres = findings_store.import_project(slug, findings, replace=replace)
     ares = assets_store.import_project(slug, assets, replace=replace)
     au_res = audit_store.import_project(slug, audit_runs, replace=replace)

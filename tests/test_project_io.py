@@ -268,6 +268,44 @@ def test_import_rejects_wrong_format(tmp_path):
         project_io.import_project(bad, tmp_path / 'dst')
 
 
+def test_import_rejects_foreign_mission_before_extracting_tree(tmp_path):
+    src = tmp_path / 'src'
+    slug, _fid = _seed(src, src / 'f.db', src / 'a.db')
+    bundle = tmp_path / 'bundle.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src / 'f.db',
+                              assets_db=src / 'a.db')
+
+    tampered = tmp_path / 'tampered.zip'
+    foreign = {
+        'rows': [{
+            'id': 'mission-foreign',
+            'project': 'other.example',
+            'profile': 'client_safe',
+            'status': 'draft',
+            'payload': '{}',
+            'created_at': '2026-01-01T00:00:00',
+            'updated_at': '2026-01-01T00:00:00',
+        }],
+        'events': [],
+    }
+    with zipfile.ZipFile(bundle) as zin, zipfile.ZipFile(tampered, 'w') as zout:
+        for item in zin.namelist():
+            data = json.dumps(foreign) if item == 'missions.json' else zin.read(item)
+            zout.writestr(item, data)
+
+    dst = tmp_path / 'dst'
+    with pytest.raises(ValueError, match='foreign project'):
+        project_io.import_project(
+            tampered,
+            dst,
+            findings_db=dst / 'f.db',
+            assets_db=dst / 'a.db',
+            missions_db=dst / 'm.db',
+        )
+
+    assert not (dst / 'Projects' / slug).exists()
+
+
 def test_bundle_info_reads_manifest(tmp_path):
     src = tmp_path / 'src'
     src_f, src_a = src / 'findings.db', src / 'assets.db'

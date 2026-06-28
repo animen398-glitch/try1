@@ -105,6 +105,33 @@ class _JsonStore(SQLiteStore):
     JSON_FIELDS = ('meta',)
 
 
+class _ProjectStore(SQLiteStore):
+    PROJECT_EXPORT = ('records', 'record_events', 'record_id')
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS records (
+        id TEXT PRIMARY KEY,
+        project TEXT NOT NULL,
+        value TEXT
+    );
+    CREATE TABLE IF NOT EXISTS record_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        record_id TEXT NOT NULL,
+        type TEXT NOT NULL
+    );
+    """
+
+
+class _SingleTableProjectStore(SQLiteStore):
+    PROJECT_EXPORT = ('records', None, None)
+    SCHEMA = """
+    CREATE TABLE IF NOT EXISTS records (
+        id TEXT PRIMARY KEY,
+        project TEXT NOT NULL,
+        value TEXT
+    );
+    """
+
+
 def test_corrupt_db_quarantined_and_recreated(tmp_path):
     """A garbage DB file does not crash construction: it is quarantined and a
     fresh, working store is recreated; the original bytes are preserved."""
@@ -146,3 +173,42 @@ def test_malformed_json_field_left_raw(tmp_path):
         row = conn.execute("SELECT 1 AS id, '{not json' AS meta").fetchone()
     decoded = _JsonStore._row_to_dict(row)
     assert decoded['meta'] == '{not json'
+
+
+def test_project_import_rejects_foreign_main_row(tmp_path):
+    store = _ProjectStore(tmp_path / 'projects.db')
+    payload = {
+        'rows': [{'id': 'r1', 'project': 'victim', 'value': 'x'}],
+        'events': [],
+    }
+
+    with pytest.raises(ValueError, match='foreign project'):
+        store.import_project('expected', payload)
+
+    assert store.export_project('victim')['rows'] == []
+
+
+def test_project_import_rejects_event_for_foreign_row(tmp_path):
+    store = _ProjectStore(tmp_path / 'projects.db')
+    payload = {
+        'rows': [{'id': 'r1', 'project': 'expected', 'value': 'x'}],
+        'events': [{'record_id': 'other-id', 'type': 'SEEN'}],
+    }
+
+    with pytest.raises(ValueError, match='foreign row'):
+        store.import_project('expected', payload)
+
+    assert store.export_project('expected')['rows'] == []
+
+
+def test_single_table_project_import_rejects_events(tmp_path):
+    store = _SingleTableProjectStore(tmp_path / 'projects.db')
+    payload = {
+        'rows': [{'id': 'r1', 'project': 'expected', 'value': 'x'}],
+        'events': [{'record_id': 'r1', 'type': 'SEEN'}],
+    }
+
+    with pytest.raises(ValueError, match='cannot contain events'):
+        store.import_project('expected', payload)
+
+    assert store.export_project('expected')['rows'] == []
