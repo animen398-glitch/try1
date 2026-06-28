@@ -4650,3 +4650,46 @@ ADVANCED INTELLIGENCE FRAMEWORK — EPIC 13: MONITORING
       report_export): 240 passed.
 
   NEXT: local commit; backend polish phase on request.
+
+================================================================================
+2026-06-28 — WORKBENCH v2 (Audit Scenarios, Re-validation & A/B Comparison)
+================================================================================
+  Extends the closed Client-Safe Pentest Workbench (v1). Single FindingsStore
+  source of truth kept; new payloads derive from it; schema growth additive/
+  optional; everything client-safe, pure, deterministic, offline.
+
+  F1 core/audit_templates.py — registry of 4 scenarios (light_client_safe,
+     authenticated_review, evidence_refresh, release_regression).
+     create_audit_run += keyword-only template/roe/baseline_run_id; a bare call
+     stays byte-identical to v1. asa_audit_run.schema.json grew optional fields.
+  F2 core/audit_scope.py — ROE_TEMPLATES (passive_external/authenticated_internal/
+     evidence_only/release_gate) + list/get/apply; create_audit_run binds a
+     scenario's roe_template into a normalized ROE when no explicit roe given.
+  F3 core/audit_revalidation.py — re-validates OPEN/IN_PROGRESS findings via
+     FindingsStore.active_findings (FIXED/IGNORED/FALSE_POSITIVE excluded),
+     overlay for advance_audit_phase(validation); store status never mutated.
+  F4 core/audit_compare.py + schemas/asa_audit_compare.schema.json — A/B diff by
+     finding_id (new/resolved/regressed/improved/unchanged), compare_gate,
+     failed candidate phase = inconclusive (not regression), derive-on-read,
+     compare_stored over AuditRunStore, optional record_comparison ('compared'
+     event on the candidate; never raises).
+  F5 core/audit_report.py — additive scenario block in run JSON/MD/HTML +
+     render_compare_json/markdown/html (views over the compare payload).
+  GUI gui/tab_audit_runs.py — scenario selector (phase-subset aware), baseline
+     compare + Export Compare; all via _run_async, thin.
+  WEB remote/web_app.py — read parity: /audit-runs, /audit-runs/{id},
+     /audit-compare.
+
+  DECISIONS LOCKED: bare create_audit_run = v1; authenticated_review = safe
+  active checks only (no credential work); compare derive-on-read (no new table);
+  failed phase = inconclusive (gate never fails on that alone).
+
+  VERIFICATION:
+    - ruff clean on the changed set.
+    - full pytest: 2074 passed, 1 existing Starlette/httpx warning.
+    - python main.py --self-check = 29 tabs.
+  Commits (local, master): 86e473f1 F1, 859d8249 F2, 3175fcfa F3, 98b0fcc5 F4,
+  ab7ce310 F5, ef41e59d roadmap; GUI/web/compared-event + doc sync follow.
+
+  NEXT: optional PyInstaller frozen smoke on user side; remote publish is the
+  user's call (no remote git performed).

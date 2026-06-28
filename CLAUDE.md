@@ -370,6 +370,8 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Infrastructure/Technology/Integration waves закрыты: cloud/region classification, tech risk, SARIF, Markdown, generic webhook, CI gate, GitHub Issues push, OWASP/CWE compliance, severity/timeline/report convergence.
 - EPIC NEXT закрыт: migrations/contracts, Business Context Model, business-aware prioritization, deterministic attack paths, remediation tasks, semantic drift, auditor-friendly compliance, IaC ingestion.
 - GUI-хвосты закрыты: Criticality business editor, per-asset business override, Remediation tab, IaC Config tab.
+- Client-Safe Pentest Workbench (v1) закрыт: audit-run workflow/phases, ROE/scope+action policy, finding validation/quality gate, schemas, AuditRunStore, report JSON/MD/HTML, тонкая вкладка Audit Runs.
+- Workbench v2 закрыт: audit scenario templates, ROE/scope templates, re-validation unresolved findings, Audit Run A/B compare (+gate), template+compare report surfaces, GUI scenario/compare controls, web read-parity (`/audit-runs`, `/audit-compare`).
 
 **Ключевые рабочие модули:**
 - `core/project.py` — единственный источник правды по проектам/сканам/metadata.
@@ -379,8 +381,13 @@ Dashboard и Reporting, риски и точки интеграции описа
 - `core/intelligence.py`, `core/business_context.py`, `core/remediation.py`, `core/compliance.py`, `core/iac_scanner.py` — business/risk/paths/remediation/compliance/IaC слой.
 - `gui/tab_*` — тонкие mixin-вкладки; любые фоновые операции идут через `_start_task()` / `_run_async()`.
 - `remote/web_app.py` — LAN web-console, parity через тонкие helpers/JOBS.
+- `core/audit_workflow.py`, `core/audit_templates.py`, `core/audit_scope.py` (ROE+ROE-templates), `core/audit_checks.py`, `core/scope_policy.py`, `core/action_policy.py`, `core/finding_validation.py`, `core/finding_quality.py`, `core/audit_revalidation.py`, `core/audit_compare.py`, `core/audit_report.py`, `core/audit_store.py`, `core/audit_schema.py` + `schemas/asa_audit_*.schema.json` — Client-Safe Pentest Workbench (v1+v2). Единый `FindingsStore` SoT; compare derive-on-read; всё client-safe.
 
-**Последние важные изменения на 2026-06-23:**
+**Последние важные изменения на 2026-06-28 (Workbench v1+v2):**
+- Client-Safe Pentest Workbench v1 закрыт (audit-run workflow, ROE/scope/action policy, validation/quality gate, schemas, store, report JSON/MD/HTML, тонкая вкладка).
+- Workbench v2 закрыт (эпик в `ROADMAP_ASM_2.0.md` «EPIC CLOSED — Workbench v2»): F1 `core/audit_templates.py` (4 сценария; `create_audit_run` += opt-in `template`/`roe`/`baseline_run_id`, bare-вызов = v1), F2 ROE/scope-шаблоны в `core/audit_scope.py`, F3 `core/audit_revalidation.py` (overlay по unresolved, lifecycle не трогаем, липкость соблюдена), F4 `core/audit_compare.py` + `schemas/asa_audit_compare.schema.json` (A/B по finding_id, gate, упавшая фаза=inconclusive, derive-on-read, опц. `compared`-событие), F5 compare+scenario рендеры в `core/audit_report.py`. GUI: scenario-селектор + baseline-compare + export в `gui/tab_audit_runs.py`. Web read-parity: `/audit-runs`, `/audit-runs/{id}`, `/audit-compare`. Decisions locked: bare=v1; authenticated=только safe checks; compare derive-on-read; failed phase=inconclusive. Проверено: ruff clean, full pytest 2074 passed (1 Starlette warning), self-check 29 вкладок.
+
+**Более ранние изменения на 2026-06-23:**
 - GUI polish (юзабилити, без слома вкладок/контрактов; окно — нативный `QMainWindow` `StableWindowBase`, не frameless qfluent): (1) `utils/subprocess_utils.py` — `run_hidden`/`popen_hidden` прячут cmd-окна внешних CLI на Windows; переведены все рантайм-вызовы (nuclei/katana/amass/subfinder/httpx/bbot/lift через `external_tools.run_command`, + rar/yt-dlp/ffmpeg/scrapy/relaunch/git). (2) Тема: слоистая dark-палитра + централизованный dark-QSS (таблицы/inputs/scrollbars/tab-pane) в `gui/theme.py`; рейл стилизуется из `theme.navigation_qss()` (sidebar совпал с темой, accent-selected). (3) `gui/ui_components.py`: `linkify`/`make_selectable_label`/`make_link_label`/`SelectableText`/`LinkTextBrowser` — ссылки кликабельны/копируемы (применено к Findings detail + health-диалогу). (4) Settings открывается размером 580×600 (поля «Уведомления» видны; скролл уже был). Sidebar wheel-scroll/collapse/footer/`&`-fix — уже были и покрыты тестами. Все изменения покрыты тестами; frozen self-check 28 вкладок.
 - Release-слой (шаг 5): добавлен `core/project_io.py` — экспорт/импорт проекта одним `.zip` (дерево `Projects/<slug>` + faithful срез findings/assets со строками и событиями lifecycle; zip-slip/SQL-safe). Generic срез — `SQLiteStore.export_project`/`import_project` (декларация `PROJECT_EXPORT` в findings/asset сторах). Поверхность — кнопки Export/Import project в Overview. Добавлен `CHANGELOG.md` (Keep a Changelog; 1.0.0 + Unreleased). Добавлен `gui/first_run.py` — first-run onboarding + system-health screen поверх `launcher.health_check` (+ пункт «Состояние системы» в nav, хук в `main.py`). Подтверждено: `init_path_manager()` во frozen-пути чтит `ASA_DATA_ROOT`. Покрыто `tests/test_project_io.py`/`test_first_run.py` + GUI-тесты Overview.
 - Demo/Release подготовка: добавлен `ASA_DATA_ROOT` env-override в `PathManager._detect_data_root` (единый seam — уводит ВСЕ data-БД/configs/settings/workspaces под один каталог, портится поверх source- и frozen-дефолтов; явный `data_root=` ctor-арг по-прежнему выше). Добавлен `demo_seed.py` (entry-скрипт корня): сеет self-contained demo workspace (1 company + 3 домена, 7 сканов, lifecycle-находки с drift, активы, business-контекст, remediation) в один каталог через явные PathManager-пути; запуск приложения — `ASA_DATA_ROOT=<dir> python main.py`. Проверено end-to-end (override → GUI читает портфель) + `tests/test_demo_seed.py`/`test_paths.py`.
@@ -390,7 +397,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
-- `PROJECT_REPORT.md` указывает актуальный масштаб набора около 1794 offline/headless тестов.
+- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-28 — 2074 offline/headless теста (зелёные, 1 Starlette/httpx warning).
 - Перед релизной пометкой обязательно прогонять `pytest` и, если менялся GUI/frozen-контур, self-check окна/PyInstaller smoke.
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 
