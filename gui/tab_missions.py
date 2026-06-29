@@ -84,6 +84,10 @@ class MissionsTabMixin:
         self.btn_mission_advance.setEnabled(False)
         self.btn_mission_advance.clicked.connect(self._advance_mission)
         advance_row.addWidget(self.btn_mission_advance)
+        self.btn_mission_run = StyledButton("Run mission")
+        self.btn_mission_run.setEnabled(False)
+        self.btn_mission_run.clicked.connect(self._run_mission)
+        advance_row.addWidget(self.btn_mission_run)
         advance_row.addStretch(1)
         layout.addLayout(advance_row)
 
@@ -317,16 +321,18 @@ class MissionsTabMixin:
         self._update_mission_actions()
 
     def _update_mission_actions(self):
-        has_mission = bool(self._selected_mission())
+        mission = self._selected_mission()
+        has_mission = bool(mission)
+        idle = has_mission and not self._mission_acting
+        status = str(mission.get("status") or "").strip().lower()
         self.btn_mission_advance.setEnabled(
-            has_mission and not self._mission_acting
-            and self.mission_advance_status.count() > 0)
+            idle and self.mission_advance_status.count() > 0)
         self.btn_mission_link_run.setEnabled(
-            has_mission and not self._mission_acting
-            and self.mission_link_run.count() > 0)
+            idle and self.mission_link_run.count() > 0)
         self.btn_mission_link_finding.setEnabled(
-            has_mission and not self._mission_acting
-            and self.mission_link_finding.count() > 0)
+            idle and self.mission_link_finding.count() > 0)
+        # A mission is executable only from the 'ready' state.
+        self.btn_mission_run.setEnabled(idle and status == "ready")
 
     # ── mutations (advance / link), all via the pure contract + store ──────────
 
@@ -405,6 +411,25 @@ class MissionsTabMixin:
             updated = link_finding(payload, str(finding_id))
             MissionStore().save_mission(updated)
             return {"ok": f"linked finding {finding_id}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _run_mission(self):
+        payload = self._begin_mission_action()
+        if not payload:
+            return
+        self.mission_status.setText("Running mission (client-safe audit run)...")
+        self._run_async(
+            lambda p=payload: self._do_run_mission(p),
+            self._on_mission_action_done,
+        )
+
+    @staticmethod
+    def _do_run_mission(payload: Dict[str, Any]) -> dict:
+        try:
+            from core.mission_runner import run_mission
+            out = run_mission(payload)
+            return {"ok": f"mission ran → {out['run_id']} ({out['status']})"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 

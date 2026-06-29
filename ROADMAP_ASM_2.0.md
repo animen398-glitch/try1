@@ -1889,4 +1889,41 @@ create form — creation stays in the core/store layer); D2 surfaces = web
 read-parity **and** timeline events; D3 linking = add-links selectors (attach
 existing runs/findings). No second findings/asset/timeline source.
 
+### M4 — Mission execution (CLOSED 2026-06-29)
+
+Run an authorized mission as a concrete, evidence-first **Audit Run** — turning
+the mission envelope into evidence — with **no second store** (the run lands in
+`AuditRunStore`, linked back via the pure `link_audit_run` contract):
+
+- **`core/audit_runner.py`** (new): the audit-run orchestration extracted from
+  the GUI's inline `tab_audit_runs._query_audit_run` into one reusable seam —
+  `build_audit_run(project, *, run_id, roe, checks, template, evidence, fetcher)`
+  → `{project, run, rows, saved}`, plus helpers (`target_from_roe`,
+  `audit_candidate`, `build_audit_rows`, `rollup`, `rows_from_run`,
+  `record_audit_events`). The Audit Runs tab is now a thin delegator (its
+  static-method surface preserved for backward-compat/tests).
+- **`core/mission_runner.py`** (new): `run_mission(mission, *, now, run_id,
+  evidence, fetcher)` — validates the mission (ROE + client-safe actions),
+  requires `ready`, advances `ready → running` (persisted), builds + saves the
+  audit run via `audit_runner` (safe checks = `allowed_actions ∩
+  audit_checks.SAFE_CHECKS`; ROE-gated; no network unless a `fetcher` is
+  injected), links the run and advances `running → completed`. On orchestration
+  error the mission is persisted `failed` and the original error re-raised (a
+  save failure never masks it).
+- **Surfaces:** GUI "Run mission" button on the Missions tab (enabled only for a
+  `ready` mission); web `POST /missions/{id}/run` — a synchronous per-resource
+  mutation like `/findings/{id}/status` (bounded + offline), **not** the
+  named-phase JOBS registry; 404 unknown / 400 not-ready.
+- Tests: `tests/test_mission_runner.py` (complete/link, ready-gate, fail+reraise,
+  allowed-actions gating), plus GUI run-button cases in
+  `tests/test_missions_tab.py` and web run cases in `tests/test_web_missions.py`;
+  `core/audit_runner` is exercised through the Audit Runs delegators +
+  `mission_runner`.
+
+**Decisions (M4, locked):** D1 extract the orchestration to `core/audit_runner`
+and share it (no duplication; GUI becomes a thin caller); D2 surfaces = GUI Run
+button **and** web execution endpoint; D3 `completed` if orchestration finishes
+(any finding count), `failed` only on exception; D4 offline-safe default (no
+fetcher → probe is a no-op). No second findings/asset/timeline source.
+
 ---

@@ -84,6 +84,33 @@ def test_advance_illegal_transition_reports_error(qapp):
     assert MissionStore().get_mission(saved["id"])["status"] == "draft"
 
 
+def test_run_button_enabled_only_for_ready_mission(qapp):
+    w = MissionsHost()
+    _seed_mission("shop.com", status="draft")
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    w.mission_table.selectRow(0)
+    assert not w.btn_mission_run.isEnabled()           # draft → not runnable
+
+    MissionStore()  # ensure store exists
+    _seed_mission("shop.com", objective="Ready review", status="ready")
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    # select the ready one
+    for i, m in enumerate(w._mission_rows):
+        if m["status"] == "ready":
+            w.mission_table.selectRow(i)
+            break
+    assert w.btn_mission_run.isEnabled()
+
+
+def test_do_run_mission_executes_and_links(qapp):
+    saved = _seed_mission("shop.com", status="ready")
+    out = MissionsTabMixin._do_run_mission(saved["payload"])
+    assert "error" not in out and "ran" in out["ok"]
+    mission = MissionStore().get_mission(saved["id"])
+    assert mission["status"] == "completed"
+    assert len(mission["payload"]["linked_audit_run_ids"]) == 1
+
+
 def test_link_run_and_finding_persist_on_mission(qapp):
     saved = _seed_mission("shop.com")
     MissionsTabMixin._do_link_run(saved["payload"], "audit-shop")

@@ -34,6 +34,34 @@ def test_mission_view_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def _ready_mission(project="shop.com", objective="Authorized external review"):
+    mission = pm.create_mission(project, objective,
+                               allowed_actions=["headers_check"])
+    mission = pm.advance_mission_status(mission, "ready")
+    return MissionStore().save_mission(mission)
+
+
+def test_mission_run_helper_executes_ready_mission():
+    saved = _ready_mission()
+    out = wa._mission_run(saved["id"])
+    assert "error" not in out
+    assert out["status"] == "completed" and out["run_id"]
+    assert MissionStore().get_mission(saved["id"])["status"] == "completed"
+
+
+def test_mission_run_helper_rejects_non_ready():
+    mission = pm.create_mission("shop.com", "Draft",
+                               allowed_actions=["headers_check"])
+    saved = MissionStore().save_mission(mission)            # draft
+    out = wa._mission_run(saved["id"])
+    assert "ready" in out.get("error", "")
+
+
+def test_mission_run_helper_unknown_is_not_found():
+    out = wa._mission_run("nope")
+    assert "not found" in out.get("error", "")
+
+
 def test_mission_endpoints_with_testclient():
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")
@@ -52,4 +80,15 @@ def test_mission_endpoints_with_testclient():
     assert r.status_code == 200 and r.json()["mission"]["mission_id"] == saved["id"]
 
     r = client.get("/missions/missing")
+    assert r.status_code == 404
+
+    # execution endpoint: draft mission → 400, ready mission → 200 completed
+    r = client.post(f"/missions/{saved['id']}/run")
+    assert r.status_code == 400 and "ready" in r.json()["error"]
+
+    ready = _ready_mission("bank.example", "Portal review")
+    r = client.post(f"/missions/{ready['id']}/run")
+    assert r.status_code == 200 and r.json()["status"] == "completed"
+
+    r = client.post("/missions/missing/run")
     assert r.status_code == 404

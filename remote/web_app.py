@@ -793,6 +793,23 @@ def _mission_view(mission_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _mission_run(mission_id: str) -> dict:
+    """Execute a ready mission as an audit run (mutation). Bounded + offline by
+    default (no fetcher), so it runs synchronously like the other per-resource
+    mutation POSTs (e.g. /findings/{id}/status), not via the named-phase JOBS."""
+    try:
+        from core.mission_runner import run_mission
+        from core.mission_store import MissionStore
+        row = MissionStore().get_mission(str(mission_id))
+        if row is None:
+            return {'error': f'mission not found: {mission_id}'}
+        out = run_mission(row['payload'])
+        return {'mission_id': out['mission_id'], 'run_id': out['run_id'],
+                'status': out['status']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -1739,6 +1756,15 @@ if _FASTAPI_OK:
         out = _mission_view(mission_id)
         code = 404 if out.get('error') and 'not found' in out['error'] else 200
         return JSONResponse(out, status_code=code)
+
+    @app.post('/missions/{mission_id}/run')
+    async def mission_run(mission_id: str):
+        out = _mission_run(mission_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[mission] {mission_id[:8]} ran → {out["run_id"]}', 'ok')
+        return out
 
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):
