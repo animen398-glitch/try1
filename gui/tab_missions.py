@@ -290,20 +290,31 @@ class MissionsTabMixin:
     @staticmethod
     def _query_missions(project: str) -> dict:
         try:
+            from core.audit_store import AuditRunStore
+            from core.findings_store import FindingsStore
+            from core.mission_links import resolve_links
             from core.mission_store import MissionStore
             missions = MissionStore().list_missions(project)
+            astore, fstore = AuditRunStore(), FindingsStore()
             runs: List[Dict[str, Any]] = []
             findings: List[Dict[str, Any]] = []
             try:
-                from core.audit_store import AuditRunStore
-                runs = AuditRunStore().list_runs(project)
+                runs = astore.list_runs(project)
             except Exception:  # noqa: BLE001 - link sources are best-effort
                 runs = []
             try:
-                from core.findings_store import FindingsStore
-                findings = FindingsStore().active_findings(project)
+                findings = fstore.active_findings(project)
             except Exception:  # noqa: BLE001 - link sources are best-effort
                 findings = []
+            # Annotate each mission with present/stale link partition (M11) so the
+            # detail panel can flag references whose run/finding was deleted.
+            for mission in missions:
+                try:
+                    mission["_links"] = resolve_links(
+                        mission.get("payload") or {},
+                        audit_store=astore, findings_store=fstore)
+                except Exception:  # noqa: BLE001 - link annotation is best-effort
+                    mission["_links"] = {}
             return {"project": project, "missions": missions,
                     "audit_runs": runs, "findings": findings}
         except Exception as e:  # noqa: BLE001
@@ -412,6 +423,13 @@ class MissionsTabMixin:
                 f"Schedule:  {schedule.get('interval', '?')} ({state}); "
                 f"next {schedule.get('next_run') or '—'}; "
                 f"last {schedule.get('last_status') or '—'}")
+        links = mission.get("_links") or {}
+        stale_runs = links.get("stale_runs") or []
+        stale_findings = links.get("stale_findings") or []
+        if stale_runs or stale_findings:
+            lines.append(
+                f"⚠ Stale links: runs={', '.join(stale_runs) or '—'}; "
+                f"findings={', '.join(stale_findings) or '—'}")
         self.mission_detail.setPlainText("\n".join(lines))
 
         status = str(mission.get("status") or "").strip().lower()
@@ -495,9 +513,9 @@ class MissionsTabMixin:
     @staticmethod
     def _do_link_run(payload: Dict[str, Any], run_id: str) -> dict:
         try:
-            from core.pentest_mission import link_audit_run
+            from core.mission_links import link_audit_run_checked
             from core.mission_store import MissionStore
-            updated = link_audit_run(payload, str(run_id))
+            updated = link_audit_run_checked(payload, str(run_id))
             MissionStore().save_mission(updated)
             return {"ok": f"linked run {run_id}"}
         except Exception as e:  # noqa: BLE001
@@ -517,9 +535,9 @@ class MissionsTabMixin:
     @staticmethod
     def _do_link_finding(payload: Dict[str, Any], finding_id: str) -> dict:
         try:
-            from core.pentest_mission import link_finding
+            from core.mission_links import link_finding_checked
             from core.mission_store import MissionStore
-            updated = link_finding(payload, str(finding_id))
+            updated = link_finding_checked(payload, str(finding_id))
             MissionStore().save_mission(updated)
             return {"ok": f"linked finding {finding_id}"}
         except Exception as e:  # noqa: BLE001

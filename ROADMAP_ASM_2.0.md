@@ -2100,4 +2100,32 @@ the existing event bridge / shared `format_event` so mission runs surface like
 project monitors; D3 opt-in (only enabled schedules run). No second
 findings/asset/timeline source.
 
+### M11 — Link integrity (CLOSED 2026-06-29) — closes M1 D4
+
+Validate mission links against the stores **without** breaking the M1 invariant
+that `pentest_mission` is pure:
+
+- The pure `pentest_mission.link_audit_run` / `link_finding` are untouched (still
+  link without any I/O — guarded by `test_pentest_mission_link_stays_pure`).
+- **`core/mission_links.py`** (new): the store-aware, opt-in layer the surfaces
+  use — `link_audit_run_checked(mission, run_id, *, audit_store)` /
+  `link_finding_checked(mission, finding_id, *, findings_store)` validate the id
+  exists (raise `ValueError` otherwise) before delegating to the pure linker; and
+  `resolve_links(mission, *, audit_store, findings_store)` →
+  `{present_runs, stale_runs, present_findings, stale_findings}` (a stale id
+  references a since-deleted run/finding — named, never silently dropped).
+- **GUI** (`gui/tab_missions.py`): the add-links handlers now call the checked
+  variants (so an id deleted between populate and click is refused); `_query_missions`
+  annotates each mission with its `_links` partition (resolved off-thread) and the
+  detail panel flags "⚠ Stale links". Web/report already surface stale references
+  (M5's `build_mission_report` marks missing runs/findings) — no new endpoint.
+- Tests: `tests/test_mission_links.py` (checked accept/reject, present/stale
+  partition, purity invariant) + GUI cases (reject nonexistent, stale flagged).
+
+**Decisions (M11, locked):** D1 keep `pentest_mission` pure — the existence check
+is an opt-in surface layer (`mission_links`), not the contract; D2 stale links are
+named/flagged, never auto-removed (cleanup stays the operator's call); D3 reuse
+the M5 report for the web/report stale surface (no new endpoint). No second
+findings/asset/timeline source.
+
 ---

@@ -182,14 +182,49 @@ def test_report_buttons_enable_on_selection_and_render(qapp):
     assert "<html>" in MissionsTabMixin._render_mission_report(payload, "html")
 
 
+def test_do_link_rejects_nonexistent_ids(qapp):
+    saved = _seed_mission("shop.com", status="ready")
+    run_err = MissionsTabMixin._do_link_run(saved["payload"], "ghost-run")
+    assert "not found" in run_err.get("error", "")
+    find_err = MissionsTabMixin._do_link_finding(saved["payload"], "ghost-finding")
+    assert "not found" in find_err.get("error", "")
+    # nothing got linked
+    payload = MissionStore().get_mission(saved["id"])["payload"]
+    assert payload["linked_audit_run_ids"] == []
+    assert payload["linked_finding_ids"] == []
+
+
+def test_detail_flags_stale_links(qapp):
+    from core import pentest_mission as pm
+    saved = _seed_mission("shop.com", status="ready")
+    mission = pm.link_finding(saved["payload"], "deleted-finding")
+    MissionStore().save_mission(mission)
+    w = MissionsHost()
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    w.mission_table.selectRow(0)
+    assert "Stale links" in w.mission_detail.toPlainText()
+    assert "deleted-finding" in w.mission_detail.toPlainText()
+
+
 def test_link_run_and_finding_persist_on_mission(qapp):
-    saved = _seed_mission("shop.com")
-    MissionsTabMixin._do_link_run(saved["payload"], "audit-shop")
+    # M11: linking now validates existence, so link a real run + finding.
+    from core import mission_runner, pentest_mission as pm
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    source = _seed_mission("shop.com", objective="source", status="ready")
+    fid = FindingsStore().upsert("shop.com", Finding(
+        category="vuln", rule_id="edge", title="m", severity="high",
+        location="https://shop.com/a").to_store(), scan_id="s1")["finding"]["id"]
+    run_id = mission_runner.run_mission(source["payload"])["run_id"]
+
+    target = MissionStore().save_mission(
+        pm.create_mission("shop.com", "link target", allowed_actions=["headers_check"]))
+    MissionsTabMixin._do_link_run(target["payload"], run_id)
     # the GUI refreshes between actions, so the second link starts from the
     # persisted (already-linked) payload — not the stale original.
-    updated = MissionStore().get_mission(saved["id"])["payload"]
-    MissionsTabMixin._do_link_finding(updated, "f-123")
+    updated = MissionStore().get_mission(target["id"])["payload"]
+    MissionsTabMixin._do_link_finding(updated, fid)
 
-    payload = MissionStore().get_mission(saved["id"])["payload"]
-    assert payload["linked_audit_run_ids"] == ["audit-shop"]
-    assert payload["linked_finding_ids"] == ["f-123"]
+    payload = MissionStore().get_mission(target["id"])["payload"]
+    assert payload["linked_audit_run_ids"] == [run_id]
+    assert payload["linked_finding_ids"] == [fid]

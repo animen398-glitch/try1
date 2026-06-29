@@ -73,6 +73,11 @@
 > existing event bridge / `monitor.format_event` in both the in-app scheduler and
 > `monitor_cli run/watch`. Opt-in. Current scale: **full pytest 2245 passed**, ruff clean,
 > self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M11): link integrity (closes M1 D4) — `core/mission_links.py`
+> adds opt-in `link_audit_run_checked`/`link_finding_checked` (validate existence before the
+> pure linker) + `resolve_links` (present vs stale partition); the Missions tab links are now
+> checked and the detail flags stale links. `pentest_mission` stays pure. Current scale: **full
+> pytest 2251 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
