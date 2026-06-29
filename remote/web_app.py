@@ -858,6 +858,23 @@ def _mission_create(project: str, objective: str, *, template=None, roe=None,
         return {'error': str(e)}
 
 
+def _mission_prune_links(mission_id: str) -> dict:
+    """Drop a mission's stale (deleted run/finding) links (M14)."""
+    try:
+        from core.mission_links import prune_stale_links
+        from core.mission_store import MissionStore
+        store = MissionStore()
+        row = store.get_mission(str(mission_id))
+        if row is None:
+            return {'error': f'mission not found: {mission_id}'}
+        out = prune_stale_links(row['payload'])
+        store.save_mission(out['mission'])
+        return {'mission_id': mission_id, 'removed_runs': out['removed_runs'],
+                'removed_findings': out['removed_findings']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _mission_report(mission_id: str) -> dict:
     """Assemble a mission's evidence-first report (read-only view over stores)."""
     try:
@@ -1887,6 +1904,16 @@ if _FASTAPI_OK:
             code = 404 if 'not found' in out['error'] else 400
             return JSONResponse(out, status_code=code)
         await _push(f'[mission] {mission_id[:8]} ran → {out["run_id"]}', 'ok')
+        return out
+
+    @app.post('/missions/{mission_id}/links/prune')
+    async def mission_prune_links(mission_id: str):
+        out = _mission_prune_links(mission_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        removed = len(out['removed_runs']) + len(out['removed_findings'])
+        await _push(f'[mission] {mission_id[:8]} pruned {removed} stale link(s)', 'ok')
         return out
 
     @app.get('/missions/{mission_id}/report')

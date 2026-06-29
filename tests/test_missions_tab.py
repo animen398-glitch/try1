@@ -212,6 +212,23 @@ def test_detail_flags_stale_links(qapp):
     w.mission_table.selectRow(0)
     assert "Stale links" in w.mission_detail.toPlainText()
     assert "deleted-finding" in w.mission_detail.toPlainText()
+    # the prune button is offered only because there is a stale link
+    assert w.btn_mission_prune.isEnabled()
+
+
+def test_do_prune_links_removes_stale(qapp):
+    from core import pentest_mission as pm
+    saved = _seed_mission("shop.com", status="ready")
+    mission = pm.link_finding(saved["payload"], "deleted-finding")
+    mission = pm.link_audit_run(mission, "deleted-run")
+    MissionStore().save_mission(mission)
+
+    out = MissionsTabMixin._do_prune_links(
+        MissionStore().get_mission(saved["id"])["payload"])
+    assert "error" not in out and "removed 2" in out["ok"]
+    payload = MissionStore().get_mission(saved["id"])["payload"]
+    assert payload["linked_finding_ids"] == []
+    assert payload["linked_audit_run_ids"] == []
 
 
 def test_link_run_and_finding_persist_on_mission(qapp):

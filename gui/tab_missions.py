@@ -164,6 +164,12 @@ class MissionsTabMixin:
         self.btn_mission_link_finding.setEnabled(False)
         self.btn_mission_link_finding.clicked.connect(self._link_mission_finding)
         link_row.addWidget(self.btn_mission_link_finding)
+        self.btn_mission_prune = StyledButton("Remove stale", style="secondary")
+        self.btn_mission_prune.setToolTip(
+            "Удалить ссылки на удалённые run/finding (stale-линки).")
+        self.btn_mission_prune.setEnabled(False)
+        self.btn_mission_prune.clicked.connect(self._prune_mission_links)
+        link_row.addWidget(self.btn_mission_prune)
         link_row.addStretch(1)
         layout.addLayout(link_row)
 
@@ -467,6 +473,10 @@ class MissionsTabMixin:
         self.btn_mission_unschedule.setEnabled(
             idle and scheduled and mission["schedule"].get("enabled", False))
         self.btn_mission_run_due.setEnabled(not self._mission_acting)
+        # Prune is offered only when the selected mission has stale links.
+        links = mission.get("_links") or {} if has_mission else {}
+        has_stale = bool(links.get("stale_runs") or links.get("stale_findings"))
+        self.btn_mission_prune.setEnabled(idle and has_stale)
 
     # ── mutations (advance / link), all via the pure contract + store ──────────
 
@@ -545,6 +555,29 @@ class MissionsTabMixin:
             updated = link_finding_checked(payload, str(finding_id))
             MissionStore().save_mission(updated)
             return {"ok": f"linked finding {finding_id}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _prune_mission_links(self):
+        payload = self._begin_mission_action()
+        if not payload:
+            return
+        self._mission_reselect_id = str(self._selected_mission().get("id") or "")
+        self.mission_status.setText("Removing stale links...")
+        self._run_async(
+            lambda p=payload: self._do_prune_links(p),
+            self._on_mission_action_done,
+        )
+
+    @staticmethod
+    def _do_prune_links(payload: Dict[str, Any]) -> dict:
+        try:
+            from core.mission_links import prune_stale_links
+            from core.mission_store import MissionStore
+            out = prune_stale_links(payload)
+            MissionStore().save_mission(out["mission"])
+            removed = len(out["removed_runs"]) + len(out["removed_findings"])
+            return {"ok": f"removed {removed} stale link(s)"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 

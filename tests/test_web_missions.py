@@ -115,6 +115,24 @@ def test_mission_run_helper_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def test_mission_prune_links_helper():
+    saved = _save_mission("shop.com")
+    linked = pm.link_audit_run(pm.link_finding(saved["payload"], "gone-finding"),
+                              "gone-run")
+    MissionStore().save_mission(linked)
+    out = wa._mission_prune_links(saved["id"])
+    assert "error" not in out
+    assert out["removed_runs"] == ["gone-run"]
+    assert out["removed_findings"] == ["gone-finding"]
+    payload = MissionStore().get_mission(saved["id"])["payload"]
+    assert payload["linked_finding_ids"] == []
+
+
+def test_mission_prune_links_unknown_is_not_found():
+    out = wa._mission_prune_links("nope")
+    assert "not found" in out.get("error", "")
+
+
 def test_mission_report_helper_aggregates_run():
     saved = _ready_mission()
     wa._mission_run(saved["id"])                            # execute → links a run
@@ -201,3 +219,11 @@ def test_mission_endpoints_with_testclient():
     assert r.status_code == 404
     r = client.post("/missions/run-due")
     assert r.status_code == 200 and "results" in r.json()
+
+    # prune stale links
+    staled = _save_mission("web.io", "stale review")
+    MissionStore().save_mission(pm.link_audit_run(staled["payload"], "gone-run"))
+    r = client.post(f"/missions/{staled['id']}/links/prune")
+    assert r.status_code == 200 and r.json()["removed_runs"] == ["gone-run"]
+    r = client.post("/missions/nope/links/prune")
+    assert r.status_code == 404

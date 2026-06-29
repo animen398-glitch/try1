@@ -86,6 +86,10 @@
 > exports the mission portfolio (overview rows) via the shared `_rows_to_csv`, surfaced as an
 > "Export CSV" button on the Missions tab + `GET /missions.csv`. Closes the planned M1-M13 arc.
 > Current scale: **full pytest 2256 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M14): stale-link cleanup — `mission_links.prune_stale_links`
+> rebuilds a mission keeping only present run/finding links (pure; `pentest_mission` untouched),
+> surfaced as a "Remove stale" button + `POST /missions/{id}/links/prune`. Closes the M1-M14 arc.
+> Current scale: **full pytest 2261 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

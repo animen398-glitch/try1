@@ -81,3 +81,25 @@ def resolve_links(mission: Dict[str, Any], *, audit_store: Optional[Any] = None,
          else stale_findings).append(finding_id)
     return {"present_runs": present_runs, "stale_runs": stale_runs,
             "present_findings": present_findings, "stale_findings": stale_findings}
+
+
+def prune_stale_links(mission: Dict[str, Any], *, audit_store: Optional[Any] = None,
+                      findings_store: Optional[Any] = None) -> Dict[str, Any]:
+    """Return a new mission keeping only links whose run/finding still exists.
+
+    Operator-driven cleanup (M14): drops the ids :func:`resolve_links` flags as
+    stale, leaving the present links untouched. Pure rebuild via
+    :func:`core.pentest_mission.normalize_mission` — never mutates the input, and
+    the result is empty-safe (a mission with no stale links comes back unchanged).
+    Returns ``{mission, removed_runs, removed_findings}``.
+    """
+    from core.pentest_mission import normalize_mission
+    resolved = resolve_links(mission, audit_store=audit_store,
+                             findings_store=findings_store)
+    normalized = normalize_mission(mission)
+    pruned = dict(normalized)
+    pruned["linked_audit_run_ids"] = list(resolved["present_runs"])
+    pruned["linked_finding_ids"] = list(resolved["present_findings"])
+    return {"mission": normalize_mission(pruned),
+            "removed_runs": resolved["stale_runs"],
+            "removed_findings": resolved["stale_findings"]}

@@ -2175,6 +2175,30 @@ CSV machinery); D2 the rows are the `mission_overview` rows (one source for the
 card + the export); D3 mirror the existing CSV surface conventions (GUI button +
 `GET /missions.csv`). No second findings/asset/timeline source.
 
-This closes the planned Mission Center arc (M1–M13).
+### M14 — Stale-link cleanup (CLOSED 2026-06-29)
+
+Operator-driven cleanup that completes the M11 link-integrity story:
+
+- **`core/mission_links.py`**: a new `prune_stale_links(mission, *, audit_store,
+  findings_store)` that, over `resolve_links`, rebuilds the mission keeping only
+  the present run/finding links — via the pure `pentest_mission.normalize_mission`
+  (input never mutated; a mission with no stale links comes back unchanged).
+  Returns `{mission, removed_runs, removed_findings}`. `pentest_mission` stays
+  pure — pruning lives in the opt-in surface layer.
+- **GUI** (`gui/tab_missions.py`): a "Remove stale" button in the link row,
+  enabled only when the selected mission has stale links (from its `_links`
+  partition); `_do_prune_links` → `save_mission` → refresh.
+- **Web** (`remote/web_app.py`): `POST /missions/{id}/links/prune`
+  (`_mission_prune_links`; 404 unknown / 400 error; the push carries the removed
+  count).
+- Tests: `tests/test_mission_links.py` (prune keeps present / drops stale,
+  no-op when all present, input purity) + GUI/web cases.
+
+**Decisions (M14, locked):** D1 prune is opt-in and operator-driven (never
+automatic); D2 keep `pentest_mission` pure — the rebuild is in `mission_links`;
+D3 surfaces = GUI button + web `POST .../links/prune`. No second
+findings/asset/timeline source.
+
+This closes the planned Mission Center arc (M1–M14).
 
 ---

@@ -395,8 +395,12 @@ Dashboard и Reporting, риски и точки интеграции описа
 - `core/mission_links.py` — Mission Center M11 link integrity (закрывает M1 D4): `link_audit_run_checked`/`link_finding_checked` (проверяют существование в AuditRunStore/FindingsStore перед чистым линком) + `resolve_links` (present vs stale-партиция). Контракт `pentest_mission.link_*` остаётся ЧИСТЫМ — проверка только в этом opt-in слое. GUI add-links теперь checked + detail помечает stale-линки.
 - `demo_seed.py` — Mission Center M12: demo workspace теперь сеет 3 миссии на первом проекте (ready+scheduled weekly; executed с linked run+finding; одна со stale-линком) → весь M1–M11 lifecycle виден в Missions-вкладке/Overview-карточке; `seed()` summary += `missions`.
 - Mission Center M13 CSV export: `report_export.missions_csv(overview)` (колонки mission_id/project/objective/status/last-run/client-facing/updated; принимает overview-dict или bare-list) поверх `mission_overview` rows. GUI «Export CSV» на вкладке Missions + web `GET /missions.csv`.
+- Mission Center M14 stale-link cleanup: `mission_links.prune_stale_links(mission, *, stores)` → новая миссия только с present-линками (+ `removed_runs/removed_findings`); чистый rebuild через `normalize_mission`, input не мутируется. GUI «Remove stale» (активна при stale-линках) + web `POST /missions/{id}/links/prune`. Закрывает плановую дугу M1–M14.
 
-**Последние важные изменения на 2026-06-29 (Mission Center M13 — CSV export):**
+**Последние важные изменения на 2026-06-29 (Mission Center M14 — stale-link cleanup):**
+- M14: operator-driven очистка stale-линков (follow-up M11; закрывает плановую дугу Mission Center). `core/mission_links.py`: новый `prune_stale_links(mission, *, audit_store, findings_store)` — поверх `resolve_links` строит НОВУЮ миссию, оставляя только present run/finding линки, через чистый `pentest_mission.normalize_mission` (input не мутируется, пустая/без-stale миссия возвращается как есть); отдаёт `{mission, removed_runs, removed_findings}`. Контракт `pentest_mission` по-прежнему чист (prune живёт в opt-in слое). GUI вкладка Missions: кнопка «Remove stale» в link-ряду, активна только когда у выбранной миссии есть stale-линки (из `_links`); `_do_prune_links` → `save_mission` → рефреш. Web: `POST /missions/{id}/links/prune` (`_mission_prune_links`; 404 unknown / 400 ошибка; пуш-уведомление с числом удалённых). Файлы: `core/mission_links.py`, `gui/tab_missions.py`, `remote/web_app.py`, тесты `test_mission_links.py`/`test_missions_tab.py`/`test_web_missions.py`. Проверено: ruff clean, self-check 30 вкладок, полный pytest зелёный.
+
+**Ранее на 2026-06-29 (Mission Center M13 — CSV export):**
 - M13: экспорт портфеля миссий в CSV (паритет с findings/portfolio surfaces). `core/report_export.py`: новый `missions_csv(overview)` через общий `_rows_to_csv` + `_MISSIONS_COLUMNS` (mission_id/project/objective/status/last_run_id/last_run_status/client_facing/updated_at); принимает либо `mission_overview.build_mission_overview()` dict (`{'missions':[...]}`), либо bare-list (как `portfolio_csv`). GUI: кнопка «Export CSV» в ctrl-ряду вкладки Missions (`_export_missions_csv` → `_missions_csv_text(project)` строит overview для текущего проекта и рендерит). Web: `GET /missions.csv` (`_missions_csv`, media-type `text/csv`, зеркало `/findings.sarif`/`/report.md`). Pure-инвариант экспортёров сохранён (строка из уже-загруженных rows, без I/O в `missions_csv`). Файлы: `core/report_export.py`, `gui/tab_missions.py`, `remote/web_app.py`, тесты `test_report_export.py`/`test_missions_tab.py`/`test_web_missions.py`. Проверено: ruff clean, self-check 30 вкладок, полный pytest зелёный.
 
 **Ранее на 2026-06-29 (Mission Center M12 — demo seed):**
@@ -464,7 +468,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
-- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-29 (после Mission Center M13) — 2256 offline/headless тестов (зелёные, 1 Starlette/httpx warning).
+- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-06-29 (после Mission Center M14) — 2261 offline/headless тестов (зелёные, 1 Starlette/httpx warning).
 - Перед релизной пометкой обязательно прогонять `pytest` и, если менялся GUI/frozen-контур, self-check окна/PyInstaller smoke.
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 

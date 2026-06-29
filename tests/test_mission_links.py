@@ -56,6 +56,31 @@ def test_resolve_links_partitions_present_and_stale():
     assert out["present_runs"] == []
 
 
+def test_prune_stale_links_keeps_present_drops_stale():
+    fid = _seed_finding()
+    mission = pm.create_mission("shop.com", "m5", allowed_actions=["headers_check"])
+    mission = pm.link_finding(mission, fid)                 # present
+    mission = pm.link_finding(mission, "deleted-finding")   # stale
+    mission = pm.link_audit_run(mission, "deleted-run")     # stale
+
+    out = mission_links.prune_stale_links(mission)
+    assert out["removed_findings"] == ["deleted-finding"]
+    assert out["removed_runs"] == ["deleted-run"]
+    assert out["mission"]["linked_finding_ids"] == [fid]
+    assert out["mission"]["linked_audit_run_ids"] == []
+    # input untouched (pure)
+    assert "deleted-finding" in mission["linked_finding_ids"]
+
+
+def test_prune_stale_links_noop_when_all_present():
+    fid = _seed_finding()
+    mission = pm.link_finding(
+        pm.create_mission("shop.com", "m6", allowed_actions=["headers_check"]), fid)
+    out = mission_links.prune_stale_links(mission)
+    assert out["removed_runs"] == [] and out["removed_findings"] == []
+    assert out["mission"]["linked_finding_ids"] == [fid]
+
+
 def test_pentest_mission_link_stays_pure():
     # The M1 contract must not gain store access — linking a non-existent id is
     # still accepted by the pure linker (the check lives only in mission_links).
