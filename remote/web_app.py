@@ -858,6 +858,19 @@ def _mission_create(project: str, objective: str, *, template=None, roe=None,
         return {'error': str(e)}
 
 
+def _mission_runs(mission_id: str) -> dict:
+    """A mission's run-history trend (client-facing count per linked run, M15)."""
+    try:
+        from core.mission_overview import mission_run_trend
+        from core.mission_store import MissionStore
+        row = MissionStore().get_mission(str(mission_id))
+        if row is None:
+            return {'error': f'mission not found: {mission_id}'}
+        return {'mission_id': mission_id, 'runs': mission_run_trend(row['payload'])}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _mission_prune_links(mission_id: str) -> dict:
     """Drop a mission's stale (deleted run/finding) links (M14)."""
     try:
@@ -1915,6 +1928,12 @@ if _FASTAPI_OK:
         removed = len(out['removed_runs']) + len(out['removed_findings'])
         await _push(f'[mission] {mission_id[:8]} pruned {removed} stale link(s)', 'ok')
         return out
+
+    @app.get('/missions/{mission_id}/runs')
+    async def mission_runs(mission_id: str):
+        out = _mission_runs(mission_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
 
     @app.get('/missions/{mission_id}/report')
     async def mission_report_json(mission_id: str):

@@ -304,6 +304,7 @@ class MissionsTabMixin:
             from core.audit_store import AuditRunStore
             from core.findings_store import FindingsStore
             from core.mission_links import resolve_links
+            from core.mission_overview import mission_run_trend
             from core.mission_store import MissionStore
             missions = MissionStore().list_missions(project)
             astore, fstore = AuditRunStore(), FindingsStore()
@@ -326,6 +327,11 @@ class MissionsTabMixin:
                         audit_store=astore, findings_store=fstore)
                 except Exception:  # noqa: BLE001 - link annotation is best-effort
                     mission["_links"] = {}
+                try:
+                    mission["_trend"] = mission_run_trend(
+                        mission.get("payload") or {}, audit_store=astore)
+                except Exception:  # noqa: BLE001 - trend annotation is best-effort
+                    mission["_trend"] = []
             return {"project": project, "missions": missions,
                     "audit_runs": runs, "findings": findings}
         except Exception as e:  # noqa: BLE001
@@ -441,6 +447,13 @@ class MissionsTabMixin:
             lines.append(
                 f"⚠ Stale links: runs={', '.join(stale_runs) or '—'}; "
                 f"findings={', '.join(stale_findings) or '—'}")
+        trend = mission.get("_trend") or []
+        if trend:
+            lines.append("Run history (client-facing):")
+            for row in trend[-5:]:
+                lines.append(
+                    f"  {row.get('at') or '—'}  {row.get('run_id', '')} "
+                    f"({row.get('status', '')}): {row.get('client_facing', 0)}")
         self.mission_detail.setPlainText("\n".join(lines))
 
         status = str(mission.get("status") or "").strip().lower()

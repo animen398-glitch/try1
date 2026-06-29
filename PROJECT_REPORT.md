@@ -90,6 +90,11 @@
 > rebuilds a mission keeping only present run/finding links (pure; `pentest_mission` untouched),
 > surfaced as a "Remove stale" button + `POST /missions/{id}/links/prune`. Closes the M1-M14 arc.
 > Current scale: **full pytest 2261 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M15): mission run trend — `mission_overview.mission_run_trend`
+> derives a per-mission run history (client-facing count per linked audit run, time-ordered),
+> shown as a "Run history" list in the Missions detail + `GET /missions/{id}/runs`. Closes the
+> M1-M15 arc (Mission Center feature-complete). Current scale: **full pytest 2266 passed**, ruff
+> clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

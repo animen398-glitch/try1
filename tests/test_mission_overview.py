@@ -47,6 +47,39 @@ def test_overview_scoped_to_project():
     assert {r["project"] for r in out["missions"]} == {"a.io"}
 
 
+def test_mission_run_trend_orders_runs_with_client_facing():
+    from core.audit_store import AuditRunStore
+    from core.audit_workflow import advance_audit_phase, create_audit_run
+
+    store = AuditRunStore()
+    # two runs: one with a client-facing finding, one without
+    run_a = create_audit_run("shop.com", phases=["validation"], run_id="run-a")
+    run_a = advance_audit_phase(run_a, "validation", {"validated_findings": [
+        {"finding_id": "f1", "severity": "high", "validation_status": "verified",
+         "quality_gate": "passed"}]})
+    store.save_run(run_a, now="2026-01-01T10:00:00")
+    run_b = create_audit_run("shop.com", phases=["validation"], run_id="run-b")
+    run_b = advance_audit_phase(run_b, "validation", {"validated_findings": []})
+    store.save_run(run_b, now="2026-02-01T10:00:00")
+
+    mission = pm.link_audit_run(
+        pm.link_audit_run(pm.create_mission("shop.com", "trend",
+                                            allowed_actions=["headers_check"]),
+                          "run-b"), "run-a")
+
+    trend = mission_overview.mission_run_trend(mission, audit_store=store)
+    assert [r["run_id"] for r in trend] == ["run-a", "run-b"]   # time-ordered
+    assert trend[0]["client_facing"] == 1
+    assert trend[1]["client_facing"] == 0
+
+
+def test_mission_run_trend_skips_missing_runs():
+    mission = pm.link_audit_run(
+        pm.create_mission("shop.com", "t2", allowed_actions=["headers_check"]),
+        "ghost-run")
+    assert mission_overview.mission_run_trend(mission) == []
+
+
 def test_overview_empty_is_well_formed():
     out = mission_overview.build_mission_overview()
     assert out == {"total": 0,

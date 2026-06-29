@@ -133,6 +133,19 @@ def test_mission_prune_links_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def test_mission_runs_trend_helper():
+    saved = _ready_mission()
+    out = wa._mission_run(saved["id"])                     # execute → linked run
+    runs = wa._mission_runs(saved["id"])
+    assert "error" not in runs
+    assert [r["run_id"] for r in runs["runs"]] == [out["run_id"]]
+
+
+def test_mission_runs_helper_unknown_is_not_found():
+    out = wa._mission_runs("nope")
+    assert "not found" in out.get("error", "")
+
+
 def test_mission_report_helper_aggregates_run():
     saved = _ready_mission()
     wa._mission_run(saved["id"])                            # execute → links a run
@@ -192,6 +205,12 @@ def test_mission_endpoints_with_testclient():
     r = client.get(f"/missions/{ready['id']}/report")
     assert r.status_code == 200
     assert r.json()["report"]["mission"]["mission_id"] == ready["id"]
+
+    # run-history trend endpoint
+    r = client.get(f"/missions/{ready['id']}/runs")
+    assert r.status_code == 200 and "runs" in r.json()
+    r = client.get("/missions/missing/runs")
+    assert r.status_code == 404
 
     r = client.get(f"/missions/{ready['id']}/report.md")
     assert r.status_code == 200

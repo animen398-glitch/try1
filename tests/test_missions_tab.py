@@ -102,6 +102,25 @@ def test_run_button_enabled_only_for_ready_mission(qapp):
     assert w.btn_mission_run.isEnabled()
 
 
+def test_detail_shows_run_history_trend(qapp):
+    from core import mission_runner
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    saved = _seed_mission("shop.com", status="ready")
+    FindingsStore().upsert("shop.com", Finding(
+        category="vuln", rule_id="edge", title="m", severity="high",
+        location="https://shop.com/a").to_store(), scan_id="s1")
+    mission_runner.run_mission(saved["payload"])           # produces a linked run
+
+    w = MissionsHost()
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    for i, m in enumerate(w._mission_rows):
+        if m["id"] == saved["id"]:
+            w.mission_table.selectRow(i)
+            break
+    assert "Run history" in w.mission_detail.toPlainText()
+
+
 def test_do_run_mission_executes_and_links(qapp):
     saved = _seed_mission("shop.com", status="ready")
     out = MissionsTabMixin._do_run_mission(saved["payload"])

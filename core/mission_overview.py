@@ -28,6 +28,42 @@ def _latest_run(run_ids: Optional[List[str]], audit_store: Any) -> Optional[Dict
     return latest
 
 
+def mission_run_trend(
+    mission: Dict[str, Any],
+    *,
+    audit_store: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
+    """Per-mission run history (M15): one row per linked audit run, ordered by
+    time, with its client-facing finding count.
+
+    Derive-on-read over the mission's ``linked_audit_run_ids`` resolved against the
+    AuditRunStore (reusing :func:`core.audit_report.client_findings`). Missing runs
+    are skipped, never faked. Returns ``[{run_id, at, status, client_facing}]``.
+    """
+    from core import audit_report
+    from core.pentest_mission import normalize_mission
+
+    if audit_store is None:
+        from core.audit_store import AuditRunStore
+        audit_store = AuditRunStore()
+
+    normalized = normalize_mission(mission)
+    rows: List[Dict[str, Any]] = []
+    for run_id in normalized["linked_audit_run_ids"]:
+        row = audit_store.get_run(run_id)
+        payload = row.get("payload") if isinstance(row, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        rows.append({
+            "run_id": payload.get("run_id", run_id),
+            "at": payload.get("updated_at") or payload.get("created_at"),
+            "status": payload.get("status", ""),
+            "client_facing": len(audit_report.client_findings(payload)),
+        })
+    rows.sort(key=lambda row: str(row.get("at") or ""))
+    return rows
+
+
 def build_mission_overview(
     *,
     mission_store: Optional[Any] = None,

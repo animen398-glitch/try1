@@ -2199,6 +2199,27 @@ automatic); D2 keep `pentest_mission` pure — the rebuild is in `mission_links`
 D3 surfaces = GUI button + web `POST .../links/prune`. No second
 findings/asset/timeline source.
 
-This closes the planned Mission Center arc (M1–M14).
+### M15 — Mission run trend (CLOSED 2026-06-29)
+
+The last grounded analytics item — a per-mission run history, derive-on-read:
+
+- **`core/mission_overview.py`**: a new `mission_run_trend(mission, *,
+  audit_store)` → one row per linked audit run `{run_id, at, status,
+  client_facing}` (client-facing count via `audit_report.client_findings`),
+  time-ordered; missing runs are skipped, never faked. No new state.
+- **GUI** (`gui/tab_missions.py`): `_query_missions` annotates each mission with
+  its `_trend` (off-thread, shared audit store); the detail panel shows a "Run
+  history (client-facing)" list (last 5 runs).
+- **Web** (`remote/web_app.py`): read-only `GET /missions/{id}/runs`
+  (`_mission_runs`; 404 unknown).
+- Tests: `tests/test_mission_overview.py` (time-ordered trend + client-facing
+  counts, missing runs skipped) + GUI/web cases.
+
+**Decisions (M15, locked):** D1 derive-on-read (no new state/store); D2 reuse
+`audit_report.client_findings` for the per-run count; D3 surfaces = GUI detail
+list + web `GET /missions/{id}/runs`. No second findings/asset/timeline source.
+
+This closes the planned Mission Center arc (M1–M15). Further milestones would be
+scope creep against the project's "value/stability over feature count" priority.
 
 ---
