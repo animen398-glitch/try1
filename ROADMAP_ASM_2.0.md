@@ -2256,3 +2256,34 @@ action/scope policy rather than introducing its own; the mission's ROE is the
 scope source (target derived from `allowed_domains` when not given explicitly).
 
 ---
+
+### Per-Tool Offline Parsers (CLOSED 2026-06-30)
+
+The safe layer above the Tool Adapter Contract: turn a tool's *already-captured*
+evidence into the generic `{findings, assets}` shape the M3 adapter consumes —
+still **no tool execution, no network, no store writes**:
+
+- **`core/tool_parsers.py`** (new): a parser per M3 tool (keyed by
+  `tool_adapter.TOOL_CAPABILITIES` name) — `parse_header_audit`,
+  `parse_cookie_audit`, `parse_source_map_finder` (detection **reused** from
+  `core.audit_checks`, not re-implemented) and `parse_safe_active_prober` (the
+  asset/enumeration parser). `parse_tool_output(tool, evidence)` dispatches and
+  returns the generic shape ready for `map_tool_result_to_findings`; an
+  empty/unknown tool, or a registered tool with no parser yet, is rejected
+  (`has_parser` reports availability). Scope/ROE gating is **not** the parser's
+  job — that already happened in `evaluate_tool_allowed_for_mission`; a parser
+  runs its reused check under a permissive in-scope ROE only to bypass the
+  check's own gate.
+- Input is **structured captured evidence** (`{headers}` / `{cookies}` /
+  `{urls}` / `{urls, hosts, subdomains}`) — offline, deterministic, fully
+  testable; no version-coupling to real binaries.
+- Tests: `tests/test_tool_parsers.py` (each parser reuses audit_checks / emits
+  assets, dispatch rejection for empty/unknown/unparsed tools, parser → M3
+  `map_tool_result_to_findings` integration, determinism).
+
+**Decisions (locked):** parsers consume captured evidence (not live runs / not
+raw binary stdout); reuse `audit_checks` for header/cookie/source-map (no
+duplication); a focused first set (3 reuse-backed + 1 asset parser) with an
+additive registry for the rest; no store writes, no network, no new dependencies.
+
+---
