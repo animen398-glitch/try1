@@ -66,10 +66,18 @@ class MonitorRunnerMixin:
                      and alert_cfg.get('enabled') else None)
         self._monitor_scheduler = monitor.MonitorScheduler(
             self._monitor_store(), check_interval=interval,
-            on_event=self._monitor_bridge.event.emit, alert_config=alert_cfg)
+            on_event=self._monitor_bridge.event.emit, alert_config=alert_cfg,
+            extra_tick=self._tick_due_missions)
         self._monitor_scheduler.start()
         self._update_monitor_indicator()
         return True
+
+    def _tick_due_missions(self, now=None) -> None:
+        """Scheduler extra pass (M10): run due Mission Center missions, surfacing
+        each via the same event bridge as project monitors. Runs on the daemon
+        thread; emits are marshalled onto the GUI thread by the queued signal."""
+        from core.mission_schedule import run_due_missions
+        run_due_missions(now=now, on_event=self._monitor_bridge.event.emit)
 
     def _stop_monitor_scheduler(self) -> None:
         if self._monitor_scheduler is not None:

@@ -114,12 +114,16 @@ def _scheduled_run_id(mission_id: str, stamp: str) -> str:
 
 
 def run_due_missions(*, store: Optional[Any] = None, now: Optional[Any] = None,
-                     run: Optional[Callable] = None) -> List[Dict[str, Any]]:
+                     run: Optional[Callable] = None,
+                     on_event: Optional[Callable[[Dict[str, Any]], None]] = None
+                     ) -> List[Dict[str, Any]]:
     """Run every enabled + due scheduled mission, advancing its schedule.
 
     ``run`` (injectable for tests) executes one mission and returns
     ``{run_id, status}``; defaults to :func:`run_mission_audit`. A run failure is
     recorded as the schedule's ``last_status`` and never aborts the sweep.
+    ``on_event`` (the monitor's event sink) receives one ``mission_run`` event per
+    mission that ran, so the CLI / in-app scheduler indicator can surface it.
     Returns one result row per mission that was due.
     """
     if store is None:
@@ -149,6 +153,9 @@ def run_due_missions(*, store: Optional[Any] = None, now: Optional[Any] = None,
         updated["next_run"] = compute_next_run(
             schedule["interval"], now_dt).isoformat(timespec="seconds")
         store.set_schedule(mission["id"], updated)
-        results.append({"mission_id": mission["id"], "run_id": run_id,
-                        "status": status})
+        result = {"mission_id": mission["id"], "run_id": run_id, "status": status}
+        results.append(result)
+        if on_event:
+            on_event({"type": "mission_run", "slug": mission.get("project"),
+                      **result})
     return results

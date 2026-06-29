@@ -68,6 +68,12 @@ def cmd_run(store: ProjectStore, on_event=None, alert_config=None) -> list:
     return monitor.run_due(store, on_event=on_event, alert_config=alert_config)
 
 
+def cmd_run_missions(on_event=None) -> list:
+    """Run every due Mission Center mission once, now (M10)."""
+    from core.mission_schedule import run_due_missions
+    return run_due_missions(on_event=on_event)
+
+
 def cmd_ci(store: ProjectStore, target: str, base: Path, *, fail_on: str = 'high',
            sarif_out=None, scan: bool = True, run_fn=None) -> dict:
     """CI/CD gate (EPIC 16 F4): optionally run a scan, diff it against the previous
@@ -178,6 +184,10 @@ def _print_event(ev: dict) -> None:
               + (f' · {line}' if line else ' (first scan, no diff)'))
     elif kind in ('error', 'diff_error'):
         print(f'  [{slug}] {kind}: {ev.get("error", "")}')
+    elif kind == 'mission_run':
+        print(f'  [{slug}] mission {ev.get("mission_id", "")} ran '
+              f'({ev.get("status", "")})'
+              + (f' → {ev["run_id"]}' if ev.get('run_id') else ''))
 
 
 def main(argv=None):
@@ -255,6 +265,8 @@ def main(argv=None):
         results = cmd_run(store, on_event=_print_event,
                           alert_config=_alert_config())
         print(f'Ran {len(results)} due project(s).')
+        mission_results = cmd_run_missions(on_event=_print_event)
+        print(f'Ran {len(mission_results)} due mission(s).')
     elif opts.command == 'test-alert':
         cfg = load_settings().get('alerts')
         out = alerts.send_test(cfg if isinstance(cfg, dict) else None)
@@ -304,9 +316,10 @@ def main(argv=None):
         else:
             print(out['markdown'])
     elif opts.command == 'watch':
-        sched = monitor.MonitorScheduler(store, check_interval=opts.every,
-                                         on_event=_print_event,
-                                         alert_config=_alert_config())
+        sched = monitor.MonitorScheduler(
+            store, check_interval=opts.every, on_event=_print_event,
+            alert_config=_alert_config(),
+            extra_tick=lambda now=None: cmd_run_missions(on_event=_print_event))
         print(f'Monitoring scheduler started (check every {opts.every:.0f}s). '
               f'Press Ctrl+C to stop.')
         sched.start()

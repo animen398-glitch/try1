@@ -68,6 +68,21 @@ def test_run_due_runs_only_enabled_and_due():
     assert sched["next_run"] > "2026-06-01"
 
 
+def test_run_due_emits_mission_run_events():
+    a = _ready_mission("a.io", "one")
+    store = MissionStore()
+    ms.set_mission_schedule(a["id"], "daily", store=store)
+    store.set_schedule(a["id"], {**store.get_schedule(a["id"]),
+                                 "next_run": "2020-01-01T00:00:00"})
+    events = []
+    ms.run_due_missions(store=store, on_event=events.append,
+                        run=lambda p, *, now=None: {"run_id": "r1",
+                                                    "status": "completed"})
+    assert [e["type"] for e in events] == ["mission_run"]
+    assert events[0]["mission_id"] == a["id"]
+    assert events[0]["slug"] == "a.io" and events[0]["run_id"] == "r1"
+
+
 def test_run_due_records_failure_without_aborting():
     a = _ready_mission("a.io", "one")
     store = MissionStore()

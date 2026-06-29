@@ -66,6 +66,23 @@ def test_cmd_run_executes_due(tmp_path, monkeypatch):
     assert store.get('x.com').get_monitor()['last_scan_id'] == '20260613_120000'
 
 
+def test_cmd_run_missions_executes_due():
+    from core import mission_schedule as ms, pentest_mission as pm
+    from core.mission_store import MissionStore
+    mission = pm.advance_mission_status(
+        pm.create_mission('shop.com', 'review', allowed_actions=['headers_check']),
+        'ready')
+    saved = MissionStore().save_mission(mission)
+    ms.set_mission_schedule(saved['id'], 'daily')
+    store = MissionStore()
+    store.set_schedule(saved['id'], {**store.get_schedule(saved['id']),
+                                     'next_run': '2000-01-01T00:00:00'})
+
+    results = cli.cmd_run_missions()
+    assert [r['mission_id'] for r in results] == [saved['id']]
+    assert results[0]['status'] == 'ok'
+
+
 def _ci_scan(project, sid, subdomains):
     """Record a scan whose subdomains phase carries ``subdomains`` (a takeover
     candidate there produces a critical diff event the CI gate catches)."""

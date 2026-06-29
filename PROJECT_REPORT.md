@@ -67,6 +67,12 @@
 > is a new `missions.schedule` column (MissionStore v2, separate from the payload), with
 > GUI controls + `POST /missions/{id}/schedule` and `POST /missions/run-due`. Current scale:
 > **full pytest 2240 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M10): scheduling auto-tick — due missions now run
+> automatically on the monitor tick, wired at the driver level via a generic
+> `MonitorScheduler.extra_tick` (the monitor engine stays decoupled), surfaced through the
+> existing event bridge / `monitor.format_event` in both the in-app scheduler and
+> `monitor_cli run/watch`. Opt-in. Current scale: **full pytest 2245 passed**, ruff clean,
+> self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

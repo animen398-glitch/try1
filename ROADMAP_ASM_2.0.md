@@ -2070,4 +2070,34 @@ surfaced by a GUI button + web `POST /missions/run-due` — an OS-level/cron
 auto-tick is a deferred follow-up; D3 schedule state is a `missions` column,
 separate from the payload. No second findings/asset/timeline source.
 
+### M10 — Scheduling auto-tick (CLOSED 2026-06-29)
+
+Completes M9's deferred follow-up: due missions run automatically on the monitor
+tick, wired at the **driver** level so the monitor engine stays decoupled from
+missions:
+
+- **`core/monitor.py`**: `MonitorScheduler` gains a generic `extra_tick(now)`
+  callback, run after the project sweep on every `tick()` (a failure there is
+  reported via `on_event`, never sinks the loop); `monitor.py` never imports the
+  mission layer. `format_event` renders a `mission_run` line (shared by the web
+  feed + in-app indicator).
+- **`core/mission_schedule.py`**: `run_due_missions` gains `on_event=`, emitting a
+  `{'type': 'mission_run', 'slug': project, mission_id, run_id, status}` event per
+  run.
+- **Drivers inject the tick:** the in-app `MonitorRunnerMixin._tick_due_missions`
+  (runs on the daemon thread, emits marshalled to the GUI thread by the existing
+  bridge signal) is passed as `extra_tick`; `monitor_cli` `run` also sweeps due
+  missions (`cmd_run_missions`), `watch` passes `extra_tick`, and `_print_event`
+  renders `mission_run`. Opt-in like project monitoring (`monitor_autostart`); a
+  mission runs only when its schedule is enabled.
+- Tests: `tests/test_monitor.py` (extra_tick runs + failure reported +
+  format_event), `tests/test_mission_schedule.py` (on_event emit),
+  `tests/test_monitor_cli.py` (`cmd_run_missions`).
+
+**Decisions (M10, locked):** D1 wire at the driver level via a generic
+`extra_tick` — the monitor engine stays decoupled (no mission import); D2 reuse
+the existing event bridge / shared `format_event` so mission runs surface like
+project monitors; D3 opt-in (only enabled schedules run). No second
+findings/asset/timeline source.
+
 ---

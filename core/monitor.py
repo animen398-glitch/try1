@@ -192,6 +192,11 @@ def format_event(ev: Dict) -> str:
         akind = ev.get('alert_kind')
         label = f'alert ({akind})' if akind else 'alert'
         return f'[monitor] {slug}: {label} error: {ev.get("error", "")}'
+    if kind == 'mission_run':
+        # Mission Center scheduled run (M10): the slug is the mission's project.
+        return (f'[mission] {slug}: {ev.get("mission_id", "")} ran '
+                f'({ev.get("status", "")})'
+                + (f' → {ev["run_id"]}' if ev.get('run_id') else ''))
     return f'[monitor] {slug}: {kind}'
 
 
@@ -463,12 +468,17 @@ class MonitorScheduler:
     def __init__(self, store, check_interval: float = 3600.0,
                  run_fn: Optional[Callable[[str], Dict]] = None,
                  on_event: Optional[Callable[[Dict], None]] = None,
-                 alert_config: Optional[Dict] = None):
+                 alert_config: Optional[Dict] = None,
+                 extra_tick: Optional[Callable[[Optional[datetime]], None]] = None):
         self.store = store
         self.check_interval = check_interval
         self.run_fn = run_fn
         self.on_event = on_event
         self.alert_config = alert_config
+        # An optional second pass run after the project sweep on every tick. The
+        # driver injects it (e.g. Mission Center's run_due_missions) so this engine
+        # stays decoupled from what else rides the schedule.
+        self.extra_tick = extra_tick
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -477,8 +487,15 @@ class MonitorScheduler:
 
     def tick(self, now: Optional[datetime] = None) -> List[Dict]:
         """One check pass — public so callers/tests can trigger it directly."""
-        return run_due(self.store, now=now, run_fn=self.run_fn,
-                       on_event=self.on_event, alert_config=self.alert_config)
+        summaries = run_due(self.store, now=now, run_fn=self.run_fn,
+                            on_event=self.on_event, alert_config=self.alert_config)
+        if self.extra_tick is not None:
+            try:
+                self.extra_tick(now)
+            except Exception as e:   # noqa: BLE001 — extra pass must not sink the loop
+                if self.on_event:
+                    self.on_event({'type': 'error', 'error': str(e)})
+        return summaries
 
     def start(self) -> None:
         if self.running():

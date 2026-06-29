@@ -566,6 +566,37 @@ def test_scheduler_tick_delegates_to_run_due(tmp_path):
     assert calls == ['https://x.com']
 
 
+def test_scheduler_tick_runs_extra_tick_after_sweep(tmp_path):
+    store = ProjectStore(tmp_path)
+    seen = []
+    sched = monitor.MonitorScheduler(
+        store, check_interval=999,
+        extra_tick=lambda now: seen.append(now))
+    sched.tick(now=datetime(2026, 6, 13, 12, 0))
+    assert seen == [datetime(2026, 6, 13, 12, 0)]
+
+
+def test_scheduler_extra_tick_failure_is_reported_not_raised(tmp_path):
+    store = ProjectStore(tmp_path)
+    events = []
+
+    def boom(now):
+        raise RuntimeError("mission tick failed")
+
+    sched = monitor.MonitorScheduler(
+        store, check_interval=999, on_event=events.append, extra_tick=boom)
+    sched.tick(now=datetime(2026, 6, 13, 12, 0))      # must not raise
+    assert any(e.get('type') == 'error' and 'mission tick failed' in e.get('error', '')
+               for e in events)
+
+
+def test_format_event_mission_run():
+    line = monitor.format_event({'type': 'mission_run', 'slug': 'shop.com',
+                                 'mission_id': 'mission-x', 'run_id': 'msched-1',
+                                 'status': 'ok'})
+    assert 'mission-x' in line and 'msched-1' in line and 'shop.com' in line
+
+
 def test_scheduler_start_stop_is_clean():
     from core.project import ProjectStore as _PS
     import tempfile
