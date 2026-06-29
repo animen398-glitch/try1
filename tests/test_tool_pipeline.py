@@ -8,7 +8,7 @@ a tool, opens a socket, or writes to a store.
 import json
 
 from core import pentest_mission as pm
-from core.tool_adapter import ToolRunResult
+from core.tool_adapter import ToolCapability, ToolRunResult
 from core.tool_pipeline import assemble_tool_run
 
 
@@ -56,8 +56,9 @@ def test_blocked_tool_yields_blocked_result_without_parsing():
 
 def test_allowed_but_no_parser_yields_skipped():
     mission = _active_mission()
-    # tls_audit is a registered M3 tool but has no parser yet.
-    result = assemble_tool_run(mission, "tls_audit", {}, target="https://example.com")
+    # A custom client-safe capability with no registered parser → skipped.
+    custom = ToolCapability("custom_probe", "safe_active_probe", passive=False)
+    result = assemble_tool_run(mission, custom, {}, target="https://example.com")
     assert result.status == "skipped"
     assert result.findings == [] and result.assets == []
 

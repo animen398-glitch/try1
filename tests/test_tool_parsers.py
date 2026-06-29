@@ -69,16 +69,14 @@ def test_safe_active_prober_emits_assets_no_findings():
     assert len(out["assets"]) == 3
 
 
-def test_dispatch_rejects_empty_and_unknown_and_unparsed_tools():
+def test_dispatch_rejects_empty_and_unknown_tools():
     with pytest.raises(ValueError, match="tool name is required"):
         tp.parse_tool_output("", {})
+    # a tool with no registered parser (not in PARSERS) is rejected
     with pytest.raises(ValueError, match="no parser for tool"):
         tp.parse_tool_output("metasploit", {})
-    # a registered M3 tool with no parser yet is also rejected
-    with pytest.raises(ValueError, match="no parser for tool"):
-        tp.parse_tool_output("tls_audit", {})
     assert tp.has_parser("Header_Audit") is True
-    assert tp.has_parser("tls_audit") is False
+    assert tp.has_parser("nessus") is False        # no parser registered
     assert tp.has_parser("") is False
 
 
@@ -102,3 +100,62 @@ def test_parse_tool_output_is_deterministic():
     first = tp.parse_tool_output("header_audit", evidence)
     second = tp.parse_tool_output("header_audit", evidence)
     assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+
+
+# ── remaining registry-tool parsers ──────────────────────────────────────────
+
+def test_all_registry_tools_have_parsers():
+    from core.tool_adapter import TOOL_CAPABILITIES
+    assert all(tp.has_parser(name) for name in TOOL_CAPABILITIES)
+
+
+def test_dependency_auditor_reuses_dependency_audit():
+    out = tp.parse_tool_output(
+        "dependency_auditor",
+        {"url": "https://example.com",
+         "scripts": ["https://cdn.example.com/jquery-1.7.1.min.js"], "html": ""})
+    assert any("jQuery" in f["title"] for f in out["findings"])
+    assert {"value": "example.com", "asset_type": "domain",
+            "source": "dependency_auditor"} in out["assets"]
+
+
+def test_graphql_introspector_flags_open_introspection_only():
+    on = tp.parse_tool_output(
+        "graphql_introspector",
+        {"url": "https://example.com/graphql",
+         "introspection": {"data": {"__schema": {"types": []}}}})
+    assert [f["title"] for f in on["findings"]] == ["GraphQL introspection enabled"]
+    assert on["findings"][0]["severity"] == "medium"
+
+    off = tp.parse_tool_output(
+        "graphql_introspector",
+        {"url": "https://example.com/graphql", "introspection": {"errors": [{}]}})
+    assert off["findings"] == []
+
+
+def test_tls_audit_flags_deprecated_protocols_and_weak_ciphers():
+    out = tp.parse_tool_output(
+        "tls_audit",
+        {"url": "https://example.com",
+         "protocols": ["TLSv1.0", "TLSv1.3"],
+         "ciphers": ["TLS_RSA_WITH_RC4_128_SHA", "TLS_AES_256_GCM_SHA384"]})
+    titles = [f["title"] for f in out["findings"]]
+    assert "Deprecated TLS protocol enabled: TLSv1.0" in titles
+    assert any("Weak TLS cipher" in t for t in titles)
+    # the modern protocol/cipher are not flagged
+    assert not any("TLSv1.3" in t or "AES_256" in t for t in titles)
+
+
+def test_iac_config_auditor_reuses_scan_path(tmp_path):
+    (tmp_path / "Dockerfile").write_text("FROM python:latest\nUSER root\n",
+                                         encoding="utf-8")
+    out = tp.parse_tool_output("iac_config_auditor", {"path": str(tmp_path)})
+    titles = [f["title"] for f in out["findings"]]
+    assert any("root" in t.lower() for t in titles)
+    assert {"value": "python:latest", "asset_type": "container_image",
+            "source": "iac_config_auditor"} in out["assets"]
+
+
+def test_iac_config_auditor_empty_path_is_safe():
+    assert tp.parse_tool_output("iac_config_auditor", {}) == {"findings": [],
+                                                              "assets": []}

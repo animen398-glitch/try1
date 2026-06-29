@@ -2286,6 +2286,16 @@ raw binary stdout); reuse `audit_checks` for header/cookie/source-map (no
 duplication); a focused first set (3 reuse-backed + 1 asset parser) with an
 additive registry for the rest; no store writes, no network, no new dependencies.
 
+**Follow-up (2026-06-30): all 8 registry tools covered.** Added parsers for the
+remaining tools — `dependency_auditor` (reuse `core.dependency_audit.audit`),
+`iac_config_auditor` (reuse `core.iac_scanner.scan_path`; the one parser whose
+evidence is a local path — IaC analysis is inherently local-file, reads only the
+operator-provided path, no network/store), `graphql_introspector` and `tls_audit`
+(small pure detection over captured introspection / TLS evidence; no live
+handshake or query). Every entry in `tool_adapter.TOOL_CAPABILITIES` now has a
+parser; the pipeline's `skipped` status now only applies to custom
+(non-registry) capabilities.
+
 ---
 
 ### Offline Tool-Evidence Pipeline (CLOSED 2026-06-30)
