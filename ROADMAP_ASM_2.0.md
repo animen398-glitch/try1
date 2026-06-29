@@ -2010,4 +2010,29 @@ D2 surfaces = Overview tab card **and** web `GET /missions/overview`; D3 last-ru
 outcome via `audit_report.client_findings` over the latest linked run. No second
 findings/asset/timeline source.
 
+### M8 — Timeline run events (CLOSED 2026-06-29)
+
+Deepen the timeline with mission *execution* events, completing the M4 story —
+derive-on-read, no new state and no surface changes:
+
+- **`core/timeline.py`**: `build_events` gains a `mission_runs` parameter (a list
+  of already-resolved `{mission_id, objective, run_id, status, created_at,
+  updated_at}` rows). Each yields a `mission_run_started` event (from the run's
+  `created_at`) and, when terminal, a `mission_run_completed` /
+  `mission_run_failed` event (from `updated_at`; failed → medium), in the
+  `missions` section — complementing the M3 mission-status events (distinct
+  type/title, so dedup keeps both). `build_timeline` assembles `mission_runs` by
+  resolving each mission's `linked_audit_run_ids` against the already-loaded
+  `audit_runs`, so `build_events` stays a pure shaper (no store lookups).
+- **Surfaces:** none changed — the `missions` section already renders generically
+  in the Timeline tab and web `/timeline` (since M3).
+- Tests: `tests/test_timeline.py` — a pure `build_events(mission_runs=...)` case
+  and a `build_timeline` integration (execute a mission → started + completed
+  events appear).
+
+**Decisions (M8, locked):** D1 derive-on-read, no new state; D2 `build_timeline`
+resolves linked runs so `build_events` stays pure; D3 run events live in the
+`missions` section alongside (not replacing) the mission-status events. No second
+findings/asset/timeline source.
+
 ---

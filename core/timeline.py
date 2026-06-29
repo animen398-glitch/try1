@@ -94,7 +94,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  audit_runs: Optional[List[Dict]] = None,
                  audit_events: Optional[List[Dict]] = None,
                  kev_events: Optional[List[Dict]] = None,
-                 missions: Optional[List[Dict]] = None) -> List[Dict]:
+                 missions: Optional[List[Dict]] = None,
+                 mission_runs: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -108,7 +109,11 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     not scan-based. ``missions`` are Mission Center store rows (see
     ``MissionStore.list_missions``); a mission carries no event log, so a created
     event is derived from ``created_at`` and a single status event from
-    ``updated_at`` whenever the mission has moved past ``draft``. Events are
+    ``updated_at`` whenever the mission has moved past ``draft``. ``mission_runs``
+    are already-resolved ``{mission_id, objective, run_id, status, created_at,
+    updated_at}`` rows (one per linked audit run); each yields a
+    ``mission_run_started`` and, when terminal, a ``mission_run_completed`` /
+    ``mission_run_failed`` event. Events are
     de-duplicated by ``(scan_id, type, title)`` and ordered chronologically.
     Each event is ``{scan_id, at, type, title, severity, section}``.
     """
@@ -229,6 +234,30 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                            'severity': 'medium' if status == 'failed' else 'info',
                            'section': 'missions'})
 
+    # Mission *execution* events (M8): a mission run produced an audit run — a
+    # started event from the run's created_at and a terminal event from its
+    # updated_at. These complement the mission-status events above (which track
+    # the mission lifecycle, not the run it executed). Shaped, never looked up.
+    for mr in mission_runs or []:
+        if not isinstance(mr, dict):
+            continue
+        mission_id = str(mr.get('mission_id') or '').strip()
+        run_id = str(mr.get('run_id') or '').strip()
+        if not mission_id or not run_id:
+            continue
+        label = str(mr.get('objective') or mission_id).strip()
+        run_status = str(mr.get('status') or '').strip().lower()
+        events.append({'scan_id': None, 'at': mr.get('created_at'),
+                       'type': 'mission_run_started',
+                       'title': f"{label} → run {run_id} started",
+                       'severity': 'info', 'section': 'missions'})
+        if run_status in {'completed', 'failed'}:
+            events.append({'scan_id': None, 'at': mr.get('updated_at'),
+                           'type': f'mission_run_{run_status}',
+                           'title': f"{label} → run {run_id} {run_status}",
+                           'severity': 'info' if run_status == 'completed' else 'medium',
+                           'section': 'missions'})
+
     seen = set()
     deduped: List[Dict] = []
     for ev in events:
@@ -292,6 +321,26 @@ def build_timeline(project) -> Dict:
         missions = MissionStore().list_missions(project.slug)
     except Exception:   # noqa: BLE001 - timeline must render even if mission store fails
         missions = []
+    # Mission execution events (M8): resolve each mission's linked runs against
+    # the audit runs already loaded above, so build_events stays a pure shaper.
+    runs_by_id = {run.get('id'): run for run in audit_runs}
+    mission_runs: List[Dict] = []
+    for mission in missions:
+        payload = mission.get('payload')
+        payload = payload if isinstance(payload, dict) else {}
+        objective = payload.get('objective')
+        for run_id in payload.get('linked_audit_run_ids') or []:
+            run = runs_by_id.get(run_id)
+            if not run:
+                continue
+            mission_runs.append({
+                'mission_id': mission.get('id'),
+                'objective': objective,
+                'run_id': run_id,
+                'status': run.get('status'),
+                'created_at': run.get('created_at'),
+                'updated_at': run.get('updated_at'),
+            })
     return {
         'project': project.slug,
         'series': build_series(entries),
@@ -304,5 +353,6 @@ def build_timeline(project) -> Dict:
             audit_events,
             kev_evts,
             missions=missions,
+            mission_runs=mission_runs,
         ),
     }

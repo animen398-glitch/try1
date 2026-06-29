@@ -55,6 +55,12 @@
 > `core/audit_report`) as a derive-on-read view, surfaced as a Missions card on the
 > Overview tab + `GET /missions/overview`. No new state. Current scale: **full pytest
 > 2227 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M8): timeline run events — `core/timeline.build_events`
+> gains `mission_runs`, emitting mission_run_started / mission_run_completed|failed
+> events (section 'missions') for each executed mission's linked audit run;
+> `build_timeline` resolves the runs so build_events stays a pure shaper. No surface
+> changes (the 'missions' section renders generically since M3). Current scale: **full
+> pytest 2229 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

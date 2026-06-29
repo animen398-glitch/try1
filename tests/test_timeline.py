@@ -239,6 +239,51 @@ def test_mission_events_are_folded_into_timeline():
     assert 'Portal audit' in running['title']
 
 
+def test_mission_run_events_are_shaped_from_linked_runs():
+    mission_runs = [
+        {'mission_id': 'mission-aaa', 'objective': 'External review',
+         'run_id': 'mrun-1', 'status': 'completed',
+         'created_at': '2026-03-03T10:00:00', 'updated_at': '2026-03-03T10:05:00'},
+        {'mission_id': 'mission-bbb', 'objective': 'Portal audit',
+         'run_id': 'mrun-2', 'status': 'failed',
+         'created_at': '2026-03-03T11:00:00', 'updated_at': '2026-03-03T11:02:00'},
+    ]
+
+    events = timeline.build_events([], mission_runs=mission_runs)
+
+    assert {e['section'] for e in events} == {'missions'}
+    types = [e['type'] for e in events]
+    assert types.count('mission_run_started') == 2
+    assert 'mission_run_completed' in types and 'mission_run_failed' in types
+    failed = next(e for e in events if e['type'] == 'mission_run_failed')
+    assert failed['severity'] == 'medium'
+    assert failed['at'] == '2026-03-03T11:02:00'
+    assert 'Portal audit' in failed['title'] and 'mrun-2' in failed['title']
+
+
+def test_build_timeline_includes_mission_run_events(tmp_path):
+    from core import mission_runner, pentest_mission as pm
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    from core.mission_store import MissionStore
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    mission = pm.advance_mission_status(
+        pm.create_mission(project.slug, 'External review',
+                          allowed_actions=['headers_check']), 'ready')
+    saved = MissionStore().save_mission(mission)
+    FindingsStore().upsert(project.slug, Finding(
+        category='vuln', rule_id='edge', title='Exposed map', severity='high',
+        location='https://x.com/a.js.map').to_store(), scan_id='s1')
+    mission_runner.run_mission(saved['payload'])
+
+    tl = timeline.build_timeline(project)
+    types = {e['type'] for e in tl['events'] if e['section'] == 'missions'}
+    assert 'mission_run_started' in types
+    assert 'mission_run_completed' in types
+
+
 def test_events_are_deduped_and_time_ordered():
     a = _report('s1', '2026-01-01')
     b = _report('s2', '2026-01-02', risk=('High', 60))
