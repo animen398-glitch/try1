@@ -61,6 +61,11 @@ class MissionsTabMixin:
         self.btn_mission_refresh = StyledButton("Refresh", style="secondary")
         self.btn_mission_refresh.clicked.connect(self._refresh_mission_projects)
         ctrl.addWidget(self.btn_mission_refresh)
+        self.btn_mission_csv = StyledButton("Export CSV", style="secondary")
+        self.btn_mission_csv.setToolTip(
+            "Экспортировать портфель миссий (статус + последний прогон) в CSV.")
+        self.btn_mission_csv.clicked.connect(self._export_missions_csv)
+        ctrl.addWidget(self.btn_mission_csv)
         layout.addLayout(ctrl)
 
         create_grp = SectionGroupBox("Create mission (client-safe)")
@@ -597,6 +602,27 @@ class MissionsTabMixin:
             self.mission_status.setText(f"Export failed: {e}")
             return
         self.mission_status.setText(f"Exported mission report: {path}")
+
+    def _export_missions_csv(self):
+        project = self.mission_project.currentData()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Missions CSV", "missions.csv", "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            text = self._missions_csv_text(project)
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+        except Exception as e:  # noqa: BLE001
+            self.mission_status.setText(f"Export failed: {e}")
+            return
+        self.mission_status.setText(f"Exported missions CSV: {path}")
+
+    @staticmethod
+    def _missions_csv_text(project) -> str:
+        from core.mission_overview import build_mission_overview
+        from core.report_export import missions_csv
+        return missions_csv(build_mission_overview(project=project or None))
 
     @staticmethod
     def _render_mission_report(payload: Dict[str, Any], fmt: str) -> str:

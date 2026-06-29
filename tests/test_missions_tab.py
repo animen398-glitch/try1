@@ -166,6 +166,14 @@ def test_do_run_due_missions(qapp):
     assert "error" not in out and "ran" in out["ok"]
 
 
+def test_missions_csv_text_exports_overview_rows(qapp):
+    saved = _seed_mission("shop.com", status="ready")
+    w = MissionsHost()
+    text = w._missions_csv_text("shop.com")
+    assert text.splitlines()[0].startswith("Mission ID,Project,Objective")
+    assert saved["id"] in text
+
+
 def test_report_buttons_enable_on_selection_and_render(qapp):
     w = MissionsHost()
     _seed_mission("shop.com", status="ready")

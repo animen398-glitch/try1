@@ -831,6 +831,16 @@ def _missions_overview(project: Optional[str] = None) -> dict:
                 'error': str(e)}
 
 
+def _missions_csv(project: Optional[str] = None) -> str:
+    """CSV of the mission portfolio (mirrors /findings.sarif, /report.md)."""
+    try:
+        from core.mission_overview import build_mission_overview
+        from core.report_export import missions_csv
+        return missions_csv(build_mission_overview(project=project))
+    except Exception as e:
+        return f'error,{e}\n'
+
+
 def _mission_create(project: str, objective: str, *, template=None, roe=None,
                     allowed_actions=None) -> dict:
     """Create + persist a client-safe mission. 400-shaped error if not valid."""
@@ -1829,6 +1839,10 @@ if _FASTAPI_OK:
     @app.get('/missions/overview')
     async def missions_overview(project: Optional[str] = None):
         return JSONResponse(_missions_overview(project))
+
+    @app.get('/missions.csv')
+    async def missions_csv_route(project: Optional[str] = None):
+        return Response(_missions_csv(project), media_type='text/csv; charset=utf-8')
 
     @app.post('/missions')
     async def mission_create(body: MissionRequest):

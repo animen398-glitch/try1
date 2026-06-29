@@ -2151,4 +2151,30 @@ audit run); D2 cover all the headline states (scheduled / executed / stale) in a
 few missions; D3 reuse the existing contract + schedule + link APIs — no demo-only
 code paths. No second findings/asset/timeline source.
 
+### M13 — Mission CSV export (CLOSED 2026-06-29)
+
+Surface parity with the findings / portfolio CSV exports:
+
+- **`core/report_export.py`**: a new `missions_csv(overview)` over the shared
+  `_rows_to_csv` + `_MISSIONS_COLUMNS` (mission_id / project / objective / status /
+  last_run_id / last_run_status / client_facing / updated_at). It accepts either
+  the `mission_overview.build_mission_overview()` dict (`{'missions': [...]}`) or a
+  bare row list (same shape as `portfolio_csv`), preserving the exporter purity
+  invariant (a string from already-loaded rows, no I/O).
+- **GUI** (`gui/tab_missions.py`): an "Export CSV" button in the Missions tab
+  control row (`_export_missions_csv` → `_missions_csv_text(project)` builds the
+  overview for the current project and renders it).
+- **Web** (`remote/web_app.py`): `GET /missions.csv` (`_missions_csv`, media type
+  `text/csv`), mirroring `/findings.sarif` and `/report.md`.
+- Tests: `tests/test_report_export.py` (header/row from overview dict + bare list +
+  empty), GUI in `tests/test_missions_tab.py`, web helper + endpoint in
+  `tests/test_web_missions.py`.
+
+**Decisions (M13, locked):** D1 reuse the shared `_rows_to_csv` exporter (no new
+CSV machinery); D2 the rows are the `mission_overview` rows (one source for the
+card + the export); D3 mirror the existing CSV surface conventions (GUI button +
+`GET /missions.csv`). No second findings/asset/timeline source.
+
+This closes the planned Mission Center arc (M1–M13).
+
 ---

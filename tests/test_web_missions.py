@@ -69,6 +69,13 @@ def test_missions_overview_helper_counts_by_status():
     assert out["counts"]["ready"] == 2
 
 
+def test_missions_csv_helper():
+    saved = _ready_mission("shop.com", "review")
+    csv_text = wa._missions_csv("shop.com")
+    assert csv_text.splitlines()[0].startswith("Mission ID,Project")
+    assert saved["id"] in csv_text
+
+
 def test_mission_create_helper_persists_and_validates():
     out = wa._mission_create("newshop.io", "Authorized review",
                             allowed_actions=["headers_check"])
@@ -179,6 +186,12 @@ def test_mission_endpoints_with_testclient():
     r = client.get("/missions/overview")
     assert r.status_code == 200
     assert "total" in r.json() and "counts" in r.json()
+
+    # CSV export endpoint
+    r = client.get("/missions.csv", params={"project": "shop.com"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert r.text.splitlines()[0].startswith("Mission ID,Project")
 
     # schedule + run-due endpoints
     r = client.post(f"/missions/{ready['id']}/schedule",

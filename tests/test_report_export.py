@@ -95,6 +95,28 @@ def test_assets_csv_empty_is_header_only():
     assert _parse(rx.assets_csv(None))[0][0] == 'Project'
 
 
+# ── missions_csv ──────────────────────────────────────────────────────────────
+
+def test_missions_csv_header_and_row_from_overview_dict():
+    overview = {'missions': [{
+        'mission_id': 'mission-abc', 'project': 'shop.com',
+        'objective': 'Review', 'status': 'completed',
+        'last_run_id': 'mrun-1', 'last_run_status': 'completed',
+        'client_facing': 3, 'updated_at': '2026-02-01T10:00:00'}]}
+    table = _parse(rx.missions_csv(overview))
+    assert table[0] == ['Mission ID', 'Project', 'Objective', 'Status',
+                        'Last Run', 'Last Run Status', 'Client-facing', 'Updated']
+    assert table[1] == ['mission-abc', 'shop.com', 'Review', 'completed',
+                        'mrun-1', 'completed', '3', '2026-02-01T10:00:00']
+
+
+def test_missions_csv_accepts_bare_list_and_empty():
+    assert _parse(rx.missions_csv([]))[0][0] == 'Mission ID'
+    assert _parse(rx.missions_csv({'missions': []}))[0][0] == 'Mission ID'
+    table = _parse(rx.missions_csv([{'mission_id': 'm1', 'project': 'p'}]))
+    assert table[1][0] == 'm1' and table[1][1] == 'p'
+
+
 # ── timeline_csv ──────────────────────────────────────────────────────────────
 
 def test_timeline_csv_header_and_row():

@@ -40,6 +40,13 @@ _ASSETS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('first_seen_at', 'First seen'), ('last_seen_at', 'Last seen'), ('id', 'ID'),
 )
 
+_MISSIONS_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('mission_id', 'Mission ID'), ('project', 'Project'),
+    ('objective', 'Objective'), ('status', 'Status'),
+    ('last_run_id', 'Last Run'), ('last_run_status', 'Last Run Status'),
+    ('client_facing', 'Client-facing'), ('updated_at', 'Updated'),
+)
+
 
 _TIMELINE_COLUMNS: Sequence[Tuple[str, str]] = (
     ('at', 'When'), ('scan_id', 'Scan'), ('severity', 'Severity'),
@@ -325,6 +332,14 @@ def portfolio_csv(portfolio) -> str:
     ``portfolio.load_portfolio`` dict (``{'rows': [...]}``) or a bare row list."""
     rows = portfolio.get('rows') if isinstance(portfolio, dict) else portfolio
     return _rows_to_csv(rows, _PORTFOLIO_COLUMNS)
+
+
+def missions_csv(overview) -> str:
+    """CSV of the mission portfolio. Accepts either the full
+    ``mission_overview.build_mission_overview`` dict (``{'missions': [...]}``) or a
+    bare row list — one line per mission with its last-run outcome."""
+    rows = overview.get('missions') if isinstance(overview, dict) else overview
+    return _rows_to_csv(rows, _MISSIONS_COLUMNS)
 
 
 # ── SARIF 2.1.0 (EPIC 16 F1) ────────────────────────────────────────────────────

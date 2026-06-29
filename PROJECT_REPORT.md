@@ -82,6 +82,10 @@
 > missions on the first project (ready+scheduled, executed with a linked run+finding, one with
 > a stale link), so the whole M1-M11 Mission Center is visible end-to-end in the demo. Current
 > scale: **full pytest 2252 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M13): mission CSV export — `report_export.missions_csv`
+> exports the mission portfolio (overview rows) via the shared `_rows_to_csv`, surfaced as an
+> "Export CSV" button on the Missions tab + `GET /missions.csv`. Closes the planned M1-M13 arc.
+> Current scale: **full pytest 2256 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
