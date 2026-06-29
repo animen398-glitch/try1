@@ -13,21 +13,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 
-def _latest_run(run_ids: Optional[List[str]], audit_store: Any) -> Optional[Dict[str, Any]]:
-    """The most-recently-updated linked run payload (or None), missing runs skipped."""
-    latest: Optional[Dict[str, Any]] = None
-    for run_id in run_ids or []:
-        row = audit_store.get_run(run_id)
-        payload = row.get("payload") if isinstance(row, dict) else None
-        if not isinstance(payload, dict):
-            continue
-        if (latest is None
-                or str(payload.get("updated_at") or payload.get("run_id") or "")
-                >= str(latest.get("updated_at") or latest.get("run_id") or "")):
-            latest = payload
-    return latest
-
-
 def mission_run_trend(
     mission: Dict[str, Any],
     *,
@@ -76,7 +61,6 @@ def build_mission_overview(
     each row carries the mission's last linked run outcome (status +
     client-facing finding count). Reads stores; pure aggregation otherwise.
     """
-    from core import audit_report
     from core.pentest_mission import MISSION_STATUSES
 
     if mission_store is None:
@@ -95,8 +79,11 @@ def build_mission_overview(
         payload = payload if isinstance(payload, dict) else {}
         status = str(mission.get("status") or "")
         counts[status] = counts.get(status, 0) + 1
-        last = _latest_run(payload.get("linked_audit_run_ids"), audit_store)
-        client = len(audit_report.client_findings(last)) if last else 0
+        # The last linked run's outcome is the tail of the run trend (one source
+        # for the per-run client-facing count, shared with mission_run_trend).
+        trend = mission_run_trend(payload, audit_store=audit_store)
+        last = trend[-1] if trend else None
+        client = last["client_facing"] if last else 0
         total_client += client
         rows.append({
             "mission_id": mission.get("id"),
@@ -104,8 +91,8 @@ def build_mission_overview(
             "objective": payload.get("objective"),
             "status": status,
             "updated_at": mission.get("updated_at"),
-            "last_run_id": last.get("run_id") if last else None,
-            "last_run_status": last.get("status") if last else None,
+            "last_run_id": last["run_id"] if last else None,
+            "last_run_status": last["status"] if last else None,
             "client_facing": client,
         })
     rows.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
