@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-28 14:10:00  
-> Total memories: **58**  
-> Breakdown: instruction: 8, decision: 11, goal: 4, preference: 1, context: 3, event: 25, artifact: 2, error: 4
+> Generated: 2026-06-30 00:07:59  
+> Total memories: **62**  
+> Breakdown: instruction: 8, decision: 13, goal: 6, preference: 1, context: 3, event: 25, artifact: 2, error: 4
 
 ---
 
@@ -96,6 +96,12 @@ Planning direction proposed for Advanced Site Analyzer: evolve from ASM/CSM + Cl
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-28T00:15:32*
 
+### M2 (MissionStore persistence + project_io export) ...
+
+M2 (MissionStore persistence + project_io export) APPROVED by user (2026-06-28, 'да'). D1-D5 as recommended: D1 MissionStore single-table NO events; D2 generalize SQLiteStore base for events-less PROJECT_EXPORT (events_table=None) - not phantom table, not override; D3 project_io FORMAT_VERSION stays 1 (additive missions.json); D4 missions columns mirror audit (+profile always client_safe); D5 GUI Overview Export/Import untouched (summary additive). Files: NEW core/mission_store.py (MissionStore mirror of AuditRunStore: missions table id/project/profile/status/payload/created_at/updated_at, save_mission via pentest_mission.mission_to_json+schema, get/list/delete/export_mission, PROJECT_EXPORT=('missions',None,None)), EDIT utils/sqlite_store.py (events_table None guard in export_project/import_project), EDIT core/project_io.py (missions.json mirror audit_runs.json + counts), EDIT tests/conftest.py (_isolate_missions_db), NEW tests/test_mission_store.py, EDIT tests/test_project_io.py (mission round-trip). M3+ deferred: timeline mission events, GUI tab, web parity.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T12:29:49*
+
 ### Workbench v2 epic COMPLETE + committed locally (ma...
 
 Workbench v2 epic COMPLETE + committed locally (master, commits 86e473f1 F1, 859d8249 F2, 3175fcfa F3, 98b0fcc5 F4, ab7ce310 F5, roadmap doc). All 5 features implemented with tests: F1 core/audit_templates.py (4 scenarios), F2 ROE templates in core/audit_scope.py, F3 core/audit_revalidation.py (overlay, no lifecycle writes), F4 core/audit_compare.py + schemas/asa_audit_compare.schema.json (derive-on-read, failed phase=inconclusive), F5 compare+scenario renderers in core/audit_report.py. Verified: ruff clean, full pytest 2064 passed (1 known Starlette warning), main.py --self-check 29 tabs. Single FindingsStore SoT preserved, schema growth additive/optional, all client-safe. DEFERRED to Codex (contract-only): GUI selectors/buttons in gui/tab_audit_runs.py, remote/web_app.py read parity, optional persisted 'compared' event. Roadmap section 'EPIC CLOSED - Workbench v2' added. CLAUDE.md/AGENTS.md/PROJECT_STATUS.txt status banners NOT yet synced.
@@ -138,6 +144,12 @@ KEV->SLA tightening follow-up IMPLEMENTED (approved separately by user; was deci
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T08:49:20*
 
+### M1 Mission Center core contract APPROVED by user (...
+
+M1 Mission Center core contract APPROVED by user (2026-06-28, 'да делай'). Scope: PURE deterministic offline contract module ONLY, mirroring core/audit_workflow.py. Files: NEW core/pentest_mission.py (create_mission/normalize_mission/validate_mission/advance_mission_status/link_audit_run/link_finding/mission_to_json), NEW schemas/asa_pentest_mission.schema.json, NEW tests/test_pentest_mission.py, +1-line alias asa_pentest_mission in core/audit_schema.SCHEMA_ALIASES. Decisions: D1 pure-contract only (no MissionStore/SQLite/GUI/web/timeline — deferred to M2); D2 status map draft->{ready,archived}, ready->{running,draft,archived}, running->{completed,failed,archived}, completed->{archived}, failed->{ready,archived}, archived terminal; ->ready requires valid mission; D3 scope lives INSIDE roe (SSOT, no separate scope field); D4 link_finding does NOT check FindingsStore existence in M1; D5 module name core/pentest_mission.py. Reuse: audit_scope.normalize_roe/validate_roe/apply_roe_template, audit_templates.resolve_template/get_template, action_policy.evaluate_action_policy for allowed_actions guardrail, audit_schema.validate_audit_payload. No new second FindingsStore/AssetStore/Timeline; client-safe; no exploit/bruteforce/stealth/auto-login/auth-bypass/persistence. M1 files were absent in repo (Codex draft was in a separate worktree without git, lost).
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T12:02:16*
+
 ---
 
 ## Goals
@@ -167,6 +179,18 @@ User assigned Codex release + UX hardening after Client-Safe Pentest Workbench: 
 User proposed adapting Cloudflare security-audit-skill methodology into ASA as a future feature: Security Audit Run with phases Collect/Recon Snapshot, Finding Hunt, Validation/False Positive Check, Risk+Business Impact, Structured Findings JSON, Independent Verification/Evidence Check. Key ideas: adversarial validation by separate validator, structured schemas (asa_finding/audit_run/validation), quality gates, additive audit runs over lifecycle/timeline. Do not copy scanner/prompts directly; keep ASA evidence-based authorized desktop/ASM product. User asked to split work between Claude Code and Codex/worktrees.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T16:38:16*
+
+### User asked to split the remaining Advanced Site An...
+
+User asked to split the remaining Advanced Site Analyzer work between Claude Code and Codex and prepare direct prompts for both agents. Proposed split should keep Claude on architecture/core contracts and Codex on release baseline, UX polish, tests, and thin surfaces.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T11:57:40 | Tags: `asa`, `claude-code`, `codex`, `planning`*
+
+### User asked Codex to analyze Advanced Site Analyzer...
+
+User asked Codex to analyze Advanced Site Analyzer's remaining open gestalts and propose a plan before continuing implementation; next work should wait for user's chosen direction/approval.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T11:54:24 | Tags: `asa`, `planning`, `next-step`*
 
 ---
 
@@ -298,6 +322,12 @@ Final release-readiness after audit event commit 2ff3485 passed on 2026-06-28: r
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T23:16:21 | Tags: `asa`, `client-safe`, `audit-events`, `release-readiness`, `full-pytest`, `frozen-smoke`*
 
+### Codex hardened project bundle database-slice impor...
+
+Codex hardened project bundle database-slice imports in commit 243dc1d9. SQLiteStore.validate_project_import now rejects main rows belonging to a foreign project, event rows referencing ids outside the imported slice, and events in single-table stores. core.project_io preflights findings/assets/audit/mission slices before deleting or extracting the project tree, so a tampered bundle cannot leave a partial destination tree. Verified: targeted storage/project tests passed, ruff clean, main.py --self-check 29 tabs, full pytest 2181 passed with 1 known Starlette/httpx warning. No remote git actions.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T14:01:04 | Tags: `asa`, `project-bundle`, `sqlite-integrity`, `commit-243dc1d9`*
+
 ### Codex completed an internal polish/release-readine...
 
 Codex completed an internal polish/release-readiness pass in current worktree: hardened project_io import against unsafe manifest slug traversal/absolute paths; made optional feature summary/missing treat detector exceptions as unavailable; added hermetic self-check smoke with ASA_DATA_ROOT and tab-count assertion; added demo_seed CLI guardrail tests for non-empty dir and --force; added release-readiness tests pinning CI ruff/pytest/PyInstaller/self-check invariants. Targeted pytest passed: 50 tests across project_io/self_check/demo_seed/features/launcher/first_run/release_readiness; ruff passed on changed files.
@@ -321,6 +351,12 @@ Integrated persistent audit history and report exports into Audit Runs GUI in co
 Final release-readiness after Client-Safe Pentest Workbench timeline/evidence work passed on 2026-06-28: ruff check . passed; full pytest with -p no:cacheprovider --basetemp .pytest-full-client-safe-final reported 1947 passed, 1 known Starlette/httpx warning in 564.43s; python main.py --self-check reported 29 tabs; PyInstaller build with QT_API=pyside6 succeeded and frozen dist/SiteAnalyzer.exe --self-check exited 0. Exe size 73,903,732 bytes. No remote git actions.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T22:59:46 | Tags: `asa`, `client-safe`, `release-readiness`, `full-pytest`, `frozen-smoke`*
+
+### Mission Center M2 IMPLEMENTED (persistence + proje...
+
+Mission Center M2 IMPLEMENTED (persistence + project_io bundle). NEW core/mission_store.py: MissionStore(SQLiteStore) mirroring AuditRunStore but SINGLE-TABLE (mission has no event log in M1) - missions table (id/project/profile/status/payload/created_at/updated_at); save_mission normalizes+schema-validates via pentest_mission.mission_to_json before write (idempotent, created_at preserved); get/list/delete/export_mission; PROJECT_EXPORT=('missions',None,None). EDITED utils/sqlite_store.py: export_project/import_project now tolerate events_table=None (single-table slice, events:[]/events:0); 3-tuple path unchanged. EDITED core/project_io.py: bundle gains missions.json (mirror audit_runs.json) + missions count; FORMAT_VERSION stays 1 (backward-compat - old bundle without missions.json imports as 0). EDITED tests/conftest.py (_isolate_missions_db). NEW tests/test_mission_store.py (11), EDITED tests/test_project_io.py (+2 mission round-trip + legacy bundle). Decisions D1-D5 as approved. Full pytest 2177 green, ruff clean. Docs synced (ROADMAP M2 section, CLAUDE/AGENTS/PROJECT_STATUS/PROJECT_REPORT). NOT yet committed. M3+ deferred: timeline mission events, GUI Mission Center tab, web read parity. REMINDER: working tree still has FOREIGN uncommitted changes (demo_seed.py, gui/tab_iac.py, tests/test_demo_seed.py, tests/test_iac_tab.py) NOT mine - left untouched.
+
+*Confidence: 1 | Status: active | Created: 2026-06-28T12:43:43*
 
 ### Post-merge release-readiness after backend release...
 
@@ -363,18 +399,6 @@ Codex added Stage 1 Client-Safe Pentest Workbench edge-test harness files for au
 Implemented Client-Safe Pentest Workbench timeline integration in commit 9679915. core.timeline now folds persisted AuditRunStore runs/events into the derived timeline as audit_run_started/completed/failed and audit_* events without a second findings source of truth. Verified with 81 targeted audit/timeline tests, ruff on changed files, and python main.py --self-check.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T22:45:36 | Tags: `asa`, `client-safe`, `timeline`, `release-readiness`*
-
-### Finalized Codex's uncommitted work in this worktre...
-
-Finalized Codex's uncommitted work in this worktree (user authorized: Codex inactive). Two coherent complete units committed: c51c1ba2 external_tools.command_error SSOT (rc+stderr tail) wired into nuclei/katana/amass/subfinder/httpx/bbot; d988da0f cookies.txt validation in core/cookie_auditor.py (read/validate/describe_cookies_txt + CookieFileError + mask_cookie_value, never exposes raw values) + GUI preflight in tab_collection/tab_media. Verified: ruff clean, targeted tests green, full pytest already 2074 green with these present, self-check 29 tabs. Working tree now clean (only auto-synced MEMORY.md). My Workbench v2 commits stayed scoped; these Codex commits are separate.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T01:29:56*
-
-### GUI polish completed in commits 31094a23, b0ddfcc,...
-
-GUI polish completed in commits 31094a23, b0ddfcc, 977e6e6, 47ab784, c2fe4f6: link helpers, settings dependency hint wrapping, and stale-state clearing for IaC, Remediation, Attack Paths, Exposure, Priorities, Technology Risk, and Scan Accuracy tabs. Targeted GUI tests, ruff, and main.py --self-check passed.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T15:48:35*
 
 ---
 
