@@ -24,7 +24,9 @@ via the stores' column whitelist, against SQL injection from a crafted bundle.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
+import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Optional, Union
@@ -36,6 +38,7 @@ _ASSETS = 'assets.json'
 _AUDIT_RUNS = 'audit_runs.json'
 _MISSIONS = 'missions.json'
 _TREE_PREFIX = 'project/'
+logger = logging.getLogger(__name__)
 
 
 def _validate_bundle_slug(slug: object) -> str:
@@ -184,14 +187,67 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         ):
             db_store.validate_project_import(slug, payload)
 
-        if dest_dir.exists():
-            shutil.rmtree(dest_dir)
-        files = _safe_extract(zf, dest_dir)
+        db_imports = (
+            (findings_store, findings),
+            (assets_store, assets),
+            (audit_store, audit_runs),
+            (mission_store, missions),
+        )
+        previous_slices = [
+            (db_store, db_store.export_project(slug))
+            for db_store, _payload in db_imports
+        ]
 
-    fres = findings_store.import_project(slug, findings, replace=replace)
-    ares = assets_store.import_project(slug, assets, replace=replace)
-    au_res = audit_store.import_project(slug, audit_runs, replace=replace)
-    mi_res = mission_store.import_project(slug, missions, replace=replace)
+        store.root.mkdir(parents=True, exist_ok=True)
+        # Stage everything inside a sibling temp dir on the same filesystem so the
+        # final tree swap is an atomic rename. ``mkdtemp`` + a best-effort rmtree
+        # (rather than ``TemporaryDirectory``) keeps a cleanup failure — e.g. a
+        # locked file in the replaced tree on Windows — from masking the outcome.
+        temp_root = Path(tempfile.mkdtemp(prefix=f'.import-{slug}-', dir=store.root))
+        try:
+            staged_tree = temp_root / 'project'
+            staged_tree.mkdir()
+            files = _safe_extract(zf, staged_tree)
+
+            try:
+                results = [
+                    db_store.import_project(slug, payload, replace=replace)
+                    for db_store, payload in db_imports
+                ]
+
+                previous_tree = temp_root / 'previous'
+                if dest_dir.exists():
+                    dest_dir.rename(previous_tree)
+                try:
+                    staged_tree.rename(dest_dir)
+                except Exception:
+                    # Tree swap failed: put the old tree back, but never let a
+                    # restore failure shadow the original swap error.
+                    if previous_tree.exists():
+                        try:
+                            previous_tree.rename(dest_dir)
+                        except Exception:  # pragma: no cover - defensive
+                            logger.exception(
+                                'Failed to restore previous project tree '
+                                'after a swap error')
+                    raise
+            except Exception as exc:
+                rollback_errors = []
+                for db_store, previous in reversed(previous_slices):
+                    try:
+                        db_store.import_project(slug, previous, replace=True)
+                    except Exception as rollback_exc:  # pragma: no cover - defensive
+                        rollback_errors.append(
+                            f'{type(db_store).__name__}: {rollback_exc}')
+                if rollback_errors:
+                    exc.add_note('project import rollback errors: '
+                                 + '; '.join(rollback_errors))
+                    logger.exception('Project import rollback was incomplete')
+                raise
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+    fres, ares, au_res, mi_res = results
 
     return {'slug': slug, 'skipped': False, 'files': files,
             'findings': fres['imported'], 'finding_events': fres['events'],

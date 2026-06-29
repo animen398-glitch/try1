@@ -88,6 +88,8 @@ def test_export_then_import_restores_tree_and_lifecycle(tmp_path):
     assert res['skipped'] is False
     assert res['findings'] == 2 and res['assets'] == 2
     assert res['audit_runs'] == 1 and res['audit_events'] == 1
+    # the staging dir is cleaned up after a successful import
+    assert list((dst / 'Projects').glob('.import-*')) == []
 
     # tree restored
     proj = ProjectStore(str(dst)).get(slug)
@@ -304,6 +306,62 @@ def test_import_rejects_foreign_mission_before_extracting_tree(tmp_path):
         )
 
     assert not (dst / 'Projects' / slug).exists()
+
+
+@pytest.mark.parametrize('existing', [False, True])
+def test_import_rolls_back_tree_and_db_slices_when_late_store_fails(
+        tmp_path, monkeypatch, existing):
+    src = tmp_path / 'src'
+    slug, _fid = _seed(src, src / 'f.db', src / 'a.db')
+    bundle = tmp_path / 'bundle.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src / 'f.db',
+                              assets_db=src / 'a.db')
+
+    dst = tmp_path / 'dst'
+    dst_f, dst_a = dst / 'f.db', dst / 'a.db'
+    if existing:
+        old_slug, old_fid = _seed(
+            dst, dst_f, dst_a, slug_url='https://shop.io')
+        assert old_slug == slug
+        set_task(FindingsStore(dst_f), old_fid, status='in_progress',
+                 owner='bob', due='2026-03-01')
+        marker = dst / 'Projects' / slug / 'keep.txt'
+        marker.write_text('old tree', encoding='utf-8')
+
+    real_stores = project_io._stores
+
+    def stores_with_late_failure(*args, **kwargs):
+        stores = real_stores(*args, **kwargs)
+        calls = 0
+
+        def fail_import(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError('late mission import failure')
+            return {'imported': 0, 'events': 0, 'skipped': False}
+
+        monkeypatch.setattr(stores[-1], 'import_project', fail_import)
+        return stores
+
+    monkeypatch.setattr(project_io, '_stores', stores_with_late_failure)
+    with pytest.raises(RuntimeError, match='late mission import failure'):
+        project_io.import_project(
+            bundle, dst, findings_db=dst_f, assets_db=dst_a,
+            missions_db=dst / 'm.db', replace=existing)
+
+    project_root = dst / 'Projects' / slug
+    assert project_root.exists() is existing
+    # a failed import leaves no half-extracted staging dir behind
+    assert list((dst / 'Projects').glob('.import-*')) == []
+    if existing:
+        assert (project_root / 'keep.txt').read_text('utf-8') == 'old tree'
+        assert len(FindingsStore(dst_f).list_findings(slug)) == 2
+        assert len(AssetStore(dst_a).list_assets(slug)) == 2
+        assert FindingsStore(dst_f).get_remediation(old_fid)['owner'] == 'bob'
+    else:
+        assert FindingsStore(dst_f).list_findings(slug) == []
+        assert AssetStore(dst_a).list_assets(slug) == []
 
 
 def test_bundle_info_reads_manifest(tmp_path):
