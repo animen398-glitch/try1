@@ -34,6 +34,32 @@ def test_mission_view_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def test_mission_schedule_helper_enable_disable():
+    saved = _ready_mission()
+    out = wa._mission_set_schedule(saved["id"], "daily", True)
+    assert "error" not in out and out["schedule"]["interval"] == "daily"
+    off = wa._mission_set_schedule(saved["id"], "daily", False)
+    assert off["schedule"]["enabled"] is False
+
+
+def test_mission_schedule_helper_unknown_is_not_found():
+    out = wa._mission_set_schedule("nope", "daily", True)
+    assert "not found" in out.get("error", "")
+
+
+def test_missions_run_due_helper():
+    saved = _ready_mission()
+    from core.mission_schedule import set_mission_schedule
+    from core.mission_store import MissionStore
+    set_mission_schedule(saved["id"], "daily")
+    MissionStore().set_schedule(
+        saved["id"], {**MissionStore().get_schedule(saved["id"]),
+                      "next_run": "2020-01-01T00:00:00"})
+    out = wa._missions_run_due()
+    assert "error" not in out
+    assert [r["mission_id"] for r in out["results"]] == [saved["id"]]
+
+
 def test_missions_overview_helper_counts_by_status():
     _ready_mission("a.io", "one")
     _ready_mission("b.io", "two")
@@ -153,3 +179,12 @@ def test_mission_endpoints_with_testclient():
     r = client.get("/missions/overview")
     assert r.status_code == 200
     assert "total" in r.json() and "counts" in r.json()
+
+    # schedule + run-due endpoints
+    r = client.post(f"/missions/{ready['id']}/schedule",
+                    json={"interval": "daily", "enabled": True})
+    assert r.status_code == 200 and r.json()["schedule"]["interval"] == "daily"
+    r = client.post("/missions/nope/schedule", json={"interval": "daily"})
+    assert r.status_code == 404
+    r = client.post("/missions/run-due")
+    assert r.status_code == 200 and "results" in r.json()

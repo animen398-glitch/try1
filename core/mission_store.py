@@ -31,10 +31,10 @@ MISSIONS_DB = _default_db_path()
 class MissionStore(SQLiteStore):
     """SQLite-backed persistence for missions (single table, no event log)."""
 
-    JSON_FIELDS = ("payload",)
+    JSON_FIELDS = ("payload", "schedule")
     # Single-table project slice: mission rows only (events_table=None).
     PROJECT_EXPORT = ("missions", None, None)
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS missions (
@@ -43,11 +43,19 @@ class MissionStore(SQLiteStore):
         profile    TEXT NOT NULL,
         status     TEXT NOT NULL,
         payload    TEXT NOT NULL,
+        schedule   TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ix_missions_project ON missions(project, updated_at);
     """
+
+    # v2 adds the recurring-schedule column to existing DBs (M9). The schedule is
+    # operational state kept *separate* from the canonical ``payload`` so the M1
+    # mission contract/schema stays pure. ``_add_column`` is idempotent.
+    MIGRATIONS = {
+        2: lambda conn: SQLiteStore._add_column(conn, "missions", "schedule TEXT"),
+    }
 
     def __init__(self, db_path: Optional[Union[str, Path]] = None):
         super().__init__(db_path or MISSIONS_DB)
@@ -128,3 +136,30 @@ class MissionStore(SQLiteStore):
         if row is None:
             raise KeyError(mission_id)
         return mission_to_json(row["payload"])
+
+    # ── recurring schedule (M9) — operational state, separate from payload ──────
+
+    def set_schedule(self, mission_id: str,
+                     schedule: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Attach (or clear, when ``schedule`` is None) a recurring schedule to a
+        mission. The mission's ``updated_at``/``payload`` are untouched — the
+        schedule is operational metadata, not part of the canonical contract."""
+        encoded = (json.dumps(schedule, ensure_ascii=False, sort_keys=True)
+                   if schedule is not None else None)
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE missions SET schedule = ? WHERE id = ?",
+                (encoded, str(mission_id)))
+            if cur.rowcount == 0:
+                raise KeyError(mission_id)
+        return self.get_mission(mission_id)
+
+    def get_schedule(self, mission_id: str) -> Optional[Dict[str, Any]]:
+        row = self.get_mission(mission_id)
+        schedule = row.get("schedule") if row else None
+        return schedule if isinstance(schedule, dict) else None
+
+    def list_scheduled(self) -> List[Dict[str, Any]]:
+        """Missions that carry a schedule dict (enabled or not)."""
+        return [m for m in self.list_missions()
+                if isinstance(m.get("schedule"), dict)]

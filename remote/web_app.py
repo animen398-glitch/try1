@@ -793,6 +793,34 @@ def _mission_view(mission_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _mission_set_schedule(mission_id: str, interval: str,
+                          enabled: bool = True) -> dict:
+    """Enable/disable a mission's recurring schedule (M9)."""
+    try:
+        from core.mission_schedule import (disable_mission_schedule,
+                                           set_mission_schedule)
+        if not enabled:
+            sched = disable_mission_schedule(mission_id)
+            if sched is None:
+                return {'error': f'mission not scheduled: {mission_id}'}
+            return {'mission_id': mission_id, 'schedule': sched}
+        sched = set_mission_schedule(mission_id, interval, enabled=True)
+        return {'mission_id': mission_id, 'schedule': sched}
+    except KeyError:
+        return {'error': f'mission not found: {mission_id}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _missions_run_due() -> dict:
+    """Run every enabled + due scheduled mission (M9)."""
+    try:
+        from core.mission_schedule import run_due_missions
+        return {'results': run_due_missions()}
+    except Exception as e:
+        return {'results': [], 'error': str(e)}
+
+
 def _missions_overview(project: Optional[str] = None) -> dict:
     """Portfolio overview of missions (counts by status + last-run outcomes)."""
     try:
@@ -1809,6 +1837,27 @@ if _FASTAPI_OK:
         if 'error' in out:
             return JSONResponse(out, status_code=400)
         await _push(f'[mission] created {out["mission_id"][:16]}', 'ok')
+        return out
+
+    class ScheduleRequest(BaseModel):
+        interval: str = 'weekly'
+        enabled: bool = True
+
+    @app.post('/missions/run-due')
+    async def missions_run_due():
+        out = _missions_run_due()
+        ran = len(out.get('results') or [])
+        await _push(f'[mission] ran {ran} due mission(s)', 'ok')
+        return out
+
+    @app.post('/missions/{mission_id}/schedule')
+    async def mission_schedule(mission_id: str, body: ScheduleRequest):
+        out = _mission_set_schedule(mission_id, body.interval, body.enabled)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[mission] schedule {mission_id[:8]} → '
+                    f'{body.interval if body.enabled else "disabled"}', 'ok')
         return out
 
     @app.get('/missions/{mission_id}')

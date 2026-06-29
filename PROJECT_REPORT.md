@@ -61,6 +61,12 @@
 > `build_timeline` resolves the runs so build_events stays a pure shaper. No surface
 > changes (the 'missions' section renders generically since M3). Current scale: **full
 > pytest 2229 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M9): recurring scheduling — `core/mission_schedule.py`
+> re-runs a mission on a cadence (reusing monitor's compute_next_run/is_due) by building
+> its audit run + linking it WITHOUT touching the one-shot status machine; schedule state
+> is a new `missions.schedule` column (MissionStore v2, separate from the payload), with
+> GUI controls + `POST /missions/{id}/schedule` and `POST /missions/run-due`. Current scale:
+> **full pytest 2240 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

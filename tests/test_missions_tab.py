@@ -137,6 +137,35 @@ def test_create_panel_builds_action_checkboxes(qapp):
     assert hasattr(w, "btn_mission_create")
 
 
+def test_schedule_buttons_and_do_schedule(qapp):
+    saved = _seed_mission("shop.com", status="ready")
+    w = MissionsHost()
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    w.mission_table.selectRow(0)
+    assert w.btn_mission_schedule.isEnabled()
+    assert not w.btn_mission_unschedule.isEnabled()       # not scheduled yet
+    assert w.btn_mission_run_due.isEnabled()
+
+    out = MissionsTabMixin._do_schedule_mission(saved["id"], "daily")
+    assert "error" not in out
+    assert MissionStore().get_schedule(saved["id"])["interval"] == "daily"
+
+    off = MissionsTabMixin._do_unschedule_mission(saved["id"])
+    assert "error" not in off
+    assert MissionStore().get_schedule(saved["id"])["enabled"] is False
+
+
+def test_do_run_due_missions(qapp):
+    from core import mission_schedule as ms
+    saved = _seed_mission("shop.com", status="ready")
+    ms.set_mission_schedule(saved["id"], "daily")
+    MissionStore().set_schedule(
+        saved["id"], {**MissionStore().get_schedule(saved["id"]),
+                      "next_run": "2020-01-01T00:00:00"})
+    out = MissionsTabMixin._do_run_due_missions()
+    assert "error" not in out and "ran" in out["ok"]
+
+
 def test_report_buttons_enable_on_selection_and_render(qapp):
     w = MissionsHost()
     _seed_mission("shop.com", status="ready")

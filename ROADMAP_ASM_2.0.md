@@ -2035,4 +2035,39 @@ resolves linked runs so `build_events` stays pure; D3 run events live in the
 `missions` section alongside (not replacing) the mission-status events. No second
 findings/asset/timeline source.
 
+### M9 — Recurring scheduling (CLOSED 2026-06-29)
+
+Re-run an authorized mission on a cadence, reusing the monitor's cadence
+primitives — never a second scheduler:
+
+- **Recurring model (key decision):** a scheduled tick does **not** drive the
+  one-shot mission status machine (`ready → running → completed`, which has no
+  `completed → ready`). Instead `mission_schedule.run_mission_audit` builds the
+  mission's audit run via `audit_runner.build_audit_run` (checks =
+  `allowed_actions ∩ SAFE_CHECKS`, ROE-gated) and links it (`link_audit_run` →
+  `save_mission`, status preserved) — the status-neutral counterpart of
+  `mission_runner.run_mission`.
+- **State:** a new `schedule` JSON column on the `missions` table (`MissionStore`
+  SCHEMA_VERSION 1→2 via the idempotent `_add_column`; `JSON_FIELDS += schedule`),
+  kept **separate from the canonical `payload`** so the M1 contract stays pure;
+  `save_mission` never overwrites it. MissionStore gains `set_schedule` /
+  `get_schedule` / `list_scheduled`.
+- **`core/mission_schedule.py`** (new): `make_mission_schedule` /
+  `set_mission_schedule` / `disable_mission_schedule` (reuse
+  `monitor.compute_next_run`), and `run_due_missions(*, store, now, run)` — walks
+  `list_scheduled`, runs enabled+due missions (`monitor.is_due`), advances
+  `last_run` / `next_run` / `last_status`; a single mission's failure is recorded,
+  never aborts the sweep.
+- **Surfaces:** GUI on the Missions tab — interval combo + Enable/Disable schedule
+  + "Run due now", schedule shown in the detail; web `POST
+  /missions/{id}/schedule` (`ScheduleRequest`; 404/400) + `POST /missions/run-due`.
+- Tests: `tests/test_mission_schedule.py` (roundtrip, bad interval, due/enabled
+  filtering, failure recording, status-neutral run) + GUI/web cases.
+
+**Decisions (M9, locked):** D1 periodic run with **no status churn** (recurring
+execution stays off the one-shot lifecycle); D2 standalone tick (`run_due_missions`)
+surfaced by a GUI button + web `POST /missions/run-due` — an OS-level/cron
+auto-tick is a deferred follow-up; D3 schedule state is a `missions` column,
+separate from the payload. No second findings/asset/timeline source.
+
 ---

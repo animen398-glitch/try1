@@ -179,6 +179,28 @@ class MissionsTabMixin:
         report_row.addStretch(1)
         layout.addLayout(report_row)
 
+        schedule_row = QHBoxLayout()
+        schedule_row.addWidget(QLabel("Schedule:"))
+        self.mission_schedule_interval = QComboBox()
+        for interval in ("daily", "weekly", "monthly"):
+            self.mission_schedule_interval.addItem(interval, interval)
+        self.mission_schedule_interval.setCurrentText("weekly")
+        schedule_row.addWidget(self.mission_schedule_interval)
+        self.btn_mission_schedule = StyledButton("Enable schedule", style="secondary")
+        self.btn_mission_schedule.setEnabled(False)
+        self.btn_mission_schedule.clicked.connect(self._schedule_mission)
+        schedule_row.addWidget(self.btn_mission_schedule)
+        self.btn_mission_unschedule = StyledButton("Disable schedule",
+                                                   style="secondary")
+        self.btn_mission_unschedule.setEnabled(False)
+        self.btn_mission_unschedule.clicked.connect(self._unschedule_mission)
+        schedule_row.addWidget(self.btn_mission_unschedule)
+        self.btn_mission_run_due = StyledButton("Run due now", style="secondary")
+        self.btn_mission_run_due.clicked.connect(self._run_due_missions)
+        schedule_row.addWidget(self.btn_mission_run_due)
+        schedule_row.addStretch(1)
+        layout.addLayout(schedule_row)
+
         detail_grp = SectionGroupBox("Selected mission detail")
         detail_layout = QVBoxLayout()
         self.mission_detail = ResultsDisplay()
@@ -383,6 +405,13 @@ class MissionsTabMixin:
             f"Linked runs:     {', '.join(payload.get('linked_audit_run_ids') or []) or '—'}",
             f"Linked findings: {', '.join(payload.get('linked_finding_ids') or []) or '—'}",
         ]
+        schedule = mission.get("schedule")
+        if isinstance(schedule, dict):
+            state = "on" if schedule.get("enabled") else "off"
+            lines.append(
+                f"Schedule:  {schedule.get('interval', '?')} ({state}); "
+                f"next {schedule.get('next_run') or '—'}; "
+                f"last {schedule.get('last_status') or '—'}")
         self.mission_detail.setPlainText("\n".join(lines))
 
         status = str(mission.get("status") or "").strip().lower()
@@ -409,6 +438,12 @@ class MissionsTabMixin:
         for btn in (self.btn_mission_report_json, self.btn_mission_report_md,
                     self.btn_mission_report_html):
             btn.setEnabled(idle)
+        # Scheduling acts on the selected mission.
+        scheduled = isinstance(mission.get("schedule"), dict) if has_mission else False
+        self.btn_mission_schedule.setEnabled(idle)
+        self.btn_mission_unschedule.setEnabled(
+            idle and scheduled and mission["schedule"].get("enabled", False))
+        self.btn_mission_run_due.setEnabled(not self._mission_acting)
 
     # ── mutations (advance / link), all via the pure contract + store ──────────
 
@@ -617,6 +652,75 @@ class MissionsTabMixin:
         self.mission_create_objective.clear()
         self._mission_pending_project = result.get("project") or ""
         self._refresh_mission_projects()
+
+    # ── schedule (M9) ──────────────────────────────────────────────────────────
+
+    def _schedule_mission(self):
+        mission = self._selected_mission()
+        if not mission or self._mission_acting:
+            return
+        mission_id = str(mission.get("id") or "")
+        interval = self.mission_schedule_interval.currentData()
+        self._mission_acting = True
+        self._update_mission_actions()
+        self._set_busy(True)
+        self.mission_status.setText(f"Scheduling {interval}...")
+        self._mission_reselect_id = mission_id
+        self._run_async(
+            lambda mid=mission_id, iv=interval: self._do_schedule_mission(mid, iv),
+            self._on_mission_action_done,
+        )
+
+    @staticmethod
+    def _do_schedule_mission(mission_id: str, interval: str) -> dict:
+        try:
+            from core.mission_schedule import set_mission_schedule
+            set_mission_schedule(mission_id, interval)
+            return {"ok": f"scheduled {interval}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _unschedule_mission(self):
+        mission = self._selected_mission()
+        if not mission or self._mission_acting:
+            return
+        mission_id = str(mission.get("id") or "")
+        self._mission_acting = True
+        self._update_mission_actions()
+        self._set_busy(True)
+        self.mission_status.setText("Disabling schedule...")
+        self._mission_reselect_id = mission_id
+        self._run_async(
+            lambda mid=mission_id: self._do_unschedule_mission(mid),
+            self._on_mission_action_done,
+        )
+
+    @staticmethod
+    def _do_unschedule_mission(mission_id: str) -> dict:
+        try:
+            from core.mission_schedule import disable_mission_schedule
+            disable_mission_schedule(mission_id)
+            return {"ok": "schedule disabled"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _run_due_missions(self):
+        if self._mission_acting:
+            return
+        self._mission_acting = True
+        self._update_mission_actions()
+        self._set_busy(True)
+        self.mission_status.setText("Running due missions...")
+        self._run_async(self._do_run_due_missions, self._on_mission_action_done)
+
+    @staticmethod
+    def _do_run_due_missions() -> dict:
+        try:
+            from core.mission_schedule import run_due_missions
+            results = run_due_missions()
+            return {"ok": f"ran {len(results)} due mission(s)"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
 
     def _on_mission_action_done(self, result: dict):
         self._mission_acting = False
