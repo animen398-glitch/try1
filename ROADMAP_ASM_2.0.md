@@ -2287,3 +2287,27 @@ duplication); a focused first set (3 reuse-backed + 1 asset parser) with an
 additive registry for the rest; no store writes, no network, no new dependencies.
 
 ---
+
+### Offline Tool-Evidence Pipeline (CLOSED 2026-06-30)
+
+The compositional capstone of the tool layer: tie the M3 gate + the parsers into
+one store-free call — still **no tool execution, no network, no store writes**:
+
+- **`core/tool_pipeline.py`** (new): `assemble_tool_run(mission, tool, evidence,
+  *, target)` builds the M3 request, gates the tool with
+  `evaluate_tool_allowed_for_mission`, and — only if allowed — parses the
+  already-captured evidence (`tool_parsers.parse_tool_output`) and normalizes it
+  via `map_tool_result_to_findings`. Status reflects the path: `blocked` (policy/
+  ROE denied — evidence never parsed), `skipped` (allowed but no parser yet), or
+  `completed`. `evidence` is data the caller captured offline; nothing here runs
+  a tool, opens a socket, or writes a store.
+- Tests: `tests/test_tool_pipeline.py` (allowed→completed with findings/assets,
+  blocked→empty, allowed-no-parser→skipped, asset parser through the pipeline,
+  determinism).
+
+**Decisions (locked):** composition only — reuse the M3 gate / parsers / mapper,
+add no detection or policy logic; map the three outcomes onto the existing
+`RESULT_STATUSES` (`blocked`/`skipped`/`completed`); evidence is captured input,
+never fetched. No store writes, no network, no new dependencies.
+
+---
