@@ -2128,4 +2128,27 @@ named/flagged, never auto-removed (cleanup stays the operator's call); D3 reuse
 the M5 report for the web/report stale surface (no new endpoint). No second
 findings/asset/timeline source.
 
+### M12 — Demo seed (CLOSED 2026-06-29)
+
+Make the whole M1–M11 Mission Center visible in the demo workspace
+(release-readiness):
+
+- **`demo_seed.py`**: a new `_seed_missions(missions_store, slug, audit_run_id,
+  finding_id)` seeds three missions on the richest (first) project — (1) a
+  `ready` mission with a weekly schedule (`set_mission_schedule`), so the schedule
+  controls / auto-tick are visible; (2) an executed mission
+  (`draft→ready→running→completed`) linking the project's existing demo audit run
+  + a real finding, so the report / overview last-run outcome populate; (3) a
+  legacy mission carrying a stale link (`audit-demo-removed`) to show the M11
+  flag. `seed()` builds `MissionStore(pm.get_db_path('missions.db'))`, captures the
+  run id from `_seed_audit_run`, calls `_seed_missions` once, and adds a
+  `missions` count to the summary/printout.
+- Tests: `tests/test_demo_seed.py` — the summary count + a check that one mission
+  is scheduled, one executed with linked run+finding, and one carries a stale link.
+
+**Decisions (M12, locked):** D1 seed on the first project only (richest, has an
+audit run); D2 cover all the headline states (scheduled / executed / stale) in a
+few missions; D3 reuse the existing contract + schedule + link APIs — no demo-only
+code paths. No second findings/asset/timeline source.
+
 ---

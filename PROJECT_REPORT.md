@@ -78,6 +78,10 @@
 > pure linker) + `resolve_links` (present vs stale partition); the Missions tab links are now
 > checked and the detail flags stale links. `pentest_mission` stays pure. Current scale: **full
 > pytest 2251 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M12): the demo workspace (`demo_seed.py`) now seeds 3
+> missions on the first project (ready+scheduled, executed with a linked run+finding, one with
+> a stale link), so the whole M1-M11 Mission Center is visible end-to-end in the demo. Current
+> scale: **full pytest 2252 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

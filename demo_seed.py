@@ -212,6 +212,43 @@ def _seed_audit_run(store, project: str, active_findings: List[Dict]) -> str:
     return run['run_id']
 
 
+def _seed_missions(missions_store, slug: str, audit_run_id: str,
+                   finding_id: str) -> int:
+    """Seed a few Mission Center missions on the demo project so the whole
+    M1-M11 lifecycle is visible: one ready+scheduled, one executed (linked run +
+    finding), one carrying a stale link (the M11 flag)."""
+    from core import pentest_mission as pm
+    from core.mission_schedule import set_mission_schedule
+
+    # 1) ready + scheduled weekly — shows the schedule controls / auto-tick.
+    scheduled = pm.advance_mission_status(
+        pm.create_mission(slug, 'Weekly authorized external review',
+                          allowed_actions=['headers_check', 'cookie_flags_check']),
+        'ready')
+    missions_store.save_mission(scheduled, now='2026-06-28T09:00:00')
+    set_mission_schedule(scheduled['mission_id'], 'weekly',
+                         store=missions_store, now='2026-06-28T09:00:00')
+
+    # 2) executed — completed, with a linked audit run + finding (drives the
+    #    report + overview last-run outcome).
+    executed = pm.create_mission(slug, 'Quarterly checkout deep audit',
+                                 template='light_client_safe',
+                                 allowed_actions=['headers_check'])
+    for status in ('ready', 'running', 'completed'):
+        executed = pm.advance_mission_status(executed, status)
+    executed = pm.link_audit_run(executed, audit_run_id)
+    executed = pm.link_finding(executed, finding_id)
+    missions_store.save_mission(executed, now='2026-06-28T10:30:00')
+
+    # 3) stale link — references a run that no longer exists (M11 surfaces it).
+    legacy = pm.link_audit_run(
+        pm.create_mission(slug, 'Legacy vendor portal review',
+                          allowed_actions=['headers_check']),
+        'audit-demo-removed')
+    missions_store.save_mission(legacy, now='2026-06-20T08:00:00')
+    return 3
+
+
 def _seed_iac_sample(data_root: Path) -> Path:
     sample = data_root / 'demo_iac'
     sample.mkdir(parents=True, exist_ok=True)
@@ -257,6 +294,7 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     from core.audit_store import AuditRunStore
     from core.findings_store import FindingsStore
     from core.findings_store import INACTIVE_STATUSES
+    from core.mission_store import MissionStore
     from core.project import ProjectStore
     from core.remediation import set_task
 
@@ -264,11 +302,12 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     findings = FindingsStore(db_path=pm.get_db_path('findings.db'))
     assets = AssetStore(db_path=pm.get_db_path('assets.db'))
     audits = AuditRunStore(db_path=pm.get_db_path('audit_runs.db'))
+    missions = MissionStore(pm.get_db_path('missions.db'))
     companies = CompanyRegistry(path=pm.get_db_path('companies.json'))
     store = ProjectStore(str(data_root))            # projects -> data_root/Projects
 
     company_slug = companies.create(company_name)
-    n_proj = n_scan = n_find = n_rem = n_audit = 0
+    n_proj = n_scan = n_find = n_rem = n_audit = n_mission = 0
 
     for spec in _portfolio():
         proj = store.get_or_create(spec['url'])
@@ -302,8 +341,12 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
             if row.get('status') not in INACTIVE_STATUSES
         ]
         if active_rows:
-            _seed_audit_run(audits, slug, active_rows)
+            run_id = _seed_audit_run(audits, slug, active_rows)
             n_audit += 1
+            # Showcase the Mission Center on the first (richest) project only.
+            if n_mission == 0:
+                n_mission += _seed_missions(missions, slug, run_id,
+                                            active_rows[0]['id'])
 
     _seed_iac_sample(data_root)
 
@@ -320,7 +363,7 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
 
     return {'company': company_name, 'projects': n_proj, 'scans': n_scan,
             'findings': n_find, 'remediation': n_rem, 'audit_runs': n_audit,
-            'data_root': str(data_root)}
+            'missions': n_mission, 'data_root': str(data_root)}
 
 
 def main(argv=None) -> int:
@@ -342,7 +385,8 @@ def main(argv=None) -> int:
 
     summary = seed(root)
     print('Demo workspace seeded:')
-    for k in ('company', 'projects', 'scans', 'findings', 'remediation', 'audit_runs'):
+    for k in ('company', 'projects', 'scans', 'findings', 'remediation',
+              'audit_runs', 'missions'):
         print(f'  {k:12}: {summary[k]}')
     print(f'  location    : {summary["data_root"]}')
     print('\nLaunch the app against it:')

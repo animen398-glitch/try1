@@ -33,6 +33,7 @@ def test_seed_returns_portfolio_summary(tmp_path):
     assert s["findings"] == 17
     assert s["remediation"] == 4
     assert s["audit_runs"] == 3
+    assert s["missions"] == 3
     assert s["company"] == "Acme Corp"
 
 
@@ -81,6 +82,26 @@ def test_assets_and_business_context(tmp_path):
                               "data_sensitivity": "restricted"}
     assets = AssetStore(db_path=root / "data" / "assets.db")
     assert len(assets.list_assets("shop.acme.com")) == 5
+
+
+def test_missions_seeded_with_schedule_run_and_stale_link(tmp_path):
+    from core.mission_links import resolve_links
+    from core.mission_store import MissionStore
+    root, _ = _seed(tmp_path)
+    missions = MissionStore(root / "data" / "missions.db")
+    rows = missions.list_missions("shop.acme.com")
+    assert len(rows) == 3
+    # one mission is scheduled (weekly)
+    assert any(isinstance(m.get("schedule"), dict)
+               and m["schedule"].get("interval") == "weekly" for m in rows)
+    # one executed mission has a linked audit run + finding
+    assert any(m["payload"].get("linked_audit_run_ids")
+               and m["payload"].get("linked_finding_ids") for m in rows)
+    # one mission carries a stale link (M11 surfaces it)
+    astore = AuditRunStore(db_path=root / "data" / "audit_runs.db")
+    fstore = FindingsStore(db_path=root / "data" / "findings.db")
+    assert any(resolve_links(m["payload"], audit_store=astore,
+                             findings_store=fstore)["stale_runs"] for m in rows)
 
 
 def test_audit_runs_and_iac_demo_content(tmp_path):
