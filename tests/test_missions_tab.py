@@ -111,6 +111,22 @@ def test_do_run_mission_executes_and_links(qapp):
     assert len(mission["payload"]["linked_audit_run_ids"]) == 1
 
 
+def test_report_buttons_enable_on_selection_and_render(qapp):
+    w = MissionsHost()
+    _seed_mission("shop.com", status="ready")
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    assert not w.btn_mission_report_md.isEnabled()        # nothing selected yet
+    w.mission_table.selectRow(0)
+    assert w.btn_mission_report_json.isEnabled()
+    assert w.btn_mission_report_md.isEnabled()
+    assert w.btn_mission_report_html.isEnabled()
+
+    payload = w._selected_mission()["payload"]
+    md = MissionsTabMixin._render_mission_report(payload, "md")
+    assert md.startswith("# Mission Report")
+    assert "<html>" in MissionsTabMixin._render_mission_report(payload, "html")
+
+
 def test_link_run_and_finding_persist_on_mission(qapp):
     saved = _seed_mission("shop.com")
     MissionsTabMixin._do_link_run(saved["payload"], "audit-shop")

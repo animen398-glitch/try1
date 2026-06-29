@@ -39,6 +39,12 @@
 > auto-links the run) with a GUI "Run mission" button + `POST /missions/{id}/run`.
 > No second store. Current scale: **full pytest 2209 passed**, ruff clean,
 > self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M5): the mission report — `core/mission_report.py`
+> assembles an evidence-first view (envelope + linked audit runs' findings, reusing
+> `core/audit_report`, + an appendix of explicitly linked findings) with pure
+> JSON/MD/HTML renderers, surfaced as GUI export buttons + `GET /missions/{id}/report[.md]`.
+> A view, no second store. Current scale: **full pytest 2216 passed**, ruff clean,
+> self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

@@ -793,6 +793,19 @@ def _mission_view(mission_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _mission_report(mission_id: str) -> dict:
+    """Assemble a mission's evidence-first report (read-only view over stores)."""
+    try:
+        from core import mission_report
+        from core.mission_store import MissionStore
+        row = MissionStore().get_mission(str(mission_id))
+        if row is None:
+            return {'error': f'mission not found: {mission_id}'}
+        return {'report': mission_report.build_mission_report(row['payload'])}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _mission_run(mission_id: str) -> dict:
     """Execute a ready mission as an audit run (mutation). Bounded + offline by
     default (no fetcher), so it runs synchronously like the other per-resource
@@ -1765,6 +1778,23 @@ if _FASTAPI_OK:
             return JSONResponse(out, status_code=code)
         await _push(f'[mission] {mission_id[:8]} ran → {out["run_id"]}', 'ok')
         return out
+
+    @app.get('/missions/{mission_id}/report')
+    async def mission_report_json(mission_id: str):
+        out = _mission_report(mission_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.get('/missions/{mission_id}/report.md')
+    async def mission_report_md(mission_id: str):
+        from core import mission_report as _mr
+        out = _mission_report(mission_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return Response(out['error'], media_type='text/plain; charset=utf-8',
+                            status_code=code)
+        return Response(_mr.render_markdown(out['report']),
+                        media_type='text/markdown; charset=utf-8')
 
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):

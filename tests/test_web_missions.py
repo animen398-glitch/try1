@@ -62,6 +62,20 @@ def test_mission_run_helper_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def test_mission_report_helper_aggregates_run():
+    saved = _ready_mission()
+    wa._mission_run(saved["id"])                            # execute → links a run
+    out = wa._mission_report(saved["id"])
+    assert "error" not in out
+    assert out["report"]["mission"]["mission_id"] == saved["id"]
+    assert out["report"]["summary"]["linked_runs"] == 1
+
+
+def test_mission_report_helper_unknown_is_not_found():
+    out = wa._mission_report("nope")
+    assert "not found" in out.get("error", "")
+
+
 def test_mission_endpoints_with_testclient():
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")
@@ -91,4 +105,16 @@ def test_mission_endpoints_with_testclient():
     assert r.status_code == 200 and r.json()["status"] == "completed"
 
     r = client.post("/missions/missing/run")
+    assert r.status_code == 404
+
+    # report surfaces: JSON + markdown for the executed mission
+    r = client.get(f"/missions/{ready['id']}/report")
+    assert r.status_code == 200
+    assert r.json()["report"]["mission"]["mission_id"] == ready["id"]
+
+    r = client.get(f"/missions/{ready['id']}/report.md")
+    assert r.status_code == 200
+    assert r.text.startswith(f"# Mission Report {ready['id']}")
+
+    r = client.get("/missions/missing/report")
     assert r.status_code == 404

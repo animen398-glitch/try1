@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -110,6 +111,23 @@ class MissionsTabMixin:
         link_row.addWidget(self.btn_mission_link_finding)
         link_row.addStretch(1)
         layout.addLayout(link_row)
+
+        report_row = QHBoxLayout()
+        report_row.addWidget(QLabel("Mission report:"))
+        self.btn_mission_report_json = StyledButton("Export JSON", style="secondary")
+        self.btn_mission_report_json.setEnabled(False)
+        self.btn_mission_report_json.clicked.connect(self._export_mission_report_json)
+        report_row.addWidget(self.btn_mission_report_json)
+        self.btn_mission_report_md = StyledButton("Export MD", style="secondary")
+        self.btn_mission_report_md.setEnabled(False)
+        self.btn_mission_report_md.clicked.connect(self._export_mission_report_md)
+        report_row.addWidget(self.btn_mission_report_md)
+        self.btn_mission_report_html = StyledButton("Export HTML", style="secondary")
+        self.btn_mission_report_html.setEnabled(False)
+        self.btn_mission_report_html.clicked.connect(self._export_mission_report_html)
+        report_row.addWidget(self.btn_mission_report_html)
+        report_row.addStretch(1)
+        layout.addLayout(report_row)
 
         detail_grp = SectionGroupBox("Selected mission detail")
         detail_layout = QVBoxLayout()
@@ -333,6 +351,10 @@ class MissionsTabMixin:
             idle and self.mission_link_finding.count() > 0)
         # A mission is executable only from the 'ready' state.
         self.btn_mission_run.setEnabled(idle and status == "ready")
+        # A report can be exported for any selected mission.
+        for btn in (self.btn_mission_report_json, self.btn_mission_report_md,
+                    self.btn_mission_report_html):
+            btn.setEnabled(idle)
 
     # ── mutations (advance / link), all via the pure contract + store ──────────
 
@@ -432,6 +454,53 @@ class MissionsTabMixin:
             return {"ok": f"mission ran → {out['run_id']} ({out['status']})"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
+
+    # ── report export ──────────────────────────────────────────────────────────
+
+    def _export_mission_report_json(self):
+        self._export_mission_report("Export Mission Report JSON",
+                                    "mission_report.json",
+                                    "JSON Files (*.json)", "json")
+
+    def _export_mission_report_md(self):
+        self._export_mission_report("Export Mission Report Markdown",
+                                    "mission_report.md",
+                                    "Markdown Files (*.md)", "md")
+
+    def _export_mission_report_html(self):
+        self._export_mission_report("Export Mission Report HTML",
+                                    "mission_report.html",
+                                    "HTML Files (*.html)", "html")
+
+    def _export_mission_report(self, title: str, default_name: str,
+                               file_filter: str, fmt: str):
+        mission = self._selected_mission()
+        payload = mission.get("payload") if mission else None
+        if not isinstance(payload, dict):
+            self.mission_status.setText("Select a mission first")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, title, default_name, file_filter)
+        if not path:
+            return
+        try:
+            text = self._render_mission_report(payload, fmt)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:  # noqa: BLE001
+            self.mission_status.setText(f"Export failed: {e}")
+            return
+        self.mission_status.setText(f"Exported mission report: {path}")
+
+    @staticmethod
+    def _render_mission_report(payload: Dict[str, Any], fmt: str) -> str:
+        from core import mission_report
+        report = mission_report.build_mission_report(payload)
+        renderer = {
+            "json": mission_report.render_json,
+            "md": mission_report.render_markdown,
+            "html": mission_report.render_html,
+        }[fmt]
+        return renderer(report)
 
     def _on_mission_action_done(self, result: dict):
         self._mission_acting = False

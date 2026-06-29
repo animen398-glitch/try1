@@ -1926,4 +1926,34 @@ button **and** web execution endpoint; D3 `completed` if orchestration finishes
 (any finding count), `failed` only on exception; D4 offline-safe default (no
 fetcher → probe is a no-op). No second findings/asset/timeline source.
 
+### M5 — Mission report (CLOSED 2026-06-29)
+
+The operator's evidence-first takeaway: aggregate a mission with the evidence it
+produced, as a **view** over the existing stores (no second source):
+
+- **`core/mission_report.py`** (new): `build_mission_report(mission, *,
+  audit_store, findings_store)` assembles a canonical report dict — the envelope
+  (objective / ROE / allowed_actions / status / report_orientation), the linked
+  audit runs (each contributing `client_findings` / `review_findings` /
+  `audit_summary`, reused verbatim from `core.audit_report`; a missing run is
+  flagged, never faked), an appendix of explicitly linked findings (resolved via
+  `FindingsStore.get`; stale ids kept as stubs), and a summary. Pure
+  deterministic renderers `render_json` (sort_keys), `render_markdown` (Linked
+  Audit Runs + Linked Findings appendix sections), `render_html` (escaped +
+  `markdown-sha`, mirroring `audit_report`).
+- **Surfaces:** GUI Export JSON / MD / HTML buttons on the Missions tab (enabled
+  for the selected mission; rendered via `_render_mission_report`); web read-only
+  `GET /missions/{id}/report` (JSON) + `/missions/{id}/report.md` (markdown; 404
+  unknown).
+- Tests: `tests/test_mission_report.py` (aggregation, stale-link honesty,
+  deterministic JSON, MD/HTML sections), plus GUI export cases in
+  `tests/test_missions_tab.py` and web report cases in
+  `tests/test_web_missions.py`.
+
+**Decisions (M5, locked):** D1 content = linked runs' evidence + an appendix of
+explicitly linked findings; D2 surfaces = GUI export (JSON/MD/HTML) **and** web
+(MD + JSON); D3 no schema — a derived report view, not a stored contract; the
+assembler reads stores, the renderers stay pure. No second findings/asset/
+timeline source.
+
 ---
