@@ -793,6 +793,23 @@ def _mission_view(mission_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _mission_create(project: str, objective: str, *, template=None, roe=None,
+                    allowed_actions=None) -> dict:
+    """Create + persist a client-safe mission. 400-shaped error if not valid."""
+    try:
+        from core.mission_store import MissionStore
+        from core.pentest_mission import create_mission, validate_mission
+        mission = create_mission(project, objective, template=template, roe=roe,
+                                 allowed_actions=allowed_actions)
+        check = validate_mission(mission)
+        if not check['valid']:
+            return {'error': 'invalid mission: ' + '; '.join(check['errors'])}
+        saved = MissionStore().save_mission(mission)
+        return {'mission_id': saved['id'], 'status': saved['status']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _mission_report(mission_id: str) -> dict:
     """Assemble a mission's evidence-first report (read-only view over stores)."""
     try:
@@ -1760,9 +1777,25 @@ if _FASTAPI_OK:
         code = 404 if out.get('error') and 'not found' in out['error'] else 200
         return JSONResponse(out, status_code=code)
 
+    class MissionRequest(BaseModel):
+        project: str
+        objective: str
+        template: Optional[str] = None
+        roe: Optional[dict] = None
+        allowed_actions: Optional[list] = None
+
     @app.get('/missions')
     async def missions(project: Optional[str] = None):
         return JSONResponse(_missions_list(project))
+
+    @app.post('/missions')
+    async def mission_create(body: MissionRequest):
+        out = _mission_create(body.project, body.objective, template=body.template,
+                              roe=body.roe, allowed_actions=body.allowed_actions)
+        if 'error' in out:
+            return JSONResponse(out, status_code=400)
+        await _push(f'[mission] created {out["mission_id"][:16]}', 'ok')
+        return out
 
     @app.get('/missions/{mission_id}')
     async def mission(mission_id: str):

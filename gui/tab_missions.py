@@ -14,19 +14,23 @@ from typing import Any, Dict, List
 
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from core.audit_checks import SAFE_CHECKS
+from core.audit_templates import list_templates
 from core.pentest_mission import MISSION_TRANSITIONS
-from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton
 
 
 class MissionsTabMixin:
@@ -58,6 +62,52 @@ class MissionsTabMixin:
         self.btn_mission_refresh.clicked.connect(self._refresh_mission_projects)
         ctrl.addWidget(self.btn_mission_refresh)
         layout.addLayout(ctrl)
+
+        create_grp = SectionGroupBox("Create mission (client-safe)")
+        create_layout = FlowLayout()
+        create_layout.addWidget(QLabel("Project:"))
+        self.mission_create_project = QLineEdit()
+        self.mission_create_project.setPlaceholderText("project / domain")
+        self.mission_create_project.setMinimumWidth(160)
+        create_layout.addWidget(self.mission_create_project)
+        create_layout.addWidget(QLabel("Objective:"))
+        self.mission_create_objective = QLineEdit()
+        self.mission_create_objective.setPlaceholderText("authorized objective")
+        self.mission_create_objective.setMinimumWidth(220)
+        create_layout.addWidget(self.mission_create_objective)
+        create_layout.addWidget(QLabel("Scenario:"))
+        self.mission_create_template = QComboBox()
+        self.mission_create_template.setMinimumWidth(150)
+        self.mission_create_template.addItem("None", "")
+        for tpl in list_templates():
+            self.mission_create_template.addItem(tpl.get("label", tpl["name"]),
+                                                 tpl["name"])
+        create_layout.addWidget(self.mission_create_template)
+        create_layout.addWidget(QLabel("Allowed domains:"))
+        self.mission_create_domains = QLineEdit()
+        self.mission_create_domains.setMinimumWidth(160)
+        create_layout.addWidget(self.mission_create_domains)
+        self.mission_create_active = QCheckBox("Active")
+        create_layout.addWidget(self.mission_create_active)
+        self.mission_create_passive = QCheckBox("Passive only")
+        self.mission_create_passive.setChecked(True)
+        create_layout.addWidget(self.mission_create_passive)
+        create_layout.addWidget(QLabel("Rate:"))
+        self.mission_create_rate = QLineEdit()
+        self.mission_create_rate.setPlaceholderText("1 rps")
+        self.mission_create_rate.setMaximumWidth(90)
+        create_layout.addWidget(self.mission_create_rate)
+        create_layout.addWidget(QLabel("Actions:"))
+        self.mission_create_actions: dict = {}
+        for action in SAFE_CHECKS:
+            cb = QCheckBox(action)
+            self.mission_create_actions[action] = cb
+            create_layout.addWidget(cb)
+        self.btn_mission_create = StyledButton("Create mission")
+        self.btn_mission_create.clicked.connect(self._create_mission)
+        create_layout.addWidget(self.btn_mission_create)
+        create_grp.setLayout(create_layout)
+        layout.addWidget(create_grp)
 
         missions_grp = SectionGroupBox("Missions")
         missions_layout = QVBoxLayout()
@@ -148,6 +198,7 @@ class MissionsTabMixin:
         self._missions_loaded = False
         self._mission_acting = False
         self._mission_reselect_id = ""
+        self._mission_pending_project = ""
         self._missions_widget = w
         return w
 
@@ -180,7 +231,10 @@ class MissionsTabMixin:
         if result.get("error"):
             self.mission_status.setText(f"Load error: {result['error']}")
             return
-        current = self.mission_project.currentData()
+        # After a create, prefer selecting the just-created project.
+        pending = getattr(self, "_mission_pending_project", "")
+        self._mission_pending_project = ""
+        current = pending or self.mission_project.currentData()
         self.mission_project.blockSignals(True)
         self.mission_project.clear()
         for project in result.get("projects", []):
@@ -501,6 +555,68 @@ class MissionsTabMixin:
             "html": mission_report.render_html,
         }[fmt]
         return renderer(report)
+
+    # ── create ─────────────────────────────────────────────────────────────────
+
+    def _create_mission(self):
+        if self._mission_acting:
+            return
+        project = self.mission_create_project.text().strip()
+        objective = self.mission_create_objective.text().strip()
+        if not project or not objective:
+            self.mission_status.setText("Project and objective are required")
+            return
+        template = self.mission_create_template.currentData() or None
+        roe = {
+            "profile": "client_safe",
+            "allowed_domains": [d.strip() for d
+                                in self.mission_create_domains.text().split(",")
+                                if d.strip()],
+            "active_scan_enabled": self.mission_create_active.isChecked(),
+            "passive_only": self.mission_create_passive.isChecked(),
+            "rate_limit": self.mission_create_rate.text().strip() or None,
+        }
+        actions = [name for name, cb in self.mission_create_actions.items()
+                   if cb.isChecked()]
+        self._mission_acting = True
+        self._update_mission_actions()
+        self.btn_mission_create.setEnabled(False)
+        self._set_busy(True)
+        self.mission_status.setText("Creating mission...")
+        self._run_async(
+            lambda p=project, o=objective, t=template, r=roe, a=actions:
+                self._do_create_mission(p, o, t, r, a),
+            self._on_mission_create_done,
+        )
+
+    @staticmethod
+    def _do_create_mission(project: str, objective: str, template, roe,
+                           allowed_actions) -> dict:
+        try:
+            from core.mission_store import MissionStore
+            from core.pentest_mission import create_mission, validate_mission
+            mission = create_mission(project, objective, template=template,
+                                     roe=roe, allowed_actions=allowed_actions)
+            check = validate_mission(mission)
+            if not check["valid"]:
+                return {"error": "invalid mission: " + "; ".join(check["errors"])}
+            saved = MissionStore().save_mission(mission)
+            return {"ok": f"created {saved['id']}", "project": project}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _on_mission_create_done(self, result: dict):
+        self._mission_acting = False
+        self._set_busy(False)
+        self.btn_mission_create.setEnabled(True)
+        if result.get("error"):
+            self.mission_status.setText(f"Create failed: {result['error']}")
+            self._update_mission_actions()
+            return
+        self.mission_status.setText(result.get("ok") or "Created")
+        self.mission_create_objective.clear()
+        self._mission_pending_project = result.get("project") or ""
+        self._refresh_mission_projects()
 
     def _on_mission_action_done(self, result: dict):
         self._mission_acting = False

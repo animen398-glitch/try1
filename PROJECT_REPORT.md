@@ -45,6 +45,11 @@
 > JSON/MD/HTML renderers, surfaced as GUI export buttons + `GET /missions/{id}/report[.md]`.
 > A view, no second store. Current scale: **full pytest 2216 passed**, ruff clean,
 > self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M6): mission creation from the surfaces — a
+> "Create mission" panel on the Missions tab + web `POST /missions`, both reusing
+> `pentest_mission.create_mission` + `validate_mission` (client-safe gate) before
+> `MissionStore.save_mission`. No new core. Current scale: **full pytest 2220
+> passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

@@ -34,6 +34,17 @@ def test_mission_view_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def test_mission_create_helper_persists_and_validates():
+    out = wa._mission_create("newshop.io", "Authorized review",
+                            allowed_actions=["headers_check"])
+    assert "error" not in out and out["mission_id"]
+    assert len(MissionStore().list_missions("newshop.io")) == 1
+
+    bad = wa._mission_create("shop.com", "Bad", allowed_actions=["exploit"])
+    assert "error" in bad
+    assert MissionStore().list_missions("shop.com") == []
+
+
 def _ready_mission(project="shop.com", objective="Authorized external review"):
     mission = pm.create_mission(project, objective,
                                allowed_actions=["headers_check"])
@@ -89,6 +100,16 @@ def test_mission_endpoints_with_testclient():
     r = client.get("/missions", params={"project": "shop.com"})
     assert r.status_code == 200
     assert {m["mission_id"] for m in r.json()["missions"]} == {saved["id"]}
+
+    # creation endpoint: valid → 200, non-client-safe action → 400
+    r = client.post("/missions", json={"project": "web.io",
+                                       "objective": "Authorized review",
+                                       "allowed_actions": ["headers_check"]})
+    assert r.status_code == 200 and r.json()["mission_id"]
+    r = client.post("/missions", json={"project": "web.io",
+                                       "objective": "Bad",
+                                       "allowed_actions": ["exploit"]})
+    assert r.status_code == 400
 
     r = client.get(f"/missions/{saved['id']}")
     assert r.status_code == 200 and r.json()["mission"]["mission_id"] == saved["id"]

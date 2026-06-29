@@ -1956,4 +1956,31 @@ explicitly linked findings; D2 surfaces = GUI export (JSON/MD/HTML) **and** web
 assembler reads stores, the renderers stay pure. No second findings/asset/
 timeline source.
 
+### M6 — Mission creation UI (CLOSED 2026-06-29)
+
+Let an operator create a mission from the surfaces (the gap deferred at M3/M5) —
+reusing the M1 contract, no new core:
+
+- **GUI** (`gui/tab_missions.py`): a "Create mission (client-safe)" panel on the
+  Missions tab — project + objective fields, a scenario combo
+  (`audit_templates.list_templates`), ROE controls (allowed domains / active /
+  passive / rate, mirroring the Audit Runs tab) and `allowed_actions` checkboxes
+  drawn from `audit_checks.SAFE_CHECKS` (client-safe actions only). The worker
+  `_do_create_mission` calls `pentest_mission.create_mission` →
+  `validate_mission` (client-safe + ROE gate) → `MissionStore.save_mission`,
+  then refreshes and auto-selects the created project.
+- **Web** (`remote/web_app.py`): `POST /missions` (`MissionRequest`:
+  project/objective/template/roe/allowed_actions) → `_mission_create` → 200
+  `{mission_id, status}`; 400 on an invalid mission (e.g. a non-client-safe
+  action).
+- Tests: GUI create cases in `tests/test_missions_tab.py` (persist, reject
+  non-client-safe action, panel builds the SAFE_CHECKS checkboxes) and web cases
+  in `tests/test_web_missions.py` (`_mission_create` helper + `POST /missions`
+  200/400).
+
+**Decisions (M6, locked):** D1 surfaces = GUI create panel **and** web `POST
+/missions`; D2 the client-safe gate is `validate_mission` *before* save (the
+schema validates structure/enums, not action policy); D3 creation reuses the M1
+contract — no new core module. No second findings/asset/timeline source.
+
 ---

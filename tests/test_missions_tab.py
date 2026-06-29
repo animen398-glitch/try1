@@ -111,6 +111,32 @@ def test_do_run_mission_executes_and_links(qapp):
     assert len(mission["payload"]["linked_audit_run_ids"]) == 1
 
 
+def test_do_create_mission_persists_client_safe_mission(qapp):
+    out = MissionsTabMixin._do_create_mission(
+        "newshop.io", "Authorized review", None,
+        {"profile": "client_safe", "allowed_domains": ["newshop.io"]},
+        ["headers_check"])
+    assert "error" not in out and out["project"] == "newshop.io"
+    missions = MissionStore().list_missions("newshop.io")
+    assert len(missions) == 1
+    assert missions[0]["payload"]["objective"] == "Authorized review"
+    assert missions[0]["payload"]["allowed_actions"] == ["headers_check"]
+
+
+def test_do_create_mission_rejects_non_client_safe_action(qapp):
+    out = MissionsTabMixin._do_create_mission(
+        "shop.com", "Bad mission", None, None, ["exploit"])
+    assert "error" in out
+    assert MissionStore().list_missions("shop.com") == []
+
+
+def test_create_panel_builds_action_checkboxes(qapp):
+    from core.audit_checks import SAFE_CHECKS
+    w = MissionsHost()
+    assert set(w.mission_create_actions) == set(SAFE_CHECKS)
+    assert hasattr(w, "btn_mission_create")
+
+
 def test_report_buttons_enable_on_selection_and_render(qapp):
     w = MissionsHost()
     _seed_mission("shop.com", status="ready")
