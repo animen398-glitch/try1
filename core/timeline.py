@@ -93,7 +93,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  sla_events: Optional[List[Dict]] = None,
                  audit_runs: Optional[List[Dict]] = None,
                  audit_events: Optional[List[Dict]] = None,
-                 kev_events: Optional[List[Dict]] = None) -> List[Dict]:
+                 kev_events: Optional[List[Dict]] = None,
+                 missions: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -104,8 +105,11 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     ``AssetStore.project_events``); ``sla_events`` are already-shaped SLA-breach
     rows (see ``findings_sla.sla_events``) and ``kev_events`` already-shaped
     KEV (known-exploited) rows (see ``threat_intel.kev_events``) — both time-based,
-    not scan-based. Events are de-duplicated by ``(scan_id, type, title)`` and
-    ordered chronologically.
+    not scan-based. ``missions`` are Mission Center store rows (see
+    ``MissionStore.list_missions``); a mission carries no event log, so a created
+    event is derived from ``created_at`` and a single status event from
+    ``updated_at`` whenever the mission has moved past ``draft``. Events are
+    de-duplicated by ``(scan_id, type, title)`` and ordered chronologically.
     Each event is ``{scan_id, at, type, title, severity, section}``.
     """
     events: List[Dict] = []
@@ -203,6 +207,28 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                        'title': f"{run_id} {event_type}{suffix}",
                        'severity': severity, 'section': 'audit_runs'})
 
+    for mission in missions or []:
+        if not isinstance(mission, dict):
+            continue
+        mission_id = str(mission.get('id') or mission.get('mission_id') or '').strip()
+        if not mission_id:
+            continue
+        payload = mission.get('payload')
+        objective = payload.get('objective') if isinstance(payload, dict) else None
+        label = str(objective or mission_id).strip()
+        profile = str(mission.get('profile') or 'client_safe')
+        status = str(mission.get('status') or '').strip().lower()
+        events.append({'scan_id': None, 'at': mission.get('created_at'),
+                       'type': 'mission_created',
+                       'title': f"[{profile}] {label} created",
+                       'severity': 'info', 'section': 'missions'})
+        if status and status != 'draft':
+            events.append({'scan_id': None, 'at': mission.get('updated_at'),
+                           'type': f'mission_{status}',
+                           'title': f"[{profile}] {label} {status}",
+                           'severity': 'medium' if status == 'failed' else 'info',
+                           'section': 'missions'})
+
     seen = set()
     deduped: List[Dict] = []
     for ev in events:
@@ -261,6 +287,11 @@ def build_timeline(project) -> Dict:
         ]
     except Exception:   # noqa: BLE001 - timeline must render even if audit store fails
         audit_runs, audit_events = [], []
+    try:
+        from core.mission_store import MissionStore
+        missions = MissionStore().list_missions(project.slug)
+    except Exception:   # noqa: BLE001 - timeline must render even if mission store fails
+        missions = []
     return {
         'project': project.slug,
         'series': build_series(entries),
@@ -272,5 +303,6 @@ def build_timeline(project) -> Dict:
             audit_runs,
             audit_events,
             kev_evts,
+            missions=missions,
         ),
     }

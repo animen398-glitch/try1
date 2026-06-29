@@ -19,6 +19,7 @@ from gui.tab_overview import OverviewTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_audit_runs import AuditRunsTabMixin
+from gui.tab_missions import MissionsTabMixin
 
 
 class _Status:
@@ -149,3 +150,9 @@ class AuditRunsHost(_BaseHost, AuditRunsTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
         self._build_audit_runs_tab()
+
+
+class MissionsHost(_BaseHost, MissionsTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._build_missions_tab()

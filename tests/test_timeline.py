@@ -206,6 +206,39 @@ def test_audit_run_events_are_folded_into_timeline():
     assert events[1]['title'] == 'audit-shop-1 finding_verified finding=finding-1'
 
 
+def test_mission_events_are_folded_into_timeline():
+    missions = [
+        {  # still a draft → only a created event
+            'id': 'mission-aaa',
+            'profile': 'client_safe',
+            'status': 'draft',
+            'created_at': '2026-03-02T09:00:00',
+            'updated_at': '2026-03-02T09:00:00',
+            'payload': {'objective': 'External review'},
+        },
+        {  # advanced → created + a status event
+            'id': 'mission-bbb',
+            'profile': 'client_safe',
+            'status': 'running',
+            'created_at': '2026-03-02T08:00:00',
+            'updated_at': '2026-03-02T10:00:00',
+            'payload': {'objective': 'Portal audit'},
+        },
+    ]
+
+    events = timeline.build_events([], missions=missions)
+
+    assert {e['section'] for e in events} == {'missions'}
+    types = [e['type'] for e in events]
+    assert types.count('mission_created') == 2
+    assert 'mission_running' in types
+    # draft missions emit no status event
+    assert 'mission_draft' not in types
+    running = next(e for e in events if e['type'] == 'mission_running')
+    assert running['at'] == '2026-03-02T10:00:00'
+    assert 'Portal audit' in running['title']
+
+
 def test_events_are_deduped_and_time_ordered():
     a = _report('s1', '2026-01-01')
     b = _report('s2', '2026-01-02', risk=('High', 60))
@@ -291,6 +324,23 @@ def test_build_timeline_includes_audit_run_events(tmp_path):
         'audit_quality_gate_passed',
         'audit_run_completed',
     ]
+
+
+def test_build_timeline_includes_mission_events(tmp_path):
+    from core import pentest_mission as pm
+    from core.mission_store import MissionStore
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    mission = pm.create_mission(project.slug, 'External review',
+                               allowed_actions=['headers_check'])
+    mission = pm.advance_mission_status(mission, 'ready')
+    MissionStore().save_mission(mission, now='2026-03-02T09:00:00')
+
+    tl = timeline.build_timeline(project)
+
+    mission_events = [e for e in tl['events'] if e['section'] == 'missions']
+    assert {e['type'] for e in mission_events} == {'mission_created', 'mission_ready'}
 
 
 def test_build_timeline_tightens_sla_breach_on_kev(tmp_path):

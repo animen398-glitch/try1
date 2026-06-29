@@ -766,6 +766,33 @@ def _audit_run_view(run_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _missions_list(project: Optional[str] = None) -> dict:
+    try:
+        from core.mission_store import MissionStore
+        missions = MissionStore().list_missions(project)
+        return {'project': project, 'missions': [
+            {'mission_id': m.get('id'), 'project': m.get('project'),
+             'status': m.get('status'), 'profile': m.get('profile'),
+             'objective': (m.get('payload') or {}).get('objective')
+             if isinstance(m.get('payload'), dict) else None,
+             'updated_at': m.get('updated_at')}
+            for m in missions
+        ]}
+    except Exception as e:
+        return {'project': project, 'missions': [], 'error': str(e)}
+
+
+def _mission_view(mission_id: str) -> dict:
+    try:
+        from core.mission_store import MissionStore
+        payload = MissionStore().export_mission(str(mission_id))
+        return {'mission': payload}
+    except KeyError:
+        return {'error': f'mission not found: {mission_id}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -1700,6 +1727,16 @@ if _FASTAPI_OK:
     @app.get('/audit-compare')
     async def audit_compare(baseline: str, candidate: str):
         out = _audit_compare_view(baseline, candidate)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.get('/missions')
+    async def missions(project: Optional[str] = None):
+        return JSONResponse(_missions_list(project))
+
+    @app.get('/missions/{mission_id}')
+    async def mission(mission_id: str):
+        out = _mission_view(mission_id)
         code = 404 if out.get('error') and 'not found' in out['error'] else 200
         return JSONResponse(out, status_code=code)
 

@@ -27,6 +27,12 @@
 > (`FORMAT_VERSION` unchanged, backward-compatible). No second findings/asset/
 > timeline source; GUI/web/timeline deferred to M3+. Current scale: **full pytest
 > 2177 passed**, ruff clean, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M3): thin read/parity surfaces over the
+> persisted missions — a `gui/tab_missions.py` Missions tab (view + status-advance
+> + add-links), web read-parity (`/missions`, `/missions/{id}`), and derive-on-read
+> mission events in `core/timeline.py` (`build_events(..., missions=)`). No new
+> store/state; reuses `pentest_mission`/`MissionStore`. Current scale: **full pytest
+> 2200 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.

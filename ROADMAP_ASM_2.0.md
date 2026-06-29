@@ -1858,9 +1858,35 @@ D3 `FORMAT_VERSION` stays 1; D4 columns mirror audit (`+profile`, always
 client_safe); D5 GUI Overview Export/Import untouched (summary gains an additive
 `missions` key).
 
-### Deferred to M3+ (not started)
+### M3 — Operator read/parity surfaces (CLOSED 2026-06-29)
 
-Mission ↔ audit-run/finding read surfaces, timeline mission events, GUI Mission
-Center tab, web read parity. None add a second findings/asset/timeline source.
+Thin operator-facing surfaces over the persisted missions, with **no new store or
+state** — every mutation flows through the pure `pentest_mission` contract and
+`MissionStore.save_mission`:
+
+- **`gui/tab_missions.py`** (new, `MissionsTabMixin`, modeled on
+  `tab_audit_runs`): project selector → missions table (`MissionStore.list_missions`)
+  + detail panel (objective / ROE / allowed_actions / linked runs+findings).
+  **View + status-advance** — a combo of legal targets from
+  `pentest_mission.MISSION_TRANSITIONS`, advanced via `advance_mission_status` →
+  `save_mission`. **Add-links selectors** — attach an existing audit run / finding
+  via `link_audit_run` / `link_finding` → `save_mission`. All blocking work via
+  `_run_async`/`_set_busy`; lazy-loaded through `_missions_widget` in
+  `tab_history._on_tab_changed`. Registered in `plugin_manager.BUILTIN_TABS` +
+  `main_window.py` (30 tabs).
+- **`remote/web_app.py`**: read-parity `_missions_list`/`_mission_view` +
+  `/missions`, `/missions/{id}` (404 on unknown) — mirrors `/audit-runs`.
+- **`core/timeline.py`**: `build_events(..., missions=)` derives `mission_created`
+  (from `created_at`) and one status event (from `updated_at`, when past `draft`)
+  on read, section `missions` — **no second table**; `build_timeline` loads
+  `MissionStore().list_missions(slug)` best-effort.
+- Tests: `tests/test_missions_tab.py` (build/register/query/advance/link),
+  `tests/test_web_missions.py` (list/view/404 + TestClient), mission cases added
+  to `tests/test_timeline.py`; `tests/gui_test_helpers.py` gains `MissionsHost`.
+
+**Decisions (M3, locked):** D1 GUI depth = view + status-advance (no in-GUI
+create form — creation stays in the core/store layer); D2 surfaces = web
+read-parity **and** timeline events; D3 linking = add-links selectors (attach
+existing runs/findings). No second findings/asset/timeline source.
 
 ---
