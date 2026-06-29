@@ -79,6 +79,35 @@ def test_query_overview_reads_portfolio(tmp_path):
     assert row['warning_count'] == 1
 
 
+def test_query_overview_attaches_missions_overview(tmp_path):
+    from core import pentest_mission as pm
+    from core.mission_store import MissionStore
+    _seed_project(tmp_path)
+    MissionStore().save_mission(
+        pm.advance_mission_status(
+            pm.create_mission('x.com', 'review', allowed_actions=['headers_check']),
+            'ready'))
+
+    out = OverviewTabMixin._query_overview(str(tmp_path))
+    assert out['missions_overview']['total'] == 1
+    assert out['missions_overview']['counts']['ready'] == 1
+
+
+def test_populate_overview_missions_cards(qapp):
+    w = OverviewHost()
+    w._populate_overview_missions({
+        'total': 3, 'client_facing': 5,
+        'counts': {'ready': 1, 'running': 0, 'completed': 2, 'failed': 0},
+        'missions': [{'mission_id': 'm1', 'objective': 'Review',
+                      'status': 'completed', 'last_run_id': 'mrun-1',
+                      'last_run_status': 'completed', 'client_facing': 5}],
+    })
+    assert w.overview_mission_cards['total'].text() == '3'
+    assert w.overview_mission_cards['completed'].text() == '2'
+    assert w.overview_mission_cards['client_facing'].text() == '5'
+    assert 'Review' in w.overview_mission_recent.text()
+
+
 def test_query_overview_series(tmp_path):
     _seed_project(tmp_path, scores=(10, 60))
     out = OverviewTabMixin._query_overview_series(str(tmp_path), 'x.com')

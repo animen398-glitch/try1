@@ -63,6 +63,16 @@ class OverviewTabMixin:
         ('active_findings', 'Активные находки'),
     ]
 
+    # Mission Center portfolio cards (derive-on-read, core.mission_overview).
+    OVERVIEW_MISSION_CARDS = [
+        ('total',         'Миссии'),
+        ('ready',         'Ready'),
+        ('running',       'Running'),
+        ('completed',     'Completed'),
+        ('failed',        'Failed'),
+        ('client_facing', 'Client-facing'),
+    ]
+
     # (series key -> (caption, colour)) for the per-project trend sparklines.
     OVERVIEW_TRENDS = [
         ('risk_score',     ('Risk', '#c62828')),
@@ -121,6 +131,21 @@ class OverviewTabMixin:
             self.overview_totals[key] = value_label
             totals_row.addWidget(card)
         layout.addLayout(totals_row)
+
+        # Mission Center portfolio roll-up (M7) — derive-on-read, read-only.
+        mission_grp = SectionGroupBox("Миссии (Mission Center)")
+        mission_v = QVBoxLayout()
+        mission_row = QHBoxLayout()
+        self.overview_mission_cards: dict = {}
+        for key, title in self.OVERVIEW_MISSION_CARDS:
+            card, value_label = self._make_stat_card(title)
+            self.overview_mission_cards[key] = value_label
+            mission_row.addWidget(card)
+        mission_v.addLayout(mission_row)
+        self.overview_mission_recent = QLabel("Последняя миссия: —")
+        mission_v.addWidget(self.overview_mission_recent)
+        mission_grp.setLayout(mission_v)
+        layout.addWidget(mission_grp)
 
         # Companies roll-up (F-C3) — group the estate by company; selecting a
         # company filters the projects table below to its projects.
@@ -373,9 +398,16 @@ class OverviewTabMixin:
     @staticmethod
     def _query_overview(base: str) -> dict:
         try:
-            return pf.load_portfolio(base)
+            data = pf.load_portfolio(base)
         except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
             return {'error': str(e)}
+        try:
+            from core.mission_overview import build_mission_overview
+            data['missions_overview'] = build_mission_overview()
+        except Exception:  # noqa: BLE001 — overview must render even if missions fail
+            data['missions_overview'] = {'total': 0, 'counts': {},
+                                         'client_facing': 0, 'missions': []}
+        return data
 
     def _on_overview_loaded(self, result: dict):
         self._overview_loading = False
@@ -391,6 +423,7 @@ class OverviewTabMixin:
             self._populate_overview_projects([])
             self._populate_overview_companies([])
             self._populate_assign_combo([])
+            self._populate_overview_missions({})
             self.overview_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         self._overview_loaded = True
@@ -398,6 +431,7 @@ class OverviewTabMixin:
         rows = result.get('rows', [])
         self._overview_rows = rows
         self._populate_overview_totals(result.get('totals', {}))
+        self._populate_overview_missions(result.get('missions_overview', {}))
         self._populate_overview_table(rows)
         self._apply_company_filter()              # re-apply any active filter
         self._render_overview_heatmap(rows)
@@ -413,6 +447,30 @@ class OverviewTabMixin:
             f"font-size: 16px; font-weight: bold; color: {color};")
         for key, label in self.overview_totals.items():
             label.setText(str(totals.get(key, 0)))
+
+    def _populate_overview_missions(self, mo: dict):
+        counts = mo.get('counts') or {}
+        values = {
+            'total': mo.get('total', 0),
+            'client_facing': mo.get('client_facing', 0),
+            'ready': counts.get('ready', 0),
+            'running': counts.get('running', 0),
+            'completed': counts.get('completed', 0),
+            'failed': counts.get('failed', 0),
+        }
+        for key, label in self.overview_mission_cards.items():
+            label.setText(str(values.get(key, 0)))
+        missions = mo.get('missions') or []
+        if not missions:
+            self.overview_mission_recent.setText("Последняя миссия: —")
+            return
+        m = missions[0]
+        recent = (f"Последняя миссия: {m.get('objective') or m.get('mission_id')}"
+                  f" — {m.get('status')}")
+        if m.get('last_run_status'):
+            recent += (f" (run {m.get('last_run_id')}: {m.get('last_run_status')},"
+                       f" client-facing {m.get('client_facing', 0)})")
+        self.overview_mission_recent.setText(recent)
 
     def _populate_overview_table(self, rows: list):
         self.overview_table.setRowCount(0)

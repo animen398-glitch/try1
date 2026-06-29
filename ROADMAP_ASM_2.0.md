@@ -1983,4 +1983,31 @@ reusing the M1 contract, no new core:
 schema validates structure/enums, not action policy); D3 creation reuses the M1
 contract — no new core module. No second findings/asset/timeline source.
 
+### M7 — Mission overview/dashboard (CLOSED 2026-06-29)
+
+Portfolio visibility now that the lifecycle is complete — a derive-on-read view,
+no new state:
+
+- **`core/mission_overview.py`** (new): `build_mission_overview(*, mission_store,
+  audit_store, project)` → `{total, counts: {status: n}, client_facing,
+  missions: [row]}`. Per mission it resolves the most-recently-updated linked
+  Audit Run and its client-facing finding count (via
+  `core.audit_report.client_findings`); missing runs are skipped. A view over
+  `MissionStore` + `AuditRunStore`, never a second source.
+- **GUI** (`gui/tab_overview.py`): a "Миссии (Mission Center)" card on the
+  Overview tab — stat cards (total / ready / running / completed / failed /
+  client-facing) + a "last mission" line. Woven into the existing
+  `_query_overview` worker (best-effort — the portfolio still renders if missions
+  fail) and `_populate_overview_missions`.
+- **Web** (`remote/web_app.py`): read-only `GET /missions/overview` (the literal
+  route is declared before `/missions/{id}` so it resolves first).
+- Tests: `tests/test_mission_overview.py` (counts, last-run outcome, project
+  scope, empty), GUI cards in `tests/test_overview_tab.py`, web in
+  `tests/test_web_missions.py`.
+
+**Decisions (M7, locked):** D1 a derive-on-read view (no cadence/no new state);
+D2 surfaces = Overview tab card **and** web `GET /missions/overview`; D3 last-run
+outcome via `audit_report.client_findings` over the latest linked run. No second
+findings/asset/timeline source.
+
 ---

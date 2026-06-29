@@ -793,6 +793,16 @@ def _mission_view(mission_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _missions_overview(project: Optional[str] = None) -> dict:
+    """Portfolio overview of missions (counts by status + last-run outcomes)."""
+    try:
+        from core.mission_overview import build_mission_overview
+        return build_mission_overview(project=project)
+    except Exception as e:
+        return {'total': 0, 'counts': {}, 'client_facing': 0, 'missions': [],
+                'error': str(e)}
+
+
 def _mission_create(project: str, objective: str, *, template=None, roe=None,
                     allowed_actions=None) -> dict:
     """Create + persist a client-safe mission. 400-shaped error if not valid."""
@@ -1787,6 +1797,10 @@ if _FASTAPI_OK:
     @app.get('/missions')
     async def missions(project: Optional[str] = None):
         return JSONResponse(_missions_list(project))
+
+    @app.get('/missions/overview')
+    async def missions_overview(project: Optional[str] = None):
+        return JSONResponse(_missions_overview(project))
 
     @app.post('/missions')
     async def mission_create(body: MissionRequest):

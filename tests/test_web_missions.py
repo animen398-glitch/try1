@@ -34,6 +34,15 @@ def test_mission_view_unknown_is_not_found():
     assert "not found" in out.get("error", "")
 
 
+def test_missions_overview_helper_counts_by_status():
+    _ready_mission("a.io", "one")
+    _ready_mission("b.io", "two")
+    out = wa._missions_overview()
+    assert "error" not in out
+    assert out["total"] == 2
+    assert out["counts"]["ready"] == 2
+
+
 def test_mission_create_helper_persists_and_validates():
     out = wa._mission_create("newshop.io", "Authorized review",
                             allowed_actions=["headers_check"])
@@ -139,3 +148,8 @@ def test_mission_endpoints_with_testclient():
 
     r = client.get("/missions/missing/report")
     assert r.status_code == 404
+
+    # overview endpoint (literal route resolves before /missions/{id})
+    r = client.get("/missions/overview")
+    assert r.status_code == 200
+    assert "total" in r.json() and "counts" in r.json()

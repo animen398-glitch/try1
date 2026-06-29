@@ -50,6 +50,11 @@
 > `pentest_mission.create_mission` + `validate_mission` (client-safe gate) before
 > `MissionStore.save_mission`. No new core. Current scale: **full pytest 2220
 > passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-29 (Mission Center M7): a portfolio overview — `core/mission_overview.py`
+> aggregates missions (counts by status + each mission's last-run outcome via
+> `core/audit_report`) as a derive-on-read view, surfaced as a Missions card on the
+> Overview tab + `GET /missions/overview`. No new state. Current scale: **full pytest
+> 2227 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
