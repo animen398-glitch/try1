@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Tool Run Result",
+  "type": "object",
+  "required": [
+    "tool",
+    "action",
+    "mission_id",
+    "target",
+    "status",
+    "findings",
+    "assets",
+    "evidence_refs"
+  ],
+  "properties": {
+    "tool": {"type": "string"},
+    "action": {"type": "string"},
+    "mission_id": {"type": "string"},
+    "target": {"type": "string"},
+    "status": {
+      "type": "string",
+      "enum": ["completed", "failed", "blocked", "skipped"]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "severity", "asset", "location", "evidence_refs"],
+        "properties": {
+          "title": {"type": "string"},
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low", "info"]
+          },
+          "asset": {"type": "string"},
+          "location": {"type": "string"},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["value", "asset_type", "source"],
+        "properties": {
+          "value": {"type": "string"},
+          "asset_type": {"type": "string"},
+          "source": {"type": "string"}
+        }
+      }
+    },
+    "evidence_refs": {"type": "array", "items": {"type": "string"}}
+  }
+}

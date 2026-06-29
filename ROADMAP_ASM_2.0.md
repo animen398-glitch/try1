@@ -2223,3 +2223,36 @@ This closes the planned Mission Center arc (M1–M15). Further milestones would 
 scope creep against the project's "value/stability over feature count" priority.
 
 ---
+
+### Tool Adapter Contract Foundation (CLOSED 2026-06-30)
+
+A pure/offline **contract layer** for later plugging external recon/audit tools
+(nuclei, nmap, katana, httpx, …) into a pentest mission — **without running them**,
+no network, and **no store writes**:
+
+- **`core/tool_adapter.py`** (new): `ToolCapability` (+ a registry of client-safe
+  tools), `ToolRunRequest`, `ToolRunResult`, `ToolFinding`, `ToolAsset`;
+  `normalize_tool_name`, `build_tool_request`, `evaluate_tool_allowed_for_mission`,
+  `map_tool_result_to_findings`, `tool_result_to_json`. Deterministic canonical
+  payloads; unknown/empty tool rejected; a request binds the mission's
+  id/project/target/profile/**ROE** (the scope SSOT). `evaluate_tool_allowed_for_mission`
+  adds **no policy of its own** — it maps the tool to its action class and defers
+  to the existing `scope_policy.evaluate_scope_policy` (→ `action_policy` +
+  `scope_guard`), passing the mission's ROE as scope: forbidden actions blocked,
+  passive-default blocks active, active in-scope safe action allowed only when the
+  ROE sets `active_scan_enabled` and `passive_only=False`. No
+  exploit/bruteforce/stealth/payload. `map_tool_result_to_findings` normalizes
+  already-parsed output into DTOs and **never writes a store**.
+- **`schemas/asa_tool_run.schema.json`** (new) + `asa_tool_run` alias in
+  `core/audit_schema.SCHEMA_ALIASES`; `tool_result_to_json` exports a
+  schema-valid payload.
+- Tests: `tests/test_tool_adapter.py` (canonical determinism, unknown/empty
+  rejection, request identity/ROE binding, policy reuse, forbidden/passive/active
+  gating, schema-valid export, parser→DTO mapping with no store writes).
+
+**Decisions (locked):** contract layer only — **no external tool execution**, no
+network, no store writes, no risk-verdict change; the gate reuses the existing
+action/scope policy rather than introducing its own; the mission's ROE is the
+scope source (target derived from `allowed_domains` when not given explicitly).
+
+---
