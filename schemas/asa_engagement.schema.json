@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Pentest Engagement",
+  "type": "object",
+  "required": [
+    "engagement_id",
+    "client",
+    "project",
+    "profile",
+    "status",
+    "report_orientation",
+    "scope",
+    "roe",
+    "authorization",
+    "linked_mission_ids",
+    "linked_audit_run_ids",
+    "linked_finding_ids"
+  ],
+  "properties": {
+    "engagement_id": {"type": "string"},
+    "client": {"type": "string"},
+    "project": {"type": "string"},
+    "profile": {"type": "string", "enum": ["client_safe"]},
+    "status": {
+      "type": "string",
+      "enum": ["draft", "authorized", "active", "reporting", "retest",
+               "closed", "archived"]
+    },
+    "report_orientation": {"type": "string", "enum": ["evidence_first"]},
+    "scope": {
+      "type": "object",
+      "required": ["allowed_domains", "allowed_ips", "forbidden_paths"],
+      "properties": {
+        "allowed_domains": {"type": "array", "items": {"type": "string"}},
+        "allowed_ips": {"type": "array", "items": {"type": "string"}},
+        "forbidden_paths": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "roe": {
+      "type": "object",
+      "required": ["passive_only", "active_scan_enabled", "rate_limit",
+                   "window", "emergency_contact"],
+      "properties": {
+        "passive_only": {"type": "boolean"},
+        "active_scan_enabled": {"type": "boolean"},
+        "rate_limit": {"type": ["string", "null"]},
+        "window": {"type": ["string", "null"]},
+        "emergency_contact": {"type": "string"}
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "required": ["accepted", "authorized_by", "reference", "notes"],
+      "properties": {
+        "accepted": {"type": "boolean"},
+        "authorized_by": {"type": "string"},
+        "reference": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    },
+    "linked_mission_ids": {"type": "array", "items": {"type": "string"}},
+    "linked_audit_run_ids": {"type": "array", "items": {"type": "string"}},
+    "linked_finding_ids": {"type": "array", "items": {"type": "string"}}
+  }
+}
