@@ -95,6 +95,25 @@
 > shown as a "Run history" list in the Missions detail + `GET /missions/{id}/runs`. Closes the
 > M1-M15 arc (Mission Center feature-complete). Current scale: **full pytest 2266 passed**, ruff
 > clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (Safe Pentest Tool Layer — pure stack): a self-contained, offline contract
+> for wiring external recon/audit tools to a mission WITHOUT running them — `core/tool_adapter.py`
+> (capability registry + ROE-gated `evaluate_tool_allowed_for_mission` + `asa_tool_run` schema) →
+> `core/tool_parsers.py` (per-tool parsers over already-captured evidence; all 8 registry tools) →
+> `core/tool_pipeline.py` (`assemble_tool_run`: gate→parse→map) → `core/tool_ingest.py` (bridge to
+> canonical Finding/Asset DTOs) → `core/tool_report.py` (JSON/MD/HTML renderer). No store writes, no
+> network, no new deps; the tool is never executed.
+> Update 2026-06-30 (Tool Layer — store-writing): `core/tool_ingest_store.ingest_tool_run` (gated,
+> idempotent persist of a completed run into the existing FindingsStore/AssetStore) + the capstone
+> `core/tool_runner.run_tool_for_mission` (composes `assemble_tool_run` + `ingest_tool_run`, mirrors
+> `mission_runner.run_mission`). Crosses the no-store boundary; the pure stack stays unchanged
+> beneath it. Current scale: **full pytest 2310 passed**, ruff clean, self-check 30 tabs.
+> Update 2026-06-30 (Tool Layer — surfaces): the orchestrator is wired into the GUI Missions tab
+> ("Run tool", evidence-driven) + web `POST /missions/{id}/tools/run`; tool runs surface in the
+> timeline as a derive-on-read `tool_run` event (scan-id convention centralized in
+> `tool_runner.tool_scan_id`/`parse_tool_scan_id`, replacing the duplicated inline string); and
+> `report_export.tool_runs_csv` exports them (Timeline tab "Export tool runs" + `GET /tool-runs.csv`).
+> No second store — tool runs are derived from the ingested items' synthetic scan id. Current scale:
+> **full pytest 2334 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -105,7 +124,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2101 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2334 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

@@ -4870,3 +4870,108 @@ MISSION CENTER M2 — MISSIONSTORE PERSISTENCE + PROJECT BUNDLE (2026-06-28)
   целевые+смежные (findings/asset/sqlite store) зелёные; полный pytest 2177.
   M3+ (отложено, не начато): timeline mission-события, GUI Mission Center вкладка,
   web read parity.
+
+------------------------------------------------------------------------------
+MISSION CENTER M3–M15 — SURFACES → FEATURE-COMPLETE (2026-06-29)
+------------------------------------------------------------------------------
+  Достроен весь Mission Center поверх контракта M1 + стора M2, БЕЗ второго
+  findings/asset/timeline источника (всё derive-on-read поверх MissionStore +
+  AuditRunStore + FindingsStore). Дуга M1–M15 закрыта.
+    M3 read/parity: gui/tab_missions.py (view + status-advance по легальным
+      переходам + add-links существующих audit run/finding), web /missions,
+      /missions/{id}; timeline.build_events(..., missions=) derive-on-read
+      (mission_created + статус-событие). 30 вкладок.
+    M4 execution: оркестрация Audit Run вынесена из GUI в core/audit_runner.py
+      (build_audit_run + helpers); core/mission_runner.run_mission гоняет ready-
+      миссию как Audit Run (ready->running->completed/failed, авто-линк),
+      GUI «Run mission» + POST /missions/{id}/run.
+    M5 report: core/mission_report.py — evidence-first view (envelope + linked
+      runs через audit_report.client/review_findings + appendix findings),
+      render_json/markdown/html; GUI export + GET /missions/{id}/report[.md].
+    M6 creation: GUI «Create mission» панель + web POST /missions (оба через
+      create_mission+validate_mission, client-safe гейт перед save).
+    M7 overview: core/mission_overview.build_mission_overview (counts by status
+      + last-run outcome) — карточка на Overview + GET /missions/overview.
+    M8 timeline run-events: build_events(..., mission_runs=) — mission_run_started
+      + терминальное completed/failed на каждый linked run.
+    M9 recurring scheduling: core/mission_schedule.py (reuse monitor cadences),
+      schedule в новой колонке missions.schedule (MissionStore v2), GUI Enable/
+      Disable/«Run due now» + POST /missions/{id}/schedule, /missions/run-due.
+    M10 auto-tick: due-миссии исполняются на тике монитора через generic
+      MonitorScheduler.extra_tick (движок monitor развязан с миссиями); opt-in.
+    M11 link integrity (закрыл M1 D4): core/mission_links.py (checked-линки +
+      resolve_links present/stale); pentest_mission остаётся чистым.
+    M12 demo: demo_seed.py сеет 3 миссии (ready+scheduled, executed, stale-link).
+    M13 CSV: report_export.missions_csv + GUI «Export CSV» + GET /missions.csv.
+    M14 stale-link cleanup: mission_links.prune_stale_links + «Remove stale» +
+      POST /missions/{id}/links/prune.
+    M15 run trend: mission_overview.mission_run_trend (per-mission run history)
+      + «Run history» в detail + GET /missions/{id}/runs.
+  Файлы: core/{pentest_mission,mission_store,mission_runner,audit_runner,
+  mission_report,mission_overview,mission_schedule,mission_links}.py,
+  gui/tab_missions.py, remote/web_app.py, core/timeline.py, demo_seed.py +
+  целевые тесты. Каждый шаг: ruff clean, self-check 30 вкладок, полный pytest
+  зелёный (рост 2200 -> 2266).
+
+------------------------------------------------------------------------------
+SAFE PENTEST TOOL LAYER — CONTRACT → CSV (2026-06-30)
+------------------------------------------------------------------------------
+  Слой подключения внешних recon/audit-инструментов к pentest-миссии БЕЗ их
+  запуска: инструмент никогда не исполняется, evidence захватывается оффлайн
+  выше по стеку, gate переиспользует существующую scope/action-политику ROE.
+  Строился снизу вверх; чистый стек не меняется под store-слоем.
+    Pure stack (no store/network/deps, tool не запускается):
+      core/tool_adapter.py — ToolCapability(+TOOL_CAPABILITIES реестр client-safe
+        tools) + ToolRunRequest/Result/Finding/Asset; build_tool_request,
+        evaluate_tool_allowed_for_mission (мапит tool->action class и делегирует
+        scope_policy.evaluate_scope_policy с ROE как scope), map_tool_result_to_
+        findings, tool_result_to_json; schemas/asa_tool_run.schema.json + alias.
+      core/tool_parsers.py — парсер на каждый из 8 registry-tools поверх уже-
+        захваченного evidence (header/cookie/source-map reuse audit_checks;
+        safe_active_prober assets; dependency reuse dependency_audit; iac reuse
+        iac_scanner; graphql/tls малая pure-детекция). Реестр PARSERS аддитивен.
+      core/tool_pipeline.assemble_tool_run(mission, tool, evidence, target=) —
+        gate -> (allowed) parse -> map в один store-free ToolRunResult; blocked
+        (политика/ROE) / skipped (нет парсера) / completed.
+      core/tool_ingest.py — чистый мост ToolRunResult -> канонические
+        findings_adapter.Finding / asset_adapter.Asset (reuse from_raw; tool-
+        finding получает ту же fingerprint-identity/категорию/severity).
+      core/tool_report.py — render_json/markdown/html(result) поверх canonical
+        payload (зеркало audit_report/mission_report); детерминирован.
+    Store-writing:
+      core/tool_ingest_store.ingest_tool_run(result, project, scan_id, *,
+        findings_store, asset_store) — ПЕРВЫЙ store-writing шаг: персистит ТОЛЬКО
+        completed-result через bridge в FindingsStore.upsert/AssetStore.sync;
+        gated (blocked/skipped -> no-op), idempotent. Без перепроверки политики.
+      core/tool_runner.run_tool_for_mission(mission, tool, evidence, *, scan_id,
+        project=None, target=None, findings_store=None, asset_store=None) —
+        КАПСТОУН: композитит assemble_tool_run + ingest_tool_run в один вызов
+        (зеркало mission_runner.run_mission поверх audit_runner+persist); project
+        дефолтится из миссии; -> {result, ingest:{status,written,findings,assets}};
+        blocked/skipped проходят насквозь как no-op.
+    Surfaces (эта сессия):
+      GUI: вкладка Missions, тонкая панель «Run tool (client-safe, evidence-
+        driven)» — tool-combo из TOOL_CAPABILITIES + JSON evidence + Run tool;
+        _run_mission_tool парсит JSON на GUI-треде (битый ввод fail-fast),
+        off-thread _do_run_mission_tool зовёт run_tool_for_mission; кнопка активна
+        для любой выбранной миссии (gate по ROE, не по lifecycle-статусу).
+      Web: POST /missions/{id}/tools/run (MissionToolRequest {tool, evidence})
+        зеркало GUI; 404 unknown / 400 missing tool; blocked/skipped -> 200
+        written:false.
+      Timeline: derive-on-read событие tool_run (БЕЗ второго стора) — формат
+        scan_id централизован в tool_runner.tool_scan_id/parse_tool_scan_id
+        (tool-<tool>-<unix_ts>, единый SoT, убрал дубль инлайн-строки в GUI+web);
+        timeline._derive_tool_runs группирует ингестнутые CREATED finding/asset
+        события по tool scan_id в строки {tool,scan_id,at,findings,assets};
+        build_events(..., tool_runs=) эмитит одно tool_run (section 'tools', info);
+        GUI-метка «Прогон инструмента».
+      CSV: build_timeline дополнительно возвращает структурные tool_runs (один
+        путь деривации); report_export.tool_runs_csv (When/Tool/Findings/Assets/
+        Scan ID; dict-или-list вход); GUI Timeline «Export tool runs» +
+        GET /tool-runs.csv (зеркало /missions.csv).
+  Решения (locked): только композиция/derive-on-read, без новой детекции/политики,
+  без второго стора, без сети/новых зависимостей, инструмент не исполняется.
+  Коммиты сессии: d5d0d27b (orchestrator), cc2abc0d (Missions GUI), 44731ae3
+  (web), 5d8dbf11 (timeline + scan-id SoT), 0ee42888 (CSV). Каждый шаг: ruff clean,
+  self-check 30 вкладок, полный pytest зелёный (рост 2266 -> 2310 чистый стек +
+  ingestion -> 2334 после surfaces; collect-only подтверждает 2334).
