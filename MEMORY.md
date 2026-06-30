@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-30 02:26:28  
-> Total memories: **87**  
-> Breakdown: instruction: 8, decision: 13, goal: 6, preference: 1, context: 3, event: 50, artifact: 2, error: 4
+> Generated: 2026-06-30 04:38:55  
+> Total memories: **88**  
+> Breakdown: instruction: 8, decision: 13, goal: 6, preference: 1, context: 3, event: 51, artifact: 2, error: 4
 
 ---
 
@@ -471,6 +471,12 @@ Implemented W1 Persistent Audit Runs core slice in commit 91ce78c: added core/au
 Mission Center M1 core contract IMPLEMENTED + committed locally (master cb1fb1b9, 9 files +646/-4). NEW core/pentest_mission.py (pure/offline/deterministic, mirrors audit_workflow): create_mission/normalize_mission/validate_mission/advance_mission_status/link_audit_run/link_finding/mission_to_json. Mission shape: mission_id(sha1 project|objective), project, objective, profile=client_safe(fixed), template(opt, from audit_templates), roe(normalize_roe SSOT incl scope, no separate scope field), allowed_actions(gated by action_policy), status, report_orientation=evidence_first, linked_audit_run_ids/linked_finding_ids. Status machine: draft->{ready,archived}, ready->{running,draft,archived}, running->{completed,failed,archived}, completed->{archived}, failed->{ready,archived}, archived terminal; ->ready needs valid mission. NEW schemas/asa_pentest_mission.schema.json + 1-line alias in audit_schema.SCHEMA_ALIASES. NEW tests/test_pentest_mission.py (35). Decisions D1-D5 as approved. Full pytest 2162 green, ruff clean, docs synced (ROADMAP EPIC FUTURE Mission Center M1 section, CLAUDE/AGENTS/PROJECT_STATUS/PROJECT_REPORT). M2+ deferred: MissionStore+project_io export, read surfaces, timeline mission events, GUI tab, web parity. NOTE: working tree also has FOREIGN uncommitted changes NOT mine (demo_seed.py, gui/tab_iac.py, tests/test_demo_seed.py, tests/test_iac_tab.py, +158) likely Codex demo/IaC work - left untouched; my commit was scoped to the 9 M1 files only. Not pushed.
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T12:17:56*
+
+### Extended the safe tool layer in try1 past the pure...
+
+Extended the safe tool layer in try1 past the pure stack: added core/tool_ingest.py (pure bridge ToolRunResult->canonical findings_adapter.Finding/asset_adapter.Asset via from_raw, no store writes), core/tool_report.py (pure JSON/MD/HTML renderer over tool_result_to_json), and core/tool_ingest_store.py (FIRST store-writing step: ingest_tool_run persists a completed result's findings/assets via FindingsStore.upsert + AssetStore.sync, gated on status=='completed' so blocked/skipped are no-ops, idempotent, reuses existing stores - no second store, no tool execution, no network). Full tool stack: M3 contract -> 8 parsers -> pipeline -> bridge -> report -> gated ingestion. Full pytest 2310 passed; pushed to origin/master tip a01788d1.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T01:38:37*
 
 ### Packaging smoke audit passed on 2026-06-27: PyInst...
 
