@@ -114,6 +114,14 @@
 > `report_export.tool_runs_csv` exports them (Timeline tab "Export tool runs" + `GET /tool-runs.csv`).
 > No second store — tool runs are derived from the ingested items' synthetic scan id. Current scale:
 > **full pytest 2334 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (Web Console Auth & Safe Bind): closed the #1 stability/safety gap — the LAN
+> console gained mutating endpoints (mission run, tool-run → store ingestion) while still binding
+> `0.0.0.0` with no auth. `resolve_web_console` defaults the bind to `127.0.0.1` (LAN = explicit opt-in
+> via `web_console.allow_lan`); one app-wide `require_token` dependency gates every endpoint except the
+> static `/` shell (Bearer or `?token=`, constant-time); loopback+no-token stays open (single-user),
+> a LAN bind with no token auto-generates one (`secrets.token_urlsafe`). Token from `web_console.token`
+> / `ASA_WEB_TOKEN`; dashboard JS attaches it. No new deps. Current scale: **full pytest 2342 passed**,
+> ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -124,7 +132,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2334 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2342 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

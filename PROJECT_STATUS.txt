@@ -4975,3 +4975,41 @@ SAFE PENTEST TOOL LAYER — CONTRACT → CSV (2026-06-30)
   (web), 5d8dbf11 (timeline + scan-id SoT), 0ee42888 (CSV). Каждый шаг: ruff clean,
   self-check 30 вкладок, полный pytest зелёный (рост 2266 -> 2310 чистый стек +
   ingestion -> 2334 после surfaces; collect-only подтверждает 2334).
+
+------------------------------------------------------------------------------
+WEB CONSOLE AUTH & SAFE BIND (2026-06-30)
+------------------------------------------------------------------------------
+  Закрыт пробел №1 по приоритету (стабильность/безопасность самого инструмента):
+  LAN web-консоль (remote/web_app.py) получила МУТИРУЮЩИЕ эндпоинты (mission run,
+  tool-run -> ingestion в сторы), но по-прежнему биндила 0.0.0.0 БЕЗ какой-либо
+  аутентификации. Выбран следующим эпиком, когда пользователь спросил «чего не
+  хватает проекту»; план утверждён (D1-D5), loopback-no-token=ok подтверждён.
+    Безопасный bind: resolve_web_console(host=None) -> (host, token) из
+      settings.json web_console + env. Дефолт host = 127.0.0.1 (из LAN
+      недоступно); LAN — явный opt-in (web_console.allow_lan -> 0.0.0.0 или явный
+      не-loopback host). start_server дефолтный host сменён 0.0.0.0 -> loopback.
+    Токен-гейт: одна app-wide зависимость require_token (FastAPI dependencies=
+      [Depends(...)]). При активном токене любой запрос вне _PUBLIC_PATHS={'/'}
+      (статичная оболочка дашборда) обязан прислать Authorization: Bearer ИЛИ
+      ?token= (чтобы браузерный EventSource/ссылка тоже аутентифицировались),
+      сравнение константное (hmac.compare_digest); 401 при отсутствии/неверном.
+    Правило «нет токена»: loopback + нет токена -> открыто (single-user desktop);
+      LAN-bind + нет токена -> токен АВТО-генерируется (secrets.token_urlsafe) и
+      печатается один раз -> консоль никогда не открыта в LAN без auth. Источник
+      токена: web_console.token или ASA_WEB_TOKEN env (в логах не печатается целиком).
+    Дашборд: малый JS-шим подставляет токен (localStorage; prompt при 401) в
+      каждый fetch + в SSE-URL.
+    Config: блок web_console {host, allow_lan, token} в DEFAULT_SETTINGS.
+  Решения (locked): D1 дефолт loopback, LAN явный opt-in; D2 Bearer + ?token=,
+  одна app-wide зависимость; D3 loopback+no-token=открыто, LAN требует токен
+  (авто-генерация если не задан); D4 токен в settings.json + ASA_WEB_TOKEN env;
+  D5 stdlib secrets/hmac, без новых зависимостей. Совместимость: дефолт изменён
+  намеренно (телефон в Wi-Fi не достучится без allow_lan — безопасное
+  направление); main_orchestrator.start_server() продолжает работать (loopback);
+  CORS '*' оставлен (токен снимает основной риск). Файлы: remote/web_app.py,
+  core/config.py, tests/test_web_auth.py (8), ROADMAP_ASM_2.0.md. Коммит 5c922062.
+  Проверено: ruff clean, целевые+смежные web/config зелёные, полный pytest зелёный
+  (рост 2334 -> 2342; 401 корректно возвращается, не перехватывается generic-
+  handler). Прочие найденные пробелы (отложены): scan retention/backup, пагинация
+  GUI-таблиц, i18n, e2e/GUI-тесты, мост captured-scan -> tool evidence,
+  assignment/comments в триаже находок.
