@@ -5341,5 +5341,32 @@ ENGAGEMENT & ROE FOUNDATION — backend slice F1–F4 (2026-07-01)
 
   Проверено: ruff clean (все новые модули), целевые сьюты зелёные, полный pytest
   зелёный (рост 2409 -> 2453; collect-only подтверждает 2453). Локальные коммиты,
-  без push. Surfaces (GUI Engagement tab / web read-parity / timeline events /
-  demo_seed / retest workflow) — СЛЕДУЮЩИЙ шаг, только после явного подтверждения.
+  без push.
+
+==============================================================================
+ENGAGEMENT SURFACES — S1–S4 (2026-07-01)
+==============================================================================
+  Поверх бэкенд-слоя (F1–F4) добавлены все surfaces (полная автономия дана
+  пользователем). Surfaces — тонкие, derive-on-read/store-aware, без второго
+  стора и без новых атак-возможностей.
+    S1 timeline (commit 2ed2a75a): timeline.build_events += engagements= →
+      engagement_created + статус-событие (section 'engagements'), derive-on-read;
+      build_timeline грузит EngagementStore().list_engagements(slug) best-effort.
+    S2 web parity (commit 6301f6f2): remote/web_app.py — GET /engagements,
+      GET /engagements/{id}, POST /engagements (create, client-safe валидация),
+      POST /engagements/{id}/advance, POST /engagements/{id}/link
+      (kind=mission|audit_run|finding, existence-checked), POST .../links/prune,
+      GET /engagements/{id}/report[.md]. 404 unknown / 400 invalid.
+    S3 demo_seed (commit 919d1ad7): _seed_engagement — 1 авторизованная
+      engagement на первом проекте, mid-flight 'reporting', linked mission+run+
+      finding; summary/main += engagements.
+    S4 GUI tab (commit b301cc24): gui/tab_engagement.EngagementsTabMixin (зеркало
+      tab_missions): project→table→create→advance→link(mission/run/finding,
+      store-combos, checked)→prune→report export JSON/MD/HTML; всё через
+      _run_async. Регистрация в plugin_manager.BUILTIN_TABS + main_window +
+      lazy-load в tab_history; EngagementsHost в gui_test_helpers. Вкладок: 31.
+  Проверено: ruff clean, целевые+смежные (incl MainWindow-based) зелёные, полный
+  pytest зелёный (рост 2453 -> 2472; collect-only подтверждает 2472). Локальные
+  коммиты, без push. Engagement-эпик (backend F1–F4 + surfaces S1–S4) закрыт.
+  Отложено осознанно: retest workflow (отдельная итерация), engagement CSV/
+  overview portfolio, engagement→mission авто-наследование scope/ROE.

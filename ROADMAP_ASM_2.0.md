@@ -2800,7 +2800,18 @@ new attack capabilities — strictly authorized-pentest workflow.
 
 **Decisions (locked):** mirror the Mission Center backend layering; engagement
 separates scope/roe/authorization; reuse audit_scope/audit_schema/audit_report;
-no second store of the linked entities; surfaces (GUI/web/timeline/demo/retest)
-are a separate step pending explicit confirmation.
+no second store of the linked entities.
+
+**Surfaces S1–S4 (CLOSED 2026-07-01):** all engagement surfaces landed on top of
+the backend — **S1** timeline events (`timeline.build_events(engagements=)`,
+section `engagements`; commit `2ed2a75a`); **S2** web parity (`GET /engagements`,
+`GET /engagements/{id}`, `POST /engagements`, `.../advance`, `.../link`,
+`.../links/prune`, `.../report[.md]`; commit `6301f6f2`); **S3** a seeded
+engagement in `demo_seed` (commit `919d1ad7`); **S4** a GUI **Engagements** tab
+(`gui/tab_engagement`, mirrors `tab_missions`; registered in
+plugin_manager/main_window, lazy-loaded — now 31 tabs; commit `b301cc24`). Thin
+surfaces, no second store. The Engagement epic (F1–F4 + S1–S4) is complete;
+deferred: retest workflow, engagement CSV/overview, engagement→mission scope/ROE
+inheritance.
 
 ---

@@ -192,6 +192,12 @@
 > (evidence-first deliverable reusing audit_report, JSON/MD/HTML). Reuses audit_scope/audit_schema; no new
 > attack capabilities. Backend only — GUI/Web surfaces deferred to a separate step. Current scale: **full
 > pytest 2453 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-07-01 (Engagement surfaces S1–S4): added all engagement surfaces over the backend —
+> timeline events (`timeline.build_events(engagements=)`), web parity (`/engagements` CRUD + advance/link/
+> prune/report), `demo_seed` engagement, and a GUI **Engagements** tab (`gui/tab_engagement`, mirrors
+> tab_missions: create/advance/link/prune/report), registered in plugin_manager/main_window (now 31 tabs).
+> Thin surfaces; no second store. Engagement epic (F1–F4 + S1–S4) complete. Current scale: **full pytest
+> 2472 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -202,7 +208,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2453 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2472 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
