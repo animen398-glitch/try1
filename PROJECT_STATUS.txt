@@ -5013,3 +5013,53 @@ WEB CONSOLE AUTH & SAFE BIND (2026-06-30)
   handler). Прочие найденные пробелы (отложены): scan retention/backup, пагинация
   GUI-таблиц, i18n, e2e/GUI-тесты, мост captured-scan -> tool evidence,
   assignment/comments в триаже находок.
+
+------------------------------------------------------------------------------
+SCAN RETENTION & BACKUP (2026-06-30)
+------------------------------------------------------------------------------
+  Закрыт пробел №2 из найденных (выбран после web-console-auth): неограниченный
+  рост scan-workspace для CSM + отсутствие полного бэкапа. Две фазы.
+
+  Phase 1 — Retention (артефакты-только, индекс жив; выбор пользователя):
+    core/retention.py. plan_retention(project, *, keep_last, keep_days, now=None)
+    — ЧИСТЫЙ планировщик: новейший скан всегда сохраняется; скан выживает если в
+    пределах keep_last ИЛИ новее keep_days дней; нет политики -> keep all; уже
+    помеченный artifacts_pruned не перечисляется повторно. apply_retention
+    удаляет ТОЛЬКО директорию scans/<id>/ (shutil.rmtree) и метит запись
+    metadata.json artifacts_pruned (аддитивно) — индекс scans[] и снимок
+    history/<id>.json СОХРАНЯЮТСЯ -> risk-серия/тренд целы, timeline мягко
+    деградирует (отсутствующий report.json уже пропускается), FindingsStore не
+    осиротеет (scan_id — лишь метка). Идемпотентно. policy_from_settings() +
+    prune_project(). Config retention {enabled, keep_last, keep_days} в
+    DEFAULT_SETTINGS, OFF by default (нулевое изменение поведения). Авто:
+    collection_runner прореживает после Full Collection при retention.enabled
+    (best-effort, не валит скан). GUI: кнопка «Prune old scans» на Overview
+    (per-project, с подтверждением, off-thread). Решение (locked): артефакты-
+    только / индекс жив; off by default; авто-прореживание opt-in + ручная кнопка.
+    Файлы: core/retention.py, core/config.py, core/collection_runner.py,
+    gui/tab_overview.py, tests/test_retention.py, tests/test_overview_tab.py.
+    Коммит db0aa9e3.
+
+  Phase 2 — Full Backup & Restore (data root + workspace -> один .zip):
+    core/backup.py. Состояние живёт в двух местах: data root (SQLite-сторы под
+    data/, конфиги под configs/) и workspace (Projects/<slug>/ под settings
+    output_dir, обычно вне data root) — захватываются оба. create_backup(dest,
+    *, data_root=None, workspace=None): каждый *.db через ONLINE BACKUP API
+    SQLite (консистентно при работающем приложении; сторы на WAL; без -wal/-shm
+    сайдкаров в архиве) под data_root/, прочие файлы verbatim, workspace-дерево
+    под workspace/ (пропуск если вложен в data root — без двойного захвата);
+    сбой online backup -> raw-copy fallback + warning в манифесте. backup_info
+    читает манифест. restore_backup(src, *, data_root, workspace, replace=False)
+    — извлекает обратно, zip-slip guard, ПРОПУСКАЕТ существующие файлы кроме
+    replace=True (restore никогда молча не затирает живые данные). GUI: кнопки
+    «Backup all…» / «Restore…» на Overview (off-thread; restore спрашивает
+    overwrite vs missing-only). Stdlib only (zipfile/sqlite3). Решение (locked):
+    online backup для БД (WAL-safe), verbatim для прочего; один архив на оба
+    места; restore non-clobbering по умолчанию. Файлы: core/backup.py,
+    gui/tab_overview.py, tests/test_backup.py, tests/test_overview_tab.py.
+    Коммит dd99e75e.
+
+  Проверено: ruff clean, целевые+смежные зелёные, полный pytest зелёный (рост
+  2342 -> 2361; collect-only подтверждает 2361). Прочие пробелы (отложены):
+  пагинация GUI-таблиц, i18n, e2e/GUI-тесты, мост captured-scan -> tool evidence,
+  assignment/comments в триаже находок.

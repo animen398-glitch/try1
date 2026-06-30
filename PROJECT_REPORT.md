@@ -122,6 +122,14 @@
 > a LAN bind with no token auto-generates one (`secrets.token_urlsafe`). Token from `web_console.token`
 > / `ASA_WEB_TOKEN`; dashboard JS attaches it. No new deps. Current scale: **full pytest 2342 passed**,
 > ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (Scan Retention & Backup): two ops-maturity gaps. **Retention** (`core/retention.py`)
+> prunes old scan *artifact* dirs beyond a keep-last/keep-days policy while keeping the `metadata.json`
+> index + `history/` snapshots (risk trend intact, findings never orphaned); `retention` block in
+> settings, off by default; auto-prune after a Full Collection + an Overview "Prune old scans" button.
+> **Backup** (`core/backup.py`) snapshots the whole data root (SQLite via the online-backup API, WAL-safe)
+> + the Projects workspace into one timestamped `.zip`; `restore_backup` is zip-slip guarded and
+> non-clobbering by default; Overview "Backup all…" / "Restore…" buttons. Stdlib only. Current scale:
+> **full pytest 2361 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -132,7 +140,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2342 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2361 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
