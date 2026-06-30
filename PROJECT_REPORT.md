@@ -146,6 +146,13 @@
 > "+N more" node, click → node_clicked), wired into the Attack Paths tab below the ranked table over the
 > existing `load_attack_paths` data. Current scale: **full pytest 2375 passed**, ruff clean, self-check
 > 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (Finding assignment & comments triage): DefectDojo-style triage on top of the
+> lifecycle/SLA, event-sourced over `finding_events` (no second store, no migration). `findings_store`
+> gains assign/get_assignee/assignees (latest ASSIGNED wins, '' unassigns) + add_comment/comments
+> (append-only). Surfaced as a "Триаж" row + detail thread on the Findings tab and web endpoints
+> `POST /findings/{id}/assign`, `POST /findings/{id}/comment`, `GET /findings/{id}/triage`. Closes the
+> last named gap-analysis item. Current scale: **full pytest 2383 passed**, ruff clean, self-check 30
+> tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -156,7 +163,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2375 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2383 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

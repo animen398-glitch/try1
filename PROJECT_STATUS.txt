@@ -5130,3 +5130,36 @@ INTERACTIVE ATTACK-PATH GRAPH (2026-06-30)
   модулями — ASM-поверхность (attack-path/cloud/correlation) уже во многом
   построена. Прочие пробелы (отложены): i18n, e2e/GUI-тесты, мост captured-scan ->
   tool evidence, assignment/comments в триаже, пагинация остальных таблиц.
+
+------------------------------------------------------------------------------
+FINDING ASSIGNMENT & COMMENTS TRIAGE (2026-06-30)
+------------------------------------------------------------------------------
+  Закрыт последний named-пробел из gap-анализа: DefectDojo-уровень триажа поверх
+  существующего lifecycle/SLA. СОБЫТИЙНО над finding_events (фича REMEDIATION —
+  точный шаблон): БЕЗ второго стора, БЕЗ миграции схемы.
+    core/findings_store.py: EVENT_TYPES += ASSIGNED, COMMENT. assign(fid,assignee)/
+    get_assignee(fid) — назначение: последний ASSIGNED побеждает, ''=снять;
+    assignees(project) — карта latest-per-finding (пустые отброшены) для
+    аннотации списка. add_comment(fid,text,author='')/comments(fid) — append-only
+    COMMENT (note=json {author,text}), лента по порядку. Все валидируют
+    существование находки (KeyError), пишут через _log_event; полная история в
+    finding_events, переносится project_io bundle автоматически (events уже
+    экспортируются).
+    GUI Findings tab: ряд «Триаж» (поле исполнителя + Назначить, поле комментария
+    + Добавить) по выбранной находке через _run_async; detail-панель показывает
+    текущего исполнителя + ленту комментариев (сырые COMMENT-события скрыты из
+    generic-истории, чтобы не светить JSON-note); поле исполнителя префиллится
+    текущим значением; кнопки активны при выбранной находке.
+    Web parity (remote/web_app.py): POST /findings/{id}/assign {assignee},
+    POST /findings/{id}/comment {text,author?}, GET /findings/{id}/triage
+    (assignee+thread); 404 unknown / 400 пустой комментарий — зеркало
+    /findings/{id}/status.
+  Решение (locked): событийно над finding_events (без второго стора/миграции);
+  assignment = latest ASSIGNED, comments append-only; surface = detail + web
+  (БЕЗ новой колонки в таблице Findings — выбор пользователя). Файлы:
+  core/findings_store.py, gui/tab_findings.py, remote/web_app.py,
+  tests/test_findings_store.py, tests/test_web_findings.py, tests/test_findings_tab.py,
+  ROADMAP_ASM_2.0.md. Коммит 05e8f72f. Проверено: ruff clean, целевые+смежные
+  зелёные, полный pytest зелёный (рост 2375 -> 2383; collect-only подтверждает
+  2383). Остаются (отложены): i18n, e2e/GUI-тесты, мост captured-scan -> tool
+  evidence, пагинация остальных таблиц.
