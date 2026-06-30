@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-30 02:03:11  
-> Total memories: **86**  
-> Breakdown: instruction: 8, decision: 13, goal: 6, preference: 1, context: 3, event: 49, artifact: 2, error: 4
+> Generated: 2026-06-30 02:26:28  
+> Total memories: **87**  
+> Breakdown: instruction: 8, decision: 13, goal: 6, preference: 1, context: 3, event: 50, artifact: 2, error: 4
 
 ---
 
@@ -495,6 +495,12 @@ Mission Center / Authorized Pentest Multitool completed and pushed: full M1-M15 
 KEV->SLA tightening EXTENDED to Alert Center + Timeline, COMMITTED locally (master a8e59322). Added threat_intel.annotate_offline (single best-effort offline SSOT seam); alerts.collect_sla_alerts and timeline.build_timeline->sla_events now annotate active findings from offline KEV/EPSS cache before computing breach, so KEV findings alert/timeline on the tightened deadline. Consolidated duplicate inline guards (collection_runner, intelligence._annotate_threat) onto annotate_offline. Tests added in test_alerts.py + test_timeline.py. Full pytest green (exit 0), ruff clean. 11 files +107/-17.
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T09:07:29*
+
+### Completed the safe pentest tool layer in try1: all...
+
+Completed the safe pentest tool layer in try1: all 8 tool_adapter.TOOL_CAPABILITIES tools now have offline parsers (core/tool_parsers.py) — header/cookie/source-map (reuse audit_checks), safe_active_prober (assets), dependency_auditor (reuse dependency_audit.audit), iac_config_auditor (reuse iac_scanner.scan_path, local file read), graphql_introspector + tls_audit (small pure detection over captured evidence). Plus the offline pipeline core/tool_pipeline.assemble_tool_run (gate->parse->map; blocked/skipped/completed). All pure/offline/deterministic: no tool execution, no network, no store writes, no new deps. Full pytest 2293 passed; pushed to origin/master tip bd8d7b47.
+
+*Confidence: 1 | Status: active | Created: 2026-06-29T23:26:04*
 
 ### EPIC FUTURE M3 Tool Adapter Contract Foundation im...
 
