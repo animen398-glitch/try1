@@ -9,6 +9,9 @@ Run alone: python remote/web_app.py
 
 import asyncio
 import json
+import hmac
+import os
+import secrets
 import socket
 import sys
 import threading
@@ -23,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     import uvicorn
-    from fastapi import BackgroundTasks, FastAPI, Request
+    from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import (
         FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse,
@@ -61,6 +64,29 @@ def _configured_report_base() -> Path:
 
 # Reports/output live under here; report serving is restricted to this tree.
 _REPORT_BASE = _configured_report_base()
+
+# Active web-console auth token. Empty = no token required (loopback single-user
+# default). ``start_server`` sets it from settings.json / ASA_WEB_TOKEN, and
+# force-generates one for a LAN bind. Tests set it directly.
+_AUTH_TOKEN = ''
+# Paths served without a token even when one is set: just the static dashboard
+# shell, so the browser can load the page and prompt for the token. No data here.
+_PUBLIC_PATHS = {'/'}
+_LOOPBACK_HOSTS = {'127.0.0.1', 'localhost', '::1', ''}
+
+
+def _is_loopback(host: str) -> bool:
+    return str(host or '').strip().lower() in _LOOPBACK_HOSTS
+
+
+def _request_token(request) -> str:
+    """Token from the ``Authorization: Bearer`` header, else the ``token`` query
+    param (so a browser EventSource / link, which cannot set headers, still
+    authenticates)."""
+    auth = request.headers.get('authorization') or ''
+    if auth[:7].lower() == 'bearer ':
+        return auth[7:].strip()
+    return str(request.query_params.get('token') or '')
 
 # ── Global state ──────────────────────────────────────────────────────────────
 # Bounds so a long-running console process can't grow unbounded: the SSE queue
@@ -1127,6 +1153,14 @@ margin-right:5px;vertical-align:middle}
 
 </div>
 <script>
+// Web-console auth: attach the token (stored locally) to every fetch + the SSE
+// stream. On a 401 prompt for it once and store. No token configured server-side
+// (loopback default) → requests pass through untouched.
+function asaTok(){return localStorage.getItem('asaToken')||'';}
+function asaUrl(u){var t=asaTok();return t?u+(u.indexOf('?')<0?'?':'&')+'token='+encodeURIComponent(t):u;}
+var _asaFetch=window.fetch;
+window.fetch=function(u,o){o=o||{};var h=o.headers||{};var t=asaTok();if(t)h['Authorization']='Bearer '+t;o.headers=h;
+  return _asaFetch(u,o).then(function(r){if(r.status===401){var nt=prompt('Web console token:');if(nt){localStorage.setItem('asaToken',nt.trim());location.reload();}}return r;});};
 const con=document.getElementById('con'),dot=document.getElementById('dot'),
 stxt=document.getElementById('stxt');
 let es=null;
@@ -1215,7 +1249,7 @@ function metrics(data){
 
 function sse(){
   if(es)es.close();
-  es=new EventSource('/events');
+  es=new EventSource(asaUrl('/events'));
   es.onopen=()=>setConn(true);
   es.onerror=()=>{setConn(false);setTimeout(sse,3000)};
   es.onmessage=e=>{
@@ -1612,7 +1646,21 @@ log('Web console ready. Accessible on your local network.','ok');
 # ── FastAPI setup ─────────────────────────────────────────────────────────────
 
 if _FASTAPI_OK:
-    app = FastAPI(title='Advanced Site Analyzer', docs_url=None, redoc_url=None)
+
+    async def require_token(request: Request):
+        """App-wide auth gate. When a token is active (``_AUTH_TOKEN``), every
+        request outside ``_PUBLIC_PATHS`` must present it (Bearer header or
+        ``?token=``); constant-time compared. No active token → open (the
+        loopback single-user default). 401 on missing/invalid."""
+        if not _AUTH_TOKEN or request.url.path in _PUBLIC_PATHS:
+            return
+        provided = _request_token(request)
+        if not provided or not hmac.compare_digest(provided, _AUTH_TOKEN):
+            raise HTTPException(status_code=401,
+                                detail='missing or invalid web console token')
+
+    app = FastAPI(title='Advanced Site Analyzer', docs_url=None, redoc_url=None,
+                  dependencies=[Depends(require_token)])
     app.add_middleware(
         CORSMiddleware,
         allow_origins=['*'],
@@ -2071,11 +2119,36 @@ def print_access_url(port: int = 5000):
     print()
 
 
-def start_server(host: str = '0.0.0.0', port: int = 5000, log_level: str = 'warning'):
+def resolve_web_console(host: Optional[str] = None) -> tuple:
+    """Resolve (host, token) for the console from settings / env / explicit host.
+
+    Safe by default: host is loopback unless ``web_console.allow_lan`` (or an
+    explicit non-loopback ``host``) opts into a LAN bind. The token comes from
+    ``ASA_WEB_TOKEN`` or ``web_console.token``; a LAN bind with no token gets a
+    generated one so the console is never reachable from the LAN unauthenticated.
+    Loopback with no token stays open (single-user desktop)."""
+    cfg = load_settings().get('web_console') or {}
+    if host is None:
+        host = '0.0.0.0' if cfg.get('allow_lan') else str(cfg.get('host') or '127.0.0.1')
+    token = (os.environ.get('ASA_WEB_TOKEN') or str(cfg.get('token') or '')).strip()
+    if not token and not _is_loopback(host):
+        token = secrets.token_urlsafe(24)
+        print('\n  [web] LAN bind without a configured token — generated one:')
+        print(f'  [web]   token: {token}')
+        print('  [web] Send it as "Authorization: Bearer <token>" or ?token=<token>.\n')
+    return host, token
+
+
+def start_server(host: Optional[str] = None, port: int = 5000,
+                 log_level: str = 'warning'):
     if not _FASTAPI_OK:
         print('[web] fastapi/uvicorn not installed.')
         print('[web] Run: pip install fastapi "uvicorn[standard]"')
         return
+    global _AUTH_TOKEN
+    host, _AUTH_TOKEN = resolve_web_console(host)
+    print(f"  [web] bind: {host}:{port}  ·  auth: "
+          f"{'token required' if _AUTH_TOKEN else 'none (loopback)'}")
     print_access_url(port)
     uvicorn.run(app, host=host, port=port, log_level=log_level)
 

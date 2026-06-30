@@ -74,6 +74,13 @@ DEFAULT_SETTINGS = {
     # CVE Intelligence (EPIC 3) — optional NVD API key. Empty = keyless (works,
     # just a lower rate limit); never required (no mandatory cloud dependency).
     'nvd_api_key': '',
+    # LAN web console (remote/web_app.py) — safe by default. 'host' is the bind
+    # address (loopback by default, so the console is NOT reachable from the LAN
+    # unless 'allow_lan' is set, which binds 0.0.0.0). 'token' gates every data /
+    # mutating endpoint when set; a LAN bind with no token auto-generates one at
+    # startup. Loopback with no token stays open (single-user desktop). The token
+    # can also be supplied out-of-band via the ASA_WEB_TOKEN env var.
+    'web_console': {'host': '127.0.0.1', 'allow_lan': False, 'token': ''},
 }
 
 MAX_TARGETS = 100

@@ -2473,3 +2473,37 @@ web endpoint mirroring `/missions.csv`. Tests: `tests/test_report_export.py`
 (endpoint).
 
 ---
+
+### Web Console Auth & Safe Bind (CLOSED 2026-06-30)
+
+The LAN web console (`remote/web_app.py`) gained mutating endpoints (mission run,
+tool-run → store ingestion) while still binding `0.0.0.0` with no authentication —
+the highest-priority stability/safety gap. Closed safely, offline, no new deps:
+
+- **Safe bind by default.** `resolve_web_console(host=None)` resolves (host, token)
+  from `settings.json` `web_console` + env. Default host is **`127.0.0.1`** (not
+  reachable from the LAN); a LAN bind is explicit opt-in via
+  `web_console.allow_lan` (→ `0.0.0.0`) or an explicit non-loopback `host`.
+  `start_server` default host changed `0.0.0.0` → settings-resolved loopback.
+- **Token gate.** One app-wide dependency `require_token` (FastAPI
+  `dependencies=[Depends(...)]`) — when a token is active, every request outside
+  `_PUBLIC_PATHS` (just `/`, the static shell) must present it via
+  `Authorization: Bearer` **or** `?token=` (so a browser EventSource/link works),
+  constant-time compared (`hmac.compare_digest`). 401 on missing/invalid.
+- **No-token rule.** Loopback + no token → open (single-user desktop). A **LAN**
+  bind with no configured token **auto-generates** one (`secrets.token_urlsafe`)
+  and prints it once → the console is never LAN-reachable unauthenticated. Token
+  source: `web_console.token` or `ASA_WEB_TOKEN` env (never logged in full).
+- **Dashboard.** A small JS shim attaches the token (localStorage; prompts once
+  on a 401) to every `fetch` + the SSE URL.
+- **Config:** `web_console: {host, allow_lan, token}` added to
+  `core.config.DEFAULT_SETTINGS`.
+
+**Decisions (locked):** D1 default loopback, LAN explicit opt-in; D2 Bearer +
+`?token=`, one app-wide dependency; D3 loopback+no-token = open, LAN requires a
+token (auto-generated if unset); D4 token in settings.json + `ASA_WEB_TOKEN`;
+D5 stdlib `secrets`/`hmac`, no new deps. Tests: `tests/test_web_auth.py`
+(host/token resolution, loopback open, LAN auto-token, env override, live gate:
+public `/`, 401 without token, Bearer/`?token=` accept, mutating POST gated).
+
+---
