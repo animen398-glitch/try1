@@ -34,7 +34,21 @@ def test_seed_returns_portfolio_summary(tmp_path):
     assert s["remediation"] == 4
     assert s["audit_runs"] == 3
     assert s["missions"] == 3
+    assert s["engagements"] == 1
     assert s["company"] == "Acme Corp"
+
+
+def test_seed_engagement_present_and_linked(tmp_path):
+    root, _ = _seed(tmp_path)
+    from core.engagement_store import EngagementStore
+    store = EngagementStore(root / "data" / "engagements.db")
+    rows = store.list_engagements()
+    assert len(rows) == 1
+    payload = rows[0]["payload"]
+    assert payload["status"] == "reporting"
+    assert payload["authorization"]["accepted"] is True
+    assert payload["linked_mission_ids"] and payload["linked_audit_run_ids"]
+    assert payload["linked_finding_ids"]
 
 
 def test_seed_writes_self_contained_layout(tmp_path):

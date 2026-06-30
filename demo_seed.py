@@ -249,6 +249,31 @@ def _seed_missions(missions_store, slug: str, audit_run_id: str,
     return 3
 
 
+def _seed_engagement(engagements_store, slug: str, company: str, *,
+                     mission_id: str, audit_run_id: str, finding_id: str) -> int:
+    """Seed one authorized engagement on the demo project, mid-flight in
+    'reporting', linking the demo mission + audit run + finding — so the whole
+    F1–F4 engagement backend (contract / store / links / report) is populated."""
+    from core import engagement as eng
+
+    e = eng.create_engagement(
+        company, slug,
+        scope={'allowed_domains': [slug]},
+        roe={'passive_only': False, 'active_scan_enabled': True,
+             'rate_limit': '1 rps', 'window': '09:00-17:00 UTC',
+             'emergency_contact': 'soc@example.com'},
+        authorization={'accepted': True, 'authorized_by': 'Client CISO',
+                       'reference': 'SOW-2026-001', 'notes': 'Authorized scope'})
+    e = eng.advance_engagement_status(e, 'authorized')
+    e = eng.advance_engagement_status(e, 'active')
+    e = eng.link_mission(e, mission_id)
+    e = eng.link_audit_run(e, audit_run_id)
+    e = eng.link_finding(e, finding_id)
+    e = eng.advance_engagement_status(e, 'reporting')
+    engagements_store.save_engagement(e, now='2026-06-28T11:00:00')
+    return 1
+
+
 def _seed_iac_sample(data_root: Path) -> Path:
     sample = data_root / 'demo_iac'
     sample.mkdir(parents=True, exist_ok=True)
@@ -294,6 +319,7 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     from core.audit_store import AuditRunStore
     from core.findings_store import FindingsStore
     from core.findings_store import INACTIVE_STATUSES
+    from core.engagement_store import EngagementStore
     from core.mission_store import MissionStore
     from core.project import ProjectStore
     from core.remediation import set_task
@@ -303,11 +329,12 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     assets = AssetStore(db_path=pm.get_db_path('assets.db'))
     audits = AuditRunStore(db_path=pm.get_db_path('audit_runs.db'))
     missions = MissionStore(pm.get_db_path('missions.db'))
+    engagements = EngagementStore(pm.get_db_path('engagements.db'))
     companies = CompanyRegistry(path=pm.get_db_path('companies.json'))
     store = ProjectStore(str(data_root))            # projects -> data_root/Projects
 
     company_slug = companies.create(company_name)
-    n_proj = n_scan = n_find = n_rem = n_audit = n_mission = 0
+    n_proj = n_scan = n_find = n_rem = n_audit = n_mission = n_engagement = 0
 
     for spec in _portfolio():
         proj = store.get_or_create(spec['url'])
@@ -343,10 +370,17 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
         if active_rows:
             run_id = _seed_audit_run(audits, slug, active_rows)
             n_audit += 1
-            # Showcase the Mission Center on the first (richest) project only.
+            # Showcase the Mission Center + Engagement on the first (richest)
+            # project only.
             if n_mission == 0:
                 n_mission += _seed_missions(missions, slug, run_id,
                                             active_rows[0]['id'])
+                seeded = missions.list_missions(slug)
+                if seeded:
+                    n_engagement += _seed_engagement(
+                        engagements, slug, company_name,
+                        mission_id=seeded[0]['id'], audit_run_id=run_id,
+                        finding_id=active_rows[0]['id'])
 
     _seed_iac_sample(data_root)
 
@@ -363,7 +397,8 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
 
     return {'company': company_name, 'projects': n_proj, 'scans': n_scan,
             'findings': n_find, 'remediation': n_rem, 'audit_runs': n_audit,
-            'missions': n_mission, 'data_root': str(data_root)}
+            'missions': n_mission, 'engagements': n_engagement,
+            'data_root': str(data_root)}
 
 
 def main(argv=None) -> int:
@@ -386,7 +421,7 @@ def main(argv=None) -> int:
     summary = seed(root)
     print('Demo workspace seeded:')
     for k in ('company', 'projects', 'scans', 'findings', 'remediation',
-              'audit_runs', 'missions'):
+              'audit_runs', 'missions', 'engagements'):
         print(f'  {k:12}: {summary[k]}')
     print(f'  location    : {summary["data_root"]}')
     print('\nLaunch the app against it:')
