@@ -2632,3 +2632,37 @@ fixed 3-stage entry→pivot→target chain and is deterministic/testable; node c
 feeds the existing detail panel (no 3-pane restructure).
 
 ---
+
+### Finding Assignment & Comments Triage (CLOSED 2026-06-30)
+
+DefectDojo-style triage on top of the existing lifecycle/SLA — **event-sourced**
+over `finding_events` (the `REMEDIATION` feature is the exact template), so no
+second store and no schema migration:
+
+- **`core/findings_store.py`:** `EVENT_TYPES += 'ASSIGNED', 'COMMENT'`.
+  `assign(finding_id, assignee)` / `get_assignee(finding_id)` (latest `ASSIGNED`
+  event wins; `''` unassigns) / `assignees(project)` (latest-per-finding map for
+  list annotation; cleared dropped). `add_comment(finding_id, text, author='')`
+  (append-only `COMMENT` event, note = JSON `{author,text}`) / `comments(
+  finding_id)` (thread, oldest first). All validate the finding exists
+  (`KeyError`) and route through `_log_event` — full history stays in
+  `finding_events`, carried by the project_io bundle automatically.
+- **GUI Findings tab:** a "Триаж" row (Assignee field + Назначить, Comment field
+  + Добавить) acting on the selected finding via `_run_async`; the detail panel
+  shows the current assignee + a readable comment thread (raw `COMMENT` events
+  hidden from the generic history to avoid the JSON note). Assignee field
+  prefills with the current value.
+- **Web parity (`remote/web_app.py`):** `POST /findings/{id}/assign`
+  (`{assignee}`), `POST /findings/{id}/comment` (`{text, author?}`),
+  `GET /findings/{id}/triage` (assignee + thread); 404 unknown / 400 empty
+  comment, mirroring `/findings/{id}/status`.
+- Tests: `tests/test_findings_store.py` (assign latest-wins/unassign, assignees
+  map, comments order, empty/unknown guards), `tests/test_web_findings.py`
+  (helpers + TestClient assign/comment/triage), `tests/test_findings_tab.py`
+  (assign/comment workers).
+
+**Decisions (locked):** event-sourced over `finding_events` (no second
+store/migration); assignment = latest `ASSIGNED` wins, comments append-only;
+surfaced in detail + web (no new findings-table column, per scope choice).
+
+---

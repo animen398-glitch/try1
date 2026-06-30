@@ -411,3 +411,59 @@ def test_location_less_finding_does_not_collide_across_projects(tmp_path):
     s.set_status(scoped_id('a.com', dns['id']), 'IGNORED')
     assert s.get(scoped_id('a.com', dns['id']))['status'] == 'IGNORED'
     assert s.get(scoped_id('b.com', dns['id']))['status'] == 'OPEN'
+
+
+# ── triage: assignment + comments (event-sourced over finding_events) ──────────
+
+def test_assign_latest_wins_and_unassign(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    s.upsert('p', f)
+    fid = _sid('p', f)
+    assert s.get_assignee(fid) == ''                 # unassigned by default
+    s.assign(fid, 'alice')
+    assert s.get_assignee(fid) == 'alice'
+    s.assign(fid, 'bob')                             # reassign — latest wins
+    assert s.get_assignee(fid) == 'bob'
+    s.assign(fid, '')                                # unassign
+    assert s.get_assignee(fid) == ''
+
+
+def test_assignees_map_drops_empty(tmp_path):
+    s = _store(tmp_path)
+    f1, f2 = _finding(location='https://x.com/a'), _finding(location='https://x.com/b')
+    s.upsert('p', f1); s.upsert('p', f2)
+    s.assign(_sid('p', f1), 'alice')
+    s.assign(_sid('p', f2), 'bob')
+    s.assign(_sid('p', f2), '')                      # cleared → dropped from map
+    assert s.assignees('p') == {_sid('p', f1): 'alice'}
+
+
+def test_assign_unknown_finding_raises(tmp_path):
+    s = _store(tmp_path)
+    with pytest.raises(KeyError):
+        s.assign('ghost', 'alice')
+
+
+def test_comments_append_in_order(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    s.upsert('p', f)
+    fid = _sid('p', f)
+    assert s.comments(fid) == []
+    s.add_comment(fid, 'first', author='alice')
+    s.add_comment(fid, 'second')                     # anonymous
+    thread = s.comments(fid)
+    assert [c['text'] for c in thread] == ['first', 'second']
+    assert thread[0]['author'] == 'alice' and thread[1]['author'] == ''
+    assert all(c['at'] for c in thread)
+
+
+def test_comment_empty_or_unknown_raises(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    s.upsert('p', f)
+    with pytest.raises(ValueError):
+        s.add_comment(_sid('p', f), '   ')
+    with pytest.raises(KeyError):
+        s.add_comment('ghost', 'hi')

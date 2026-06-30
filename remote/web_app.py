@@ -477,6 +477,45 @@ def _findings_set_status(finding_id: str, status: str,
         return {'error': str(e)}
 
 
+def _finding_assign(finding_id: str, assignee: Optional[str] = None) -> dict:
+    """Assign (or, with an empty value, unassign) one finding — event-sourced over
+    finding_events. Returns the current assignee, or an ``{'error': ...}``."""
+    try:
+        who = FindingsStore().assign(finding_id, assignee or '')
+        return {'status': 'ok', 'finding_id': finding_id, 'assignee': who}
+    except KeyError:
+        return {'error': f'finding not found: {finding_id}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _finding_comment(finding_id: str, text: str,
+                     author: Optional[str] = None) -> dict:
+    """Append a triage comment to one finding (event-sourced). Returns the stored
+    comment, or an ``{'error': ...}`` for empty text / an unknown finding."""
+    try:
+        comment = FindingsStore().add_comment(finding_id, text, author=author or '')
+        return {'status': 'ok', 'finding_id': finding_id, 'comment': comment}
+    except KeyError:
+        return {'error': f'finding not found: {finding_id}'}
+    except ValueError as e:
+        return {'error': str(e)}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _finding_triage(finding_id: str) -> dict:
+    """Read-only triage view of one finding: current assignee + comment thread."""
+    try:
+        store = FindingsStore()
+        if store.get(finding_id) is None:
+            return {'error': f'finding not found: {finding_id}'}
+        return {'finding_id': finding_id, 'assignee': store.get_assignee(finding_id),
+                'comments': store.comments(finding_id)}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 # ── Asset Inventory (web parity) ────────────────────────────────────────────────
 # Thin read-only wrapper over core.asset_store (the same SQLite store the GUI tab
 # and CollectionRunner use). Assets are observed, not user-triaged, so there is no
@@ -1853,6 +1892,13 @@ if _FASTAPI_OK:
         status: str
         note: Optional[str] = None
 
+    class AssignRequest(BaseModel):
+        assignee: str = ''
+
+    class CommentRequest(BaseModel):
+        text: str
+        author: Optional[str] = None
+
     @app.get('/findings')
     async def findings(project: Optional[str] = None,
                        status: Optional[str] = None,
@@ -1876,6 +1922,31 @@ if _FASTAPI_OK:
             code = 404 if 'not found' in out['error'] else 400
             return JSONResponse(out, status_code=code)
         await _push(f'[findings] {finding_id[:8]} → {body.status}', 'ok')
+        return out
+
+    @app.get('/findings/{finding_id}/triage')
+    async def finding_triage(finding_id: str):
+        out = _finding_triage(finding_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.post('/findings/{finding_id}/assign')
+    async def finding_assign(finding_id: str, body: AssignRequest):
+        out = _finding_assign(finding_id, body.assignee)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[findings] {finding_id[:8]} assigned → '
+                    f'{out["assignee"] or "—"}', 'ok')
+        return out
+
+    @app.post('/findings/{finding_id}/comment')
+    async def finding_comment(finding_id: str, body: CommentRequest):
+        out = _finding_comment(finding_id, body.text, body.author)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[findings] {finding_id[:8]} commented', 'ok')
         return out
 
     @app.get('/assets')

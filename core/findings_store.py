@@ -48,7 +48,7 @@ SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
                'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED', 'ISSUE_CREATED',
-               'REMEDIATION')
+               'REMEDIATION', 'ASSIGNED', 'COMMENT')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -576,6 +576,84 @@ class FindingsStore(SQLiteStore):
                 'finding_status': r['status'], 'updated_at': r['at'], 'task': task,
             }
         return list(latest.values())
+
+    # ── triage: assignment + comments (event-sourced over finding_events) ──────
+
+    def assign(self, finding_id, assignee, *, now: Optional[str] = None) -> str:
+        """Set (or clear, with ``''``) a finding's current assignee — an
+        ``ASSIGNED`` event whose note is the assignee. Latest event wins (see
+        :meth:`get_assignee`); the full history stays in ``finding_events`` (no
+        second table). Raises ``KeyError`` for an unknown finding."""
+        clean = str(assignee or '').strip()
+        with self._connect() as conn:
+            if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                            (str(finding_id),)).fetchone() is None:
+                raise KeyError(finding_id)
+            self._log_event(conn, str(finding_id), 'ASSIGNED',
+                            note=clean, at=now or _now())
+        return clean
+
+    def get_assignee(self, finding_id) -> str:
+        """The finding's current assignee (latest ``ASSIGNED`` event's note), or ''."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT note FROM finding_events WHERE finding_id = ?"
+                " AND type = 'ASSIGNED' ORDER BY id DESC LIMIT 1",
+                (str(finding_id),)).fetchone()
+        return (row['note'] or '') if row else ''
+
+    def assignees(self, project: str) -> Dict[str, str]:
+        """``finding_id → current assignee`` for a project (latest ``ASSIGNED`` per
+        finding; cleared/empty assignees dropped). Annotates the findings list —
+        joins ``finding_events`` to ``findings``, no second table."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT e.finding_id fid, e.note note FROM finding_events e"
+                " JOIN findings f ON f.id = e.finding_id"
+                " WHERE f.project = ? AND e.type = 'ASSIGNED' ORDER BY e.id",
+                (project,)).fetchall()
+        latest: Dict[str, str] = {}
+        for r in rows:                       # ascending id → last write wins
+            latest[r['fid']] = r['note'] or ''
+        return {fid: who for fid, who in latest.items() if who}
+
+    def add_comment(self, finding_id, text, *, author: str = '',
+                    now: Optional[str] = None) -> Dict:
+        """Append a triage ``COMMENT`` event (note = JSON ``{author, text}``).
+
+        Comments are append-only and event-sourced (full thread in
+        ``finding_events``, no second table). Raises ``ValueError`` on empty text,
+        ``KeyError`` for an unknown finding. Returns the stored ``{author, text,
+        at}``."""
+        body = str(text or '').strip()
+        if not body:
+            raise ValueError('comment text is required')
+        who = str(author or '').strip()
+        at = now or _now()
+        with self._connect() as conn:
+            if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                            (str(finding_id),)).fetchone() is None:
+                raise KeyError(finding_id)
+            self._log_event(conn, str(finding_id), 'COMMENT',
+                            note=json.dumps({'author': who, 'text': body},
+                                            ensure_ascii=False), at=at)
+        return {'author': who, 'text': body, 'at': at}
+
+    def comments(self, finding_id) -> List[Dict]:
+        """All triage comments for a finding, oldest first: ``[{author, text, at}]``."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT note, at FROM finding_events WHERE finding_id = ?"
+                " AND type = 'COMMENT' ORDER BY id", (str(finding_id),)).fetchall()
+        out: List[Dict] = []
+        for r in rows:
+            try:
+                payload = json.loads(r['note']) if r['note'] else {}
+            except (ValueError, TypeError):
+                payload = {}
+            out.append({'author': payload.get('author', ''),
+                        'text': payload.get('text', ''), 'at': r['at']})
+        return out
 
     def reopen_dates(self, project: Optional[str] = None) -> Dict[str, str]:
         """``finding_id → timestamp of its most recent REOPENED event``.

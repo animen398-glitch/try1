@@ -126,6 +126,28 @@ class FindingsTabMixin:
         change_grp.setLayout(change_row)
         layout.addWidget(change_grp)
 
+        # ── triage row: assignment + comment (act on the selected finding) ───
+        triage_grp = SectionGroupBox("Триаж выбранной находки")
+        triage_row = QHBoxLayout()
+        triage_row.addWidget(QLabel("Исполнитель:"))
+        self.findings_assignee = QLineEdit()
+        self.findings_assignee.setPlaceholderText("кому назначить (пусто = снять)")
+        triage_row.addWidget(self.findings_assignee)
+        self.btn_findings_assign = StyledButton("Назначить", style='secondary')
+        self.btn_findings_assign.setEnabled(False)
+        self.btn_findings_assign.clicked.connect(self._apply_finding_assign)
+        triage_row.addWidget(self.btn_findings_assign)
+        triage_row.addWidget(QLabel("Комментарий:"))
+        self.findings_comment = QLineEdit()
+        self.findings_comment.setPlaceholderText("добавить комментарий")
+        triage_row.addWidget(self.findings_comment, stretch=1)
+        self.btn_findings_comment = StyledButton("Добавить", style='secondary')
+        self.btn_findings_comment.setEnabled(False)
+        self.btn_findings_comment.clicked.connect(self._apply_finding_comment)
+        triage_row.addWidget(self.btn_findings_comment)
+        triage_grp.setLayout(triage_row)
+        layout.addWidget(triage_grp)
+
         # ── detail / history panel ──────────────────────────────────────────
         detail_grp = SectionGroupBox("Детали и история выбранной находки")
         detail_layout = QVBoxLayout()
@@ -334,12 +356,17 @@ class FindingsTabMixin:
         self._findings_records = rows          # full list — selection + CSV export
         self._findings_paginator.set_rows(rows)
         self.findings_detail.clear()
-        self.btn_findings_apply.setEnabled(False)
+        self._set_triage_enabled(False)
 
     def _on_findings_page_changed(self):
-        # A new page has no carried-over selection; clear the stale detail/apply.
+        # A new page has no carried-over selection; clear the stale detail/triage.
         self.findings_detail.clear()
-        self.btn_findings_apply.setEnabled(False)
+        self._set_triage_enabled(False)
+
+    def _set_triage_enabled(self, enabled: bool):
+        self.btn_findings_apply.setEnabled(enabled)
+        self.btn_findings_assign.setEnabled(enabled)
+        self.btn_findings_comment.setEnabled(enabled)
 
     # ── selection / detail ────────────────────────────────────────────────────
 
@@ -354,15 +381,15 @@ class FindingsTabMixin:
     def _on_finding_row_selected(self):
         rec = self._selected_finding()
         if not rec:
-            self.btn_findings_apply.setEnabled(False)
+            self._set_triage_enabled(False)
             return
-        self.btn_findings_apply.setEnabled(True)
+        self._set_triage_enabled(True)
         # Preselect the current status in the change combo.
         i = self.findings_new_status.findData(rec.get('status'))
         if i >= 0:
             self.findings_new_status.setCurrentIndex(i)
         self._show_finding_detail(rec)
-        # Load the audit trail off the GUI thread.
+        # Load the audit trail + triage state off the GUI thread.
         fid = rec.get('id')
         if fid:
             self._run_async(lambda f=fid: self._query_finding_events(f),
@@ -371,7 +398,10 @@ class FindingsTabMixin:
     @staticmethod
     def _query_finding_events(finding_id: str) -> dict:
         try:
-            return {'id': finding_id, 'events': FindingsStore().events(finding_id)}
+            store = FindingsStore()
+            return {'id': finding_id, 'events': store.events(finding_id),
+                    'assignee': store.get_assignee(finding_id),
+                    'comments': store.comments(finding_id)}
         except Exception as e:  # noqa: BLE001
             return {'id': finding_id, 'error': str(e)}
 
@@ -380,9 +410,14 @@ class FindingsTabMixin:
         # Discard if the selection moved on while the query ran.
         if not rec or rec.get('id') != result.get('id'):
             return
-        self._show_finding_detail(rec, result.get('events'))
+        # Prefill the assignee field with the current value (empty = unassigned).
+        self.findings_assignee.setText(result.get('assignee') or '')
+        self._show_finding_detail(rec, result.get('events'),
+                                  assignee=result.get('assignee') or '',
+                                  comments=result.get('comments') or [])
 
-    def _show_finding_detail(self, rec: dict, events=None):
+    def _show_finding_detail(self, rec: dict, events=None, *, assignee='',
+                             comments=None):
         lines = [
             f"Заголовок:  {rec.get('title', '')}",
             f"Категория:  {rec.get('category', '')}   "
@@ -390,6 +425,7 @@ class FindingsTabMixin:
             f"Статус: {STATUS_LABELS.get(rec.get('status'), rec.get('status', ''))}",
             f"Rule:       {rec.get('rule_id', '')}",
             f"ID:         {rec.get('id', '')}",
+            f"Исполнитель: {assignee or '—'}",
             f"Обнаружено: {rec.get('first_seen_at', '')} → {rec.get('last_seen_at', '')}",
         ]
         # KEV/EPSS exploitability badge — the strongest "fix now" signal, shown
@@ -432,9 +468,18 @@ class FindingsTabMixin:
                 chain.get('endpoint'), chain.get('host'), chain.get('ip'), asn) if x)
             if trail:
                 lines.append(f"Цепочка:    {trail}")
+        # Triage comments thread (rendered readably; the raw COMMENT events are
+        # skipped in the history below to avoid showing their JSON note twice).
+        if comments:
+            lines.append("Комментарии:")
+            for c in comments:
+                who = c.get('author') or '—'
+                lines.append(f"  [{(c.get('at') or '')[:16]}] {who}: {c.get('text', '')}")
         if events:
             lines.append("История:")
             for ev in events:
+                if ev.get('type') == 'COMMENT':
+                    continue   # shown in the Comments section above
                 transition = ''
                 if ev.get('from_status') or ev.get('to_status'):
                     transition = f" {ev.get('from_status') or '—'}→{ev.get('to_status') or '—'}"
@@ -474,3 +519,58 @@ class FindingsTabMixin:
             return
         # Reload so counts, the row's status and project tallies all refresh.
         self._refresh_findings()
+
+    # ── triage: assignment + comment (write) ────────────────────────────────────
+
+    def _apply_finding_assign(self):
+        rec = self._selected_finding()
+        fid = rec.get('id')
+        if not fid:
+            return
+        who = self.findings_assignee.text().strip()
+        self._set_triage_enabled(False)
+        self._set_busy(True)
+        self._run_async(lambda f=fid, w=who: self._write_finding_assign(f, w),
+                        self._on_triage_written)
+
+    @staticmethod
+    def _write_finding_assign(finding_id: str, assignee: str) -> dict:
+        try:
+            FindingsStore().assign(finding_id, assignee)
+            return {'ok': True, 'msg': (f"назначено: {assignee}" if assignee
+                                        else "назначение снято")}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    def _apply_finding_comment(self):
+        rec = self._selected_finding()
+        fid = rec.get('id')
+        if not fid:
+            return
+        text = self.findings_comment.text().strip()
+        if not text:
+            self.findings_status.setText("Комментарий пуст")
+            return
+        self._set_triage_enabled(False)
+        self._set_busy(True)
+        self._run_async(lambda f=fid, t=text: self._write_finding_comment(f, t),
+                        self._on_triage_written)
+
+    @staticmethod
+    def _write_finding_comment(finding_id: str, text: str) -> dict:
+        try:
+            FindingsStore().add_comment(finding_id, text)
+            return {'ok': True, 'msg': "комментарий добавлен"}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    def _on_triage_written(self, result: dict):
+        self._set_busy(False)
+        self.findings_comment.clear()
+        if result.get('error'):
+            self.findings_status.setText(f"Ошибка триажа: {result['error']}")
+            self._set_triage_enabled(bool(self._selected_finding()))
+            return
+        self.findings_status.setText(result.get('msg') or "Готово")
+        # Refresh the detail + triage state of the still-selected finding.
+        self._on_finding_row_selected()

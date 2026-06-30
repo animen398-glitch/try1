@@ -18,6 +18,19 @@ def _window(qapp):
     return FindingsHost()
 
 
+def test_triage_workers_assign_and_comment(qapp):
+    fs = FindingsStore()
+    fid = fs.upsert('p1', {'id': 'fp-x', 'category': 'vuln', 'rule_id': 'r',
+                           'title': 't', 'severity': 'high'})['finding']['id']
+    assert FindingsTabMixin._write_finding_assign(fid, 'alice').get('ok')
+    assert fs.get_assignee(fid) == 'alice'
+    assert FindingsTabMixin._write_finding_comment(fid, 'investigate').get('ok')
+    assert fs.comments(fid)[0]['text'] == 'investigate'
+    # worker errors surface as data, never raise
+    assert 'error' in FindingsTabMixin._write_finding_assign('ghost', 'x')
+    assert 'error' in FindingsTabMixin._write_finding_comment('ghost', 'x')
+
+
 def test_findings_table_paginates_and_maps_selection(qapp):
     w = FindingsHost()
     rows = [{'severity': 'low', 'category': 'c', 'title': f't{i}',

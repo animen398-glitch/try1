@@ -115,6 +115,27 @@ def test_findings_sarif_helper_always_valid_when_empty():
 
 # ── live endpoints ─────────────────────────────────────────────────────────────
 
+def test_finding_assign_and_triage_helpers():
+    _seed()
+    fid = scoped_id('p1', 'f-a')
+    assert wa._finding_assign(fid, 'alice')['assignee'] == 'alice'
+    assert wa._finding_assign(fid, '')['assignee'] == ''        # unassign
+    t = wa._finding_triage(fid)
+    assert t['assignee'] == '' and t['comments'] == []
+    assert 'not found' in wa._finding_assign('zzz', 'x').get('error', '')
+    assert 'not found' in wa._finding_triage('zzz').get('error', '')
+
+
+def test_finding_comment_helper():
+    _seed()
+    fid = scoped_id('p1', 'f-a')
+    out = wa._finding_comment(fid, 'looks exploitable', author='alice')
+    assert out['comment']['text'] == 'looks exploitable'
+    assert wa._finding_triage(fid)['comments'][0]['author'] == 'alice'
+    assert 'required' in wa._finding_comment(fid, '   ').get('error', '')  # empty
+    assert 'not found' in wa._finding_comment('zzz', 'x').get('error', '')
+
+
 def test_findings_endpoints_with_testclient():
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")
@@ -142,6 +163,21 @@ def test_findings_endpoints_with_testclient():
                        json={'status': 'NOPE'}).status_code == 400
     assert client.post('/findings/zzz/status',
                        json={'status': 'FIXED'}).status_code == 404
+
+    # triage: assign + comment + read-back
+    r = client.post(f'/findings/{fid}/assign', json={'assignee': 'alice'})
+    assert r.status_code == 200 and r.json()['assignee'] == 'alice'
+    r = client.post(f'/findings/{fid}/comment',
+                    json={'text': 'investigate', 'author': 'bob'})
+    assert r.status_code == 200 and r.json()['comment']['text'] == 'investigate'
+    body = client.get(f'/findings/{fid}/triage').json()
+    assert body['assignee'] == 'alice' and body['comments'][0]['author'] == 'bob'
+    # empty comment -> 400; unknown finding -> 404
+    assert client.post(f'/findings/{fid}/comment',
+                       json={'text': ''}).status_code == 400
+    assert client.post('/findings/zzz/assign',
+                       json={'assignee': 'x'}).status_code == 404
+    assert client.get('/findings/zzz/triage').status_code == 404
 
 
 def test_findings_sarif_endpoint_with_testclient():
