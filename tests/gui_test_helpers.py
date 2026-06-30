@@ -20,6 +20,7 @@ from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_audit_runs import AuditRunsTabMixin
 from gui.tab_missions import MissionsTabMixin
+from gui.tab_engagement import EngagementsTabMixin
 
 
 class _Status:
@@ -171,6 +172,12 @@ class MissionsHost(_BaseHost, MissionsTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
         self._build_missions_tab()
+
+
+class EngagementsHost(_BaseHost, EngagementsTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._build_engagement_tab()
 
 
 # ── e2e hosts: synchronous _run_async so QTest clicks drive the full chain ───────

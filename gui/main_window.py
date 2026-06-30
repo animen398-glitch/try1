@@ -28,6 +28,7 @@ from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_iac import IacTabMixin
 from gui.tab_audit_runs import AuditRunsTabMixin
 from gui.tab_missions import MissionsTabMixin
+from gui.tab_engagement import EngagementsTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_overview import OverviewTabMixin
 from gui.tab_dashboard import DashboardTabMixin
@@ -47,6 +48,7 @@ class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  AttackPathsTabMixin,
                  AccuracyTabMixin, TechnologyRiskTabMixin, OsintCatalogTabMixin,
                  IacTabMixin, AuditRunsTabMixin, MissionsTabMixin,
+                 EngagementsTabMixin,
                  TimelineTabMixin,
                  OverviewTabMixin, DashboardTabMixin, HistoryTabMixin):
     """Основное окно Advanced Site Analyzer.

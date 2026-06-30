@@ -149,6 +149,10 @@ class HistoryTabMixin:
         elif widget is getattr(self, '_missions_widget', None):
             if not getattr(self, '_missions_loaded', False) and not self._missions_loading:
                 self._refresh_mission_projects()
+        elif widget is getattr(self, '_engagement_widget', None):
+            if (not getattr(self, '_engagements_loaded', False)
+                    and not self._engagements_loading):
+                self._refresh_engagement_projects()
         elif widget is getattr(self, '_timeline_widget', None):
             if not self._timeline_loaded and not self._timeline_loading:
                 self._refresh_timeline()
