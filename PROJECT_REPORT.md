@@ -179,6 +179,11 @@
 > (`QAbstractButton.click()`) through the full handler→worker→callback→store/UI chain: Findings
 > assign/comment/status, Missions run-tool + «Из скана». Existing hosts/tests untouched. Current scale:
 > **full pytest 2406 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-07-01 (more table pagination): applied TablePaginator to the remaining high-volume tables —
+> Dashboard endpoints (drops the old [:200] cap), Intelligence, Accuracy; each keeps its full list for
+> selection + CSV and maps via record_at. Subdomain left as-is (streaming/in-place-updated table, bounded
+> per scan); the other table tabs are bounded-small. Current scale: **full pytest 2409 passed**, ruff
+> clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -189,7 +194,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2406 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2409 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

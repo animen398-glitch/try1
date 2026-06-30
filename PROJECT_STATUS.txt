@@ -5272,3 +5272,25 @@ E2E / GUI-INTERACTION TESTS (2026-07-01)
   ROADMAP_ASM_2.0.md. Коммит 3eb18aa6. Проверено: ruff clean, целевые+смежные
   GUI-сьюты зелёные, полный pytest зелёный (рост 2400 -> 2406; collect-only
   подтверждает 2406). Остаются (отложены): i18n, пагинация остальных таблиц.
+
+------------------------------------------------------------------------------
+GUI PAGINATION: DASHBOARD / INTELLIGENCE / ACCURACY (2026-07-01)
+------------------------------------------------------------------------------
+  Применён готовый TablePaginator к оставшимся ВЫСОКООБЪЁМНЫМ таблицам (тем же
+  паттерном, что Findings/Assets/Timeline):
+    Dashboard endpoints — снят старый обрез [:200]; теперь пагинируется ПОЛНЫЙ
+    список уникальных эндпоинтов (selection/detail маппится через record_at).
+    Intelligence (priority-ranked findings) + Accuracy (per-entity rows) — тот же
+    transform: render-row callback + paginator.set_rows + record_at; полный список
+    хранится для selection + CSV.
+  Subdomain ОСОЗНАННО оставлен как есть: это STREAMING-таблица (row_found/
+  row_updated добавляют + обновляют строки in-place во время живого скана,
+  трекинг через _subdomain_rows) — статичный list-paginator не подходит без
+  буфер-ризрайта; объём ограничен одним сканом. Остальные табличные вкладки
+  (exposure/criticality/technology-risk/osint/history/remediation/security/
+  attack-paths) — bounded-small, не пагинируются by design. Файлы:
+  gui/tab_dashboard.py, gui/tab_intelligence.py, gui/tab_accuracy.py,
+  tests/test_dashboard_detail.py, tests/test_intelligence_tab.py,
+  tests/test_accuracy_tab.py, ROADMAP_ASM_2.0.md. Коммит 3772364e. Проверено:
+  ruff clean, целевые+смежные зелёные, полный pytest зелёный (рост 2406 -> 2409;
+  collect-only подтверждает 2409). Остаётся (отложено): i18n.
