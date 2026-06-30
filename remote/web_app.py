@@ -1019,6 +1019,121 @@ def _mission_run_tool(mission_id: str, tool: str,
         return {'error': str(e)}
 
 
+# ── Engagements (Engagement & ROE Foundation, web parity) ────────────────────
+# Read + thin mutations over EngagementStore + the pure core.engagement contract
+# (mirrors the missions endpoints). Authorized-pentest only; no second store.
+
+def _engagements_list(project: Optional[str] = None) -> dict:
+    try:
+        from core.engagement_store import EngagementStore
+        rows = EngagementStore().list_engagements(project)
+        return {'project': project, 'engagements': [
+            {'engagement_id': r.get('id'), 'client': r.get('client'),
+             'project': r.get('project'), 'status': r.get('status'),
+             'updated_at': r.get('updated_at')}
+            for r in rows]}
+    except Exception as e:
+        return {'project': project, 'engagements': [], 'error': str(e)}
+
+
+def _engagement_view(engagement_id: str) -> dict:
+    try:
+        from core.engagement_store import EngagementStore
+        return {'engagement': EngagementStore().export_engagement(str(engagement_id))}
+    except KeyError:
+        return {'error': f'engagement not found: {engagement_id}'}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagement_create(client: str, project: str, *, scope=None, roe=None,
+                       authorization=None) -> dict:
+    """Create + persist a client-safe engagement. 400-shaped if not valid."""
+    try:
+        from core.engagement import create_engagement, validate_engagement
+        from core.engagement_store import EngagementStore
+        engagement = create_engagement(client, project, scope=scope, roe=roe,
+                                       authorization=authorization)
+        check = validate_engagement(engagement)
+        if not check['valid']:
+            return {'error': 'invalid engagement: ' + '; '.join(check['errors'])}
+        saved = EngagementStore().save_engagement(engagement)
+        return {'engagement_id': saved['id'], 'status': saved['status']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagement_advance(engagement_id: str, new_status: str) -> dict:
+    try:
+        from core.engagement import advance_engagement_status
+        from core.engagement_store import EngagementStore
+        store = EngagementStore()
+        row = store.get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        saved = store.save_engagement(
+            advance_engagement_status(row['payload'], str(new_status)))
+        return {'engagement_id': saved['id'], 'status': saved['status']}
+    except ValueError as e:
+        return {'error': str(e)}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagement_link(engagement_id: str, kind: str, ref_id: str) -> dict:
+    """Link an existing mission / audit_run / finding to the engagement (checked)."""
+    try:
+        from core import engagement_links as el
+        from core.engagement_store import EngagementStore
+        store = EngagementStore()
+        row = store.get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        linker = {'mission': el.link_mission_checked,
+                  'audit_run': el.link_audit_run_checked,
+                  'finding': el.link_finding_checked}.get(str(kind))
+        if linker is None:
+            return {'error': f'unknown link kind: {kind} '
+                             '(mission / audit_run / finding)'}
+        saved = store.save_engagement(linker(row['payload'], str(ref_id)))
+        return {'engagement_id': saved['id'], 'kind': str(kind),
+                'ref_id': str(ref_id)}
+    except ValueError as e:
+        return {'error': str(e)}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagement_prune_links(engagement_id: str) -> dict:
+    try:
+        from core.engagement_links import prune_stale_links
+        from core.engagement_store import EngagementStore
+        store = EngagementStore()
+        row = store.get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        out = prune_stale_links(row['payload'])
+        store.save_engagement(out['engagement'])
+        return {'engagement_id': str(engagement_id),
+                'removed_missions': out['removed_missions'],
+                'removed_runs': out['removed_runs'],
+                'removed_findings': out['removed_findings']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagement_report(engagement_id: str) -> dict:
+    try:
+        from core.engagement_report import build_engagement_report
+        from core.engagement_store import EngagementStore
+        row = EngagementStore().get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        return {'report': build_engagement_report(row['payload'])}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -2129,6 +2244,88 @@ if _FASTAPI_OK:
             return Response(out['error'], media_type='text/plain; charset=utf-8',
                             status_code=code)
         return Response(_mr.render_markdown(out['report']),
+                        media_type='text/markdown; charset=utf-8')
+
+    # ── Engagements ──────────────────────────────────────────────────────
+    class EngagementRequest(BaseModel):
+        client: str
+        project: str
+        scope: Optional[dict] = None
+        roe: Optional[dict] = None
+        authorization: Optional[dict] = None
+
+    class EngagementAdvanceRequest(BaseModel):
+        status: str
+
+    class EngagementLinkRequest(BaseModel):
+        kind: str          # mission | audit_run | finding
+        ref_id: str
+
+    @app.get('/engagements')
+    async def engagements(project: Optional[str] = None):
+        return JSONResponse(_engagements_list(project))
+
+    @app.post('/engagements')
+    async def engagement_create(body: EngagementRequest):
+        out = _engagement_create(body.client, body.project, scope=body.scope,
+                                 roe=body.roe, authorization=body.authorization)
+        if 'error' in out:
+            return JSONResponse(out, status_code=400)
+        await _push(f'[engagement] created {out["engagement_id"][:16]}', 'ok')
+        return out
+
+    @app.get('/engagements/{engagement_id}')
+    async def engagement(engagement_id: str):
+        out = _engagement_view(engagement_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.post('/engagements/{engagement_id}/advance')
+    async def engagement_advance(engagement_id: str,
+                                 body: EngagementAdvanceRequest):
+        out = _engagement_advance(engagement_id, body.status)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[engagement] {engagement_id[:8]} → {out["status"]}', 'ok')
+        return out
+
+    @app.post('/engagements/{engagement_id}/link')
+    async def engagement_link(engagement_id: str, body: EngagementLinkRequest):
+        out = _engagement_link(engagement_id, body.kind, body.ref_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[engagement] {engagement_id[:8]} linked '
+                    f'{body.kind} {body.ref_id}', 'ok')
+        return out
+
+    @app.post('/engagements/{engagement_id}/links/prune')
+    async def engagement_prune_links(engagement_id: str):
+        out = _engagement_prune_links(engagement_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        removed = (len(out['removed_missions']) + len(out['removed_runs'])
+                   + len(out['removed_findings']))
+        await _push(f'[engagement] {engagement_id[:8]} pruned {removed} stale', 'ok')
+        return out
+
+    @app.get('/engagements/{engagement_id}/report')
+    async def engagement_report_json(engagement_id: str):
+        out = _engagement_report(engagement_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.get('/engagements/{engagement_id}/report.md')
+    async def engagement_report_md(engagement_id: str):
+        from core import engagement_report as _er
+        out = _engagement_report(engagement_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return Response(out['error'], media_type='text/plain; charset=utf-8',
+                            status_code=code)
+        return Response(_er.render_markdown(out['report']),
                         media_type='text/markdown; charset=utf-8')
 
     @app.get('/intelligence')
