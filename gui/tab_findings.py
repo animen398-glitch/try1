@@ -23,7 +23,9 @@ from core.findings_store import (
     FindingsStore, SEVERITY_ORDER, STATUS_LABELS, STATUSES,
 )
 from gui import theme
-from gui.ui_components import LinkTextBrowser, SectionGroupBox, StyledButton
+from gui.ui_components import (
+    LinkTextBrowser, SectionGroupBox, StyledButton, TablePaginator,
+)
 
 # Severity → cell colour. The canonical (light) palette now lives in gui.theme;
 # this alias is kept for backward compatibility. Rendering uses
@@ -98,6 +100,12 @@ class FindingsTabMixin:
         self.findings_table.itemSelectionChanged.connect(
             self._on_finding_row_selected)
         layout.addWidget(self.findings_table, stretch=1)
+        # Page large finding lists so populating the widget never freezes the UI;
+        # the full (filtered/sorted) list is kept for selection + CSV export.
+        self._findings_paginator = TablePaginator(
+            self.findings_table, self._render_findings_row,
+            on_page_changed=self._on_findings_page_changed)
+        layout.addWidget(self._findings_paginator.widget)
 
         # ── status-change row (acts on the selected finding) ────────────────
         change_grp = SectionGroupBox("Сменить статус выбранной находки")
@@ -291,40 +299,45 @@ class FindingsTabMixin:
             f"  ·  показано: {len(result.get('rows', []))}")
         self._populate_findings_table(result.get('rows', []))
 
+    @staticmethod
+    def _render_findings_row(table, r: int, rec: dict):
+        severity = str(rec.get('severity', '')).lower()
+        status = rec.get('status', '')
+        sla = rec.get('sla') or {}
+        values = [
+            severity,
+            rec.get('category', ''),
+            rec.get('title', ''),
+            STATUS_LABELS.get(status, status),
+            (rec.get('first_seen_at') or '')[:10],
+            (rec.get('last_seen_at') or '')[:10],
+            format_sla(sla),
+        ]
+        threat = rec.get('threat') if isinstance(rec.get('threat'), dict) else {}
+        is_kev = bool(threat.get('kev'))
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 0:
+                color = theme.severity_color(severity)
+                if color:
+                    item.setForeground(QColor(color))
+            elif col == 6 and sla.get('breached'):
+                # Overdue findings stand out in the SLA column.
+                item.setForeground(QColor(theme.severity_color('critical')))
+            if is_kev and col == 2:
+                # In-list cue for a known-exploited finding (full badge in detail).
+                item.setForeground(QColor(theme.severity_color('critical')))
+                item.setToolTip("⚠ KEV — известно эксплуатируется в реальных атаках")
+            table.setItem(r, col, item)
+
     def _populate_findings_table(self, rows: list):
-        self._findings_records = rows
-        self.findings_table.setRowCount(0)
-        for rec in rows:
-            r = self.findings_table.rowCount()
-            self.findings_table.insertRow(r)
-            severity = str(rec.get('severity', '')).lower()
-            status = rec.get('status', '')
-            sla = rec.get('sla') or {}
-            values = [
-                severity,
-                rec.get('category', ''),
-                rec.get('title', ''),
-                STATUS_LABELS.get(status, status),
-                (rec.get('first_seen_at') or '')[:10],
-                (rec.get('last_seen_at') or '')[:10],
-                format_sla(sla),
-            ]
-            threat = rec.get('threat') if isinstance(rec.get('threat'), dict) else {}
-            is_kev = bool(threat.get('kev'))
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 0:
-                    color = theme.severity_color(severity)
-                    if color:
-                        item.setForeground(QColor(color))
-                elif col == 6 and sla.get('breached'):
-                    # Overdue findings stand out in the SLA column.
-                    item.setForeground(QColor(theme.severity_color('critical')))
-                if is_kev and col == 2:
-                    # In-list cue for a known-exploited finding (full badge in detail).
-                    item.setForeground(QColor(theme.severity_color('critical')))
-                    item.setToolTip("⚠ KEV — известно эксплуатируется в реальных атаках")
-                self.findings_table.setItem(r, col, item)
+        self._findings_records = rows          # full list — selection + CSV export
+        self._findings_paginator.set_rows(rows)
+        self.findings_detail.clear()
+        self.btn_findings_apply.setEnabled(False)
+
+    def _on_findings_page_changed(self):
+        # A new page has no carried-over selection; clear the stale detail/apply.
         self.findings_detail.clear()
         self.btn_findings_apply.setEnabled(False)
 
@@ -334,10 +347,9 @@ class FindingsTabMixin:
         sel = self.findings_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._findings_records)):
-            return {}
-        return self._findings_records[idx]
+        # Map the table row to the full-list record via the paginator (the table
+        # shows only the current page).
+        return self._findings_paginator.record_at(sel[0].row()) or {}
 
     def _on_finding_row_selected(self):
         rec = self._selected_finding()

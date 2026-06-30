@@ -20,7 +20,7 @@ from qtpy.QtWidgets import (
 from core.asset_adapter import ASSET_TYPES
 from core.asset_store import STATUS_LABELS, STATUSES, AssetStore
 from gui.ui_components import (
-    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
 )
 
 
@@ -109,6 +109,12 @@ class AssetsTabMixin:
         header.setSectionResizeMode(1, QHeaderView.Stretch)  # value fills space
         self.assets_table.itemSelectionChanged.connect(self._on_asset_row_selected)
         layout.addWidget(self.assets_table, stretch=1)
+        # Page large asset inventories so the widget never freezes the UI; the
+        # full (filtered) list is kept for selection + CSV export.
+        self._assets_paginator = TablePaginator(
+            self.assets_table, self._render_assets_row,
+            on_page_changed=lambda: self.assets_detail.clear())
+        layout.addWidget(self._assets_paginator.widget)
 
         # ── detail / history panel ──────────────────────────────────────────
         detail_grp = SectionGroupBox("Детали и история выбранного актива")
@@ -259,22 +265,22 @@ class AssetsTabMixin:
         for key, label in self.assets_rollup.items():
             label.setText(str(by_type.get(key, 0)))
 
+    @staticmethod
+    def _render_assets_row(table, r: int, rec: dict):
+        status = rec.get('status', '')
+        values = [
+            rec.get('type', ''),
+            rec.get('label') or rec.get('value', ''),
+            STATUS_LABELS.get(status, status),
+            (rec.get('first_seen_at') or '')[:10],
+            (rec.get('last_seen_at') or '')[:10],
+        ]
+        for col, val in enumerate(values):
+            table.setItem(r, col, QTableWidgetItem(str(val)))
+
     def _populate_assets_table(self, rows: list):
-        self._assets_records = rows
-        self.assets_table.setRowCount(0)
-        for rec in rows:
-            r = self.assets_table.rowCount()
-            self.assets_table.insertRow(r)
-            status = rec.get('status', '')
-            values = [
-                rec.get('type', ''),
-                rec.get('label') or rec.get('value', ''),
-                STATUS_LABELS.get(status, status),
-                (rec.get('first_seen_at') or '')[:10],
-                (rec.get('last_seen_at') or '')[:10],
-            ]
-            for col, val in enumerate(values):
-                self.assets_table.setItem(r, col, QTableWidgetItem(str(val)))
+        self._assets_records = rows            # full list — selection + CSV export
+        self._assets_paginator.set_rows(rows)
         self.assets_detail.clear()
 
     # ── selection / detail ────────────────────────────────────────────────────
@@ -283,10 +289,7 @@ class AssetsTabMixin:
         sel = self.assets_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._assets_records)):
-            return {}
-        return self._assets_records[idx]
+        return self._assets_paginator.record_at(sel[0].row()) or {}
 
     def _on_asset_row_selected(self):
         rec = self._selected_asset()

@@ -4,7 +4,8 @@ import re
 from qtpy.QtCore import QPoint, QRect, QSize, Qt
 from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
-    QGroupBox, QLabel, QLayout, QPushButton, QTextBrowser, QTextEdit,
+    QComboBox, QGroupBox, QHBoxLayout, QLabel, QLayout, QPushButton, QTextBrowser,
+    QTextEdit, QWidget,
 )
 
 from gui import theme
@@ -235,3 +236,129 @@ class ResultsDisplay(QTextEdit):
 
     def append_medium(self, text: str):
         self.append(f'<span style="color:#ffb74d; font-weight:bold;">[MEDIUM]</span> {html.escape(str(text))}')
+
+
+class TablePaginator:
+    """Render a large row list into a ``QTableWidget`` one page at a time.
+
+    The slow part of a big table is *populating the widget* (thousands of
+    ``QTableWidgetItem``), not holding the rows in memory — so the full,
+    already-queried/filtered/sorted list is kept and only a window of it is
+    rendered. Adopting tabs pass their table + a per-row render callback
+    (``render_row(table, table_row, record)``); selection handlers map a table
+    row back to the full-list record via :meth:`record_at`. Pure UI — no data
+    layer change. ``widget`` is a control strip (First/◀/▶/Last + a status label
+    + a page-size combo) for the tab to place under the table.
+    """
+
+    PAGE_SIZES = (100, 200, 500, 1000)
+
+    def __init__(self, table, render_row, *, page_size: int = 200,
+                 on_page_changed=None):
+        self.table = table
+        self._render_row = render_row
+        self._on_page_changed = on_page_changed
+        self._rows: list = []
+        self._page = 0
+        self._page_size = int(page_size)
+        self.widget = self._build_controls()
+        self._refresh_controls()
+
+    def _build_controls(self) -> QWidget:
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.btn_first = QPushButton('⏮')
+        self.btn_prev = QPushButton('◀')
+        self.btn_next = QPushButton('▶')
+        self.btn_last = QPushButton('⏭')
+        for b in (self.btn_first, self.btn_prev, self.btn_next, self.btn_last):
+            b.setMaximumWidth(40)
+        self.btn_first.clicked.connect(lambda: self.go_to(0))
+        self.btn_prev.clicked.connect(lambda: self.go_to(self._page - 1))
+        self.btn_next.clicked.connect(lambda: self.go_to(self._page + 1))
+        self.btn_last.clicked.connect(lambda: self.go_to(self.page_count() - 1))
+        self.page_label = QLabel('Нет строк')
+        self.size_combo = QComboBox()
+        for n in self.PAGE_SIZES:
+            self.size_combo.addItem(f'{n}/стр', n)
+        idx = self.size_combo.findData(self._page_size)
+        self.size_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.size_combo.currentIndexChanged.connect(self._on_size_changed)
+        lay.addWidget(self.btn_first)
+        lay.addWidget(self.btn_prev)
+        lay.addWidget(self.page_label, stretch=1)
+        lay.addWidget(self.btn_next)
+        lay.addWidget(self.btn_last)
+        lay.addWidget(self.size_combo)
+        return w
+
+    # ── data ────────────────────────────────────────────────────────────────
+    def set_rows(self, rows) -> None:
+        """Replace the full row list and render the first page."""
+        self._rows = list(rows or [])
+        self._page = 0
+        self._render()
+
+    def all_rows(self) -> list:
+        return self._rows
+
+    def page_count(self) -> int:
+        if not self._rows:
+            return 1
+        return (len(self._rows) + self._page_size - 1) // self._page_size
+
+    def page_start(self) -> int:
+        return self._page * self._page_size
+
+    def index_at(self, table_row) -> int:
+        """Full-list index for a table row (page offset + row), or -1."""
+        if table_row is None or table_row < 0:
+            return -1
+        return self.page_start() + int(table_row)
+
+    def record_at(self, table_row):
+        idx = self.index_at(table_row)
+        return self._rows[idx] if 0 <= idx < len(self._rows) else None
+
+    def go_to(self, page: int) -> None:
+        page = max(0, min(int(page), self.page_count() - 1))
+        if page != self._page:
+            self._page = page
+            self._render()
+            if self._on_page_changed:
+                self._on_page_changed()
+
+    def _on_size_changed(self) -> None:
+        new = self.size_combo.currentData() or self._page_size
+        first = self.page_start()                 # keep the first visible row visible
+        self._page_size = int(new)
+        self._page = first // self._page_size
+        self._render()
+        if self._on_page_changed:
+            self._on_page_changed()
+
+    def _render(self) -> None:
+        start = self.page_start()
+        window = self._rows[start:start + self._page_size]
+        self.table.setRowCount(0)
+        for rec in window:
+            r = self.table.rowCount()
+            self.table.insertRow(r)
+            self._render_row(self.table, r, rec)
+        self._refresh_controls()
+
+    def _refresh_controls(self) -> None:
+        n = len(self._rows)
+        pages = self.page_count()
+        if n == 0:
+            self.page_label.setText('Нет строк')
+        else:
+            a = self.page_start() + 1
+            b = min(self.page_start() + self._page_size, n)
+            self.page_label.setText(
+                f'стр. {self._page + 1}/{pages} · показано {a}–{b} из {n}')
+        self.btn_first.setEnabled(self._page > 0)
+        self.btn_prev.setEnabled(self._page > 0)
+        self.btn_next.setEnabled(self._page < pages - 1)
+        self.btn_last.setEnabled(self._page < pages - 1)

@@ -2570,3 +2570,32 @@ rest; one archive covers data root + workspace; restore is non-clobbering by
 default; stdlib only. Closes the Scan Retention & Backup epic.
 
 ---
+
+### GUI Table Pagination (CLOSED 2026-06-30)
+
+The heavy tables loaded every row into the widget at once, freezing the UI on a
+large estate/history. Fixed with **UI windowing** (the slow part is populating
+the widget, not holding the rows) — the data layer is untouched:
+
+- **`gui/ui_components.TablePaginator`** (new): renders a large, already
+  queried/filtered/sorted row list into a `QTableWidget` one page at a time via a
+  per-row render callback. A control strip (First/◀/▶/Last + "page X/Y · showing
+  a–b of N" + a page-size combo 100/200/500/1000) drives navigation;
+  `record_at(table_row)` / `index_at(table_row)` map a table row back to the
+  full-list record so selection/detail keep working; `on_page_changed` lets a tab
+  clear stale detail. Pure UI — no store/query change.
+- **Applied to** the three highest-volume tables: **Findings**, **Assets**,
+  **Timeline** (the gap-analysis list). Each keeps its full list for selection +
+  CSV export (`_findings_records` / `_assets_records` / `_timeline_events_data`)
+  and renders only a page. The remaining ~17 table tabs are a trivial follow-up
+  on the same helper.
+- Tests: `tests/test_ui_pagination.py` (windowing math, nav, `record_at`
+  mapping, page-size change keeps the first visible row, empty, callback),
+  `tests/test_findings_tab.py` (250 rows → one page rendered, selection maps to
+  the right full-list record across pages).
+
+**Decisions (locked):** UI windowing (not store limit/offset — sorting/filtering/
+CSV stay over the full list); reusable paginator; scope this iteration = Findings
++ Assets + Timeline, others follow on the same helper.
+
+---

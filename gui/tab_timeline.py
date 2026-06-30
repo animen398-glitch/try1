@@ -20,7 +20,7 @@ from qtpy.QtWidgets import (
 
 from core.project import ProjectStore
 from gui import theme                            # one severity palette, shared
-from gui.ui_components import SectionGroupBox, StyledButton
+from gui.ui_components import SectionGroupBox, StyledButton, TablePaginator
 
 # Event type → RU label for the feed.
 _EVENT_LABELS = {
@@ -107,6 +107,11 @@ class TimelineTabMixin:
         self.timeline_events = self._make_timeline_table(self.TIMELINE_EVENT_COLUMNS,
                                                          stretch_col=4)
         feed_v.addWidget(self.timeline_events)
+        # Page large change feeds so populating the widget never freezes the UI;
+        # the full event list is kept for CSV export (_timeline_events_data).
+        self._timeline_paginator = TablePaginator(
+            self.timeline_events, self._render_timeline_event_row)
+        feed_v.addWidget(self._timeline_paginator.widget)
         feed_grp.setLayout(feed_v)
         layout.addWidget(feed_grp, stretch=2)
 
@@ -283,26 +288,26 @@ class TimelineTabMixin:
             return
         self.timeline_status.setText(f"Экспортировано прогонов: {len(runs)}")
 
+    @staticmethod
+    def _render_timeline_event_row(table, r: int, ev: dict):
+        severity = str(ev.get('severity', '')).lower()
+        values = [
+            (ev.get('at') or '')[:19].replace('T', ' '),
+            ev.get('scan_id', ''),
+            _EVENT_LABELS.get(ev.get('type'), ev.get('type', '')),
+            severity,
+            ev.get('title', ''),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 3:
+                color = theme.severity_color(severity)
+                if color:
+                    item.setForeground(QColor(color))
+            table.setItem(r, col, item)
+
     def _populate_timeline_events(self, events: list):
-        self.timeline_events.setRowCount(0)
-        for ev in events:
-            r = self.timeline_events.rowCount()
-            self.timeline_events.insertRow(r)
-            severity = str(ev.get('severity', '')).lower()
-            values = [
-                (ev.get('at') or '')[:19].replace('T', ' '),
-                ev.get('scan_id', ''),
-                _EVENT_LABELS.get(ev.get('type'), ev.get('type', '')),
-                severity,
-                ev.get('title', ''),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 3:
-                    color = theme.severity_color(severity)
-                    if color:
-                        item.setForeground(QColor(color))
-                self.timeline_events.setItem(r, col, item)
+        self._timeline_paginator.set_rows(events)
 
     def _populate_timeline_series(self, series: list):
         self.timeline_series.setRowCount(0)

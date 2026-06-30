@@ -18,6 +18,22 @@ def _window(qapp):
     return FindingsHost()
 
 
+def test_findings_table_paginates_and_maps_selection(qapp):
+    w = FindingsHost()
+    rows = [{'severity': 'low', 'category': 'c', 'title': f't{i}',
+             'status': 'OPEN', 'first_seen_at': '2026-01-01',
+             'last_seen_at': '2026-01-01', 'sla': {}, 'id': f'f{i}'}
+            for i in range(250)]
+    w._populate_findings_table(rows)
+    assert len(w._findings_records) == 250          # full list kept (selection+CSV)
+    assert w.findings_table.rowCount() == 200        # only the first page rendered
+    w.findings_table.selectRow(0)
+    assert w._selected_finding()['id'] == 'f0'
+    w._findings_paginator.go_to(1)                   # page 2 → table row 0 == f200
+    w.findings_table.selectRow(0)
+    assert w._selected_finding()['id'] == 'f200'
+
+
 def _seed():
     s = FindingsStore()
     s.upsert('p1', {'id': 'f-a', 'category': 'header', 'rule_id': 'csp',
