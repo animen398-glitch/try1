@@ -6,6 +6,8 @@ safe_active_prober), the empty/unknown fallbacks, available_tools, and that the
 output feeds straight into the matching tool_parsers parser (round-trip).
 """
 
+import json
+
 from core import tool_evidence as te
 from core.tool_parsers import parse_tool_output
 
@@ -69,3 +71,44 @@ def test_bridge_output_feeds_the_parser():
     out = parse_tool_output('safe_active_prober', sp)
     values = {a['value'] for a in out['assets']}
     assert {'a.shop.io', 'b.shop.io', 'c.shop.io'} <= values
+
+
+# ── evidence_from_project_scan (thin loader over a real project) ────────────────
+
+def _seed_project(base):
+    from core.project import ProjectStore
+    proj = ProjectStore(base).get_or_create('https://shop.io')
+    sid = '20260101_000000'
+    d = proj.start_scan(sid)
+    report = {
+        'url': 'https://shop.io', 'finished_at': sid,
+        'phases': {'recon': {'status': 'Success', 'data': {
+            'source_maps': [{'url': 'https://shop.io/a.js.map', 'has_content': True}]}}},
+        'executive_summary': {'metrics': {}},
+    }
+    (d / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    proj.record_scan(d, report)
+    return proj
+
+
+def test_evidence_from_project_scan_latest(tmp_path):
+    _seed_project(str(tmp_path))
+    ev = te.evidence_from_project_scan('shop.io', 'source_map_finder',
+                                       base=str(tmp_path))
+    assert ev['urls'] == ['https://shop.io/a.js.map']
+
+
+def test_evidence_from_project_scan_explicit_scan(tmp_path):
+    _seed_project(str(tmp_path))
+    ev = te.evidence_from_project_scan('shop.io', 'source_map_finder',
+                                       base=str(tmp_path), scan_id='20260101_000000')
+    assert ev['urls'] == ['https://shop.io/a.js.map']
+
+
+def test_evidence_from_project_scan_missing(tmp_path):
+    assert te.evidence_from_project_scan('nope', 'source_map_finder',
+                                         base=str(tmp_path)) == {}
+    # known project, unknown explicit scan → {}
+    _seed_project(str(tmp_path))
+    assert te.evidence_from_project_scan('shop.io', 'source_map_finder',
+                                         base=str(tmp_path), scan_id='zzz') == {}

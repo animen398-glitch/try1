@@ -216,6 +216,13 @@ class MissionsTabMixin:
         self.btn_mission_tool_run.setEnabled(False)
         self.btn_mission_tool_run.clicked.connect(self._run_mission_tool)
         tool_ctrl.addWidget(self.btn_mission_tool_run)
+        self.btn_mission_tool_evidence = StyledButton("Из скана", style="secondary")
+        self.btn_mission_tool_evidence.setToolTip(
+            "Подтянуть evidence для инструмента из последнего скана проекта миссии "
+            "(заполнит поле ниже; можно отредактировать перед запуском).")
+        self.btn_mission_tool_evidence.setEnabled(False)
+        self.btn_mission_tool_evidence.clicked.connect(self._fill_tool_evidence)
+        tool_ctrl.addWidget(self.btn_mission_tool_evidence)
         tool_ctrl.addStretch(1)
         tool_layout.addLayout(tool_ctrl)
         self.mission_tool_evidence = QPlainTextEdit()
@@ -520,6 +527,7 @@ class MissionsTabMixin:
         # A tool run is gated by ROE (not the mission's lifecycle status), so it
         # is offered for any selected mission while idle.
         self.btn_mission_tool_run.setEnabled(idle)
+        self.btn_mission_tool_evidence.setEnabled(idle)
         # Scheduling acts on the selected mission.
         scheduled = isinstance(mission.get("schedule"), dict) if has_mission else False
         self.btn_mission_schedule.setEnabled(idle)
@@ -693,6 +701,48 @@ class MissionsTabMixin:
                           f"{ingest['assets']} asset(s) {verb}"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
+
+    def _fill_tool_evidence(self):
+        """Pull evidence for the selected tool from the mission's latest project
+        scan into the evidence field (operator reviews/edits, then Run)."""
+        mission = self._selected_mission()
+        payload = mission.get("payload") if mission else None
+        if not isinstance(payload, dict):
+            self.mission_status.setText("Выберите миссию")
+            return
+        project = payload.get("project")
+        tool = self.mission_tool.currentData()
+        self.mission_status.setText(f"Загрузка evidence из скана ({tool})...")
+        self._set_busy(True)
+        self._run_async(
+            lambda p=project, t=tool: self._do_fill_tool_evidence(p, t),
+            self._on_tool_evidence_filled)
+
+    @staticmethod
+    def _do_fill_tool_evidence(project, tool) -> dict:
+        try:
+            from core.tool_evidence import evidence_from_project_scan
+            return {"tool": tool, "evidence": evidence_from_project_scan(project, tool)}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _on_tool_evidence_filled(self, result: dict):
+        import json
+        self._set_busy(False)
+        if result.get("error"):
+            self.mission_status.setText(
+                f"Ошибка загрузки evidence: {result['error']}")
+            return
+        evidence = result.get("evidence") or {}
+        tool = result.get("tool")
+        if not evidence:
+            self.mission_status.setText(
+                f"Нет captured-evidence для {tool} в последнем скане")
+            return
+        self.mission_tool_evidence.setPlainText(
+            json.dumps(evidence, ensure_ascii=False, indent=2))
+        self.mission_status.setText(
+            f"Evidence для {tool} подставлен из скана — проверьте и запустите")
 
     # ── report export ──────────────────────────────────────────────────────────
 

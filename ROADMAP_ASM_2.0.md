@@ -2695,4 +2695,19 @@ only verified report shapes (source_map_finder + safe_active_prober), rest stay
 manual; no surface wiring this iteration (Missions/web auto-evidence is an
 additive follow-up).
 
+**Surface wiring (2026-06-30):** `tool_evidence.evidence_from_project_scan(project,
+tool, *, base=None, scan_id=None)` — the thin I/O loader (mirrors
+`timeline.build_timeline`): resolves a project's scan report (latest or given)
+via `ProjectStore`/`load_scan_report` and delegates to the pure mapper; `{}` on a
+missing project/scan, never raises. **GUI Missions** "Run tool" panel gains an
+«Из скана» button — fills the evidence field from the mission's project scan
+(off-thread; operator reviews/edits, then Run; the manual flow is untouched).
+**Web** `POST /missions/{id}/tools/run` gains `from_scan: bool` (+ optional
+`scan_id`): when set and no `evidence` is supplied, evidence is pulled from the
+mission's project scan (`base=_REPORT_BASE`) before the run. Tests:
+`tests/test_tool_evidence.py` (loader latest/explicit/missing),
+`tests/test_missions_tab.py` (fill worker), `tests/test_web_missions.py`
+(`from_scan` run pulls scan evidence → completed). No new data path; the run
+flow (`run_tool_for_mission`) and the tool-never-executed invariant are unchanged.
+
 ---

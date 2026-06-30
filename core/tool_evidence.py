@@ -101,3 +101,32 @@ def evidence_from_report(report: Dict[str, Any], tool: Any) -> Dict[str, Any]:
 def available_tools(report: Dict[str, Any]) -> List[str]:
     """Tools with non-empty bridgeable evidence in this report (sorted)."""
     return sorted(t for t in EXTRACTORS if evidence_from_report(report, t))
+
+
+def evidence_from_project_scan(project: str, tool: Any, *,
+                               base: Any = None,
+                               scan_id: Any = None) -> Dict[str, Any]:
+    """Load a project's scan report and extract ``tool`` evidence from it.
+
+    The thin I/O loader over the pure :func:`evidence_from_report` (mirrors
+    ``timeline.build_timeline`` over its pure builders): resolves the project via
+    ``ProjectStore(base).get(project)``, reads the given ``scan_id`` (or the
+    latest scan), and delegates. ``base`` defaults to the settings ``output_dir``.
+    Returns ``{}`` if the project / scan / report is missing. Never raises."""
+    try:
+        from core.project import ProjectStore
+        if base is None:
+            from core.config import load_settings
+            base = load_settings().get('output_dir') or ''
+        proj = ProjectStore(str(base)).get(str(project)) if project else None
+        if proj is None:
+            return {}
+        sid = scan_id or (proj.latest_scan() or {}).get('id')
+        if not sid:
+            return {}
+        report = proj.load_scan_report(str(sid))
+        if not isinstance(report, dict):
+            return {}
+        return evidence_from_report(report, tool)
+    except Exception:   # noqa: BLE001 — a loader must never crash the caller
+        return {}

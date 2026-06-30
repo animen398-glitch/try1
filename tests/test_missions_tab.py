@@ -287,6 +287,14 @@ def test_do_run_mission_tool_completed_ingests(qapp):
     assert FindingsStore().list_findings("shop.io")     # persisted into the store
 
 
+def test_do_fill_tool_evidence_worker(qapp):
+    # the fill worker returns {tool, evidence} and never raises; an unknown
+    # project yields empty evidence (the loader is fully covered in
+    # test_tool_evidence.py)
+    out = MissionsTabMixin._do_fill_tool_evidence('nope.project', 'source_map_finder')
+    assert out['tool'] == 'source_map_finder' and out['evidence'] == {}
+
+
 def test_do_run_mission_tool_blocked_not_ingested(qapp):
     from core.findings_store import FindingsStore
     mission = pm.create_mission(

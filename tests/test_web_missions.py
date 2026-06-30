@@ -143,6 +143,33 @@ def test_mission_run_tool_helper_requires_tool():
     assert "tool is required" in out.get("error", "")
 
 
+def test_mission_run_tool_from_scan_pulls_evidence(tmp_path, monkeypatch):
+    # from_scan resolves evidence from the mission's project scan under _REPORT_BASE
+    import json as _json
+
+    from core.project import ProjectStore
+    monkeypatch.setattr(wa, "_REPORT_BASE", tmp_path)
+    proj = ProjectStore(str(tmp_path)).get_or_create("https://shop.io")
+    sid = "20260101_000000"
+    d = proj.start_scan(sid)
+    report = {"url": "https://shop.io", "finished_at": sid,
+              "phases": {"subdomains": {"data": {
+                  "results": [{"subdomain": "a.shop.io"}]}}}}
+    (d / "report.json").write_text(_json.dumps(report), encoding="utf-8")
+    proj.record_scan(d, report)
+
+    mission = pm.create_mission(
+        "shop.io", "review",
+        roe={"allowed_domains": ["shop.io"], "active_scan_enabled": True,
+             "passive_only": False, "authorized_by": "client"},
+        allowed_actions=["safe_active_probe"])
+    saved = MissionStore().save_mission(mission)
+
+    out = wa._mission_run_tool(saved["id"], "safe_active_prober", from_scan=True)
+    assert "error" not in out
+    assert out["status"] == "completed" and out["assets"] >= 1
+
+
 def test_mission_run_helper_executes_ready_mission():
     saved = _ready_mission()
     out = wa._mission_run(saved["id"])

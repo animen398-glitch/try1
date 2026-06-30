@@ -984,12 +984,15 @@ def _mission_run(mission_id: str) -> dict:
 
 
 def _mission_run_tool(mission_id: str, tool: str,
-                      evidence: Optional[dict] = None) -> dict:
+                      evidence: Optional[dict] = None, *,
+                      from_scan: bool = False,
+                      scan_id_src: Optional[str] = None) -> dict:
     """Run one client-safe tool against a mission from captured evidence
     (mutation). The tool is never executed — the operator supplies the captured
-    evidence, the run is gated by the mission's ROE, and a completed run's
-    findings/assets are ingested into the project stores (blocked/skipped → no
-    write). Mirrors the Missions tab 'Run tool' surface."""
+    evidence (or, with ``from_scan``, it is pulled from the mission's project
+    scan via ``tool_evidence``), the run is gated by the mission's ROE, and a
+    completed run's findings/assets are ingested into the project stores
+    (blocked/skipped → no write). Mirrors the Missions tab 'Run tool' surface."""
     try:
         from core.mission_store import MissionStore
         from core.tool_runner import run_tool_for_mission, tool_scan_id
@@ -998,8 +1001,15 @@ def _mission_run_tool(mission_id: str, tool: str,
             return {'error': f'mission not found: {mission_id}'}
         if not str(tool or '').strip():
             return {'error': 'tool is required'}
+        payload = row['payload']
+        # Pull evidence from the mission's project scan when asked and none given.
+        if from_scan and not evidence:
+            from core.tool_evidence import evidence_from_project_scan
+            evidence = evidence_from_project_scan(
+                payload.get('project'), str(tool), base=str(_REPORT_BASE),
+                scan_id=scan_id_src)
         scan_id = tool_scan_id(str(tool))
-        out = run_tool_for_mission(row['payload'], str(tool),
+        out = run_tool_for_mission(payload, str(tool),
                                    evidence or {}, scan_id=scan_id)
         result, ingest = out['result'], out['ingest']
         return {'mission_id': mission_id, 'tool': str(tool),
@@ -2042,6 +2052,8 @@ if _FASTAPI_OK:
     class MissionToolRequest(BaseModel):
         tool: str
         evidence: Optional[dict] = None
+        from_scan: bool = False
+        scan_id: Optional[str] = None
 
     @app.post('/missions/run-due')
     async def missions_run_due():
@@ -2077,7 +2089,8 @@ if _FASTAPI_OK:
 
     @app.post('/missions/{mission_id}/tools/run')
     async def mission_tool_run(mission_id: str, body: MissionToolRequest):
-        out = _mission_run_tool(mission_id, body.tool, body.evidence)
+        out = _mission_run_tool(mission_id, body.tool, body.evidence,
+                                from_scan=body.from_scan, scan_id_src=body.scan_id)
         if 'error' in out:
             code = 404 if 'not found' in out['error'] else 400
             return JSONResponse(out, status_code=code)
