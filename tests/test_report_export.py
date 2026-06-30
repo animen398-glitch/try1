@@ -539,6 +539,31 @@ def test_evidence_integrity_csv_exports_warning_summary():
 
 # ── portfolio_csv ─────────────────────────────────────────────────────────────
 
+def test_tool_runs_csv_from_full_dict():
+    tl = {'tool_runs': [
+        {'tool': 'header_audit', 'scan_id': 'tool-header_audit-1700000000',
+         'at': '2026-04-01T10:00:00', 'findings': 2, 'assets': 1},
+    ]}
+    table = _parse(rx.tool_runs_csv(tl))
+    assert table[0] == ['When', 'Tool', 'Findings', 'Assets', 'Scan ID']
+    row = table[1]
+    assert row[table[0].index('Tool')] == 'header_audit'
+    assert row[table[0].index('Findings')] == '2'
+    assert row[table[0].index('Assets')] == '1'
+    assert row[table[0].index('Scan ID')] == 'tool-header_audit-1700000000'
+
+
+def test_tool_runs_csv_accepts_bare_row_list():
+    table = _parse(rx.tool_runs_csv([{'tool': 'cookie_audit', 'findings': 0,
+                                      'assets': 3}]))
+    assert table[1][table[0].index('Tool')] == 'cookie_audit'
+
+
+def test_tool_runs_csv_empty():
+    assert _parse(rx.tool_runs_csv({'tool_runs': []}))[0][0] == 'When'
+    assert _parse(rx.tool_runs_csv(None))[0][0] == 'When'
+
+
 def test_portfolio_csv_from_full_dict():
     portfolio = {'rows': [{'slug': 'x.com', 'url': 'https://x', 'risk_level': 'High',
                            'risk_score': 12, 'risk_delta': 50, 'attack_surface': 11,

@@ -323,7 +323,8 @@ def _derive_tool_runs(finding_events: Optional[List[Dict]],
 
     _bump(finding_events, 'findings')
     _bump(asset_events, 'assets')
-    return list(runs.values())
+    return sorted(runs.values(),
+                  key=lambda r: (str(r.get('at') or ''), str(r['scan_id'])))
 
 
 def build_timeline(project) -> Dict:
@@ -400,6 +401,7 @@ def build_timeline(project) -> Dict:
     return {
         'project': project.slug,
         'series': build_series(entries),
+        'tool_runs': tool_runs,
         'events': build_events(
             scans,
             finding_events,

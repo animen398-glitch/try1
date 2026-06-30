@@ -137,6 +137,21 @@ def test_timeline_load_error_clears_stale_tables_and_export_source(qapp):
     assert 'boom' in w.timeline_status.text()
 
 
+def test_on_loaded_stores_tool_runs_for_export(qapp):
+    from core.report_export import tool_runs_csv
+    w = _window(qapp)
+    w.timeline_project.addItem('x.com', 'x.com')
+    w._on_timeline_loaded({
+        'slug': 'x.com', 'events': [], 'series': [],
+        'tool_runs': [{'tool': 'header_audit',
+                       'scan_id': 'tool-header_audit-1700000000',
+                       'at': '2026-04-01T10:00:00', 'findings': 2, 'assets': 1}],
+    })
+    assert len(w._timeline_tool_runs_data) == 1
+    csv_text = tool_runs_csv(w._timeline_tool_runs_data)
+    assert 'header_audit' in csv_text and 'When,Tool,Findings' in csv_text
+
+
 def test_event_labels_cover_all_event_types():
     # Every event type the timeline can render needs a RU label, else the feed
     # shows its raw key. Guards against adding a diff/lifecycle/asset event type

@@ -1865,6 +1865,13 @@ if _FASTAPI_OK:
     async def timeline(project: Optional[str] = None):
         return JSONResponse(_timeline_view(project))
 
+    @app.get('/tool-runs.csv')
+    async def tool_runs_csv_route(project: Optional[str] = None):
+        from core.report_export import tool_runs_csv
+        tl = _timeline_view(project)
+        return Response(tool_runs_csv(tl.get('tool_runs') or []),
+                        media_type='text/csv; charset=utf-8')
+
     @app.get('/audit-runs')
     async def audit_runs(project: Optional[str] = None):
         return JSONResponse(_audit_runs_list(project))

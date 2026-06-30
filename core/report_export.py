@@ -53,6 +53,11 @@ _TIMELINE_COLUMNS: Sequence[Tuple[str, str]] = (
     ('section', 'Section'), ('type', 'Event'), ('title', 'Detail'),
 )
 
+_TOOL_RUNS_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('at', 'When'), ('tool', 'Tool'), ('findings', 'Findings'),
+    ('assets', 'Assets'), ('scan_id', 'Scan ID'),
+)
+
 _HISTORY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('at', 'When'), ('scan_id', 'Scan'), ('risk_level', 'Risk'),
     ('risk_score', 'Risk Score'), ('attack_surface', 'Attack Surface'),
@@ -178,6 +183,16 @@ def timeline_csv(events: Optional[List[Dict]]) -> str:
     Each event is ``{at, scan_id, type, title, severity, section}`` — the same rows
     the GUI Timeline tab and the web /timeline endpoint show."""
     return _rows_to_csv(events, _TIMELINE_COLUMNS)
+
+
+def tool_runs_csv(runs) -> str:
+    """CSV of a project's tool runs (``timeline.build_timeline`` 'tool_runs').
+
+    Accepts either the full ``build_timeline`` dict (``{'tool_runs': [...]}``) or a
+    bare row list — one line per tool run with the finding/asset counts it
+    ingested (the same rows that drive the ``tool_run`` timeline events)."""
+    rows = runs.get('tool_runs') if isinstance(runs, dict) else runs
+    return _rows_to_csv(rows, _TOOL_RUNS_COLUMNS)
 
 
 def history_csv(series: Optional[List[Dict]]) -> str:

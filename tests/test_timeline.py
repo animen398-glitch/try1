@@ -342,6 +342,10 @@ def test_build_timeline_includes_tool_run_event(tmp_path):
     assert len(tool_events) == 1
     assert tool_events[0]['scan_id'] == sid
     assert 'header_audit' in tool_events[0]['title']
+    # structured rows are also returned for CSV/export (one per tool run)
+    assert [r['scan_id'] for r in tl['tool_runs']] == [sid]
+    assert tl['tool_runs'][0]['tool'] == 'header_audit'
+    assert tl['tool_runs'][0]['findings'] >= 1
 
 
 def test_events_are_deduped_and_time_ordered():

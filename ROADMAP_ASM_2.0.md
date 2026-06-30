@@ -2461,4 +2461,15 @@ no section-based rendering changes (the feed renders generically). Tests:
 non-tool-id exclusion, end-to-end `build_timeline`), `tests/test_tool_runner.py`
 (scan-id round-trip + rejection).
 
+**CSV export (2026-06-30):** `build_timeline` now also returns the structured
+`tool_runs` rows it derives (additive), so the export has one derivation path.
+`report_export.tool_runs_csv(runs)` (columns When/Tool/Findings/Assets/Scan ID;
+accepts the full dict or a bare list, like `portfolio_csv`/`missions_csv`)
+renders them. Surfaced as an "Export tool runs" button on the Timeline tab
+(`gui/tab_timeline.py`, alongside the events CSV) and a `GET /tool-runs.csv`
+web endpoint mirroring `/missions.csv`. Tests: `tests/test_report_export.py`
+(dict/list/empty), `tests/test_timeline.py` (structured rows returned),
+`tests/test_timeline_tab.py` (loaded rows render), `tests/test_web_timeline.py`
+(endpoint).
+
 ---

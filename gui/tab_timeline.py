@@ -91,6 +91,11 @@ class TimelineTabMixin:
         btn_export = StyledButton("Export CSV", style='secondary')
         btn_export.clicked.connect(self._export_timeline_csv)
         ctrl.addWidget(btn_export)
+        btn_export_tools = StyledButton("Export tool runs", style='secondary')
+        btn_export_tools.setToolTip(
+            "Экспортировать прогоны инструментов (tool/findings/assets) в CSV.")
+        btn_export_tools.clicked.connect(self._export_tool_runs_csv)
+        ctrl.addWidget(btn_export_tools)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_timeline)
         ctrl.addWidget(btn_refresh)
@@ -227,6 +232,7 @@ class TimelineTabMixin:
             return
         events = result.get('events', [])
         self._timeline_events_data = events       # export source (CSV)
+        self._timeline_tool_runs_data = result.get('tool_runs', [])  # CSV source
         self._populate_timeline_events(events)
         self._populate_timeline_series(result.get('series', []))
         self.timeline_status.setText(
@@ -254,6 +260,28 @@ class TimelineTabMixin:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить CSV: {e}")
             return
         self.timeline_status.setText(f"Экспортировано событий: {len(events)}")
+
+    def _export_tool_runs_csv(self):
+        """Save the loaded tool runs (tool / ingested findings+assets) to CSV."""
+        from datetime import datetime
+
+        from core.report_export import tool_runs_csv
+        runs = getattr(self, '_timeline_tool_runs_data', None)
+        if not runs:
+            self.timeline_status.setText("Нет прогонов инструментов для экспорта")
+            return
+        default = f"tool_runs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export tool runs CSV", default, "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write(tool_runs_csv(runs))
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить CSV: {e}")
+            return
+        self.timeline_status.setText(f"Экспортировано прогонов: {len(runs)}")
 
     def _populate_timeline_events(self, events: list):
         self.timeline_events.setRowCount(0)

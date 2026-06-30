@@ -82,3 +82,35 @@ def test_timeline_endpoint_with_testclient(tmp_path, monkeypatch):
     body = r.json()
     assert len(body['series']) == 2
     assert any(e['type'] == 'new_subdomain' for e in body['events'])
+
+
+def test_tool_runs_csv_endpoint(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+
+    from core import pentest_mission as pm
+    from core.tool_runner import run_tool_for_mission, tool_scan_id
+    _seed(tmp_path)
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+
+    # ingest a tool run for the project (header_audit, in-scope ROE)
+    mission = pm.create_mission(
+        'x.com', 'review',
+        roe={'allowed_domains': ['x.com'], 'active_scan_enabled': True,
+             'passive_only': False, 'authorized_by': 'client'},
+        allowed_actions=['headers_check'])
+    out = run_tool_for_mission(
+        mission, 'header_audit', {'url': 'https://x.com', 'headers': {}},
+        scan_id=tool_scan_id('header_audit'))
+    assert out['ingest']['written']
+
+    client = TestClient(wa.app)
+    r = client.get('/tool-runs.csv', params={'project': 'x.com'})
+    assert r.status_code == 200
+    assert r.headers['content-type'].startswith('text/csv')
+    lines = r.text.splitlines()
+    assert lines[0].startswith('When,Tool,Findings,Assets')
+    assert any('header_audit' in ln for ln in lines[1:])
