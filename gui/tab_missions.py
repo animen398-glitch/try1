@@ -682,10 +682,8 @@ class MissionsTabMixin:
     def _do_run_mission_tool(payload: Dict[str, Any], tool: str,
                              evidence: Dict[str, Any]) -> dict:
         try:
-            import time
-
-            from core.tool_runner import run_tool_for_mission
-            scan_id = f"tool-{tool}-{int(time.time())}"
+            from core.tool_runner import run_tool_for_mission, tool_scan_id
+            scan_id = tool_scan_id(tool)
             out = run_tool_for_mission(payload, tool, evidence, scan_id=scan_id)
             result = out["result"]
             ingest = out["ingest"]

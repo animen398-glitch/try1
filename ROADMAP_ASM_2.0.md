@@ -2446,4 +2446,19 @@ return 200 with `written: false` (a gated outcome, not an error). Tests:
 `tests/test_web_missions.py` (helper completed→ingested, blocked→not-ingested,
 unknown→not-found, tool-required; TestClient endpoint completed + 404).
 
+**Timeline event (2026-06-30):** a tool run is not persisted as its own entity
+(no second store), so the timeline derives a `tool_run` event **on read** from
+the ingested items' synthetic scan id. The convention is centralized in
+`core/tool_runner.tool_scan_id` / `parse_tool_scan_id` (`tool-<tool>-<unix_ts>`,
+now the single source of truth shared by the GUI + web run surfaces, replacing
+the duplicated inline string). `timeline._derive_tool_runs` groups the ingested
+CREATED finding/asset events by that scan id into one `{tool, scan_id, at,
+findings, assets}` row per run (a run that ingested nothing leaves no events →
+no row); `build_events` gains a `tool_runs` param emitting one `tool_run` event
+(section `tools`, severity info) per row. GUI label added (`tab_timeline`);
+no section-based rendering changes (the feed renders generically). Tests:
+`tests/test_timeline.py` (event shaping, `_derive_tool_runs` grouping +
+non-tool-id exclusion, end-to-end `build_timeline`), `tests/test_tool_runner.py`
+(scan-id round-trip + rejection).
+
 ---

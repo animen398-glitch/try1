@@ -926,15 +926,14 @@ def _mission_run_tool(mission_id: str, tool: str,
     findings/assets are ingested into the project stores (blocked/skipped → no
     write). Mirrors the Missions tab 'Run tool' surface."""
     try:
-        import time
         from core.mission_store import MissionStore
-        from core.tool_runner import run_tool_for_mission
+        from core.tool_runner import run_tool_for_mission, tool_scan_id
         row = MissionStore().get_mission(str(mission_id))
         if row is None:
             return {'error': f'mission not found: {mission_id}'}
         if not str(tool or '').strip():
             return {'error': 'tool is required'}
-        scan_id = f'tool-{tool}-{int(time.time())}'
+        scan_id = tool_scan_id(str(tool))
         out = run_tool_for_mission(row['payload'], str(tool),
                                    evidence or {}, scan_id=scan_id)
         result, ingest = out['result'], out['ingest']

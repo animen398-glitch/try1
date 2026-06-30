@@ -10,7 +10,7 @@ from core import pentest_mission as pm
 from core.asset_store import AssetStore
 from core.findings_store import FindingsStore
 from core.tool_adapter import ToolCapability
-from core.tool_runner import run_tool_for_mission
+from core.tool_runner import parse_tool_scan_id, run_tool_for_mission, tool_scan_id
 
 
 def _mission():
@@ -74,6 +74,20 @@ def test_blocked_run_persists_nothing(tmp_path):
     assert out["ingest"]["written"] is False
     assert fs.list_findings("shop.io") == []
     assert as_.list_assets("shop.io") == []
+
+
+def test_tool_scan_id_round_trips():
+    sid = tool_scan_id("header_audit", now=1700000000)
+    assert sid == "tool-header_audit-1700000000"
+    assert parse_tool_scan_id(sid) == "header_audit"
+
+
+def test_parse_tool_scan_id_rejects_non_tool_ids():
+    assert parse_tool_scan_id("s1") is None
+    assert parse_tool_scan_id("") is None
+    assert parse_tool_scan_id(None) is None
+    assert parse_tool_scan_id("tool-header_audit") is None     # no timestamp
+    assert parse_tool_scan_id("tool--1700000000") is None      # no tool name
 
 
 def test_skipped_run_persists_nothing(tmp_path):

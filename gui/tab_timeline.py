@@ -64,6 +64,7 @@ _EVENT_LABELS = {
     'asset_gone':          'Актив исчез',
     'sla_breach':          'Просрочка SLA',
     'new_kev':             'Эксплуатируется (KEV)',
+    'tool_run':            'Прогон инструмента',
 }
 
 

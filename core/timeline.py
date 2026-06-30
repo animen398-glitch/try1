@@ -95,7 +95,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  audit_events: Optional[List[Dict]] = None,
                  kev_events: Optional[List[Dict]] = None,
                  missions: Optional[List[Dict]] = None,
-                 mission_runs: Optional[List[Dict]] = None) -> List[Dict]:
+                 mission_runs: Optional[List[Dict]] = None,
+                 tool_runs: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -113,7 +114,10 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     are already-resolved ``{mission_id, objective, run_id, status, created_at,
     updated_at}`` rows (one per linked audit run); each yields a
     ``mission_run_started`` and, when terminal, a ``mission_run_completed`` /
-    ``mission_run_failed`` event. Events are
+    ``mission_run_failed`` event. ``tool_runs`` are already-shaped
+    ``{tool, scan_id, at, findings, assets}`` rows (one per tool run that
+    ingested something — see ``_derive_tool_runs``); each yields one ``tool_run``
+    event in the ``tools`` section. Events are
     de-duplicated by ``(scan_id, type, title)`` and ordered chronologically.
     Each event is ``{scan_id, at, type, title, severity, section}``.
     """
@@ -258,6 +262,24 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                            'severity': 'info' if run_status == 'completed' else 'medium',
                            'section': 'missions'})
 
+    # Tool-run events: one summary per tool run that ingested findings/assets.
+    # A tool run is not persisted as its own entity (no second store) — these
+    # rows are derived on read from the ingested events' synthetic scan id.
+    for tr in tool_runs or []:
+        if not isinstance(tr, dict):
+            continue
+        tool = str(tr.get('tool') or '').strip()
+        scan_id = str(tr.get('scan_id') or '').strip()
+        if not tool or not scan_id:
+            continue
+        n_find = int(tr.get('findings') or 0)
+        n_asset = int(tr.get('assets') or 0)
+        events.append({'scan_id': scan_id, 'at': tr.get('at'),
+                       'type': 'tool_run',
+                       'title': f"[{tool}] ingested {n_find} finding(s), "
+                                f"{n_asset} asset(s)",
+                       'severity': 'info', 'section': 'tools'})
+
     seen = set()
     deduped: List[Dict] = []
     for ev in events:
@@ -271,6 +293,37 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                                  str(ev.get('scan_id') or ''),
                                  _SEVERITY_RANK.get(ev.get('severity'), 9)))
     return deduped
+
+
+def _derive_tool_runs(finding_events: Optional[List[Dict]],
+                      asset_events: Optional[List[Dict]]) -> List[Dict]:
+    """Group ingested CREATED finding/asset events by their synthetic tool
+    ``scan_id`` into one row per tool run (pure; derive-on-read, no second store).
+
+    A tool run that ingested nothing leaves no events and so produces no row.
+    Returns ``[{tool, scan_id, at, findings, assets}]``."""
+    from core.tool_runner import parse_tool_scan_id
+    runs: Dict[str, Dict] = {}
+
+    def _bump(rows: Optional[List[Dict]], key: str):
+        for ev in rows or []:
+            if not isinstance(ev, dict) or ev.get('type') != 'CREATED':
+                continue
+            scan_id = ev.get('scan_id')
+            tool = parse_tool_scan_id(scan_id)
+            if not tool:
+                continue
+            row = runs.setdefault(scan_id, {'tool': tool, 'scan_id': scan_id,
+                                            'at': ev.get('at'),
+                                            'findings': 0, 'assets': 0})
+            row[key] += 1
+            at = ev.get('at')
+            if at and (not row['at'] or str(at) < str(row['at'])):
+                row['at'] = at
+
+    _bump(finding_events, 'findings')
+    _bump(asset_events, 'assets')
+    return list(runs.values())
 
 
 def build_timeline(project) -> Dict:
@@ -341,6 +394,9 @@ def build_timeline(project) -> Dict:
                 'created_at': run.get('created_at'),
                 'updated_at': run.get('updated_at'),
             })
+    # Tool-run events: derived on read from the ingested findings/assets' tool
+    # scan id (no second store) — one summary per tool run that ingested items.
+    tool_runs = _derive_tool_runs(finding_events, asset_events)
     return {
         'project': project.slug,
         'series': build_series(entries),
@@ -354,5 +410,6 @@ def build_timeline(project) -> Dict:
             kev_evts,
             missions=missions,
             mission_runs=mission_runs,
+            tool_runs=tool_runs,
         ),
     }

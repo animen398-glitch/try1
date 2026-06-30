@@ -284,6 +284,66 @@ def test_build_timeline_includes_mission_run_events(tmp_path):
     assert 'mission_run_completed' in types
 
 
+def test_tool_run_events_are_shaped():
+    tool_runs = [
+        {'tool': 'header_audit', 'scan_id': 'tool-header_audit-1700000000',
+         'at': '2026-04-01T10:00:00', 'findings': 2, 'assets': 1},
+    ]
+    events = timeline.build_events([], tool_runs=tool_runs)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev['type'] == 'tool_run' and ev['section'] == 'tools'
+    assert ev['scan_id'] == 'tool-header_audit-1700000000'
+    assert ev['severity'] == 'info'
+    assert ('header_audit' in ev['title'] and '2 finding' in ev['title']
+            and '1 asset' in ev['title'])
+
+
+def test_derive_tool_runs_groups_created_events_by_scan_id():
+    fe = [
+        {'type': 'CREATED', 'scan_id': 'tool-header_audit-1700000000',
+         'at': '2026-04-01T10:00:01'},
+        {'type': 'CREATED', 'scan_id': 'tool-header_audit-1700000000',
+         'at': '2026-04-01T10:00:00'},                       # earlier 'at'
+        {'type': 'CREATED', 'scan_id': 's1', 'at': '2026-04-01T09:00:00'},  # real scan
+        {'type': 'SEEN', 'scan_id': 'tool-header_audit-1700000000', 'at': 'x'},  # not CREATED
+    ]
+    ae = [{'type': 'CREATED', 'scan_id': 'tool-safe_active_prober-1700000005',
+           'at': '2026-04-01T10:01:00'}]
+    by_id = {r['scan_id']: r for r in timeline._derive_tool_runs(fe, ae)}
+    assert 's1' not in by_id                                 # non-tool scan id excluded
+    hdr = by_id['tool-header_audit-1700000000']
+    assert hdr['tool'] == 'header_audit' and hdr['findings'] == 2
+    assert hdr['at'] == '2026-04-01T10:00:00'                # earliest kept
+    assert by_id['tool-safe_active_prober-1700000005']['assets'] == 1
+
+
+def test_build_timeline_includes_tool_run_event(tmp_path):
+    from core import pentest_mission as pm
+    from core.mission_store import MissionStore
+    from core.project import ProjectStore
+    from core.tool_runner import run_tool_for_mission, tool_scan_id
+
+    project = ProjectStore(tmp_path).get_or_create('https://shop.io')
+    mission = pm.create_mission(
+        project.slug, 'External review',
+        roe={'allowed_domains': [project.slug], 'active_scan_enabled': True,
+             'passive_only': False, 'authorized_by': 'client'},
+        allowed_actions=['headers_check'])
+    MissionStore().save_mission(mission)
+    sid = tool_scan_id('header_audit')
+    out = run_tool_for_mission(
+        mission, 'header_audit',
+        {'url': f'https://{project.slug}', 'headers': {}}, scan_id=sid)
+    assert out['ingest']['written']
+
+    tl = timeline.build_timeline(project)
+    tool_events = [e for e in tl['events'] if e['type'] == 'tool_run']
+    assert len(tool_events) == 1
+    assert tool_events[0]['scan_id'] == sid
+    assert 'header_audit' in tool_events[0]['title']
+
+
 def test_events_are_deduped_and_time_ordered():
     a = _report('s1', '2026-01-01')
     b = _report('s2', '2026-01-02', risk=('High', 60))
