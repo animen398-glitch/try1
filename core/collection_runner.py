@@ -697,6 +697,21 @@ class CollectionRunner:
             self._log(f'  ! project index failed: {e}')
             self._warn(report, 'project_index', 'Project metadata index could not be updated', e)
 
+        # Opt-in scan retention: prune old artifact dirs per the configured policy
+        # (the index + history snapshots are kept). Best-effort — never fail a
+        # scan over housekeeping; off by default (retention.enabled).
+        try:
+            from core.retention import policy_from_settings, prune_project
+            pol = policy_from_settings()
+            if pol['enabled'] and (pol['keep_last'] or pol['keep_days']):
+                out = prune_project(project, keep_last=pol['keep_last'] or None,
+                                    keep_days=pol['keep_days'] or None)
+                if out['pruned']:
+                    self._log(f"  • retention: pruned {len(out['pruned'])} old "
+                              f"scan artifact dir(s), freed {out['freed_bytes']} bytes")
+        except Exception as e:  # noqa: BLE001 — retention must not fail the scan
+            self._log(f'  ! retention skipped: {e}')
+
         self._finish_operation(op_registry, op_id, report)
         self._active_operation = (None, None)
         self._log(f'Отчёт: {html_path}')

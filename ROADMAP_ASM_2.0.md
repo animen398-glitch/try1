@@ -2507,3 +2507,35 @@ D5 stdlib `secrets`/`hmac`, no new deps. Tests: `tests/test_web_auth.py`
 public `/`, 401 without token, Bearer/`?token=` accept, mutating POST gated).
 
 ---
+
+### Scan Retention — Phase 1 (CLOSED 2026-06-30)
+
+For Continuous Security Monitoring the scan workspace grows unbounded. Retention
+prunes the bulky scan *artifact* directories beyond a keep policy while keeping
+the lightweight index — the lowest-risk design (chosen):
+
+- **`core/retention.py`** (new): `plan_retention(project, *, keep_last, keep_days,
+  now=None)` — pure planner; the newest scan is always kept, a scan survives if
+  within the newest `keep_last` OR newer than `keep_days` days; no policy → keep
+  all; an already-pruned entry is never re-listed. `apply_retention(project, plan)`
+  deletes only the `scans/<id>/` directory (`shutil.rmtree`) and marks the metadata
+  entry `artifacts_pruned` (additive) — the `metadata.json scans[]` index and the
+  `history/<id>.json` snapshot stay, so the risk series/trend stay intact, the
+  timeline degrades softly (a missing `report.json` is already skipped), and
+  FindingsStore rows are never orphaned (`scan_id` is only a label). Idempotent.
+  `policy_from_settings()` + `prune_project()` convenience.
+- **Config:** `retention: {enabled, keep_last, keep_days}` in `DEFAULT_SETTINGS`,
+  **disabled by default** (zero behaviour change).
+- **Auto:** `collection_runner` prunes after a Full Collection when
+  `retention.enabled` — best-effort, never fails a scan.
+- **GUI:** Overview "Prune old scans" button (per selected project, confirms,
+  off-thread; index/history kept).
+- Tests: `tests/test_retention.py` (keep-last / keep-days / always-keep-newest,
+  apply deletes dir + marks index + keeps history, idempotent, series survives),
+  `tests/test_overview_tab.py` (prune worker).
+
+**Decisions (locked):** prune artifacts only, keep the index (series intact, no
+orphaned findings); disabled by default; opt-in auto-prune after a scan + manual
+GUI prune. Phase 2 (full data-root backup) follows.
+
+---

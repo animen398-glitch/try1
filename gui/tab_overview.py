@@ -118,6 +118,12 @@ class OverviewTabMixin:
         btn_import_proj.setToolTip("Импортировать проект из .zip-бандла.")
         btn_import_proj.clicked.connect(self._import_project_bundle)
         ctrl.addWidget(btn_import_proj)
+        btn_prune = StyledButton("Prune old scans", style='secondary')
+        btn_prune.setToolTip(
+            "Удалить артефакты старых сканов выбранного проекта по политике "
+            "retention (индекс и история сохраняются — тренд не пострадает).")
+        btn_prune.clicked.connect(self._prune_project_scans)
+        ctrl.addWidget(btn_prune)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_overview)
         ctrl.addWidget(btn_refresh)
@@ -335,6 +341,65 @@ class OverviewTabMixin:
         self.overview_status.setText(
             f"Экспортирован {result['slug']}: {result['findings']} findings, "
             f"{result['assets']} assets, {result['scans']} сканов")
+
+    # ── scan retention ──────────────────────────────────────────────────────────
+
+    def _prune_project_scans(self):
+        """Prune the selected project's old scan artifact dirs per the configured
+        retention policy (index + history kept). Confirms before deleting."""
+        slug = self._selected_overview_slug()
+        if not slug:
+            self.overview_status.setText("Выберите проект в таблице для прореживания")
+            return
+        from core.retention import plan_retention, policy_from_settings
+        pol = policy_from_settings()
+        keep_last = pol['keep_last'] or None
+        keep_days = pol['keep_days'] or None
+        if keep_last is None and keep_days is None:
+            self.overview_status.setText(
+                "Задайте retention.keep_last / keep_days в настройках")
+            return
+        base = self._overview_base()
+        project = ProjectStore(base).get(slug)
+        if project is None:
+            self.overview_status.setText("Проект не найден")
+            return
+        plan = plan_retention(project, keep_last=keep_last, keep_days=keep_days)
+        n = len(plan['prune'])
+        if n == 0:
+            self.overview_status.setText("Нет старых сканов для прореживания")
+            return
+        if QMessageBox.question(
+                self, "Prune old scans",
+                f"Удалить артефакты {n} старых сканов проекта «{slug}»?\n"
+                "Индекс и история сохранятся — тренд не пострадает."
+        ) != QMessageBox.Yes:
+            return
+        self._set_busy(True)
+        self._run_async(
+            lambda b=base, s=slug, pl=plan: self._do_prune_scans(b, s, pl),
+            self._on_scans_pruned)
+
+    @staticmethod
+    def _do_prune_scans(base: str, slug: str, plan: dict) -> dict:
+        try:
+            from core.retention import apply_retention
+            project = ProjectStore(base).get(slug)
+            if project is None:
+                return {'error': 'project not found'}
+            return apply_retention(project, plan)
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_scans_pruned(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            QMessageBox.critical(self, "Ошибка", result['error'])
+            return
+        mb = (result.get('freed_bytes', 0)) // (1024 * 1024)
+        self.overview_status.setText(
+            f"Прорежено сканов: {len(result.get('pruned', []))}, "
+            f"освобождено ~{mb} МБ")
 
     def _import_project_bundle(self):
         """Import a project from a .zip bundle (off-thread), then refresh."""

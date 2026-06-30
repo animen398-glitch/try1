@@ -74,6 +74,12 @@ DEFAULT_SETTINGS = {
     # CVE Intelligence (EPIC 3) — optional NVD API key. Empty = keyless (works,
     # just a lower rate limit); never required (no mandatory cloud dependency).
     'nvd_api_key': '',
+    # Scan retention (core/retention.py) — opt-in housekeeping. When 'enabled',
+    # a Full Collection prunes old scan *artifact* directories beyond the policy
+    # (keep newest 'keep_last' scans and/or scans newer than 'keep_days' days; the
+    # newest scan is always kept). The metadata index + history snapshots are kept
+    # so the risk trend stays intact. 0 = that limit is off. Disabled by default.
+    'retention': {'enabled': False, 'keep_last': 10, 'keep_days': 0},
     # LAN web console (remote/web_app.py) — safe by default. 'host' is the bind
     # address (loopback by default, so the console is NOT reachable from the LAN
     # unless 'allow_lan' is set, which binds 0.0.0.0). 'token' gates every data /

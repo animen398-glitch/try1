@@ -226,6 +226,32 @@ def test_query_overview_graph_no_scans(tmp_path):
     assert out['svg'] is None
 
 
+# ── scan retention (Prune old scans) ──────────────────────────────────────────
+
+def test_do_prune_scans_deletes_artifacts_keeps_index(tmp_path):
+    from core.retention import plan_retention
+    project = ProjectStore(str(tmp_path)).get_or_create('https://x.com')
+    for i in range(1, 4):
+        sid = f'2026010{i}_000000'
+        d = project.start_scan(sid)
+        (d / 'report.json').write_text('{}', encoding='utf-8')
+        project.record_scan(d, {'scan_id': sid, 'finished_at': f'2026-01-0{i}T00:00:00',
+                                'executive_summary': {'risk_score': i, 'metrics': {}}})
+
+    plan = plan_retention(project, keep_last=1)
+    out = OverviewTabMixin._do_prune_scans(str(tmp_path), 'x.com', plan)
+    assert 'error' not in out
+    assert set(out['pruned']) == {'20260101_000000', '20260102_000000'}
+    assert not (project.root / 'scans' / '20260101_000000').exists()
+    assert (project.root / 'scans' / '20260103_000000').exists()   # newest kept
+    assert len(project.scans()) == 3                                # index intact
+
+
+def test_do_prune_scans_unknown_project(tmp_path):
+    out = OverviewTabMixin._do_prune_scans(str(tmp_path), 'nope.com', {'prune': ['x']})
+    assert 'error' in out
+
+
 # ── F-C3: company roll-up, filter, assignment ─────────────────────────────────
 
 def test_company_table_built(qapp):
