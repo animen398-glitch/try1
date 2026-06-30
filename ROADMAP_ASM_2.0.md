@@ -2348,3 +2348,23 @@ writes**:
 step, not this layer); no network, no new dependencies.
 
 ---
+
+### Tool-Run Report Renderer (CLOSED 2026-06-30)
+
+The presentation layer of the tool stack — pure, offline, **no store writes**:
+
+- **`core/tool_report.py`** (new): `render_json` / `render_markdown` /
+  `render_html` over a `ToolRunResult`'s canonical, schema-shaped payload
+  (`tool_result_to_json`). Markdown carries the envelope (tool / action / mission
+  / target / status + counts) and findings/assets tables; HTML is escaped and
+  ends with a `markdown-sha` comment — mirroring `core.audit_report` /
+  `mission_report`. A view, not storage: reads an already-assembled result and
+  returns a string; deterministic, no network, no new dependencies.
+- Tests: `tests/test_tool_report.py` (JSON == canonical payload + deterministic,
+  MD header/tables + empty case, HTML escaped + markdown-sha, type guards).
+
+**Decisions (locked):** presentation only — render the existing canonical payload,
+add no detection / no policy / no new model; deterministic; no store writes, no
+network, no new dependencies.
+
+---
