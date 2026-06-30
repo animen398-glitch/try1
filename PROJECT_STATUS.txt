@@ -5220,3 +5220,28 @@ TOOL-EVIDENCE SURFACE WIRING (2026-06-30)
   pytest зелёный (рост 2389 -> 2394; collect-only подтверждает 2394). Остаются
   (отложены): i18n, e2e/GUI-тесты, пагинация остальных таблиц, больше
   tool-evidence экстракторов (header/cookie/dependency).
+
+------------------------------------------------------------------------------
+TOOL-EVIDENCE: HEADER + COOKIE EXTRACTORS (2026-06-30)
+------------------------------------------------------------------------------
+  Расширен реестр core/tool_evidence.EXTRACTORS двумя ВЕРИФИЦИРОВАННЫМИ
+  экстракторами (формы отчёта сверены в коде):
+    header_audit -> {url, headers} из recon.data.security_headers (захваченные
+    security-заголовки; гейт по наличию ключа = recon реально фетчил; headers_check
+    флагует недостающие).
+    cookie_audit -> {url, cookies} из cookies-фазы (CookieAuditor.audit строки
+    несут name/secure/httponly — ровно то, что читает cookie_flags_check).
+  dependency_auditor СОЗНАТЕЛЬНО НЕ подключён (решение пользователя): recon хранит
+  только РЕЗУЛЬТАТ аудита (recon.data.dependencies), а не сырые scripts/html,
+  которые парсер ре-аудитит; эти находки уже в FindingsStore через vuln-фазу ->
+  tool-run избыточен, а персист сырого HTML в report.json = scope-creep против §8.
+  Реестр теперь: source_map_finder/safe_active_prober/header_audit/cookie_audit
+  (аддитивно). Surface-провязка (GUI «Из скана» / web from_scan) работает для них
+  БЕЗ изменений — она generic над реестром. Верифицированные формы отчёта:
+  recon.data = server_headers/security_headers/technologies/dependencies/cms
+  (НЕ сырые scripts/html); cookies.data.cookies. Файлы: core/tool_evidence.py,
+  tests/test_tool_evidence.py (формы, empty/unfetched->{}, round-trip через
+  parse_tool_output, available_tools), ROADMAP_ASM_2.0.md. Коммит 93f0fb5f.
+  Проверено: ruff clean, целевой+смежные зелёные, полный pytest зелёный (рост
+  2394 -> 2400; collect-only подтверждает 2400). Остаются (отложены): i18n,
+  e2e/GUI-тесты, пагинация остальных таблиц.

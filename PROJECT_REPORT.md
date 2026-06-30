@@ -167,6 +167,12 @@
 > evidence from the scan when no evidence supplied). Run flow + the tool-never-executed invariant
 > unchanged. Current scale: **full pytest 2394 passed**, ruff clean, self-check 30 tabs, 1 existing
 > Starlette/httpx warning.
+> Update 2026-06-30 (Tool-evidence header+cookie extractors): two verified extractors added to
+> `tool_evidence.EXTRACTORS` — header_audit (from `recon.data.security_headers`) and cookie_audit (from
+> the cookies phase). dependency_auditor deliberately not bridged (recon stores only the audit result,
+> not raw scripts/html; those findings are already in FindingsStore). Surface auto-fill works for both
+> with no changes (it is generic over the registry). Current scale: **full pytest 2400 passed**, ruff
+> clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -177,7 +183,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2394 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2400 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
