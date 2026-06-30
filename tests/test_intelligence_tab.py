@@ -137,3 +137,16 @@ def test_selection_shows_explanation_and_factors(qapp):
     assert 'Schema exposed' in text
     assert 'disable introspection' in text
     assert '+30' in text and '+85' in text
+
+
+def test_intel_table_paginates_and_maps_selection(qapp):
+    w = _window(qapp)
+    items = [{'priority': i, 'confidence': 50, 'confidence_band': 'medium',
+              'severity': 'low', 'category': 'c', 'title': f'item{i}',
+              'explanation': {'description': f'd{i}', 'impact': '', 'remediation': ''}}
+             for i in range(250)]
+    w._populate_intel_table(items)
+    assert len(w._intel_records) == 250 and w.intel_table.rowCount() == 200
+    w._intel_paginator.go_to(1)              # page 2 → table row 0 == item 200
+    w.intel_table.selectRow(0)
+    assert w._selected_intel()['title'] == 'item200'

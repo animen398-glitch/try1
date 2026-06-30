@@ -22,7 +22,7 @@ from qtpy.QtWidgets import (
 
 from gui import theme
 from gui.ui_components import (
-    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
 )
 
 
@@ -86,6 +86,12 @@ class IntelligenceTabMixin:
         header.setSectionResizeMode(4, QHeaderView.Stretch)  # title fills space
         self.intel_table.itemSelectionChanged.connect(self._on_intel_row_selected)
         layout.addWidget(self.intel_table, stretch=1)
+        # Page the priority-ranked list (scales with findings); full list kept
+        # for selection + CSV export.
+        self._intel_paginator = TablePaginator(
+            self.intel_table, self._render_intel_row,
+            on_page_changed=lambda: self.intel_detail.clear())
+        layout.addWidget(self._intel_paginator.widget)
 
         # ── detail panel (explanation + factors) ────────────────────────────
         detail_grp = SectionGroupBox(
@@ -212,27 +218,27 @@ class IntelligenceTabMixin:
         for key, label in self.intel_rollup.items():
             label.setText(str(summary.get(key, 0)))
 
+    @staticmethod
+    def _render_intel_row(table, r: int, rec: dict):
+        severity = str(rec.get('severity', '')).lower()
+        values = [
+            str(rec.get('priority', '')),
+            f"{rec.get('confidence', '')}% ({rec.get('confidence_band', '')})",
+            severity,
+            rec.get('category', ''),
+            rec.get('title', ''),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 2:   # severity cell — themed colour
+                color = theme.severity_color(severity)
+                if color:
+                    item.setForeground(QColor(color))
+            table.setItem(r, col, item)
+
     def _populate_intel_table(self, items: list):
-        self._intel_records = items
-        self.intel_table.setRowCount(0)
-        for rec in items:
-            r = self.intel_table.rowCount()
-            self.intel_table.insertRow(r)
-            severity = str(rec.get('severity', '')).lower()
-            values = [
-                str(rec.get('priority', '')),
-                f"{rec.get('confidence', '')}% ({rec.get('confidence_band', '')})",
-                severity,
-                rec.get('category', ''),
-                rec.get('title', ''),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 2:   # severity cell — themed colour
-                    color = theme.severity_color(severity)
-                    if color:
-                        item.setForeground(QColor(color))
-                self.intel_table.setItem(r, col, item)
+        self._intel_records = items              # full list — selection + CSV export
+        self._intel_paginator.set_rows(items)
         self.intel_detail.clear()
 
     # ── selection / detail ────────────────────────────────────────────────────
@@ -241,10 +247,7 @@ class IntelligenceTabMixin:
         sel = self.intel_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._intel_records)):
-            return {}
-        return self._intel_records[idx]
+        return self._intel_paginator.record_at(sel[0].row()) or {}
 
     def _on_intel_row_selected(self):
         rec = self._selected_intel()

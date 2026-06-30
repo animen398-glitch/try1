@@ -16,6 +16,17 @@ def _window(qapp):
     return AccuracyHost()
 
 
+def test_acc_table_paginates_and_maps_selection(qapp):
+    w = AccuracyHost()
+    items = [{'score': i % 100, 'band': 'low', 'entity_type': 'host',
+              'label': f'h{i}', 'verification': 'unverified'} for i in range(250)]
+    w._populate_acc_table(items)
+    assert len(w._acc_records) == 250 and w.acc_table.rowCount() == 200
+    w._acc_paginator.go_to(1)                # page 2 → table row 0 == h200
+    w.acc_table.selectRow(0)
+    assert w._selected_acc()['label'] == 'h200'
+
+
 def _seed_project(base):
     """One recorded scan whose report carries scannable entities (a technology +
     an infrastructure block), plus a persisted finding and asset for the slug, so

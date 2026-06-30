@@ -34,6 +34,22 @@ def test_endpoint_row_detail_lists_sources(qapp):
     assert "p1" in detail and "p2" in detail
 
 
+def test_endpoints_table_paginates_and_maps_selection(qapp):
+    w = _window(qapp)
+    eps = [{"endpoint": f"https://x/api/{i}", "count": i, "source_count": 1,
+            "sources": [f"p{i}"], "patterns": ["api_endpoint"]}
+           for i in range(250)]
+    w._populate_endpoints_table(eps)
+    assert len(w._endpoints_records) == 250          # full list kept (no [:200] cap)
+    assert w.endpoints_table.rowCount() == 200        # only the first page rendered
+    w.endpoints_table.selectRow(0)
+    assert "https://x/api/0" in w.dash_detail.toPlainText()
+    # page 2 → table row 0 maps to the full-list endpoint #200
+    w._endpoints_paginator.go_to(1)
+    w.endpoints_table.selectRow(0)
+    assert "https://x/api/200" in w.dash_detail.toPlainText()
+
+
 def test_detail_is_read_only_but_copyable(qapp):
     w = _window(qapp)
     # Read-only (not editable) yet text interaction allows selection/copy.

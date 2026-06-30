@@ -27,7 +27,7 @@ from qtpy.QtWidgets import (
 from core.project import ProjectStore
 from gui import theme
 from gui.ui_components import (
-    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
 )
 
 # confidence band → severity colour key (reuses the themed palette: high = strong,
@@ -95,6 +95,12 @@ class AccuracyTabMixin:
         header.setSectionResizeMode(3, QHeaderView.Stretch)  # entity fills space
         self.acc_table.itemSelectionChanged.connect(self._on_acc_row_selected)
         layout.addWidget(self.acc_table, stretch=1)
+        # Page the per-entity list (scales with findings/assets); full list kept
+        # for selection + CSV export.
+        self._acc_paginator = TablePaginator(
+            self.acc_table, self._render_acc_row,
+            on_page_changed=lambda: self.acc_detail.clear())
+        layout.addWidget(self._acc_paginator.widget)
 
         # ── detail panel (evidence + factors) ───────────────────────────────
         detail_grp = SectionGroupBox(
@@ -226,27 +232,27 @@ class AccuracyTabMixin:
             val = summary.get(key, 0)
             label.setText(f"{val}%" if key == 'avg_confidence' else str(val))
 
+    @staticmethod
+    def _render_acc_row(table, r: int, rec: dict):
+        band = str(rec.get('band', '')).lower()
+        values = [
+            f"{rec.get('score', '')}%",
+            band,
+            rec.get('entity_type', ''),
+            rec.get('label', ''),
+            rec.get('verification', ''),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 1:   # band cell — themed colour (low band = attention)
+                color = theme.severity_color(_BAND_SEVERITY.get(band, ''))
+                if color:
+                    item.setForeground(QColor(color))
+            table.setItem(r, col, item)
+
     def _populate_acc_table(self, items: list):
-        self._acc_records = items
-        self.acc_table.setRowCount(0)
-        for rec in items:
-            r = self.acc_table.rowCount()
-            self.acc_table.insertRow(r)
-            band = str(rec.get('band', '')).lower()
-            values = [
-                f"{rec.get('score', '')}%",
-                band,
-                rec.get('entity_type', ''),
-                rec.get('label', ''),
-                rec.get('verification', ''),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 1:   # band cell — themed colour (low band = attention)
-                    color = theme.severity_color(_BAND_SEVERITY.get(band, ''))
-                    if color:
-                        item.setForeground(QColor(color))
-                self.acc_table.setItem(r, col, item)
+        self._acc_records = items                # full list — selection + CSV export
+        self._acc_paginator.set_rows(items)
         self.acc_detail.clear()
 
     # ── selection / detail ────────────────────────────────────────────────────
@@ -255,10 +261,7 @@ class AccuracyTabMixin:
         sel = self.acc_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._acc_records)):
-            return {}
-        return self._acc_records[idx]
+        return self._acc_paginator.record_at(sel[0].row()) or {}
 
     def _on_acc_row_selected(self):
         rec = self._selected_acc()

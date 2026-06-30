@@ -19,7 +19,7 @@ from core.paths import get_path_manager
 from gui import theme
 from gui.constants import REGISTRY_DB
 from gui.ui_components import (
-    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
 )
 from utils.data_viewer import DataViewer
 from utils.endpoint_index import EndpointIndex
@@ -187,6 +187,12 @@ class DashboardTabMixin:
         ep_header.setSectionResizeMode(0, QHeaderView.Stretch)  # Endpoint fills space
         self.endpoints_table.itemSelectionChanged.connect(self._on_endpoint_row_selected)
         ep_layout.addWidget(self.endpoints_table)
+        # Page the (potentially huge) unique-endpoint list instead of truncating
+        # it; the full list is kept for selection/detail.
+        self._endpoints_paginator = TablePaginator(
+            self.endpoints_table, self._render_endpoint_row,
+            on_page_changed=lambda: self.dash_detail.clear())
+        ep_layout.addWidget(self._endpoints_paginator.widget)
         ep_grp.setLayout(ep_layout)
         layout.addWidget(ep_grp, stretch=1)
 
@@ -268,9 +274,9 @@ class DashboardTabMixin:
         вид автоматически.
         """
         self.dashboard_table.setRowCount(0)
-        self.endpoints_table.setRowCount(0)
         self._dashboard_records = []
         self._endpoints_records = []
+        self._endpoints_paginator.set_rows([])   # clears the table + paginator state
         self.dash_detail.clear()
         for label in self.dash_stats.values():
             label.setText("0")
@@ -410,27 +416,27 @@ class DashboardTabMixin:
     def _clear_security(self):
         self._populate_security(None)
 
+    @staticmethod
+    def _render_endpoint_row(table, r: int, ep: dict):
+        sources = ep.get('sources', [])
+        patterns = ep.get('patterns', [])
+        values = [
+            ep.get('endpoint', ''),
+            ep.get('count', 0),
+            ep.get('source_count', 0),
+            ', '.join(patterns),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col in (1, 2):
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            if col == 2 and sources:
+                item.setToolTip('\n'.join(sources))  # source pages on hover
+            table.setItem(r, col, item)
+
     def _populate_endpoints_table(self, endpoints: list):
-        self._endpoints_records = endpoints[:200]
-        self.endpoints_table.setRowCount(0)
-        for ep in endpoints[:200]:
-            r = self.endpoints_table.rowCount()
-            self.endpoints_table.insertRow(r)
-            sources = ep.get('sources', [])
-            patterns = ep.get('patterns', [])
-            values = [
-                ep.get('endpoint', ''),
-                ep.get('count', 0),
-                ep.get('source_count', 0),
-                ', '.join(patterns),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col in (1, 2):
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if col == 2 and sources:
-                    item.setToolTip('\n'.join(sources))  # source pages on hover
-                self.endpoints_table.setItem(r, col, item)
+        self._endpoints_records = endpoints      # full list — selection/detail
+        self._endpoints_paginator.set_rows(endpoints)
 
     def _on_filter_combo_changed(self, *args):
         # A manual type change clears any active endpoint drill-down.
@@ -516,9 +522,10 @@ class DashboardTabMixin:
         self._apply_dashboard_filter()
 
     def _show_endpoint_detail(self, row: int):
-        if not (0 <= row < len(self._endpoints_records)):
+        # The table shows one page; map the table row to the full-list record.
+        ep = self._endpoints_paginator.record_at(row)
+        if ep is None:
             return
-        ep = self._endpoints_records[row]
         lines = [
             f"Эндпоинт:   {ep.get('endpoint', '')}",
             f"Вхождений:  {ep.get('count', 0)}",

@@ -2598,6 +2598,19 @@ the widget, not holding the rows) — the data layer is untouched:
 CSV stay over the full list); reusable paginator; scope this iteration = Findings
 + Assets + Timeline, others follow on the same helper.
 
+**More tables paginated (2026-07-01):** applied the same `TablePaginator` pattern
+to the remaining high-volume tables — **Dashboard endpoints** (drops the old
+`[:200]` truncation — now pages the full unique-endpoint list), **Intelligence**
+(priority-ranked findings) and **Accuracy** (per-entity rows); each keeps its full
+list for selection/detail + CSV and maps the table row via `record_at`. The
+**Subdomain** table is deliberately left as-is: it is a *streaming* table
+(`row_found`/`row_updated` append + in-place update during a live scan, tracked by
+`_subdomain_rows`), which the static list-paginator doesn't fit; it is bounded per
+scan. The other table tabs (exposure/criticality/technology-risk/osint/history/
+remediation/security/attack-paths) are bounded-small — left unpaginated by design.
+Tests: `tests/test_dashboard_detail.py`, `tests/test_intelligence_tab.py`,
+`tests/test_accuracy_tab.py` (page rendered + selection maps across pages).
+
 ---
 
 ### Interactive Attack-Path Graph (CLOSED 2026-06-30)
