@@ -2810,8 +2810,16 @@ section `engagements`; commit `2ed2a75a`); **S2** web parity (`GET /engagements`
 engagement in `demo_seed` (commit `919d1ad7`); **S4** a GUI **Engagements** tab
 (`gui/tab_engagement`, mirrors `tab_missions`; registered in
 plugin_manager/main_window, lazy-loaded — now 31 tabs; commit `b301cc24`). Thin
-surfaces, no second store. The Engagement epic (F1–F4 + S1–S4) is complete;
-deferred: retest workflow, engagement CSV/overview, engagement→mission scope/ROE
-inheritance.
+surfaces, no second store.
+
+**Follow-ups (CLOSED 2026-07-01, commit `2825e836`):** the deferred items are
+done — **retest** (`core/engagement_retest.py`: re-check each linked finding's
+current status → fixed/open/accepted/missing; web `GET /engagements/{id}/retest`
++ GUI export), **overview + CSV** (`core/engagement_overview.py` +
+`report_export.engagements_csv`; web `GET /engagements/overview` &
+`GET /engagements.csv` + GUI export), and **scope/ROE inheritance**
+(`engagement.mission_roe_from_engagement` — a mission created under an engagement
+inherits its scope+ROE). The Engagement epic (F1–F4 + S1–S4 + follow-ups) is
+fully complete.
 
 ---

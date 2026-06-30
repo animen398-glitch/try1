@@ -5368,5 +5368,24 @@ ENGAGEMENT SURFACES — S1–S4 (2026-07-01)
   Проверено: ruff clean, целевые+смежные (incl MainWindow-based) зелёные, полный
   pytest зелёный (рост 2453 -> 2472; collect-only подтверждает 2472). Локальные
   коммиты, без push. Engagement-эпик (backend F1–F4 + surfaces S1–S4) закрыт.
-  Отложено осознанно: retest workflow (отдельная итерация), engagement CSV/
-  overview portfolio, engagement→mission авто-наследование scope/ROE.
+
+------------------------------------------------------------------------------
+ENGAGEMENT FOLLOW-UPS — retest / overview+CSV / scope inheritance (2026-07-01)
+------------------------------------------------------------------------------
+  Закрыты все ранее отложенные хвосты Engagement-эпика (commit 2825e836).
+    Retest: core/engagement_retest.py — build_retest перепроверяет КАЖДУЮ
+    связанную находку по ТЕКУЩЕМУ статусу (fixed=FIXED / open=OPEN,IN_PROGRESS /
+    accepted=IGNORED,FALSE_POSITIVE / missing=удалена) — derive-on-read поверх
+    FindingsStore, без re-scan/второго стора + render_json/markdown. Web
+    GET /engagements/{id}/retest; GUI кнопка «Export retest».
+    Overview + CSV: core/engagement_overview.build_engagement_overview (counts by
+    status + per-engagement rows) + report_export.engagements_csv. Web
+    GET /engagements/overview + GET /engagements.csv; GUI кнопка «Export CSV».
+    Scope/ROE inheritance: core/engagement.mission_roe_from_engagement — чистый
+    helper, сидирует mission-ROE (audit_scope-форма, scope встроен) из engagement
+    scope+roe+authorization, чтобы миссия под engagement наследовала границы.
+  Тесты: test_engagement_retest.py / test_engagement_overview.py + дополнения в
+  test_engagement.py / test_web_engagements.py / test_engagement_tab.py /
+  test_report_export.py. Проверено: ruff clean, целевые сьюты зелёные, полный
+  pytest зелёный (рост 2472 -> 2482; collect-only подтверждает 2482). Локальные
+  коммиты, без push. Engagement-эпик ПОЛНОСТЬЮ закрыт (F1–F4 + S1–S4 + follow-ups).

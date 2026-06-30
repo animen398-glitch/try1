@@ -198,6 +198,7 @@
 > tab_missions: create/advance/link/prune/report), registered in plugin_manager/main_window (now 31 tabs).
 > Thin surfaces; no second store. Engagement epic (F1–F4 + S1–S4) complete. Current scale: **full pytest
 > 2472 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-07-01 (Engagement follow-ups): closed the deferred items — engagement_retest (re-check linked findings' current status: fixed/open/accepted/missing, web GET /engagements/{id}/retest + GUI export), engagement_overview + report_export.engagements_csv (web /engagements/overview + /engagements.csv + GUI export), and engagement.mission_roe_from_engagement (mission inherits the engagement's scope/ROE). Engagement epic fully closed. Current scale: **full pytest 2482 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -208,7 +209,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2472 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2482 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
