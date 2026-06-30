@@ -2725,3 +2725,29 @@ mission's project scan (`base=_REPORT_BASE`) before the run. Tests:
 flow (`run_tool_for_mission`) and the tool-never-executed invariant are unchanged.
 
 ---
+
+### e2e / GUI-interaction Tests (CLOSED 2026-07-01)
+
+The GUI suite tested handlers in isolation (`_run_async` stubbed to a no-op); it
+did not exercise the real **click → handler → worker → callback → store/UI**
+chain. Added a deterministic, headless e2e layer:
+
+- **Harness (`tests/gui_test_helpers.py`):** `_SyncRunMixin` overrides
+  `_run_async(work, on_done)` to run the worker **inline** and call the callback
+  (the `TaskRunnerMixin` contract, synchronously — no QThread, deterministic) +
+  reusable e2e hosts `FindingsE2EHost` / `MissionsE2EHost`. Existing hosts/tests
+  untouched.
+- **`tests/test_gui_e2e.py`:** genuine button activations (`QAbstractButton.click()`
+  — respects enabled-state, fires the connected slot) over isolated stores:
+  Findings — select a row then **assign / comment / change status** by click
+  (asserts the store), plus the disabled-without-selection enable-state wiring;
+  Missions — **run a tool** by click (header_audit → finding ingested into the
+  project) and **«Из скана»** fill-evidence by click (subdomains scan → evidence
+  field auto-filled). Offline / offscreen Qt.
+
+**Decisions (locked):** synchronous `_run_async` for deterministic, thread-free
+e2e; `.click()` activations (robust headless, still validates the full wiring);
+representative scope (Findings + Missions mutating flows), other tabs follow on
+the same harness.
+
+---

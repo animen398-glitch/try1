@@ -45,6 +45,21 @@ class _BaseHost(QWidget):
         return None
 
 
+class _SyncRunMixin:
+    """e2e: run ``_run_async`` **inline** (no QThread) so a ``QTest`` click drives
+    the full handler → worker → callback → UI chain deterministically.
+
+    Mirrors the real ``TaskRunnerMixin`` contract ``_run_async(work, on_done)``
+    but synchronously, so headless GUI e2e tests stay thread-free and
+    deterministic. Override beats ``_BaseHost._run_async`` via MRO."""
+
+    def _run_async(self, work, on_done=None, *args, **kwargs):
+        result = work()
+        if on_done is not None:
+            on_done(result)
+        return result
+
+
 class DashboardHost(_BaseHost, DashboardTabMixin):
     def __init__(self):
         super().__init__()
@@ -156,3 +171,13 @@ class MissionsHost(_BaseHost, MissionsTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
         self._build_missions_tab()
+
+
+# ── e2e hosts: synchronous _run_async so QTest clicks drive the full chain ───────
+
+class FindingsE2EHost(_SyncRunMixin, FindingsHost):
+    """FindingsHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class MissionsE2EHost(_SyncRunMixin, MissionsHost):
+    """MissionsHost whose _run_async runs inline (for click-driven e2e tests)."""
