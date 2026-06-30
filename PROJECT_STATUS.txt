@@ -5389,3 +5389,5 @@ ENGAGEMENT FOLLOW-UPS — retest / overview+CSV / scope inheritance (2026-07-01)
   test_report_export.py. Проверено: ruff clean, целевые сьюты зелёные, полный
   pytest зелёный (рост 2472 -> 2482; collect-only подтверждает 2482). Локальные
   коммиты, без push. Engagement-эпик ПОЛНОСТЬЮ закрыт (F1–F4 + S1–S4 + follow-ups).
+  + Overview-карточка «Engagements (Pentest Workbench)» (commit 38525e3b, surface-
+  паритет с missions) — рост 2482 -> 2484.
