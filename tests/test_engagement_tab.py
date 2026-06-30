@@ -98,6 +98,17 @@ def test_render_engagement_report_formats(qapp):
     assert "<html>" in html
 
 
+def test_do_create_mission_for_engagement(qapp):
+    saved = _save("Acme", "shop.com",
+                  authorization={"accepted": True})
+    out = EngagementsTabMixin._do_create_mission_for_engagement(
+        saved["payload"], "External review")
+    assert "error" not in out and "created" in out["ok"]
+    from core.engagement_store import EngagementStore
+    linked = EngagementStore().get_engagement(saved["id"])["payload"]
+    assert linked["linked_mission_ids"]                  # mission linked back
+
+
 def test_render_retest_and_csv_helpers(qapp):
     saved = _save("Acme Corp", "shop.com")
     retest_md = EngagementsTabMixin._render_engagement_retest(saved["payload"])

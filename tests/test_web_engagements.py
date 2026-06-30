@@ -83,6 +83,19 @@ def test_retest_overview_csv_helpers():
     assert saved["id"] in csv_text
 
 
+def test_create_mission_under_engagement_helper():
+    saved = _save("Acme", "shop.io")
+    out = wa._engagement_create_mission(saved["id"], "External review",
+                                        ["headers_check"])
+    assert "error" not in out and out["mission_id"]
+    from core.engagement_store import EngagementStore
+    linked = EngagementStore().get_engagement(saved["id"])["payload"]
+    assert out["mission_id"] in linked["linked_mission_ids"]
+    assert "not found" in wa._engagement_create_mission("nope", "x").get("error", "")
+    assert "invalid" in wa._engagement_create_mission(
+        saved["id"], "y", ["exploit"]).get("error", "")
+
+
 # ── live endpoints ───────────────────────────────────────────────────────────--
 
 def test_engagement_endpoints_with_testclient():
@@ -147,3 +160,11 @@ def test_engagement_endpoints_with_testclient():
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     assert r.text.splitlines()[0].startswith("Engagement ID,Client")
+
+    # create a mission under the engagement (ROE inherited) → linked
+    r = client.post(f"/engagements/{eid}/missions",
+                    json={"objective": "Spin-up review",
+                          "allowed_actions": ["headers_check"]})
+    assert r.status_code == 200 and r.json()["mission_id"]
+    assert client.post("/engagements/missing/missions",
+                       json={"objective": "x"}).status_code == 404

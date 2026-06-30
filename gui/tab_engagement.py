@@ -162,6 +162,24 @@ class EngagementsTabMixin:
         link_row.addStretch(1)
         layout.addLayout(link_row)
 
+        # ── create a mission under the engagement (ROE inherited) ────────────
+        new_mission_row = QHBoxLayout()
+        new_mission_row.addWidget(QLabel("New mission objective:"))
+        self.engagement_mission_objective = QLineEdit()
+        self.engagement_mission_objective.setPlaceholderText(
+            "objective — mission inherits the engagement's scope/ROE")
+        new_mission_row.addWidget(self.engagement_mission_objective, stretch=1)
+        self.btn_engagement_new_mission = StyledButton(
+            "Create mission", style="secondary")
+        self.btn_engagement_new_mission.setToolTip(
+            "Создать миссию под engagement — ROE наследуется из scope/ROE "
+            "engagement, миссия сразу линкуется к нему.")
+        self.btn_engagement_new_mission.setEnabled(False)
+        self.btn_engagement_new_mission.clicked.connect(
+            self._create_mission_for_engagement)
+        new_mission_row.addWidget(self.btn_engagement_new_mission)
+        layout.addLayout(new_mission_row)
+
         # ── report export row ───────────────────────────────────────────────
         report_row = QHBoxLayout()
         report_row.addWidget(QLabel("Engagement report:"))
@@ -445,6 +463,7 @@ class EngagementsTabMixin:
             idle and self.engagement_link_run.count() > 0)
         self.btn_engagement_link_finding.setEnabled(
             idle and self.engagement_link_finding.count() > 0)
+        self.btn_engagement_new_mission.setEnabled(idle)
         for btn in (self.btn_engagement_report_json, self.btn_engagement_report_md,
                     self.btn_engagement_report_html, self.btn_engagement_retest):
             btn.setEnabled(idle)
@@ -512,6 +531,30 @@ class EngagementsTabMixin:
                       "finding": el.link_finding_checked}[kind]
             EngagementStore().save_engagement(linker(payload, str(ref_id)))
             return {"ok": f"linked {kind} {ref_id}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    def _create_mission_for_engagement(self):
+        objective = self.engagement_mission_objective.text().strip()
+        if not objective:
+            self.engagement_status.setText("New mission objective is required")
+            return
+        payload = self._begin_engagement_action()
+        if not payload:
+            return
+        self.engagement_status.setText("Creating mission under engagement...")
+        self._run_async(
+            lambda p=payload, o=objective:
+                self._do_create_mission_for_engagement(p, o),
+            self._on_engagement_action_done)
+
+    @staticmethod
+    def _do_create_mission_for_engagement(payload: Dict[str, Any],
+                                          objective: str) -> dict:
+        try:
+            from core.engagement_missions import create_mission_under_engagement
+            out = create_mission_under_engagement(payload, objective)
+            return {"ok": f"mission {out['mission_id']} created + linked"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 

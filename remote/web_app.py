@@ -1160,6 +1160,23 @@ def _engagements_csv(project: Optional[str] = None) -> str:
     return engagements_csv(build_engagement_overview(project=project))
 
 
+def _engagement_create_mission(engagement_id: str, objective: str,
+                               allowed_actions=None) -> dict:
+    """Create a mission under an engagement (ROE inherited) + link it back."""
+    try:
+        from core.engagement_missions import create_mission_under_engagement
+        from core.engagement_store import EngagementStore
+        row = EngagementStore().get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        return create_mission_under_engagement(
+            row['payload'], objective, allowed_actions=allowed_actions)
+    except ValueError as e:
+        return {'error': str(e)}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -2287,6 +2304,10 @@ if _FASTAPI_OK:
         kind: str          # mission | audit_run | finding
         ref_id: str
 
+    class EngagementMissionRequest(BaseModel):
+        objective: str
+        allowed_actions: Optional[list] = None
+
     @app.get('/engagements')
     async def engagements(project: Optional[str] = None):
         return JSONResponse(_engagements_list(project))
@@ -2368,6 +2389,18 @@ if _FASTAPI_OK:
         out = _engagement_retest(engagement_id)
         code = 404 if out.get('error') and 'not found' in out['error'] else 200
         return JSONResponse(out, status_code=code)
+
+    @app.post('/engagements/{engagement_id}/missions')
+    async def engagement_create_mission(engagement_id: str,
+                                        body: EngagementMissionRequest):
+        out = _engagement_create_mission(engagement_id, body.objective,
+                                         body.allowed_actions)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[engagement] {engagement_id[:8]} → mission '
+                    f'{out["mission_id"][:16]}', 'ok')
+        return out
 
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):
