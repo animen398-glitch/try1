@@ -108,6 +108,30 @@ def test_populate_overview_missions_cards(qapp):
     assert 'Review' in w.overview_mission_recent.text()
 
 
+def test_populate_overview_engagement_cards(qapp):
+    w = OverviewHost()
+    w._populate_overview_engagements({
+        'total': 2,
+        'counts': {'active': 1, 'reporting': 1, 'retest': 0, 'closed': 0},
+        'engagements': [{'engagement_id': 'eng-1', 'client': 'Acme Corp',
+                         'status': 'reporting', 'missions': 2, 'findings': 3}],
+    })
+    assert w.overview_engagement_cards['total'].text() == '2'
+    assert w.overview_engagement_cards['active'].text() == '1'
+    assert w.overview_engagement_cards['reporting'].text() == '1'
+    assert 'Acme Corp' in w.overview_engagement_recent.text()
+
+
+def test_query_overview_attaches_engagements_overview(tmp_path):
+    from core import engagement as eng
+    from core.engagement_store import EngagementStore
+    _seed_project(tmp_path)
+    EngagementStore().save_engagement(eng.create_engagement("Acme", "x.com"))
+    out = OverviewTabMixin._query_overview(str(tmp_path))
+    assert "error" not in out
+    assert out["engagements_overview"]["total"] == 1
+
+
 def test_query_overview_series(tmp_path):
     _seed_project(tmp_path, scores=(10, 60))
     out = OverviewTabMixin._query_overview_series(str(tmp_path), 'x.com')

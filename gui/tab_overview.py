@@ -73,6 +73,15 @@ class OverviewTabMixin:
         ('client_facing', 'Client-facing'),
     ]
 
+    # Engagement portfolio cards (derive-on-read, core.engagement_overview).
+    OVERVIEW_ENGAGEMENT_CARDS = [
+        ('total',     'Engagements'),
+        ('active',    'Active'),
+        ('reporting', 'Reporting'),
+        ('retest',    'Retest'),
+        ('closed',    'Closed'),
+    ]
+
     # (series key -> (caption, colour)) for the per-project trend sparklines.
     OVERVIEW_TRENDS = [
         ('risk_score',     ('Risk', '#c62828')),
@@ -164,6 +173,21 @@ class OverviewTabMixin:
         mission_v.addWidget(self.overview_mission_recent)
         mission_grp.setLayout(mission_v)
         layout.addWidget(mission_grp)
+
+        # Engagement portfolio roll-up — derive-on-read, read-only.
+        engagement_grp = SectionGroupBox("Engagements (Pentest Workbench)")
+        engagement_v = QVBoxLayout()
+        engagement_row = QHBoxLayout()
+        self.overview_engagement_cards: dict = {}
+        for key, title in self.OVERVIEW_ENGAGEMENT_CARDS:
+            card, value_label = self._make_stat_card(title)
+            self.overview_engagement_cards[key] = value_label
+            engagement_row.addWidget(card)
+        engagement_v.addLayout(engagement_row)
+        self.overview_engagement_recent = QLabel("Последний engagement: —")
+        engagement_v.addWidget(self.overview_engagement_recent)
+        engagement_grp.setLayout(engagement_v)
+        layout.addWidget(engagement_grp)
 
         # Companies roll-up (F-C3) — group the estate by company; selecting a
         # company filters the projects table below to its projects.
@@ -555,6 +579,12 @@ class OverviewTabMixin:
         except Exception:  # noqa: BLE001 — overview must render even if missions fail
             data['missions_overview'] = {'total': 0, 'counts': {},
                                          'client_facing': 0, 'missions': []}
+        try:
+            from core.engagement_overview import build_engagement_overview
+            data['engagements_overview'] = build_engagement_overview()
+        except Exception:  # noqa: BLE001 — overview must render even if it fails
+            data['engagements_overview'] = {'total': 0, 'counts': {},
+                                            'engagements': []}
         return data
 
     def _on_overview_loaded(self, result: dict):
@@ -572,6 +602,7 @@ class OverviewTabMixin:
             self._populate_overview_companies([])
             self._populate_assign_combo([])
             self._populate_overview_missions({})
+            self._populate_overview_engagements({})
             self.overview_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         self._overview_loaded = True
@@ -580,6 +611,7 @@ class OverviewTabMixin:
         self._overview_rows = rows
         self._populate_overview_totals(result.get('totals', {}))
         self._populate_overview_missions(result.get('missions_overview', {}))
+        self._populate_overview_engagements(result.get('engagements_overview', {}))
         self._populate_overview_table(rows)
         self._apply_company_filter()              # re-apply any active filter
         self._render_overview_heatmap(rows)
@@ -619,6 +651,27 @@ class OverviewTabMixin:
             recent += (f" (run {m.get('last_run_id')}: {m.get('last_run_status')},"
                        f" client-facing {m.get('client_facing', 0)})")
         self.overview_mission_recent.setText(recent)
+
+    def _populate_overview_engagements(self, eo: dict):
+        counts = eo.get('counts') or {}
+        values = {
+            'total': eo.get('total', 0),
+            'active': counts.get('active', 0),
+            'reporting': counts.get('reporting', 0),
+            'retest': counts.get('retest', 0),
+            'closed': counts.get('closed', 0),
+        }
+        for key, label in self.overview_engagement_cards.items():
+            label.setText(str(values.get(key, 0)))
+        engagements = eo.get('engagements') or []
+        if not engagements:
+            self.overview_engagement_recent.setText("Последний engagement: —")
+            return
+        e = engagements[0]
+        self.overview_engagement_recent.setText(
+            f"Последний engagement: {e.get('client') or e.get('engagement_id')}"
+            f" — {e.get('status')} (missions {e.get('missions', 0)}, "
+            f"findings {e.get('findings', 0)})")
 
     def _populate_overview_table(self, rows: list):
         self.overview_table.setRowCount(0)
