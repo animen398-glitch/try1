@@ -184,6 +184,14 @@
 > selection + CSV and maps via record_at. Subdomain left as-is (streaming/in-place-updated table, bounded
 > per scan); the other table tabs are bounded-small. Current scale: **full pytest 2409 passed**, ruff
 > clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-07-01 (Engagement & ROE Foundation — backend F1–F4): started the Authorized/Client-Safe
+> Pentest Workbench's top-level entity. `core/engagement.py` (pure contract: client+project → scope/ROE/
+> authorization + links to missions/audit-runs/findings; lifecycle draft→authorized→active→reporting⇄
+> retest→closed→archived), `core/engagement_store.py` (single-table SQLite + project-bundle export/import),
+> `core/engagement_links.py` (store-checked links + present/stale resolve/prune), `core/engagement_report.py`
+> (evidence-first deliverable reusing audit_report, JSON/MD/HTML). Reuses audit_scope/audit_schema; no new
+> attack capabilities. Backend only — GUI/Web surfaces deferred to a separate step. Current scale: **full
+> pytest 2453 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -194,7 +202,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2409 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2453 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

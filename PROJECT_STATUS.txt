@@ -5294,3 +5294,52 @@ GUI PAGINATION: DASHBOARD / INTELLIGENCE / ACCURACY (2026-07-01)
   tests/test_accuracy_tab.py, ROADMAP_ASM_2.0.md. Коммит 3772364e. Проверено:
   ruff clean, целевые+смежные зелёные, полный pytest зелёный (рост 2406 -> 2409;
   collect-only подтверждает 2409). Остаётся (отложено): i18n.
+
+==============================================================================
+ENGAGEMENT & ROE FOUNDATION — backend slice F1–F4 (2026-07-01)
+==============================================================================
+  Стартовал следующий большой этап: Authorized / Client-Safe Pentest Workbench →
+  верхнеуровневая сущность Pentest Engagement, связывающая клиента/проект/scope/
+  ROE/авторизацию с миссиями, audit runs и findings. Дуга: Engagement ->
+  Authorization/ROE -> Missions -> Audit Runs -> Evidence -> Findings -> Report ->
+  Retest -> Close. БЭКЕНД-срез без GUI/Web (surfaces отложены до отдельного go).
+  Направление строго авторизованный pentest: НЕ добавлялись brute force/stealth/
+  exploit-automation/credential-attacks/auth-bypass/persistence/destructive.
+
+  F1 Engagement Core Contract (commit 44b52784):
+    core/engagement.py — чистый/детерминированный/offline контракт (зеркало
+    core/pentest_mission.py): без I/O/БД/сети/subprocess/GUI; не читает сторы.
+    create/normalize/validate/advance_engagement_status + link_mission/
+    link_audit_run/link_finding + engagement_to_json. Lifecycle draft->authorized
+    ->active->reporting<->retest->closed->archived (archived терминальный).
+    Engagement РАЗДЕЛЯЕТ scope {allowed_domains,allowed_ips,forbidden_paths} +
+    roe {passive_only,active_scan_enabled,rate_limit,window,emergency_contact} +
+    authorization {accepted,authorized_by,reference,notes} (в отличие от миссии,
+    где ROE встраивает scope). Reuse audit_scope.validate_roe для active/passive
+    consistency (не дублируется); schema через audit_schema. Детерминированный id
+    eng-+sha1(client|project)[:16]; списки dedupe+sort; вход не мутируется.
+    ->authorized требует valid + authorization.accepted=True; ->closed требует
+    >=1 связанного объекта. schemas/asa_engagement.schema.json + alias.
+    tests/test_engagement.py (22).
+  F2 EngagementStore + bundle (commit 42a175f4):
+    core/engagement_store.py — EngagementStore(SQLiteStore) single-table (no event
+    log), save/get/list/delete/export, idempotent save, schema-validация перед
+    записью. project_io: engagements.json в bundle (export+import), аддитивно
+    (FORMAT_VERSION остался 1; старые бандлы -> 0 engagements). conftest +
+    _isolate_engagements_db. tests/test_engagement_store.py + project_io round-trip.
+  F3 Link integrity (commit c32d6702):
+    core/engagement_links.py — store-aware слой поверх чистого контракта (зеркало
+    mission_links): link_*_checked (проверка существования в Mission/AuditRun/
+    Findings store) + resolve_links (present/stale по всем 3 типам) +
+    prune_stale_links. Чистый core.engagement не тронут. tests/test_engagement_links.py.
+  F4 Engagement report (commit 0e8da25b):
+    core/engagement_report.py — evidence-first deliverable: build_engagement_report
+    агрегирует envelope + linked missions (summary) + linked audit runs (client/
+    review findings reuse из audit_report) + appendix linked findings; stale-линки
+    помечаются, не фейкаются. render_json/markdown/html — чистые. View, не стор.
+    tests/test_engagement_report.py.
+
+  Проверено: ruff clean (все новые модули), целевые сьюты зелёные, полный pytest
+  зелёный (рост 2409 -> 2453; collect-only подтверждает 2453). Локальные коммиты,
+  без push. Surfaces (GUI Engagement tab / web read-parity / timeline events /
+  demo_seed / retest workflow) — СЛЕДУЮЩИЙ шаг, только после явного подтверждения.

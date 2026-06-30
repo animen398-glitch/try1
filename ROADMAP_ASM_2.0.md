@@ -2764,3 +2764,43 @@ representative scope (Findings + Missions mutating flows), other tabs follow on
 the same harness.
 
 ---
+
+### Engagement & ROE Foundation — backend slice (CLOSED 2026-07-01)
+
+The next strategic layer of the Authorized / Client-Safe Pentest Workbench: a
+top-level **Pentest Engagement** that ties a client + project to scope, ROE,
+client authorization, and links to the missions / audit runs / findings that
+carry the work and its evidence. Arc: Engagement → Authorization/ROE → Missions
+→ Audit Runs → Evidence → Findings → Report → Retest → Close. Backend only this
+slice (GUI/Web surfaces deferred to a separate, explicitly-confirmed step). No
+new attack capabilities — strictly authorized-pentest workflow.
+
+- **F1 `core/engagement.py`** (commit `44b52784`): pure, deterministic, offline
+  contract (mirrors `core.pentest_mission`). `create / normalize / validate /
+  advance_engagement_status`, `link_mission / link_audit_run / link_finding`,
+  `engagement_to_json`. Lifecycle draft → authorized → active → reporting ⇄
+  retest → closed → archived (archived terminal). Engagement keeps `scope`,
+  `roe` and `authorization` as separate blocks (unlike a mission's ROE-embedded
+  scope); reuses `audit_scope.validate_roe` for the active/passive consistency
+  rule and `audit_schema` for validation. Deterministic id (`eng-` + sha1(
+  client|project)[:16]); → authorized requires an accepted authorization; →
+  closed requires ≥1 linked object. `schemas/asa_engagement.schema.json` + alias.
+- **F2 `core/engagement_store.py`** (commit `42a175f4`): `EngagementStore` —
+  single-table SQLite (no event log; mirrors `MissionStore`), CRUD + idempotent
+  save + schema-validated export; `core/project_io` bundle gains `engagements.json`
+  (additive, FORMAT_VERSION stays 1).
+- **F3 `core/engagement_links.py`** (commit `c32d6702`): the store-aware layer —
+  `link_*_checked` (existence-validated), `resolve_links` (present/stale across
+  missions/runs/findings), `prune_stale_links`. The pure contract stays untouched.
+- **F4 `core/engagement_report.py`** (commit `0e8da25b`): the evidence-first
+  deliverable — `build_engagement_report` aggregates the envelope + linked
+  missions + linked audit runs (client-facing + review findings reused from
+  `core.audit_report`) + linked-findings appendix; stale links are flagged, never
+  faked. Pure `render_json / render_markdown / render_html`. A view, not storage.
+
+**Decisions (locked):** mirror the Mission Center backend layering; engagement
+separates scope/roe/authorization; reuse audit_scope/audit_schema/audit_report;
+no second store of the linked entities; surfaces (GUI/web/timeline/demo/retest)
+are a separate step pending explicit confirmation.
+
+---
