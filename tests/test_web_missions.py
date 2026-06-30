@@ -94,6 +94,55 @@ def _ready_mission(project="shop.com", objective="Authorized external review"):
     return MissionStore().save_mission(mission)
 
 
+def _scoped_mission(project="shop.io", objective="External review"):
+    """A mission whose ROE puts the project host in scope, so a passive tool
+    (header_audit) is allowed against it."""
+    mission = pm.create_mission(
+        project, objective,
+        roe={"allowed_domains": [project], "active_scan_enabled": True,
+             "passive_only": False, "authorized_by": "client"},
+        allowed_actions=["headers_check"])
+    return MissionStore().save_mission(mission)
+
+
+def test_mission_run_tool_helper_completed_ingests():
+    from core.findings_store import FindingsStore
+    saved = _scoped_mission()
+    out = wa._mission_run_tool(
+        saved["id"], "header_audit", {"url": "https://shop.io/app", "headers": {}})
+    assert "error" not in out
+    assert out["status"] == "completed" and out["written"] is True
+    assert out["findings"] >= 1
+    assert FindingsStore().list_findings("shop.io")        # ingested into the store
+
+
+def test_mission_run_tool_helper_blocked_not_ingested():
+    from core.findings_store import FindingsStore
+    mission = pm.create_mission(
+        "shop.io", "Passive review",
+        roe={"allowed_domains": ["shop.io"], "active_scan_enabled": False,
+             "passive_only": True},
+        allowed_actions=["headers_check"])
+    saved = MissionStore().save_mission(mission)
+    # an active tool under a passive-only ROE is blocked → nothing ingested
+    out = wa._mission_run_tool(
+        saved["id"], "graphql_introspector", {"url": "https://shop.io"})
+    assert "error" not in out
+    assert out["status"] == "blocked" and out["written"] is False
+    assert FindingsStore().list_findings("shop.io") == []
+
+
+def test_mission_run_tool_helper_unknown_is_not_found():
+    out = wa._mission_run_tool("nope", "header_audit", {})
+    assert "not found" in out.get("error", "")
+
+
+def test_mission_run_tool_helper_requires_tool():
+    saved = _scoped_mission()
+    out = wa._mission_run_tool(saved["id"], "", {})
+    assert "tool is required" in out.get("error", "")
+
+
 def test_mission_run_helper_executes_ready_mission():
     saved = _ready_mission()
     out = wa._mission_run(saved["id"])
@@ -199,6 +248,16 @@ def test_mission_endpoints_with_testclient():
     assert r.status_code == 200 and r.json()["status"] == "completed"
 
     r = client.post("/missions/missing/run")
+    assert r.status_code == 404
+
+    # tool-run endpoint: completed for a scoped mission, 404 for unknown
+    scoped = _scoped_mission("toolshop.io", "tool review")
+    r = client.post(f"/missions/{scoped['id']}/tools/run",
+                    json={"tool": "header_audit",
+                          "evidence": {"url": "https://toolshop.io", "headers": {}}})
+    assert r.status_code == 200
+    assert r.json()["status"] == "completed" and r.json()["written"] is True
+    r = client.post("/missions/missing/tools/run", json={"tool": "header_audit"})
     assert r.status_code == 404
 
     # report surfaces: JSON + markdown for the executed mission

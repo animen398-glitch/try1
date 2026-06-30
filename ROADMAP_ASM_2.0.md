@@ -2438,4 +2438,12 @@ is never executed, and a `blocked`/`skipped` run ingests nothing. Tests:
 `tests/test_missions_tab.py` (panel builds from registry, enable-on-selection,
 bad-JSON rejection, completed→ingested, blocked→not-ingested).
 
+**Web parity (2026-06-30):** `remote/web_app.py` adds `_mission_run_tool` +
+`POST /missions/{id}/tools/run` (body `{tool, evidence}`) mirroring the GUI
+surface — synthetic `scan_id`, returns `{status, written, findings, assets}`;
+404 for an unknown mission, 400 for a missing tool. `blocked`/`skipped` runs
+return 200 with `written: false` (a gated outcome, not an error). Tests:
+`tests/test_web_missions.py` (helper completed→ingested, blocked→not-ingested,
+unknown→not-found, tool-required; TestClient endpoint completed + 404).
+
 ---

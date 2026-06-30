@@ -918,6 +918,33 @@ def _mission_run(mission_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _mission_run_tool(mission_id: str, tool: str,
+                      evidence: Optional[dict] = None) -> dict:
+    """Run one client-safe tool against a mission from captured evidence
+    (mutation). The tool is never executed — the operator supplies the captured
+    evidence, the run is gated by the mission's ROE, and a completed run's
+    findings/assets are ingested into the project stores (blocked/skipped → no
+    write). Mirrors the Missions tab 'Run tool' surface."""
+    try:
+        import time
+        from core.mission_store import MissionStore
+        from core.tool_runner import run_tool_for_mission
+        row = MissionStore().get_mission(str(mission_id))
+        if row is None:
+            return {'error': f'mission not found: {mission_id}'}
+        if not str(tool or '').strip():
+            return {'error': 'tool is required'}
+        scan_id = f'tool-{tool}-{int(time.time())}'
+        out = run_tool_for_mission(row['payload'], str(tool),
+                                   evidence or {}, scan_id=scan_id)
+        result, ingest = out['result'], out['ingest']
+        return {'mission_id': mission_id, 'tool': str(tool),
+                'status': result.status, 'written': ingest['written'],
+                'findings': ingest['findings'], 'assets': ingest['assets']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -1887,6 +1914,10 @@ if _FASTAPI_OK:
         interval: str = 'weekly'
         enabled: bool = True
 
+    class MissionToolRequest(BaseModel):
+        tool: str
+        evidence: Optional[dict] = None
+
     @app.post('/missions/run-due')
     async def missions_run_due():
         out = _missions_run_due()
@@ -1917,6 +1948,16 @@ if _FASTAPI_OK:
             code = 404 if 'not found' in out['error'] else 400
             return JSONResponse(out, status_code=code)
         await _push(f'[mission] {mission_id[:8]} ran → {out["run_id"]}', 'ok')
+        return out
+
+    @app.post('/missions/{mission_id}/tools/run')
+    async def mission_tool_run(mission_id: str, body: MissionToolRequest):
+        out = _mission_run_tool(mission_id, body.tool, body.evidence)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[mission] {mission_id[:8]} tool {out["tool"]} → '
+                    f'{out["status"]}', 'ok')
         return out
 
     @app.post('/missions/{mission_id}/links/prune')
