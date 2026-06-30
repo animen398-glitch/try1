@@ -184,6 +184,59 @@ def test_import_tolerates_bundle_without_missions(tmp_path):
     assert res['missions'] == 0                           # absent section → empty
 
 
+def test_export_import_restores_engagements(tmp_path):
+    from core import engagement as eng
+    from core.engagement_store import EngagementStore
+
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    src_e = src / 'engagements.db'
+    slug, _fid = _seed(src, src_f, src_a)
+    engagement = eng.create_engagement('Acme Corp', slug,
+                                       scope={'allowed_domains': [slug]},
+                                       authorization={'accepted': True})
+    EngagementStore(src_e).save_engagement(engagement, now='2026-07-01T09:00:00')
+
+    bundle = tmp_path / 'b.zip'
+    out = project_io.export_project(src, slug, bundle, findings_db=src_f,
+                                    assets_db=src_a, engagements_db=src_e)
+    assert out['engagements'] == 1
+
+    dst = tmp_path / 'dst'
+    dst_e = dst / 'engagements.db'
+    res = project_io.import_project(bundle, dst, findings_db=dst / 'f.db',
+                                    assets_db=dst / 'a.db', engagements_db=dst_e)
+    assert res['engagements'] == 1
+    restored = EngagementStore(dst_e).get_engagement(engagement['engagement_id'])
+    assert restored is not None
+    assert restored['payload'] == engagement              # canonical, verbatim
+    assert restored['created_at'] == '2026-07-01T09:00:00'
+
+
+def test_import_tolerates_bundle_without_engagements(tmp_path):
+    """An older bundle (predating engagements.json) imports cleanly with 0."""
+    import zipfile
+
+    src = tmp_path / 'src'
+    slug, _fid = _seed(src, src / 'f.db', src / 'a.db')
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src / 'f.db',
+                              assets_db=src / 'a.db')
+
+    legacy = tmp_path / 'legacy.zip'
+    with zipfile.ZipFile(bundle) as zin, zipfile.ZipFile(legacy, 'w') as zout:
+        for item in zin.namelist():
+            if item != 'engagements.json':                # strip the new member
+                zout.writestr(item, zin.read(item))
+
+    dst = tmp_path / 'dst'
+    res = project_io.import_project(legacy, dst, findings_db=dst / 'f.db',
+                                    assets_db=dst / 'a.db',
+                                    engagements_db=dst / 'e.db')
+    assert res['skipped'] is False
+    assert res['engagements'] == 0                        # absent section → empty
+
+
 # ── skip / replace ────────────────────────────────────────────────────────────
 
 def test_import_skips_existing_without_replace(tmp_path):

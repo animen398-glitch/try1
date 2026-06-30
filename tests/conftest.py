@@ -76,6 +76,14 @@ def _isolate_missions_db(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_engagements_db(tmp_path_factory, monkeypatch):
+    """Redirect the global engagements DB to a per-test temp file."""
+    import core.engagement_store as estore
+    monkeypatch.setattr(estore, "ENGAGEMENTS_DB",
+                        tmp_path_factory.mktemp("engagements") / "engagements.db")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_companies_registry(tmp_path_factory, monkeypatch):
     """Redirect the global companies registry to a per-test temp file.
 
