@@ -73,6 +73,58 @@ def test_bridge_output_feeds_the_parser():
     assert {'a.shop.io', 'b.shop.io', 'c.shop.io'} <= values
 
 
+# ── header / cookie extractors ──────────────────────────────────────────────────
+
+def _report_hc():
+    return {
+        'url': 'https://shop.io',
+        'phases': {
+            'recon': {'status': 'Success', 'data': {
+                'security_headers': {'content-security-policy': "default-src 'self'"}}},
+            'cookies': {'status': 'Success', 'data': {'cookies': [
+                {'name': 'sid', 'secure': False, 'httponly': False},
+                {'name': 'ok', 'secure': True, 'httponly': True},
+            ]}},
+        },
+    }
+
+
+def test_header_audit_evidence_shape():
+    ev = te.evidence_from_report(_report_hc(), 'header_audit')
+    assert ev['url'] == 'https://shop.io'
+    assert 'content-security-policy' in ev['headers']
+
+
+def test_header_audit_absent_when_recon_did_not_fetch():
+    # no security_headers key → recon never fetched → no evidence (not a fake {})
+    assert te.evidence_from_report({'phases': {'recon': {'data': {}}}},
+                                   'header_audit') == {}
+
+
+def test_cookie_audit_evidence_shape():
+    ev = te.evidence_from_report(_report_hc(), 'cookie_audit')
+    assert [c['name'] for c in ev['cookies']] == ['sid', 'ok']
+
+
+def test_cookie_audit_empty_when_no_cookies():
+    assert te.evidence_from_report(
+        {'phases': {'cookies': {'data': {'cookies': []}}}}, 'cookie_audit') == {}
+
+
+def test_header_cookie_round_trip_through_parser():
+    rep = _report_hc()
+    # header: security_headers has CSP but not HSTS → headers_check flags missing
+    hout = parse_tool_output('header_audit', te.evidence_from_report(rep, 'header_audit'))
+    assert hout['findings']
+    # cookie: 'sid' missing Secure/HttpOnly is flagged; 'ok' is clean
+    cout = parse_tool_output('cookie_audit', te.evidence_from_report(rep, 'cookie_audit'))
+    assert any('sid' in f.get('title', '') for f in cout['findings'])
+
+
+def test_available_tools_includes_header_cookie_when_present():
+    assert set(te.available_tools(_report_hc())) >= {'header_audit', 'cookie_audit'}
+
+
 # ── evidence_from_project_scan (thin loader over a real project) ────────────────
 
 def _seed_project(base):

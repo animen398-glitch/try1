@@ -65,6 +65,26 @@ def _extract_safe_active_prober(report: Dict[str, Any]) -> Dict[str, Any]:
     return {'subdomains': subs} if subs else {}
 
 
+def _extract_header_audit(report: Dict[str, Any]) -> Dict[str, Any]:
+    """``{url, headers}`` from ``recon.data.security_headers`` (the security-
+    relevant response headers recon captured). Present only on a successful recon
+    fetch; ``headers_check`` flags the ones that are missing."""
+    recon = _phase_data(report, 'recon')
+    if 'security_headers' not in recon:          # recon never fetched → no evidence
+        return {}
+    headers = recon.get('security_headers')
+    headers = headers if isinstance(headers, dict) else {}
+    return {'url': _target(report), 'headers': headers}
+
+
+def _extract_cookie_audit(report: Dict[str, Any]) -> Dict[str, Any]:
+    """``{url, cookies}`` from the cookies phase (``CookieAuditor.audit`` rows —
+    each carries name/secure/httponly, exactly what ``cookie_flags_check`` reads)."""
+    cookies = _phase_data(report, 'cookies').get('cookies')
+    cookies = [c for c in (cookies or []) if isinstance(c, dict)]
+    return {'url': _target(report), 'cookies': cookies} if cookies else {}
+
+
 # Per-tool extractor registry, keyed by the M3 tool name (see
 # tool_adapter.TOOL_CAPABILITIES / tool_parsers.PARSERS). Additive: a tool whose
 # evidence is not reliably present in a passive scan report is simply absent here
@@ -72,6 +92,8 @@ def _extract_safe_active_prober(report: Dict[str, Any]) -> Dict[str, Any]:
 EXTRACTORS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     'source_map_finder': _extract_source_map_finder,
     'safe_active_prober': _extract_safe_active_prober,
+    'header_audit': _extract_header_audit,
+    'cookie_audit': _extract_cookie_audit,
 }
 
 

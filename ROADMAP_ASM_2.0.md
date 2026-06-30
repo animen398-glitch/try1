@@ -2695,6 +2695,20 @@ only verified report shapes (source_map_finder + safe_active_prober), rest stay
 manual; no surface wiring this iteration (Missions/web auto-evidence is an
 additive follow-up).
 
+**More extractors (2026-06-30):** added two verified extractors to the registry —
+**`header_audit`** (from `recon.data.security_headers` — the security response
+headers recon captured; `headers_check` flags the missing ones) and
+**`cookie_audit`** (from the cookies phase — `CookieAuditor.audit` rows carry
+name/secure/httponly, exactly what `cookie_flags_check` reads). **`dependency_auditor`
+is deliberately not bridged**: recon stores only the audit *result*
+(`recon.data.dependencies`), not the raw `scripts`/`html` the parser would
+re-audit, and those dependency findings are already in FindingsStore via the
+vuln phase — bridging would mean persisting raw HTML in `report.json` (scope
+creep) for a redundant run. Tests extended (`tests/test_tool_evidence.py`): both
+shapes, empty/un-fetched → `{}`, round-trip through `parse_tool_output`,
+`available_tools`. Registry now: source_map_finder / safe_active_prober /
+header_audit / cookie_audit (additive).
+
 **Surface wiring (2026-06-30):** `tool_evidence.evidence_from_project_scan(project,
 tool, *, base=None, scan_id=None)` — the thin I/O loader (mirrors
 `timeline.build_timeline`): resolves a project's scan report (latest or given)
