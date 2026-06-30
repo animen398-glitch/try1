@@ -252,6 +252,17 @@ def test_do_prune_scans_unknown_project(tmp_path):
     assert 'error' in out
 
 
+def test_do_restore_all_rejects_non_backup(tmp_path):
+    # the restore worker surfaces a bad archive as an error dict (never crashes
+    # the UI); core.backup itself is covered in test_backup.py
+    import zipfile
+    junk = tmp_path / 'junk.zip'
+    with zipfile.ZipFile(junk, 'w') as zf:
+        zf.writestr('x.txt', 'nope')
+    out = OverviewTabMixin._do_restore_all(str(junk), False)
+    assert 'error' in out
+
+
 # ── F-C3: company roll-up, filter, assignment ─────────────────────────────────
 
 def test_company_table_built(qapp):

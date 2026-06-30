@@ -2539,3 +2539,34 @@ orphaned findings); disabled by default; opt-in auto-prune after a scan + manual
 GUI prune. Phase 2 (full data-root backup) follows.
 
 ---
+
+### Full Backup & Restore — Phase 2 (CLOSED 2026-06-30)
+
+A timestamped `.zip` snapshot of the whole app state, restorable. State lives in
+two places — the writable **data root** (SQLite stores under `data/`, config JSON
+under `configs/`) and the **workspace** (`Projects/<slug>/` under the settings
+`output_dir`, usually outside the data root) — so both are captured:
+
+- **`core/backup.py`** (new): `create_backup(dest_zip, *, data_root=None,
+  workspace=None)` — every `*.db` is snapshotted via SQLite's **online backup**
+  API (consistent even while the app reads it; the stores use WAL; no `-wal`/
+  `-shm` sidecars in the archive), every other data-root file is copied verbatim
+  under `data_root/…`, and the workspace tree under `workspace/…` (skipped if
+  nested inside the data root, to avoid double-capture). A failed online backup
+  falls back to a raw copy + a manifest warning. `backup_info(src)` reads the
+  manifest; `restore_backup(src, *, data_root=None, workspace=None,
+  replace=False)` extracts back onto the target roots, **zip-slip guarded**, and
+  **skips existing files unless `replace=True`** (a restore never silently
+  clobbers live data). Stdlib only (`zipfile`/`sqlite3`).
+- **GUI:** Overview "Backup all…" + "Restore…" buttons (off-thread; restore
+  confirms overwrite vs missing-only).
+- Tests: `tests/test_backup.py` (captures db/config/workspace, no WAL sidecars,
+  manifest, round-trip restores a valid SQLite copy, skip-vs-replace, zip-slip
+  guard, nested-workspace not double-captured), `tests/test_overview_tab.py`
+  (restore worker error path).
+
+**Decisions (locked):** online backup for DBs (WAL-safe), verbatim copy for the
+rest; one archive covers data root + workspace; restore is non-clobbering by
+default; stdlib only. Closes the Scan Retention & Backup epic.
+
+---

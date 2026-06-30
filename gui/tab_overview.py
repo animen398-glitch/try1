@@ -124,6 +124,18 @@ class OverviewTabMixin:
             "retention (индекс и история сохраняются — тренд не пострадает).")
         btn_prune.clicked.connect(self._prune_project_scans)
         ctrl.addWidget(btn_prune)
+        btn_backup = StyledButton("Backup all…", style='secondary')
+        btn_backup.setToolTip(
+            "Снимок всего data root (SQLite-сторы + конфиги) и workspace "
+            "(Projects) в один .zip — восстановимо.")
+        btn_backup.clicked.connect(self._backup_all)
+        ctrl.addWidget(btn_backup)
+        btn_restore = StyledButton("Restore…", style='secondary')
+        btn_restore.setToolTip(
+            "Восстановить из .zip-снимка. Существующие файлы по умолчанию не "
+            "перезаписываются.")
+        btn_restore.clicked.connect(self._restore_all)
+        ctrl.addWidget(btn_restore)
         btn_refresh = StyledButton("Обновить", style='secondary')
         btn_refresh.clicked.connect(self._refresh_overview)
         ctrl.addWidget(btn_refresh)
@@ -400,6 +412,77 @@ class OverviewTabMixin:
         self.overview_status.setText(
             f"Прорежено сканов: {len(result.get('pruned', []))}, "
             f"освобождено ~{mb} МБ")
+
+    # ── full backup / restore ───────────────────────────────────────────────────
+
+    def _backup_all(self):
+        """Snapshot the whole data root + workspace to a .zip (off-thread)."""
+        from datetime import datetime
+        default = f"asa_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Backup all", default, "Backup archive (*.zip)")
+        if not path:
+            return
+        self._set_busy(True)
+        self._run_async(lambda p=path: self._do_backup_all(p), self._on_backup_done)
+
+    @staticmethod
+    def _do_backup_all(path: str) -> dict:
+        try:
+            from core.backup import create_backup
+            return create_backup(path)
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_backup_done(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            QMessageBox.critical(self, "Ошибка backup", result['error'])
+            return
+        mb = (result.get('bytes', 0)) // (1024 * 1024)
+        self.overview_status.setText(
+            f"Backup: {result.get('dbs', 0)} БД, {result.get('data_files', 0)} "
+            f"конфиг-файлов, {result.get('workspace_files', 0)} файлов workspace "
+            f"(~{mb} МБ)")
+
+    def _restore_all(self):
+        """Restore from a backup .zip (off-thread). Existing files are kept unless
+        the user confirms an overwrite."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Restore backup", "", "Backup archive (*.zip)")
+        if not path:
+            return
+        from core.backup import backup_info
+        info = backup_info(path)
+        if info is None:
+            QMessageBox.critical(self, "Ошибка", "Это не снимок резервной копии (.zip).")
+            return
+        replace = QMessageBox.question(
+            self, "Restore backup",
+            "Перезаписать существующие файлы данными из снимка?\n"
+            "«Да» — перезаписать (потеря текущих данных), «Нет» — только "
+            "восстановить отсутствующие.") == QMessageBox.Yes
+        self._set_busy(True)
+        self._run_async(
+            lambda p=path, r=replace: self._do_restore_all(p, r),
+            self._on_restore_done)
+
+    @staticmethod
+    def _do_restore_all(path: str, replace: bool) -> dict:
+        try:
+            from core.backup import restore_backup
+            return restore_backup(path, replace=replace)
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_restore_done(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            QMessageBox.critical(self, "Ошибка restore", result['error'])
+            return
+        self.overview_status.setText(
+            f"Restore: восстановлено {result.get('restored', 0)} файлов, "
+            f"пропущено {result.get('skipped', 0)} (уже есть)")
 
     def _import_project_bundle(self):
         """Import a project from a .zip bundle (off-thread), then refresh."""
