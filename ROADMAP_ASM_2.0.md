@@ -2666,3 +2666,33 @@ store/migration); assignment = latest `ASSIGNED` wins, comments append-only;
 surfaced in detail + web (no new findings-table column, per scope choice).
 
 ---
+
+### Captured-Scan → Tool-Evidence Bridge (CLOSED 2026-06-30)
+
+Tool runs took operator-pasted evidence JSON; this lets them be driven from data
+a scan already captured (passively, offline). **`core/tool_evidence.py`** (new):
+
+- `evidence_from_report(report, tool) -> dict` — maps a loaded scan
+  ``report.json`` to the exact evidence shape the matching
+  ``core.tool_parsers`` parser consumes (so it feeds straight into
+  ``tool_pipeline.assemble_tool_run`` / ``parse_tool_output``). `{}` when the
+  tool has no extractor or the report lacks its data; never raises.
+  `available_tools(report)` lists what's bridgeable.
+- **Additive per-tool extractor registry** (mirrors `tool_parsers.PARSERS`).
+  Verified extractors this iteration: **`source_map_finder`** (from
+  `recon.data.source_maps[].url`) and **`safe_active_prober`** (from the
+  subdomains phase — enumerated results + takeover candidates, deduped). Other
+  tools are absent (→ manual evidence) and are purely additive to add later.
+- **Pure** dict→dict over an already-loaded report (caller uses
+  `project.load_scan_report`); no I/O, network, store writes, or tool execution;
+  reuses the report shapes `collection_runner` writes — no new data path.
+- Tests: `tests/test_tool_evidence.py` (both extractor shapes, dedup, missing/
+  unknown → `{}`, `available_tools`, and a round-trip proving the bridge output
+  parses cleanly through `tool_parsers.parse_tool_output`).
+
+**Decisions (locked):** pure report→evidence mapper + additive registry; bridge
+only verified report shapes (source_map_finder + safe_active_prober), rest stay
+manual; no surface wiring this iteration (Missions/web auto-evidence is an
+additive follow-up).
+
+---
