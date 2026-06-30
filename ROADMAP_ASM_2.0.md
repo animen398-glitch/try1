@@ -2396,3 +2396,33 @@ This is the first layer to cross the no-store boundary; the pure tool stack
 (contract → parsers → pipeline → bridge → report) stays unchanged beneath it.
 
 ---
+
+### End-to-End Tool-Run Orchestrator (CLOSED 2026-06-30)
+
+The **capstone** of the tool layer: tie the two halves of the stack — the
+store-free pipeline and the gated ingestion — into one mission-scoped call.
+
+- **`core/tool_runner.py`** (new): `run_tool_for_mission(mission, tool, evidence,
+  *, scan_id, project=None, target=None, findings_store=None, asset_store=None)`
+  composes `tool_pipeline.assemble_tool_run` (gate → parse captured evidence →
+  map) with `tool_ingest_store.ingest_tool_run` (persist a **completed** result's
+  findings/assets, gated + idempotent). `project` defaults to the mission's own
+  `project`. Returns `{"result": ToolRunResult, "ingest": {status, written,
+  findings, assets}}` — the result is the store-free run (render via
+  `core.tool_report`), the ingest summary reports what was persisted. A
+  `blocked` / `skipped` result flows through unchanged: assemble marks the
+  status, ingestion is a no-op (`written` False).
+- Mirrors `mission_runner.run_mission` wrapping `audit_runner.build_audit_run` +
+  persist. **Pure composition** — no new detection or policy, no second store,
+  no network, no new dependencies; a tool is still never executed (`evidence`
+  was captured offline upstream).
+- Tests: `tests/test_tool_runner.py` (completed persists + returns result,
+  project defaults to mission, idempotent re-run, blocked → no-op, skipped →
+  no-op).
+
+**Decisions (locked):** the orchestrator only composes the existing two layers —
+no new behavior; `project` defaults from the mission; return shape carries both
+the renderable result and the ingestion summary. The pure stack and the
+ingestion layer stay unchanged beneath it.
+
+---
