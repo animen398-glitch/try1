@@ -250,6 +250,58 @@ def test_do_prune_links_removes_stale(qapp):
     assert payload["linked_audit_run_ids"] == []
 
 
+def test_tool_run_panel_builds_from_registry(qapp):
+    from core.tool_adapter import TOOL_CAPABILITIES
+    w = MissionsHost()
+    names = {w.mission_tool.itemData(i) for i in range(w.mission_tool.count())}
+    assert names == set(TOOL_CAPABILITIES)
+    assert not w.btn_mission_tool_run.isEnabled()      # nothing selected yet
+
+
+def test_tool_run_button_enables_on_selection(qapp):
+    _seed_mission("shop.com", status="ready")
+    w = MissionsHost()
+    w._populate_missions(MissionsTabMixin._query_missions("shop.com"))
+    w.mission_table.selectRow(0)
+    assert w.btn_mission_tool_run.isEnabled()           # gated by ROE, any status
+
+
+def test_run_mission_tool_rejects_bad_json(qapp):
+    w = MissionsHost()
+    w.mission_tool_evidence.setPlainText("{not json")
+    w._run_mission_tool()
+    assert "Invalid evidence JSON" in w.mission_status.text()
+
+
+def test_do_run_mission_tool_completed_ingests(qapp):
+    from core.findings_store import FindingsStore
+    mission = pm.create_mission(
+        "shop.io", "External review",
+        roe={"allowed_domains": ["shop.io"], "active_scan_enabled": True,
+             "passive_only": False, "authorized_by": "client"},
+        allowed_actions=["headers_check"])
+    out = MissionsTabMixin._do_run_mission_tool(
+        mission, "header_audit", {"url": "https://shop.io/app", "headers": {}})
+    assert "error" not in out
+    assert "completed" in out["ok"] and "ingested" in out["ok"]
+    assert FindingsStore().list_findings("shop.io")     # persisted into the store
+
+
+def test_do_run_mission_tool_blocked_not_ingested(qapp):
+    from core.findings_store import FindingsStore
+    mission = pm.create_mission(
+        "shop.io", "Passive review",
+        roe={"allowed_domains": ["shop.io"], "active_scan_enabled": False,
+             "passive_only": True},
+        allowed_actions=["headers_check"])
+    # an active tool under a passive-only ROE is blocked → nothing ingested
+    out = MissionsTabMixin._do_run_mission_tool(
+        mission, "graphql_introspector", {"url": "https://shop.io"})
+    assert "error" not in out
+    assert "blocked" in out["ok"] and "not ingested" in out["ok"]
+    assert FindingsStore().list_findings("shop.io") == []
+
+
 def test_link_run_and_finding_persist_on_mission(qapp):
     # M11: linking now validates existence, so link a real run + finding.
     from core import mission_runner, pentest_mission as pm

@@ -2425,4 +2425,17 @@ no new behavior; `project` defaults from the mission; return shape carries both
 the renderable result and the ingestion summary. The pure stack and the
 ingestion layer stay unchanged beneath it.
 
+**GUI surface (2026-06-30):** the orchestrator is wired into the **Missions tab**
+(`gui/tab_missions.py`) as a thin "Run tool (client-safe, evidence-driven)"
+panel: a tool combo from `tool_adapter.TOOL_CAPABILITIES` + a JSON evidence
+field + "Run tool". The button is gated by ROE (offered for any selected
+mission while idle, not the lifecycle status). `_run_mission_tool` parses the
+evidence JSON on the GUI thread (bad input fails fast), then the off-thread
+`_do_run_mission_tool` calls `run_tool_for_mission` with a synthetic
+`scan_id=tool-<name>-<ts>` and reports `status` + ingested finding/asset counts.
+Faithful to the layer: the operator supplies already-captured evidence, the tool
+is never executed, and a `blocked`/`skipped` run ingests nothing. Tests:
+`tests/test_missions_tab.py` (panel builds from registry, enable-on-selection,
+bad-JSON rejection, completed→ingested, blocked→not-ingested).
+
 ---

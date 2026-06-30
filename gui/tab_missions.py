@@ -21,6 +21,7 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -30,6 +31,7 @@ from qtpy.QtWidgets import (
 from core.audit_checks import SAFE_CHECKS
 from core.audit_templates import list_templates
 from core.pentest_mission import MISSION_TRANSITIONS
+from core.tool_adapter import TOOL_CAPABILITIES
 from gui.ui_components import FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton
 
 
@@ -189,6 +191,41 @@ class MissionsTabMixin:
         report_row.addWidget(self.btn_mission_report_html)
         report_row.addStretch(1)
         layout.addLayout(report_row)
+
+        # Run a single client-safe tool against the mission from already-captured
+        # evidence. The tool is never executed here — the operator supplies the
+        # captured evidence; the run is gated by the mission's ROE/policy and a
+        # completed run's findings/assets are ingested into the project stores.
+        tool_grp = SectionGroupBox("Run tool (client-safe, evidence-driven)")
+        tool_layout = QVBoxLayout()
+        tool_ctrl = QHBoxLayout()
+        tool_ctrl.addWidget(QLabel("Tool:"))
+        self.mission_tool = QComboBox()
+        self.mission_tool.setMinimumWidth(180)
+        for name in sorted(TOOL_CAPABILITIES):
+            cap = TOOL_CAPABILITIES[name]
+            self.mission_tool.addItem(name, name)
+            self.mission_tool.setItemData(
+                self.mission_tool.count() - 1, cap.description, 3)  # Qt.ToolTipRole
+        tool_ctrl.addWidget(self.mission_tool)
+        self.btn_mission_tool_run = StyledButton("Run tool", style="secondary")
+        self.btn_mission_tool_run.setToolTip(
+            "Прогнать выбранный инструмент по уже-захваченному evidence "
+            "(инструмент не запускается); gated по ROE миссии, completed-результат "
+            "ингестится в сторы проекта.")
+        self.btn_mission_tool_run.setEnabled(False)
+        self.btn_mission_tool_run.clicked.connect(self._run_mission_tool)
+        tool_ctrl.addWidget(self.btn_mission_tool_run)
+        tool_ctrl.addStretch(1)
+        tool_layout.addLayout(tool_ctrl)
+        self.mission_tool_evidence = QPlainTextEdit()
+        self.mission_tool_evidence.setMaximumHeight(70)
+        self.mission_tool_evidence.setPlaceholderText(
+            'Captured evidence (JSON), e.g. {"url": "https://example.com", '
+            '"headers": {}}')
+        tool_layout.addWidget(self.mission_tool_evidence)
+        tool_grp.setLayout(tool_layout)
+        layout.addWidget(tool_grp)
 
         schedule_row = QHBoxLayout()
         schedule_row.addWidget(QLabel("Schedule:"))
@@ -480,6 +517,9 @@ class MissionsTabMixin:
         for btn in (self.btn_mission_report_json, self.btn_mission_report_md,
                     self.btn_mission_report_html):
             btn.setEnabled(idle)
+        # A tool run is gated by ROE (not the mission's lifecycle status), so it
+        # is offered for any selected mission while idle.
+        self.btn_mission_tool_run.setEnabled(idle)
         # Scheduling acts on the selected mission.
         scheduled = isinstance(mission.get("schedule"), dict) if has_mission else False
         self.btn_mission_schedule.setEnabled(idle)
@@ -610,6 +650,49 @@ class MissionsTabMixin:
             from core.mission_runner import run_mission
             out = run_mission(payload)
             return {"ok": f"mission ran → {out['run_id']} ({out['status']})"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
+
+    # ── run a single client-safe tool from captured evidence ────────────────────
+
+    def _run_mission_tool(self):
+        # Parse the evidence JSON on the GUI thread so bad input fails fast,
+        # before busying the runner.
+        import json
+        raw = self.mission_tool_evidence.toPlainText().strip()
+        try:
+            evidence = json.loads(raw) if raw else {}
+        except ValueError as e:
+            self.mission_status.setText(f"Invalid evidence JSON: {e}")
+            return
+        if not isinstance(evidence, dict):
+            self.mission_status.setText("Evidence JSON must be an object")
+            return
+        payload = self._begin_mission_action()
+        if not payload:
+            return
+        tool = self.mission_tool.currentData()
+        self.mission_status.setText(f"Running tool {tool}...")
+        self._run_async(
+            lambda p=payload, t=tool, ev=evidence: self._do_run_mission_tool(p, t, ev),
+            self._on_mission_action_done,
+        )
+
+    @staticmethod
+    def _do_run_mission_tool(payload: Dict[str, Any], tool: str,
+                             evidence: Dict[str, Any]) -> dict:
+        try:
+            import time
+
+            from core.tool_runner import run_tool_for_mission
+            scan_id = f"tool-{tool}-{int(time.time())}"
+            out = run_tool_for_mission(payload, tool, evidence, scan_id=scan_id)
+            result = out["result"]
+            ingest = out["ingest"]
+            verb = "ingested" if ingest["written"] else "not ingested"
+            return {"ok": f"tool {tool} → {result.status}: "
+                          f"{ingest['findings']} finding(s), "
+                          f"{ingest['assets']} asset(s) {verb}"}
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
