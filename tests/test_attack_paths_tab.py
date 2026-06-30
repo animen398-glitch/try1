@@ -128,3 +128,32 @@ def test_selection_shows_chain(qapp):
     assert 'api.x.com' in text
     assert 'ip 1.2.3.4' in text
     assert 'a.x.com' in text and 'b.x.com' in text
+    # the interactive graph mirrors the selected path
+    roles = w.attack_graph.node_roles()
+    assert roles.get('api.x.com') == 'entry' and roles.get('1.2.3.4') == 'pivot'
+
+
+def test_graph_node_click_highlights_in_detail(qapp):
+    w = _window(qapp)
+    w._populate_path_table([{
+        'score': 55, 'band': 'medium', 'entry': 'api.x.com',
+        'entry_severity': 'high', 'pivot_type': 'ip', 'pivot_node': '1.2.3.4',
+        'size': 3, 'targets': ['a.x.com'], 'critical_targets': 1,
+    }])
+    w.path_table.selectRow(0)
+    w._on_graph_node_clicked('1.2.3.4', 'pivot')
+    text = w.path_detail.toPlainText()
+    assert 'Выбран узел' in text and '1.2.3.4' in text
+
+
+def test_clearing_table_clears_graph(qapp):
+    w = _window(qapp)
+    w._populate_path_table([{
+        'score': 55, 'band': 'medium', 'entry': 'api.x.com',
+        'entry_severity': 'high', 'pivot_type': 'ip', 'pivot_node': '1.2.3.4',
+        'size': 3, 'targets': ['a.x.com'], 'critical_targets': 1,
+    }])
+    w.path_table.selectRow(0)
+    assert w.attack_graph.node_count() > 0
+    w._populate_path_table([])                       # reload empty → graph cleared
+    assert w.attack_graph.node_count() == 0

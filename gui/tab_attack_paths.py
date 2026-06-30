@@ -22,6 +22,7 @@ from qtpy.QtWidgets import (
 )
 
 from gui import theme
+from gui.attack_graph_view import AttackGraphView
 from gui.ui_components import (
     FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
 )
@@ -91,6 +92,15 @@ class AttackPathsTabMixin:
         self.path_table.itemSelectionChanged.connect(self._on_path_row_selected)
         layout.addWidget(self.path_table, stretch=1)
 
+        # ── interactive attack graph (Вход → Транзит → Цель) ─────────────────
+        graph_grp = SectionGroupBox("Граф атаки: вход → транзит → цель")
+        graph_layout = QVBoxLayout()
+        self.attack_graph = AttackGraphView()
+        self.attack_graph.node_clicked.connect(self._on_graph_node_clicked)
+        graph_layout.addWidget(self.attack_graph)
+        graph_grp.setLayout(graph_layout)
+        layout.addWidget(graph_grp, stretch=1)
+
         # ── detail panel (entry → pivot → targets) ──────────────────────────
         detail_grp = SectionGroupBox("Цепочка: entry → pivot → targets")
         detail_layout = QVBoxLayout()
@@ -104,6 +114,7 @@ class AttackPathsTabMixin:
 
         # Full ranked paths backing the table (untruncated detail on selection).
         self._path_records: list = []
+        self._path_graph_rec: dict = {}   # path currently drawn in the graph
         self._attack_paths_widget = w
         return w
 
@@ -238,6 +249,8 @@ class AttackPathsTabMixin:
                         item.setForeground(QColor(color))
                 self.path_table.setItem(r, col, item)
         self.path_detail.clear()
+        self._path_graph_rec = {}
+        self.attack_graph.clear_graph()
 
     # ── selection / detail ────────────────────────────────────────────────────
 
@@ -254,6 +267,19 @@ class AttackPathsTabMixin:
         rec = self._selected_path()
         if rec:
             self._show_path_detail(rec)
+            self._path_graph_rec = rec
+            self.attack_graph.render_path(rec)
+
+    def _on_graph_node_clicked(self, node_id: str, role: str):
+        """A node in the attack graph was clicked — re-show the path detail with
+        the selected node highlighted at the end."""
+        rec = self._path_graph_rec
+        if not rec:
+            return
+        self._show_path_detail(rec)
+        role_label = {'entry': 'вход', 'pivot': 'транзит', 'target': 'цель',
+                      'overflow': 'ещё цели'}.get(role, role)
+        self.path_detail.append(f"\n▸ Выбран узел [{role_label}]: {node_id}")
 
     def _show_path_detail(self, rec: dict):
         pivot = f"{rec.get('pivot_type', '')} {rec.get('pivot_node', '')}".strip()

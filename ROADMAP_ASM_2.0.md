@@ -2599,3 +2599,36 @@ CSV stay over the full list); reusable paginator; scope this iteration = Finding
 + Assets + Timeline, others follow on the same helper.
 
 ---
+
+### Interactive Attack-Path Graph (CLOSED 2026-06-30)
+
+The Attack Paths tab ranked paths as a table + detail; it lacked a visual graph.
+**Important:** the requested "cloud classifier", "attack-path engine" and
+"attack-surface tab" all already existed (`core/cloud_classifier.py`,
+`core/intelligence.build_attack_paths` + `core/correlation.py`,
+`gui/tab_attack_paths.py`) — so this added only the genuinely-missing piece (an
+interactive graph view) over those engines, **without duplicating** them.
+
+- **`gui/attack_graph_view.py`** (new): `AttackGraphView(QGraphicsView)` renders
+  one ranked path record as a deterministic layered node-edge diagram —
+  **Entry (вход) → Pivot (транзит) → Targets (цель)** — in a `QGraphicsScene`
+  (stdlib Qt only, no graph library). Entry coloured by its finding severity, the
+  ranked goal/critical targets highlighted (shared theme palette), target fan-out
+  capped at `MAX_TARGETS` with a "+N more" overflow node. Nodes are clickable →
+  `node_clicked(node_id, role)`. Pure presentation over an already-loaded record;
+  headless-safe; never raises (a malformed record is logged).
+- **`gui/tab_attack_paths.py`:** the graph is wired below the ranked table —
+  selecting a path renders its chain; clicking a node highlights it in the detail
+  panel; reloading clears it. Reuses the existing `load_attack_paths` data + the
+  `_run_async` loader (no new data path).
+- Tests: `tests/test_attack_graph_view.py` (entry/pivot/target nodes, target cap
+  + overflow, empty/malformed clears, click signal, determinism),
+  `tests/test_attack_paths_tab.py` (graph mirrors selection, node-click detail,
+  reload clears).
+
+**Decisions (locked):** reuse the existing cloud/attack-path/correlation engines —
+build only the missing visual graph; layered (not force-directed) layout fits the
+fixed 3-stage entry→pivot→target chain and is deterministic/testable; node click
+feeds the existing detail panel (no 3-pane restructure).
+
+---
