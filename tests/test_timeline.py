@@ -452,6 +452,46 @@ def test_build_timeline_includes_mission_events(tmp_path):
     assert {e['type'] for e in mission_events} == {'mission_created', 'mission_ready'}
 
 
+def test_engagement_events_are_folded_into_timeline():
+    engagements = [
+        {  # draft → only a created event
+            'id': 'eng-aaa', 'status': 'draft',
+            'created_at': '2026-04-01T09:00:00', 'updated_at': '2026-04-01T09:00:00',
+            'payload': {'client': 'Acme Corp'},
+        },
+        {  # advanced → created + a status event
+            'id': 'eng-bbb', 'status': 'authorized',
+            'created_at': '2026-04-01T08:00:00', 'updated_at': '2026-04-01T10:00:00',
+            'payload': {'client': 'Beta LLC'},
+        },
+    ]
+    events = timeline.build_events([], engagements=engagements)
+    assert {e['section'] for e in events} == {'engagements'}
+    types = [e['type'] for e in events]
+    assert types.count('engagement_created') == 2
+    assert 'engagement_authorized' in types
+    assert 'engagement_draft' not in types
+    auth = next(e for e in events if e['type'] == 'engagement_authorized')
+    assert auth['at'] == '2026-04-01T10:00:00' and 'Beta LLC' in auth['title']
+
+
+def test_build_timeline_includes_engagement_events(tmp_path):
+    from core import engagement as eng
+    from core.engagement_store import EngagementStore
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    e = eng.create_engagement('Acme Corp', project.slug,
+                              authorization={'accepted': True})
+    e = eng.advance_engagement_status(e, 'authorized')
+    EngagementStore().save_engagement(e, now='2026-04-01T09:00:00')
+
+    tl = timeline.build_timeline(project)
+    eng_events = [ev for ev in tl['events'] if ev['section'] == 'engagements']
+    assert {ev['type'] for ev in eng_events} == {'engagement_created',
+                                                 'engagement_authorized'}
+
+
 def test_build_timeline_tightens_sla_breach_on_kev(tmp_path):
     """A KEV finding surfaces an sla_breach on its tightened deadline even though
     it is on-track on the plain severity window — the timeline threat-annotates

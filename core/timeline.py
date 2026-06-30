@@ -96,7 +96,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  kev_events: Optional[List[Dict]] = None,
                  missions: Optional[List[Dict]] = None,
                  mission_runs: Optional[List[Dict]] = None,
-                 tool_runs: Optional[List[Dict]] = None) -> List[Dict]:
+                 tool_runs: Optional[List[Dict]] = None,
+                 engagements: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -238,6 +239,30 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                            'severity': 'medium' if status == 'failed' else 'info',
                            'section': 'missions'})
 
+    # Engagement lifecycle events (derive-on-read, no second store): a created
+    # event from created_at and one status event from updated_at once it moves
+    # past draft. Mirrors the mission events; section 'engagements'.
+    for engagement in engagements or []:
+        if not isinstance(engagement, dict):
+            continue
+        eid = str(engagement.get('id') or engagement.get('engagement_id') or '').strip()
+        if not eid:
+            continue
+        payload = engagement.get('payload')
+        payload = payload if isinstance(payload, dict) else {}
+        client = str(payload.get('client') or engagement.get('client') or '').strip()
+        label = f"{client}: {eid}".strip(': ') if client else eid
+        status = str(engagement.get('status') or '').strip().lower()
+        events.append({'scan_id': None, 'at': engagement.get('created_at'),
+                       'type': 'engagement_created',
+                       'title': f"[client_safe] {label} created",
+                       'severity': 'info', 'section': 'engagements'})
+        if status and status != 'draft':
+            events.append({'scan_id': None, 'at': engagement.get('updated_at'),
+                           'type': f'engagement_{status}',
+                           'title': f"[client_safe] {label} {status}",
+                           'severity': 'info', 'section': 'engagements'})
+
     # Mission *execution* events (M8): a mission run produced an audit run — a
     # started event from the run's created_at and a terminal event from its
     # updated_at. These complement the mission-status events above (which track
@@ -375,6 +400,11 @@ def build_timeline(project) -> Dict:
         missions = MissionStore().list_missions(project.slug)
     except Exception:   # noqa: BLE001 - timeline must render even if mission store fails
         missions = []
+    try:
+        from core.engagement_store import EngagementStore
+        engagements = EngagementStore().list_engagements(project.slug)
+    except Exception:   # noqa: BLE001 - timeline must render even if it fails
+        engagements = []
     # Mission execution events (M8): resolve each mission's linked runs against
     # the audit runs already loaded above, so build_events stays a pure shaper.
     runs_by_id = {run.get('id'): run for run in audit_runs}
@@ -413,5 +443,6 @@ def build_timeline(project) -> Dict:
             missions=missions,
             mission_runs=mission_runs,
             tool_runs=tool_runs,
+            engagements=engagements,
         ),
     }
