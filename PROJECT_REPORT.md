@@ -160,6 +160,13 @@
 > additive. `available_tools(report)` lists what's bridgeable; a round-trip test proves the output parses
 > through `parse_tool_output`. No new data path. Current scale: **full pytest 2389 passed**, ruff clean,
 > self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (Tool-evidence surface wiring): `tool_evidence.evidence_from_project_scan` (thin
+> loader over ProjectStore/load_scan_report) drives the bridge from a project's scan. The Missions "Run
+> tool" panel gains an «Из скана» button that fills the evidence field from the mission's project scan
+> (operator reviews/edits, then Run), and web `POST /missions/{id}/tools/run` gains `from_scan` (pull
+> evidence from the scan when no evidence supplied). Run flow + the tool-never-executed invariant
+> unchanged. Current scale: **full pytest 2394 passed**, ruff clean, self-check 30 tabs, 1 existing
+> Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -170,7 +177,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2389 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2394 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

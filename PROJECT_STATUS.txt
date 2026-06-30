@@ -5191,3 +5191,32 @@ CAPTURED-SCAN -> TOOL-EVIDENCE BRIDGE (2026-06-30)
   2383 -> 2389; collect-only подтверждает 2389). Остаются (отложены): i18n,
   e2e/GUI-тесты, пагинация остальных таблиц, surface-провязка tool-evidence +
   больше экстракторов (header/cookie/dependency).
+
+------------------------------------------------------------------------------
+TOOL-EVIDENCE SURFACE WIRING (2026-06-30)
+------------------------------------------------------------------------------
+  Follow-up к мосту: tool-runs теперь заполняют evidence из скана прямо из «Run
+  tool» (а не вручную JSON). core/tool_evidence.evidence_from_project_scan(
+  project, tool, *, base=None, scan_id=None) — ТОНКИЙ I/O-loader (зеркало
+  timeline.build_timeline: чистые мапперы + один loader): резолвит отчёт скана
+  проекта (последний или заданный) через ProjectStore/load_scan_report и
+  делегирует чистому evidence_from_report; {} при отсутствии project/scan/report,
+  не падает; base дефолтит на settings output_dir.
+    GUI Missions «Run tool»: новая кнопка «Из скана» (btn_mission_tool_evidence) —
+    off-thread _do_fill_tool_evidence(project,tool) -> _on_tool_evidence_filled
+    заполняет поле mission_tool_evidence pretty-JSON'ом из последнего скана
+    проекта миссии; оператор проверяет/правит и жмёт Run (ручной поток не тронут;
+    кнопка активна вместе с Run).
+    Web POST /missions/{id}/tools/run: + from_scan:bool (+ опц. scan_id); при
+    from_scan и пустом evidence — evidence тянется из скана проекта миссии
+    (base=_REPORT_BASE, т.к. это web-workspace) перед запуском.
+  Решение (locked): GUI fill-button (прозрачно — оператор видит/правит до Run),
+  не auto-чекбокс; loader тонкий поверх ProjectStore/load_scan_report; run-flow
+  (run_tool_for_mission) и инвариант «tool не исполняется» не тронуты; без нового
+  пути данных. Файлы: core/tool_evidence.py, gui/tab_missions.py,
+  remote/web_app.py, tests/test_tool_evidence.py, tests/test_missions_tab.py,
+  tests/test_web_missions.py, ROADMAP_ASM_2.0.md. Коммит e64618e9. Проверено:
+  ruff clean, целевые+смежные зелёные (incl from_scan->completed+assets), полный
+  pytest зелёный (рост 2389 -> 2394; collect-only подтверждает 2394). Остаются
+  (отложены): i18n, e2e/GUI-тесты, пагинация остальных таблиц, больше
+  tool-evidence экстракторов (header/cookie/dependency).
