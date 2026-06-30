@@ -153,6 +153,13 @@
 > `POST /findings/{id}/assign`, `POST /findings/{id}/comment`, `GET /findings/{id}/triage`. Closes the
 > last named gap-analysis item. Current scale: **full pytest 2383 passed**, ruff clean, self-check 30
 > tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (Captured-scan → tool-evidence bridge): `core/tool_evidence.py` maps a loaded scan
+> `report.json` to the exact evidence shape a `tool_parsers` parser consumes, so a tool run can be driven
+> from already-captured data instead of pasted JSON. Pure dict→dict + an additive extractor registry;
+> verified extractors source_map_finder (recon.source_maps) and safe_active_prober (subdomains), others
+> additive. `available_tools(report)` lists what's bridgeable; a round-trip test proves the output parses
+> through `parse_tool_output`. No new data path. Current scale: **full pytest 2389 passed**, ruff clean,
+> self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -163,7 +170,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2383 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2389 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

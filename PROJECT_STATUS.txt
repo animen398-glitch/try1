@@ -5163,3 +5163,31 @@ FINDING ASSIGNMENT & COMMENTS TRIAGE (2026-06-30)
   зелёные, полный pytest зелёный (рост 2375 -> 2383; collect-only подтверждает
   2383). Остаются (отложены): i18n, e2e/GUI-тесты, мост captured-scan -> tool
   evidence, пагинация остальных таблиц.
+
+------------------------------------------------------------------------------
+CAPTURED-SCAN -> TOOL-EVIDENCE BRIDGE (2026-06-30)
+------------------------------------------------------------------------------
+  Tool-runs принимали evidence вручную (paste JSON) — теперь их можно гонять из
+  данных, уже захваченных сканом (пассивно, offline). core/tool_evidence.py (new):
+    evidence_from_report(report, tool) -> dict — мапит загруженный report.json в
+    ТОЧНУЮ evidence-форму, которую потребляет парсер core.tool_parsers для этого
+    tool'а (готово к tool_pipeline.assemble_tool_run / parse_tool_output). {} если
+    у tool'а нет экстрактора или в отчёте нет данных; не падает.
+    available_tools(report) -> список bridgeable tool'ов. АДДИТИВНЫЙ реестр
+    EXTRACTORS (зеркало tool_parsers.PARSERS).
+    Верифицированные экстракторы (охват по решению пользователя): source_map_finder
+    (из recon.data.source_maps[].url) + safe_active_prober (из
+    subdomains.data.results[].subdomain + summary.takeover_candidates[].subdomain,
+    dedup). Прочие tool'ы отсутствуют -> manual evidence, добавляются тривиально.
+    ЧИСТЫЙ dict->dict над уже-загруженным отчётом (caller берёт его через
+    project.load_scan_report); без I/O/сети/стора/запуска tool'а; переиспользует
+    формы отчёта collection_runner — нового пути данных нет.
+  Решение (locked): чистый report->evidence mapper + аддитивный реестр; мапим
+  только верифицированные формы (source_map_finder + safe_active_prober), остальное
+  manual; surface-провязка (Missions/web auto-evidence) — аддитивный follow-up, не
+  в этой итерации. Файлы: core/tool_evidence.py, tests/test_tool_evidence.py
+  (incl. round-trip через parse_tool_output), ROADMAP_ASM_2.0.md. Коммит 7ea4982c.
+  Проверено: ruff clean, целевой+смежные зелёные, полный pytest зелёный (рост
+  2383 -> 2389; collect-only подтверждает 2389). Остаются (отложены): i18n,
+  e2e/GUI-тесты, пагинация остальных таблиц, surface-провязка tool-evidence +
+  больше экстракторов (header/cookie/dependency).
