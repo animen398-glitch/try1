@@ -2368,3 +2368,31 @@ add no detection / no policy / no new model; deterministic; no store writes, no
 network, no new dependencies.
 
 ---
+
+### Gated Tool-Run Ingestion (CLOSED 2026-06-30)
+
+The **first store-writing step** of the tool layer — gated and idempotent, into
+the *existing* stores (no second store):
+
+- **`core/tool_ingest_store.py`** (new): `ingest_tool_run(result, project,
+  scan_id, *, findings_store, asset_store)` persists a **completed**,
+  already-authorized `ToolRunResult`'s findings/assets — via the canonical bridge
+  (`tool_ingest`) — into `FindingsStore.upsert` (per finding) and
+  `AssetStore.sync`. **Gated:** only `status == "completed"` writes; `blocked` /
+  `skipped` / any other status is a no-op (authorization was decided upstream by
+  `evaluate_tool_allowed_for_mission`; this never runs a tool, opens a socket, or
+  re-checks policy). **Idempotent:** `upsert`/`sync` are identity-keyed, so
+  re-ingesting the same result never duplicates. Returns `{status, written,
+  findings, assets}`. No network, no new dependencies.
+- Tests: `tests/test_tool_ingest_store.py` (completed persists findings+assets,
+  idempotent re-ingest, blocked→no-op, skipped→no-op, type/project guards).
+
+**Decisions (locked):** reuse the existing FindingsStore/AssetStore (no second
+store) + the bridge DTOs; write **only** on `completed`; idempotent; the result is
+already authorized (no policy re-check here) — and a tool is still never executed
+(`evidence` was captured offline upstream). No network, no new dependencies.
+
+This is the first layer to cross the no-store boundary; the pure tool stack
+(contract → parsers → pipeline → bridge → report) stays unchanged beneath it.
+
+---
