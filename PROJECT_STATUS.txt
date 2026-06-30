@@ -5063,3 +5063,34 @@ SCAN RETENTION & BACKUP (2026-06-30)
   2342 -> 2361; collect-only подтверждает 2361). Прочие пробелы (отложены):
   пагинация GUI-таблиц, i18n, e2e/GUI-тесты, мост captured-scan -> tool evidence,
   assignment/comments в триаже находок.
+
+------------------------------------------------------------------------------
+GUI TABLE PAGINATION (2026-06-30)
+------------------------------------------------------------------------------
+  Закрыт пробел №3 из найденных: тяжёлые таблицы грузили все строки в виджет
+  разом -> фриз UI на крупном портфеле/истории. Решено UI-WINDOWING (тормозит
+  именно заполнение QTableWidget тысячами item'ов, не хранение строк в памяти) —
+  слой данных НЕ тронут.
+    gui/ui_components.TablePaginator (new): рисует уже-выбранный/отфильтрованный/
+    отсортированный список в QTableWidget ПО СТРАНИЦЕ через колбэк
+    render_row(table, row, rec). Полоска управления (First/◀/▶/Last + «стр X/Y ·
+    показано a-b из N» + комбо размера страницы 100/200/500/1000). set_rows(full)
+    хранит полный список и рисует страницу; record_at(table_row)/index_at маппят
+    строку таблицы -> запись ПОЛНОГО списка (selection/detail работают, т.к.
+    таблица показывает лишь страницу); on_page_changed -> таб чистит stale-detail.
+    Чистый UI, без изменения store/запросов/сортировки/фильтра.
+    Применено к 3 самым объёмным таблицам (их назвал gap-анализ): Findings,
+    Assets, Timeline. Каждый: render-row вынесен в callback, _populate_* ->
+    paginator.set_rows(rows), selection -> paginator.record_at(row); полный список
+    по-прежнему хранится (_findings_records/_assets_records/_timeline_events_data)
+    для selection + CSV-экспорта (экспорт идёт по полному набору, не по странице).
+    Остальные ~17 табличных вкладок — тривиальный follow-up на том же helper.
+  Решение (locked): UI-windowing, НЕ store limit/offset (сорт/фильтр/CSV остаются
+  над полным списком); reusable paginator; охват этой итерации = Findings+Assets+
+  Timeline. Файлы: gui/ui_components.py, gui/tab_findings.py, gui/tab_assets.py,
+  gui/tab_timeline.py, tests/test_ui_pagination.py, tests/test_findings_tab.py
+  (+assets/timeline tab tests), ROADMAP_ASM_2.0.md. Коммит e8d1df4d. Проверено:
+  ruff clean, целевые+смежные зелёные, полный pytest зелёный (рост 2361 -> 2368;
+  collect-only подтверждает 2368). Прочие пробелы (отложены): i18n, e2e/GUI-тесты,
+  мост captured-scan -> tool evidence, assignment/comments в триаже находок,
+  пагинация остальных таблиц.

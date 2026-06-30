@@ -130,6 +130,14 @@
 > + the Projects workspace into one timestamped `.zip`; `restore_backup` is zip-slip guarded and
 > non-clobbering by default; Overview "Backup all…" / "Restore…" buttons. Stdlib only. Current scale:
 > **full pytest 2361 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-06-30 (GUI table pagination): the heavy tables loaded every row into the widget at once,
+> freezing the UI on a large estate. `gui/ui_components.TablePaginator` renders a large (already
+> queried/filtered/sorted) row list into a `QTableWidget` one page at a time via a render callback,
+> with a First/◀/▶/Last + page-size control strip; `record_at` maps a table row back to the full-list
+> record so selection/detail keep working. Applied to the three highest-volume tables — Findings, Assets,
+> Timeline — each keeping its full list for selection + CSV export. UI windowing only; the data layer is
+> untouched. Current scale: **full pytest 2368 passed**, ruff clean, self-check 30 tabs, 1 existing
+> Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -140,7 +148,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2361 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2368 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
