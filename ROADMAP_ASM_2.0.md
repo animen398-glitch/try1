@@ -2321,3 +2321,30 @@ add no detection or policy logic; map the three outcomes onto the existing
 never fetched. No store writes, no network, no new dependencies.
 
 ---
+
+### Tool→Canonical Finding/Asset Bridge (CLOSED 2026-06-30)
+
+Connect the tool layer to the platform's finding model — still **no store
+writes**:
+
+- **`core/tool_ingest.py`** (new): `tool_result_to_findings(result)` maps a
+  `ToolRunResult`'s findings onto the platform's identity-bearing
+  `core.findings_adapter.Finding` DTOs via `from_raw` (so a tool finding gets the
+  same fingerprint identity / category / severity normalization as a scanner
+  finding; category mapped from the tool's action, default `vuln`; the tool's
+  string evidence refs are carried in `detail` since they are not manifest
+  artifacts). `tool_result_to_assets(result)` maps assets onto
+  `core.asset_adapter.Asset` DTOs (the discovering tool in `attrs['source']`).
+  Pure: writes to **no store**, no network — persistence stays an explicit,
+  separate step the caller performs later. A `blocked`/`skipped`/empty result
+  yields empty lists.
+- Tests: `tests/test_tool_ingest.py` (canonical identity + category, dependency→
+  `vuln`, asset mapping with source, blocked→empty, determinism/purity, type
+  guards, empty result).
+
+**Decisions (locked):** pure converter only — reuse `findings_adapter.from_raw` +
+`asset_adapter.Asset` for canonical identity, add no new finding/asset model;
+**no store writes** (ingestion into FindingsStore/AssetStore is a later, explicit
+step, not this layer); no network, no new dependencies.
+
+---
