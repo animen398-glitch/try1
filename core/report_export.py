@@ -47,6 +47,13 @@ _MISSIONS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('client_facing', 'Client-facing'), ('updated_at', 'Updated'),
 )
 
+_ENGAGEMENTS_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('engagement_id', 'Engagement ID'), ('client', 'Client'),
+    ('project', 'Project'), ('status', 'Status'),
+    ('missions', 'Missions'), ('audit_runs', 'Audit Runs'),
+    ('findings', 'Findings'), ('updated_at', 'Updated'),
+)
+
 
 _TIMELINE_COLUMNS: Sequence[Tuple[str, str]] = (
     ('at', 'When'), ('scan_id', 'Scan'), ('severity', 'Severity'),
@@ -355,6 +362,15 @@ def missions_csv(overview) -> str:
     bare row list — one line per mission with its last-run outcome."""
     rows = overview.get('missions') if isinstance(overview, dict) else overview
     return _rows_to_csv(rows, _MISSIONS_COLUMNS)
+
+
+def engagements_csv(overview) -> str:
+    """CSV of the engagement portfolio. Accepts either the full
+    ``engagement_overview.build_engagement_overview`` dict
+    (``{'engagements': [...]}``) or a bare row list — one line per engagement with
+    its status + linked counts."""
+    rows = overview.get('engagements') if isinstance(overview, dict) else overview
+    return _rows_to_csv(rows, _ENGAGEMENTS_COLUMNS)
 
 
 # ── SARIF 2.1.0 (EPIC 16 F1) ────────────────────────────────────────────────────

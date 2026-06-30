@@ -180,6 +180,18 @@ class EngagementsTabMixin:
         self.btn_engagement_report_html.clicked.connect(
             lambda: self._export_engagement_report("html"))
         report_row.addWidget(self.btn_engagement_report_html)
+        self.btn_engagement_retest = StyledButton("Export retest", style="secondary")
+        self.btn_engagement_retest.setToolTip(
+            "Перепроверить статус связанных находок (fixed/open/accepted) и "
+            "сохранить retest-отчёт (Markdown).")
+        self.btn_engagement_retest.setEnabled(False)
+        self.btn_engagement_retest.clicked.connect(self._export_engagement_retest)
+        report_row.addWidget(self.btn_engagement_retest)
+        self.btn_engagement_csv = StyledButton("Export CSV", style="secondary")
+        self.btn_engagement_csv.setToolTip(
+            "Экспортировать портфель engagement'ов проекта в CSV.")
+        self.btn_engagement_csv.clicked.connect(self._export_engagements_csv)
+        report_row.addWidget(self.btn_engagement_csv)
         report_row.addStretch(1)
         layout.addLayout(report_row)
 
@@ -434,7 +446,7 @@ class EngagementsTabMixin:
         self.btn_engagement_link_finding.setEnabled(
             idle and self.engagement_link_finding.count() > 0)
         for btn in (self.btn_engagement_report_json, self.btn_engagement_report_md,
-                    self.btn_engagement_report_html):
+                    self.btn_engagement_report_html, self.btn_engagement_retest):
             btn.setEnabled(idle)
         links = e.get("_links") or {} if e else {}
         has_stale = bool(links.get("stale_missions") or links.get("stale_runs")
@@ -630,3 +642,50 @@ class EngagementsTabMixin:
             "html": engagement_report.render_html,
         }[fmt]
         return renderer(report)
+
+    def _export_engagement_retest(self):
+        e = self._selected_engagement()
+        payload = e.get("payload") if e else None
+        if not isinstance(payload, dict):
+            self.engagement_status.setText("Select an engagement first")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Engagement Retest", "engagement_retest.md",
+            "Markdown Files (*.md)")
+        if not path:
+            return
+        try:
+            text = self._render_engagement_retest(payload)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:  # noqa: BLE001
+            self.engagement_status.setText(f"Export failed: {e}")
+            return
+        self.engagement_status.setText(f"Exported retest: {path}")
+
+    @staticmethod
+    def _render_engagement_retest(payload: Dict[str, Any]) -> str:
+        from core import engagement_retest
+        return engagement_retest.render_markdown(
+            engagement_retest.build_retest(payload))
+
+    def _export_engagements_csv(self):
+        project = self.engagement_project.currentData()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Engagements CSV", "engagements.csv", "CSV Files (*.csv)")
+        if not path:
+            return
+        try:
+            text = self._engagements_csv_text(project)
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+        except Exception as e:  # noqa: BLE001
+            self.engagement_status.setText(f"Export failed: {e}")
+            return
+        self.engagement_status.setText(f"Exported engagements CSV: {path}")
+
+    @staticmethod
+    def _engagements_csv_text(project) -> str:
+        from core.engagement_overview import build_engagement_overview
+        from core.report_export import engagements_csv
+        return engagements_csv(build_engagement_overview(project=project or None))

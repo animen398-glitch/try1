@@ -1134,6 +1134,32 @@ def _engagement_report(engagement_id: str) -> dict:
         return {'error': str(e)}
 
 
+def _engagement_retest(engagement_id: str) -> dict:
+    try:
+        from core.engagement_retest import build_retest
+        from core.engagement_store import EngagementStore
+        row = EngagementStore().get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        return {'retest': build_retest(row['payload'])}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagements_overview(project: Optional[str] = None) -> dict:
+    try:
+        from core.engagement_overview import build_engagement_overview
+        return build_engagement_overview(project=project)
+    except Exception as e:
+        return {'total': 0, 'counts': {}, 'engagements': [], 'error': str(e)}
+
+
+def _engagements_csv(project: Optional[str] = None) -> str:
+    from core.engagement_overview import build_engagement_overview
+    from core.report_export import engagements_csv
+    return engagements_csv(build_engagement_overview(project=project))
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -2265,6 +2291,15 @@ if _FASTAPI_OK:
     async def engagements(project: Optional[str] = None):
         return JSONResponse(_engagements_list(project))
 
+    @app.get('/engagements/overview')
+    async def engagements_overview(project: Optional[str] = None):
+        return JSONResponse(_engagements_overview(project))
+
+    @app.get('/engagements.csv')
+    async def engagements_csv_route(project: Optional[str] = None):
+        return Response(_engagements_csv(project),
+                        media_type='text/csv; charset=utf-8')
+
     @app.post('/engagements')
     async def engagement_create(body: EngagementRequest):
         out = _engagement_create(body.client, body.project, scope=body.scope,
@@ -2327,6 +2362,12 @@ if _FASTAPI_OK:
                             status_code=code)
         return Response(_er.render_markdown(out['report']),
                         media_type='text/markdown; charset=utf-8')
+
+    @app.get('/engagements/{engagement_id}/retest')
+    async def engagement_retest(engagement_id: str):
+        out = _engagement_retest(engagement_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
 
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):

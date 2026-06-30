@@ -236,6 +236,27 @@ def test_engagement_to_json_rejects_bad_status():
 
 # ── immutability ───────────────────────────────────────────────────────────────
 
+def test_mission_roe_from_engagement_inherits_scope_and_roe():
+    e = eng.create_engagement(
+        "Acme", "shop.io",
+        scope={"allowed_domains": ["shop.io", "x.io"], "allowed_ips": ["1.1.1.1"],
+               "forbidden_paths": ["/admin"]},
+        roe={"active_scan_enabled": True, "passive_only": False,
+             "rate_limit": "2 rps"},
+        authorization={"accepted": True, "authorized_by": "CISO"})
+    roe = eng.mission_roe_from_engagement(e)
+    assert roe["allowed_domains"] == ["shop.io", "x.io"]
+    assert roe["forbidden_paths"] == ["/admin"]
+    assert roe["active_scan_enabled"] is True and roe["passive_only"] is False
+    assert roe["rate_limit"] == "2 rps"
+    assert roe["authorized_by"] == "CISO"
+    assert roe["profile"] == "client_safe"
+    assert "allowed_ips" not in roe          # not part of the mission ROE shape
+    # the result is accepted by the mission ROE normalizer
+    from core.audit_scope import normalize_roe
+    assert normalize_roe(roe)["allowed_domains"] == ["shop.io", "x.io"]
+
+
 def test_inputs_are_not_mutated():
     e = eng.create_engagement("Acme", "shop.io")
     snapshot = copy.deepcopy(e)

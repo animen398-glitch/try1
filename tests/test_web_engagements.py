@@ -72,6 +72,17 @@ def test_report_helper():
     assert "not found" in wa._engagement_report("nope").get("error", "")
 
 
+def test_retest_overview_csv_helpers():
+    saved = _save("Acme", "shop.io")
+    assert wa._engagement_retest(saved["id"])["retest"]["engagement_id"] == saved["id"]
+    assert "not found" in wa._engagement_retest("nope").get("error", "")
+    ov = wa._engagements_overview("shop.io")
+    assert ov["total"] == 1 and ov["engagements"][0]["client"] == "Acme"
+    csv_text = wa._engagements_csv("shop.io")
+    assert csv_text.splitlines()[0].startswith("Engagement ID,Client")
+    assert saved["id"] in csv_text
+
+
 # ── live endpoints ───────────────────────────────────────────────────────────--
 
 def test_engagement_endpoints_with_testclient():
@@ -125,3 +136,14 @@ def test_engagement_endpoints_with_testclient():
     assert r.json()["report"]["summary"]["linked_findings"] == 1
     r = client.get(f"/engagements/{eid}/report.md")
     assert r.status_code == 200 and r.text.startswith("# Engagement Report ")
+
+    # retest + overview + csv endpoints
+    r = client.get(f"/engagements/{eid}/retest")
+    assert r.status_code == 200 and r.json()["retest"]["summary"]["total"] == 1
+    assert client.get("/engagements/missing/retest").status_code == 404
+    r = client.get("/engagements/overview")        # literal route before /{id}
+    assert r.status_code == 200 and "total" in r.json() and "counts" in r.json()
+    r = client.get("/engagements.csv", params={"project": "web.io"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert r.text.splitlines()[0].startswith("Engagement ID,Client")

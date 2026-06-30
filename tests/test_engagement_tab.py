@@ -96,3 +96,12 @@ def test_render_engagement_report_formats(qapp):
     assert md.startswith("# Engagement Report ")
     html = EngagementsTabMixin._render_engagement_report(saved["payload"], "html")
     assert "<html>" in html
+
+
+def test_render_retest_and_csv_helpers(qapp):
+    saved = _save("Acme Corp", "shop.com")
+    retest_md = EngagementsTabMixin._render_engagement_retest(saved["payload"])
+    assert retest_md.startswith("# Engagement Retest ")
+    csv_text = EngagementsTabMixin._engagements_csv_text("shop.com")
+    assert csv_text.splitlines()[0].startswith("Engagement ID,Client")
+    assert saved["id"] in csv_text

@@ -285,6 +285,29 @@ def link_finding(engagement: Dict[str, Any], finding_id: str) -> Dict[str, Any]:
     return normalize_engagement(updated)
 
 
+def mission_roe_from_engagement(engagement: Dict[str, Any]) -> Dict[str, Any]:
+    """A mission-style ROE (``core.audit_scope`` shape, with scope embedded)
+    seeded from an engagement's scope + ROE + authorization — so a mission created
+    under an engagement inherits its bounds.
+
+    Pure: returns a dict suitable for ``pentest_mission.create_mission(roe=...)``.
+    The engagement keeps scope separate; a mission embeds it, so the engagement's
+    ``scope.allowed_domains`` / ``forbidden_paths`` are folded into the ROE here
+    (``allowed_ips`` has no place in the mission ROE shape and is dropped)."""
+    normalized = normalize_engagement(engagement)
+    scope = normalized["scope"]
+    roe = normalized["roe"]
+    return {
+        "profile": PROFILE,
+        "allowed_domains": list(scope["allowed_domains"]),
+        "forbidden_paths": list(scope["forbidden_paths"]),
+        "active_scan_enabled": roe["active_scan_enabled"],
+        "passive_only": roe["passive_only"],
+        "rate_limit": roe["rate_limit"],
+        "authorized_by": normalized["authorization"]["authorized_by"],
+    }
+
+
 def engagement_to_json(engagement: Dict[str, Any]) -> Dict[str, Any]:
     """Canonical JSON-serializable engagement export, schema-validated.
 
