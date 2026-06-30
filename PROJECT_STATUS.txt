@@ -5094,3 +5094,39 @@ GUI TABLE PAGINATION (2026-06-30)
   collect-only подтверждает 2368). Прочие пробелы (отложены): i18n, e2e/GUI-тесты,
   мост captured-scan -> tool evidence, assignment/comments в триаже находок,
   пагинация остальных таблиц.
+
+------------------------------------------------------------------------------
+INTERACTIVE ATTACK-PATH GRAPH (2026-06-30)
+------------------------------------------------------------------------------
+  ВАЖНО: пользователь попросил «3 новых модуля под ключ» (cloud_classifier,
+  движок attack paths, GUI attack-surface), но ВСЕ ТРИ уже существовали —
+  core/cloud_classifier.py (classify_cloud(provider,asn_name,asn,technologies,
+  cname) — уже принимает CNAME+CDN-tech сигналы; встроен в infrastructure.py),
+  intelligence.build_attack_paths + correlation.py (entry/pivot/target/score/
+  vector/band, кластеры по общему IP/подсети/ASN через ipaddress, blast radius),
+  gui/tab_attack_paths.py (таблица путей по score + detail + async). Отказ
+  дублировать (CLAUDE §5.2/5.3/6/10): проведён аудит, показана доказательная
+  карта, и по решению пользователя добавлена ТОЛЬКО недостающая часть —
+  интерактивный граф — поверх существующих движков, без второго движка/
+  классификатора.
+    gui/attack_graph_view.AttackGraphView(QGraphicsView) (new): детерминированный
+    ПОСЛОЙНЫЙ граф Вход→Транзит→Цель в QGraphicsScene (stdlib Qt, без graph-
+    библиотек). Entry окрашен по своей severity, критичная цель/goal подсвечена
+    (палитра theme), fan-out целей ограничен MAX_TARGETS=12 + узел «+N more»;
+    клик по узлу -> сигнал node_clicked(node_id, role). Чистая презентация поверх
+    уже-загруженной записи пути; headless-safe; не падает на кривых данных
+    (логируется). Вшит в gui/tab_attack_paths.py ПОД таблицей: выбор пути ->
+    render_path; клик по узлу -> подсветка в detail-панели; перезагрузка/пустой
+    список -> clear_graph. Переиспользует load_attack_paths + _run_async (нового
+    пути данных нет).
+  Решение (locked): переиспользовать существующие cloud/attack-path/correlation
+  движки — строить только недостающий граф; послойная (не force-directed)
+  раскладка под фиксированную 3-стадийную цепочку (детерминирована/тестируема);
+  клик-узел кормит существующую detail-панель (без перехода на 3-pane). Файлы:
+  gui/attack_graph_view.py, gui/tab_attack_paths.py, tests/test_attack_graph_view.py,
+  tests/test_attack_paths_tab.py, ROADMAP_ASM_2.0.md. Коммит 651c214f. Проверено:
+  ruff clean, целевые+смежные зелёные, полный pytest зелёный (рост 2368 -> 2375;
+  collect-only подтверждает 2375). УРОК: всегда аудитить core/ перед «новыми»
+  модулями — ASM-поверхность (attack-path/cloud/correlation) уже во многом
+  построена. Прочие пробелы (отложены): i18n, e2e/GUI-тесты, мост captured-scan ->
+  tool evidence, assignment/comments в триаже, пагинация остальных таблиц.

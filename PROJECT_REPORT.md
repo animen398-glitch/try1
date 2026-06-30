@@ -138,6 +138,14 @@
 > Timeline — each keeping its full list for selection + CSV export. UI windowing only; the data layer is
 > untouched. Current scale: **full pytest 2368 passed**, ruff clean, self-check 30 tabs, 1 existing
 > Starlette/httpx warning.
+> Update 2026-06-30 (Interactive attack-path graph): the cloud classifier, attack-path engine and
+> attack-surface tab ALREADY existed (`core/cloud_classifier.py`, `intelligence.build_attack_paths` +
+> `core/correlation.py`, `gui/tab_attack_paths.py`), so only the missing visual was added — no
+> duplication. `gui/attack_graph_view.AttackGraphView` (QGraphicsView) draws one ranked path as a
+> deterministic layered Entry→Pivot→Targets node-edge diagram (stdlib Qt, target fan-out capped with a
+> "+N more" node, click → node_clicked), wired into the Attack Paths tab below the ranked table over the
+> existing `load_attack_paths` data. Current scale: **full pytest 2375 passed**, ruff clean, self-check
+> 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -148,7 +156,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2368 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2375 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
