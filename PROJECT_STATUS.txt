@@ -5245,3 +5245,30 @@ TOOL-EVIDENCE: HEADER + COOKIE EXTRACTORS (2026-06-30)
   Проверено: ruff clean, целевой+смежные зелёные, полный pytest зелёный (рост
   2394 -> 2400; collect-only подтверждает 2400). Остаются (отложены): i18n,
   e2e/GUI-тесты, пагинация остальных таблиц.
+
+------------------------------------------------------------------------------
+E2E / GUI-INTERACTION TESTS (2026-07-01)
+------------------------------------------------------------------------------
+  GUI-набор тестировал хендлеры изолированно (_run_async застаблен в no-op) —
+  реальная цепочка клик -> handler -> worker -> callback -> store/UI не
+  покрывалась. Добавлен детерминированный headless e2e-слой.
+    Harness (tests/gui_test_helpers.py): _SyncRunMixin переопределяет
+    _run_async(work, on_done) — гоняет воркер INLINE и зовёт callback (контракт
+    TaskRunnerMixin, синхронно, БЕЗ QThread -> детерминизм) + переиспользуемые
+    e2e-хосты FindingsE2EHost(_SyncRunMixin,FindingsHost)/MissionsE2EHost(
+    _SyncRunMixin,MissionsHost). Существующие хосты/тесты НЕ тронуты.
+    tests/test_gui_e2e.py: настоящие активации через QAbstractButton.click()
+    (уважает enabled-state, бьёт по подключённому слоту) над conftest-изолированными
+    сторами. Findings: выбор строки -> assign/comment/change-status кликом (ассерт
+    в сторе) + проверка enable-state (кнопки выключены без выбора). Missions:
+    Run tool кликом (header_audit -> finding заингестен в проект) + «Из скана»
+    кликом (скан с субдоменами -> поле evidence авто-заполнено; монкипатч
+    core.config.load_settings output_dir на tmp). Offline / offscreen Qt.
+  Решение (locked): синхронный _run_async для детерминированного thread-free e2e;
+  .click()-активации (надёжно headless, валидируют всю проводку); репрезентативный
+  охват (Findings+Missions mutating-цепочки), остальные вкладки -> follow-up на
+  том же harness. Паттерн для будущего GUI e2e: subclass host + _SyncRunMixin +
+  .click(). Файлы: tests/gui_test_helpers.py, tests/test_gui_e2e.py,
+  ROADMAP_ASM_2.0.md. Коммит 3eb18aa6. Проверено: ruff clean, целевые+смежные
+  GUI-сьюты зелёные, полный pytest зелёный (рост 2400 -> 2406; collect-only
+  подтверждает 2406). Остаются (отложены): i18n, пагинация остальных таблиц.

@@ -173,6 +173,12 @@
 > not raw scripts/html; those findings are already in FindingsStore). Surface auto-fill works for both
 > with no changes (it is generic over the registry). Current scale: **full pytest 2400 passed**, ruff
 > clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
+> Update 2026-07-01 (e2e/GUI tests): the GUI suite tested handlers in isolation; added a deterministic
+> headless e2e layer — `tests/gui_test_helpers._SyncRunMixin` runs `_run_async` inline (no QThread) +
+> reusable FindingsE2EHost/MissionsE2EHost, and `tests/test_gui_e2e.py` drives genuine button clicks
+> (`QAbstractButton.click()`) through the full handler→worker→callback→store/UI chain: Findings
+> assign/comment/status, Missions run-tool + «Из скана». Existing hosts/tests untouched. Current scale:
+> **full pytest 2406 passed**, ruff clean, self-check 30 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -183,7 +189,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2400 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2406 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |
