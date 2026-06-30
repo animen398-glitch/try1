@@ -5391,3 +5391,5 @@ ENGAGEMENT FOLLOW-UPS — retest / overview+CSV / scope inheritance (2026-07-01)
   коммиты, без push. Engagement-эпик ПОЛНОСТЬЮ закрыт (F1–F4 + S1–S4 + follow-ups).
   + Overview-карточка «Engagements (Pentest Workbench)» (commit 38525e3b, surface-
   паритет с missions) — рост 2482 -> 2484.
+  + Создание миссии под engagement с наследованием ROE: core/engagement_missions.create_mission_under_engagement (потребитель E3-helper'а)
+  + web POST /engagements/{id}/missions + GUI «Create mission» (d8526f43) — 2484 -> 2489.
