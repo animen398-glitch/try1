@@ -5399,3 +5399,30 @@ ENGAGEMENT FOLLOW-UPS — retest / overview+CSV / scope inheritance (2026-07-01)
   + Тот же проход: общий HTML-конверт отчётов (html_open/html_close: doctype/head/style +
   markdown-sha-футер) вынесен из 5 рендереров (audit_report x2/mission/engagement/tool),
   байт-в-байт тот же вывод (commit 62b5419c) — рост 2494 -> 2496.
+
+------------------------------------------------------------------------------
+VERIFICATION & STABILIZATION — Engagement epic (2026-07-01)
+------------------------------------------------------------------------------
+  Проверочный проход после закрытия Engagement-эпика (F1–F4 + S1–S4 +
+  follow-ups + Overview-карточка + mission-under-engagement + report-layer
+  dedup). Кода не меняли — только верификация стабильности.
+    Статика: python -m compileall core gui remote tests (exit 0); ruff check .
+      (All checks passed).
+    Тесты: targeted (engagement core/store/links/report/retest/overview/
+      missions), surfaces (engagement_tab/web_engagements/report_export/
+      finding_render), regression (pentest_mission/mission_store/mission_runner/
+      missions_tab/audit_report[/_v2]/audit_store/audit_workflow_edges/
+      project_io) — все зелёные.
+    Полный pytest: зелёный (exit 0), 2496 тестов, единственный warning —
+      известный StarletteDeprecationWarning (httpx/testclient), не проблема.
+    Self-check GUI: self-check OK — 31 tab(s).
+    Ручной аудит: web /engagements* (11 роутов, литеральные до параметрич.,
+      404/400 корректны); finding_render/html_open переиспользуются 5
+      рендерерами без дублей; project_io bundle содержит engagements.json,
+      старый bundle без него импортируется как {}; единственные FindingsStore/
+      AssetStore/EngagementStore, второго Timeline нет; engagement_report —
+      view, engagement_retest/overview — derive-on-read (0 store-writes);
+      engagement_missions client-safe (без tools/сети); GUI-вкладка тонкая
+      (8x _run_async, 0 ручных QThread).
+  Исправлений не потребовалось — регрессий/битых импортов/дублей не найдено.
+
