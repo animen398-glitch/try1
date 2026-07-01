@@ -237,6 +237,63 @@ def test_import_tolerates_bundle_without_engagements(tmp_path):
     assert res['engagements'] == 0                        # absent section → empty
 
 
+def test_export_import_restores_retest_runs(tmp_path):
+    from core import engagement as eng
+    from core import retest_run as rr
+    from core.retest_run_store import RetestRunStore
+
+    src = tmp_path / 'src'
+    src_f, src_a = src / 'findings.db', src / 'assets.db'
+    src_r = src / 'retest_runs.db'
+    slug, _fid = _seed(src, src_f, src_a)
+    engagement = eng.create_engagement('Acme Corp', slug)
+    run = rr.create_retest_run(
+        engagement, created_at='2026-07-01T09:00:00',
+        finding_results=[{'finding_id': 'f1', 'outcome': 'fixed',
+                          'title': 'H', 'severity': 'low', 'status': 'FIXED'}])
+    run = rr.advance_retest_run_status(run, 'completed')
+    RetestRunStore(src_r).save_retest_run(run)
+
+    bundle = tmp_path / 'b.zip'
+    out = project_io.export_project(src, slug, bundle, findings_db=src_f,
+                                    assets_db=src_a, retest_runs_db=src_r)
+    assert out['retest_runs'] == 1
+
+    dst = tmp_path / 'dst'
+    dst_r = dst / 'retest_runs.db'
+    res = project_io.import_project(bundle, dst, findings_db=dst / 'f.db',
+                                    assets_db=dst / 'a.db', retest_runs_db=dst_r)
+    assert res['retest_runs'] == 1
+    restored = RetestRunStore(dst_r).get_retest_run(run['retest_run_id'])
+    assert restored is not None
+    assert restored['payload'] == run                     # canonical, verbatim
+    assert restored['created_at'] == '2026-07-01T09:00:00'
+
+
+def test_import_tolerates_bundle_without_retest_runs(tmp_path):
+    """An older bundle (predating retest_runs.json) imports cleanly with 0."""
+    import zipfile
+
+    src = tmp_path / 'src'
+    slug, _fid = _seed(src, src / 'f.db', src / 'a.db')
+    bundle = tmp_path / 'b.zip'
+    project_io.export_project(src, slug, bundle, findings_db=src / 'f.db',
+                              assets_db=src / 'a.db')
+
+    legacy = tmp_path / 'legacy.zip'
+    with zipfile.ZipFile(bundle) as zin, zipfile.ZipFile(legacy, 'w') as zout:
+        for item in zin.namelist():
+            if item != 'retest_runs.json':                # strip the new member
+                zout.writestr(item, zin.read(item))
+
+    dst = tmp_path / 'dst'
+    res = project_io.import_project(legacy, dst, findings_db=dst / 'f.db',
+                                    assets_db=dst / 'a.db',
+                                    retest_runs_db=dst / 'r.db')
+    assert res['skipped'] is False
+    assert res['retest_runs'] == 0                        # absent section → empty
+
+
 # ── skip / replace ────────────────────────────────────────────────────────────
 
 def test_import_skips_existing_without_replace(tmp_path):

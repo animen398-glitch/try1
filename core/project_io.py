@@ -16,6 +16,7 @@ Bundle layout (``format_version`` 1):
     audit_runs.json   # AuditRunStore.export_project(slug) — rows + events, verbatim
     missions.json     # MissionStore.export_project(slug)  — rows (no event log)
     engagements.json  # EngagementStore.export_project(slug) — rows (no event log)
+    retest_runs.json  # RetestRunStore.export_project(slug) — rows (no event log)
     project/…         # the Projects/<slug>/ tree, paths relative to the project dir
 
 Offline, stdlib only (``zipfile``). Reuses ProjectStore / FindingsStore /
@@ -39,6 +40,7 @@ _ASSETS = 'assets.json'
 _AUDIT_RUNS = 'audit_runs.json'
 _MISSIONS = 'missions.json'
 _ENGAGEMENTS = 'engagements.json'
+_RETEST_RUNS = 'retest_runs.json'
 _TREE_PREFIX = 'project/'
 logger = logging.getLogger(__name__)
 
@@ -68,20 +70,22 @@ def _read_manifest(zf: zipfile.ZipFile) -> Dict:
 
 
 def _stores(findings_db, assets_db, audit_db=None, missions_db=None,
-            engagements_db=None):
+            engagements_db=None, retest_runs_db=None):
     from core.asset_store import AssetStore
     from core.audit_store import AuditRunStore
     from core.engagement_store import EngagementStore
     from core.findings_store import FindingsStore
     from core.mission_store import MissionStore
+    from core.retest_run_store import RetestRunStore
     return (FindingsStore(findings_db), AssetStore(assets_db),
             AuditRunStore(audit_db), MissionStore(missions_db),
-            EngagementStore(engagements_db))
+            EngagementStore(engagements_db), RetestRunStore(retest_runs_db))
 
 
 def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
                    findings_db=None, assets_db=None, audit_db=None,
-                   missions_db=None, engagements_db=None) -> Dict:
+                   missions_db=None, engagements_db=None,
+                   retest_runs_db=None) -> Dict:
     """Bundle project ``slug`` (under workspace ``base``) into the ``dest`` zip.
     Raises ``KeyError`` if the project does not exist."""
     from core.config import APP_VERSION
@@ -94,13 +98,15 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
         raise KeyError(f'project not found: {slug}')
 
     (findings_store, assets_store, audit_store, mission_store,
-     engagement_store) = _stores(
-        findings_db, assets_db, audit_db, missions_db, engagements_db)
+     engagement_store, retest_run_store) = _stores(
+        findings_db, assets_db, audit_db, missions_db, engagements_db,
+        retest_runs_db)
     findings = findings_store.export_project(slug)
     assets = assets_store.export_project(slug)
     audit_runs = audit_store.export_project(slug)
     missions = mission_store.export_project(slug)
     engagements = engagement_store.export_project(slug)
+    retest_runs = retest_run_store.export_project(slug)
     meta = proj.load_metadata()
 
     manifest = {
@@ -119,6 +125,7 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
             'audit_events': len(audit_runs['events']),
             'missions': len(missions['rows']),
             'engagements': len(engagements['rows']),
+            'retest_runs': len(retest_runs['rows']),
             'scans': len(meta.get('scans') or []),
         },
     }
@@ -135,6 +142,7 @@ def export_project(base: Union[str, Path], slug: str, dest: Union[str, Path], *,
         zf.writestr(_AUDIT_RUNS, json.dumps(audit_runs, ensure_ascii=False))
         zf.writestr(_MISSIONS, json.dumps(missions, ensure_ascii=False))
         zf.writestr(_ENGAGEMENTS, json.dumps(engagements, ensure_ascii=False))
+        zf.writestr(_RETEST_RUNS, json.dumps(retest_runs, ensure_ascii=False))
 
     return {'path': str(dest), 'slug': slug, **manifest['counts']}
 
@@ -161,7 +169,7 @@ def _safe_extract(zf: zipfile.ZipFile, dest_dir: Path) -> int:
 
 def import_project(src: Union[str, Path], base: Union[str, Path], *,
                    findings_db=None, assets_db=None, audit_db=None,
-                   missions_db=None, engagements_db=None,
+                   missions_db=None, engagements_db=None, retest_runs_db=None,
                    replace: bool = False) -> Dict:
     """Restore a bundle into workspace ``base``. If the project tree already
     exists it is skipped unless ``replace`` (which wipes the tree and the DB
@@ -188,16 +196,20 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         missions = json.loads(zf.read(_MISSIONS)) if _MISSIONS in names else {}
         engagements = (json.loads(zf.read(_ENGAGEMENTS))
                        if _ENGAGEMENTS in names else {})
+        retest_runs = (json.loads(zf.read(_RETEST_RUNS))
+                       if _RETEST_RUNS in names else {})
 
         (findings_store, assets_store, audit_store, mission_store,
-         engagement_store) = _stores(
-            findings_db, assets_db, audit_db, missions_db, engagements_db)
+         engagement_store, retest_run_store) = _stores(
+            findings_db, assets_db, audit_db, missions_db, engagements_db,
+            retest_runs_db)
         db_imports = (
             (findings_store, findings),
             (assets_store, assets),
             (audit_store, audit_runs),
             (mission_store, missions),
             (engagement_store, engagements),
+            (retest_run_store, retest_runs),
         )
         for db_store, payload in db_imports:
             db_store.validate_project_import(slug, payload)
@@ -255,13 +267,14 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 
-    fres, ares, au_res, mi_res, eng_res = results
+    fres, ares, au_res, mi_res, eng_res, rt_res = results
 
     return {'slug': slug, 'skipped': False, 'files': files,
             'findings': fres['imported'], 'finding_events': fres['events'],
             'assets': ares['imported'], 'asset_events': ares['events'],
             'audit_runs': au_res['imported'], 'audit_events': au_res['events'],
-            'missions': mi_res['imported'], 'engagements': eng_res['imported']}
+            'missions': mi_res['imported'], 'engagements': eng_res['imported'],
+            'retest_runs': rt_res['imported']}
 
 
 def bundle_info(src: Union[str, Path]) -> Optional[Dict]:
