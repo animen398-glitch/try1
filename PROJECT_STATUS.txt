@@ -5581,3 +5581,56 @@ maxlen + редактируются, pending/mark_seen, excepthook И threading.
 при install(), полный pytest зелёный — 2544 passed, 0 failed/error/skipped
 (junit-xml; 2532 → 2544, +12 crash-репортер тестов). Локальные коммиты, без push.
 
+------------------------------------------------------------------------------
+DEV_PLAN WS6 (быстрые пункты) — Rate-limiting web-консоли (2026-07-02)
+------------------------------------------------------------------------------
+По DEV_PLAN_CLAUDE_CODE.md (WS6, быстрые пункты сразу после WS2) закрыт главный
+пробел надёжности LAN web-консоли: мутирующие эндпоинты (запуск сканов / mission-
+run / tool-run) не имели rate-limit. Реализован серверный throttle на stdlib.
+
+utils/rate_limiter.py: новый класс RequestThrottle (ОТДЕЛЬНЫЙ от существующего
+client-side RateLimiter — иная семантика: RateLimiter БЛОКИРУЕТ, чтобы разредить
+исходящие запросы; RequestThrottle НЕ блокирует — allow(key)->bool, и caller
+отвечает 429). Per-key fixed-window счётчик: max_requests в окне window_sec на
+ключ (токен или client IP); max<=0 или window<=0 → disabled (allow всегда True);
+thread-safe (Lock); time_fn инъектируется для детерминизма; ленивый prune stale-
+ключей при росте >1024 (память ограничена); свойства .enabled/.limit.
+
+remote/web_app.py:
+  • Новая app-wide зависимость rate_limit(request) рядом с require_token
+    (FastAPI(dependencies=[Depends(require_token), Depends(rate_limit)])). Только
+    мутирующие методы (POST/PUT/PATCH/DELETE); GET/HEAD/OPTIONS никогда не
+    throttl'ятся. Ключ = _request_token(request) (переиспользован) иначе
+    request.client.host. Превышение → HTTPException(429). Доккоммент: LAN-bind
+    без TLS небезопасен вне доверенной сети; CSRF здесь не проблема — auth это
+    Bearer-заголовок / явный ?token=, а не ambient cookie, поэтому cross-site
+    запрос не подхватит креды пользователя.
+  • _THROTTLE (module-level) + _make_throttle() читают web_console.
+    rate_limit_per_min (fixed 60s окно); _THROTTLE ребилдится в start_server из
+    настроек (+печать "rate: N/min").
+
+core/config.py: web_console += 'rate_limit_per_min': 60 (0 = off) + коммент про
+TLS/trusted-network.
+
+tests/conftest.py: autouse-фикстура _reset_web_throttle — свежий _THROTTLE перед
+каждым тестом (module-level throttle шарится сессией; без сброса накопленные POST
+под ключом TestClient могли дать ложный 429 в позднем тесте). Действует только
+если remote.web_app уже импортирован → не-web тесты ничего не платят.
+
+«Единый источник версии приложения» (тоже WS6 quick item) уже удовлетворён —
+существующий core.config.APP_VERSION; изменений не потребовал.
+
+Тесты: tests/test_rate_limiter.py (+4 RequestThrottle: disabled-when-non-positive,
+blocks-after-limit-per-key, per-key-независимость, window-reset),
+tests/test_web_auth.py (+2: 429 при burst мутирующих POST, disabled пропускает
+всё; read-запросы не throttl'ятся).
+
+Проверено: ruff clean, self-check OK (29 вкладок), полный pytest зелёный — 2550
+passed, 0 failed/error/skipped (junit-xml; 2544 → 2550, +6 тестов). Локальные
+коммиты, без push.
+
+Остаток WS6 (осознанно отложен к «остатку WS6» после WS3–WS5): update-check
+(opt-in, лёгкий), user-facing error messages вместо сырых traceback в GUI-
+диалогах (traceback → crash-репорт из WS2), аудит ~192 проглатываемых
+except Exception в core (добавить breadcrumb/лог — связка с WS2).
+

@@ -88,3 +88,29 @@ def test_open_when_no_token(monkeypatch):
     client = _client()
     monkeypatch.setattr(wa, '_AUTH_TOKEN', '')
     assert client.get('/jobs').status_code == 200     # loopback single-user default
+
+
+def test_rate_limit_throttles_mutating_requests(monkeypatch):
+    from utils.rate_limiter import RequestThrottle
+    client = _client()
+    monkeypatch.setattr(wa, '_AUTH_TOKEN', '')                 # open (loopback)
+    monkeypatch.setattr(wa, '_THROTTLE', RequestThrottle(2, 60.0))
+
+    # Read requests are never throttled.
+    for _ in range(5):
+        assert client.get('/jobs').status_code == 200
+
+    # Mutating requests share a per-key fixed window: first 2 pass the limiter,
+    # the 3rd is rejected with 429 (the limiter runs before the handler).
+    codes = [client.post('/cancel').status_code for _ in range(3)]
+    assert 429 not in codes[:2]
+    assert codes[2] == 429
+
+
+def test_rate_limit_disabled_lets_all_through(monkeypatch):
+    from utils.rate_limiter import RequestThrottle
+    client = _client()
+    monkeypatch.setattr(wa, '_AUTH_TOKEN', '')
+    monkeypatch.setattr(wa, '_THROTTLE', RequestThrottle(0, 60.0))  # disabled
+    codes = [client.post('/cancel').status_code for _ in range(6)]
+    assert 429 not in codes

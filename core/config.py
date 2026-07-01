@@ -86,7 +86,12 @@ DEFAULT_SETTINGS = {
     # mutating endpoint when set; a LAN bind with no token auto-generates one at
     # startup. Loopback with no token stays open (single-user desktop). The token
     # can also be supplied out-of-band via the ASA_WEB_TOKEN env var.
-    'web_console': {'host': '127.0.0.1', 'allow_lan': False, 'token': ''},
+    # 'rate_limit_per_min' throttles mutating (POST) requests per token / client
+    # IP (fixed 60s window; 0 disables) so a runaway loop or a malicious LAN
+    # peer cannot spam scan/mission/tool launches. NB: a LAN bind has no TLS, so
+    # only expose the console on a trusted network even with a token.
+    'web_console': {'host': '127.0.0.1', 'allow_lan': False, 'token': '',
+                    'rate_limit_per_min': 60},
     # Crash reporting (core/crash_reporter.py) — local-first observability.
     # 'enabled' writes a redacted JSON report on any crash and surfaces unseen
     # ones on next launch. Nothing is ever sent automatically; 'endpoint' (empty

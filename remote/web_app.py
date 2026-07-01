@@ -53,6 +53,7 @@ from core.security_auditor import SecurityAuditor
 from core.subdomain_scanner import SubdomainScanner
 from utils.data_viewer import DataViewer
 from utils.operation_registry import OperationRegistry
+from utils.rate_limiter import RequestThrottle
 
 def _configured_report_base() -> Path:
     """Reports/output base from settings.json (fallback preserves legacy default)."""
@@ -85,6 +86,17 @@ def _request_token(request) -> str:
     if auth[:7].lower() == 'bearer ':
         return auth[7:].strip()
     return str(request.query_params.get('token') or '')
+
+
+def _make_throttle() -> RequestThrottle:
+    """Build the mutating-request throttle from settings (fixed 60s window)."""
+    cfg = load_settings().get('web_console') or {}
+    return RequestThrottle(int(cfg.get('rate_limit_per_min', 60) or 0), 60.0)
+
+
+# Throttle for mutating (POST) requests, keyed per token / client IP. Rebuilt
+# from settings at ``start_server``; tests set it directly.
+_THROTTLE = _make_throttle()
 
 # ── Global state ──────────────────────────────────────────────────────────────
 # Bounds so a long-running console process can't grow unbounded: the SSE queue
@@ -1885,8 +1897,28 @@ if _FASTAPI_OK:
             raise HTTPException(status_code=401,
                                 detail='missing or invalid web console token')
 
+    async def rate_limit(request: Request):
+        """Throttle mutating (POST/PUT/PATCH/DELETE) requests per token / client
+        IP so a runaway loop or a malicious LAN peer cannot spam scan / mission
+        / tool launches. Read methods are never throttled. 429 on exceed.
+
+        This is the console's abuse guard; note the LAN bind carries no TLS, so
+        the token + this limiter assume a *trusted* network — do not expose the
+        console to the open internet. CSRF is not a concern here: auth is a
+        Bearer token / explicit ``?token=`` (never an ambient cookie), so a
+        cross-site request cannot ride the user's credentials."""
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return
+        if _THROTTLE is None or not _THROTTLE.enabled:
+            return
+        key = _request_token(request) or (
+            request.client.host if request.client else 'anon')
+        if not _THROTTLE.allow(key):
+            raise HTTPException(status_code=429,
+                                detail='rate limit exceeded; slow down')
+
     app = FastAPI(title='Advanced Site Analyzer', docs_url=None, redoc_url=None,
-                  dependencies=[Depends(require_token)])
+                  dependencies=[Depends(require_token), Depends(rate_limit)])
     app.add_middleware(
         CORSMiddleware,
         allow_origins=['*'],
@@ -2557,10 +2589,12 @@ def start_server(host: Optional[str] = None, port: int = 5000,
         print('[web] fastapi/uvicorn not installed.')
         print('[web] Run: pip install fastapi "uvicorn[standard]"')
         return
-    global _AUTH_TOKEN
+    global _AUTH_TOKEN, _THROTTLE
     host, _AUTH_TOKEN = resolve_web_console(host)
+    _THROTTLE = _make_throttle()
     print(f"  [web] bind: {host}:{port}  ·  auth: "
-          f"{'token required' if _AUTH_TOKEN else 'none (loopback)'}")
+          f"{'token required' if _AUTH_TOKEN else 'none (loopback)'}"
+          f"{f'  ·  rate: {_THROTTLE.limit}/min' if _THROTTLE.enabled else ''}")
     print_access_url(port)
     uvicorn.run(app, host=host, port=port, log_level=log_level)
 

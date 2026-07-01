@@ -104,6 +104,22 @@ def _isolate_companies_registry(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_web_throttle():
+    """Give each test a fresh web-console request throttle.
+
+    ``remote.web_app._THROTTLE`` is a module-level fixed-window limiter shared
+    across the whole session; without a per-test reset the accumulated POST
+    count (keyed by the TestClient host) could trip a spurious 429 in a later
+    test. Only acts if web_app is already imported, so non-web tests pay
+    nothing."""
+    import sys
+    wa = sys.modules.get('remote.web_app')
+    if wa is not None:
+        wa._THROTTLE = wa._make_throttle()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_operations_db(request, tmp_path_factory, monkeypatch):
     """Redirect the global operations DB to a per-test temp file.
 
