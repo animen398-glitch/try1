@@ -10,12 +10,38 @@ report envelope and interleave these tables.
 """
 
 import html
+from hashlib import sha1
 from typing import Any, Dict, List
 
 _MD_HEADER = (
     "| Severity | Title | Validation | Confidence | Evidence |\n"
     "|---|---|---|---:|---|"
 )
+
+
+def html_open(title: str) -> str:
+    """Opening of a report HTML document (doctype/head/style) through ``<body>``.
+
+    ``title`` is emitted verbatim (all callers pass static ASCII titles), keeping
+    the extracted output byte-identical to the inlined envelopes it replaces.
+    """
+    return (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        f"<title>{title}</title>"
+        "<style>body{font-family:Arial,sans-serif;margin:24px}"
+        "table{border-collapse:collapse;width:100%;margin:12px 0}"
+        "td,th{border:1px solid #bbb;padding:6px;text-align:left}"
+        "th{background:#eee}</style></head><body>"
+    )
+
+
+def html_close(markdown: str) -> str:
+    """Closing of a report HTML document: the ``markdown-sha`` provenance comment
+    (over the sibling markdown rendering) plus ``</body></html>``."""
+    return (
+        f"<!-- markdown-sha={sha1(markdown.encode('utf-8')).hexdigest()} -->"
+        "</body></html>"
+    )
 
 
 def finding_refs(finding: Dict[str, Any]) -> str:

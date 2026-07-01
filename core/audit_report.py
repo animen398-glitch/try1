@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import html
 import json
-from hashlib import sha1
 from typing import Any, Dict, Iterable, List
+
+from core.finding_render import html_close, html_open
 
 from core.audit_schema import validate_audit_payload
 from core.audit_workflow import audit_run_to_json
@@ -181,12 +182,7 @@ def render_html(run: Dict[str, Any]) -> str:
         for phase in payload.get("phases") or []
     )
     return (
-        "<!doctype html><html><head><meta charset=\"utf-8\">"
-        "<title>ASA Audit Run</title>"
-        "<style>body{font-family:Arial,sans-serif;margin:24px}"
-        "table{border-collapse:collapse;width:100%;margin:12px 0}"
-        "td,th{border:1px solid #bbb;padding:6px;text-align:left}"
-        "th{background:#eee}</style></head><body>"
+        html_open("ASA Audit Run") +
         f"<h1>Audit Run {html.escape(str(payload.get('run_id', '')))}</h1>"
         f"<p><b>Project:</b> {html.escape(str(payload.get('project', '')))}"
         f" | <b>Profile:</b> {html.escape(str(payload.get('profile', '')))}"
@@ -202,8 +198,7 @@ def render_html(run: Dict[str, Any]) -> str:
         f"{table(client_findings(payload))}"
         "<h2>Review Appendix</h2>"
         f"{table(review_findings(payload))}"
-        f"<!-- markdown-sha={sha1(markdown.encode('utf-8')).hexdigest()} -->"
-        "</body></html>"
+        + html_close(markdown)
     )
 
 
@@ -303,12 +298,7 @@ def render_compare_html(diff: Dict[str, Any]) -> str:
         for bucket in ("regressed", "new", "resolved")
     )
     return (
-        "<!doctype html><html><head><meta charset=\"utf-8\">"
-        "<title>ASA Audit Compare</title>"
-        "<style>body{font-family:Arial,sans-serif;margin:24px}"
-        "table{border-collapse:collapse;width:100%;margin:12px 0}"
-        "td,th{border:1px solid #bbb;padding:6px;text-align:left}"
-        "th{background:#eee}</style></head><body>"
+        html_open("ASA Audit Compare") +
         f"<h1>Audit Compare {html.escape(str(diff.get('candidate_run_id', '')))}"
         f" vs {html.escape(str(diff.get('baseline_run_id', '')))}</h1>"
         f"<p><b>Project:</b> {html.escape(str(diff.get('project', '')))}"
@@ -318,8 +308,7 @@ def render_compare_html(diff: Dict[str, Any]) -> str:
         "<table><thead><tr><th>Bucket</th><th>Count</th></tr></thead>"
         f"<tbody>{rows}</tbody></table>"
         f"{sections}"
-        f"<!-- markdown-sha={sha1(markdown.encode('utf-8')).hexdigest()} -->"
-        "</body></html>"
+        + html_close(markdown)
     )
 
 

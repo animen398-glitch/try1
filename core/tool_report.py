@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import html
 import json
-from hashlib import sha1
 from typing import Any, Dict, List
+
+from core.finding_render import html_close, html_open
 
 from core.tool_adapter import ToolRunResult, tool_result_to_json
 
@@ -137,12 +138,7 @@ def render_html(result: ToolRunResult) -> str:
         )
 
     return (
-        '<!doctype html><html><head><meta charset="utf-8">'
-        "<title>ASA Tool Run</title>"
-        "<style>body{font-family:Arial,sans-serif;margin:24px}"
-        "table{border-collapse:collapse;width:100%;margin:12px 0}"
-        "td,th{border:1px solid #bbb;padding:6px;text-align:left}"
-        "th{background:#eee}</style></head><body>"
+        html_open("ASA Tool Run") +
         f"<h1>Tool Run {html.escape(str(payload.get('tool', '')))}</h1>"
         f"<p><b>Action:</b> {html.escape(str(payload.get('action', '')))}"
         f" | <b>Mission:</b> {html.escape(str(payload.get('mission_id', '')))}"
@@ -153,6 +149,5 @@ def render_html(result: ToolRunResult) -> str:
         f"{finding_rows()}"
         "<h2>Assets</h2>"
         f"{asset_rows()}"
-        f"<!-- markdown-sha={sha1(markdown.encode('utf-8')).hexdigest()} -->"
-        "</body></html>"
+        + html_close(markdown)
     )

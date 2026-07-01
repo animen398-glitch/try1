@@ -46,3 +46,21 @@ def test_html_table_escapes_angle_brackets():
     out = fr.finding_html_table([{"title": "<script>", "severity": "high"}])
     assert "<script>" not in out
     assert "&lt;script&gt;" in out
+
+
+def test_html_open_envelope():
+    head = fr.html_open("ASA Mission Report")
+    assert head.startswith('<!doctype html><html><head><meta charset="utf-8">')
+    assert "<title>ASA Mission Report</title>" in head
+    assert head.endswith("</style></head><body>")
+    assert "font-family:Arial" in head
+
+
+def test_html_close_is_sha_of_markdown():
+    from hashlib import sha1
+    md = "# Report\n"
+    close = fr.html_close(md)
+    digest = sha1(md.encode("utf-8")).hexdigest()
+    assert close == f"<!-- markdown-sha={digest} --></body></html>"
+    # different markdown → different provenance sha
+    assert fr.html_close("other") != close

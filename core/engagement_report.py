@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import html
 import json
-from hashlib import sha1
 from typing import Any, Dict, List, Optional
 
-from core.finding_render import finding_html_table, finding_md_table
+from core.finding_render import finding_html_table, finding_md_table, html_close, html_open
 
 
 def build_engagement_report(
@@ -228,12 +227,7 @@ def render_html(report: Dict[str, Any]) -> str:
 
     present = [f for f in (report.get("linked_findings") or []) if not f.get("missing")]
     return (
-        '<!doctype html><html><head><meta charset="utf-8">'
-        "<title>ASA Engagement Report</title>"
-        "<style>body{font-family:Arial,sans-serif;margin:24px}"
-        "table{border-collapse:collapse;width:100%;margin:12px 0}"
-        "td,th{border:1px solid #bbb;padding:6px;text-align:left}"
-        "th{background:#eee}</style></head><body>"
+        html_open("ASA Engagement Report") +
         f"<h1>Engagement Report {html.escape(str(eng.get('engagement_id', '')))}</h1>"
         f"<p><b>Client:</b> {html.escape(str(eng.get('client', '')))}"
         f" | <b>Project:</b> {html.escape(str(eng.get('project', '')))}"
@@ -252,8 +246,7 @@ def render_html(report: Dict[str, Any]) -> str:
         + "".join(run_sections)
         + "<h2>Linked Findings (appendix)</h2>"
         + table(present)
-        + f"<!-- markdown-sha={sha1(markdown.encode('utf-8')).hexdigest()} -->"
-        "</body></html>"
+        + html_close(markdown)
     )
 
 
