@@ -492,6 +492,47 @@ def test_build_timeline_includes_engagement_events(tmp_path):
                                                  'engagement_authorized'}
 
 
+def test_retest_run_events_are_shaped():
+    retest_runs = [
+        {'retest_run_id': 'rt-ok', 'engagement_id': 'eng-1',
+         'status': 'completed', 'created_at': '2026-07-01T10:00:00Z',
+         'summary': {'total': 3, 'fixed': 1, 'open': 2, 'accepted': 0,
+                     'missing': 0}},
+        {'retest_run_id': 'rt-bad', 'engagement_id': 'eng-1',
+         'status': 'failed', 'created_at': '2026-07-02T10:00:00Z',
+         'summary': {}},
+    ]
+    events = timeline.build_events([], retest_runs=retest_runs)
+    assert {e['section'] for e in events} == {'engagements'}
+    assert [e['type'] for e in events] == ['retest_run', 'retest_run']
+    ok = next(e for e in events if 'rt-ok' in e['title'])
+    assert 'fixed 1/3' in ok['title'] and ok['severity'] == 'info'
+    bad = next(e for e in events if 'rt-bad' in e['title'])
+    assert bad['severity'] == 'medium'
+
+
+def test_build_timeline_includes_retest_run_events(tmp_path):
+    from core import engagement as eng
+    from core.engagement_store import EngagementStore
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    from core.project import ProjectStore
+    from core.retest_runner import run_retest
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    fid = FindingsStore().upsert(project.slug, Finding(
+        category='vuln', rule_id='r', title='t', severity='high',
+        location='https://x.com/a').to_store(), scan_id='s1')['finding']['id']
+    e = eng.link_finding(eng.create_engagement('Acme', project.slug), fid)
+    EngagementStore().save_engagement(e, now='2026-07-01T09:00:00')
+    run_retest(e, now='2026-07-01T10:00:00Z')
+
+    tl = timeline.build_timeline(project)
+    assert len(tl['retest_runs']) == 1
+    rt_events = [ev for ev in tl['events'] if ev['type'] == 'retest_run']
+    assert len(rt_events) == 1 and rt_events[0]['section'] == 'engagements'
+
+
 def test_build_timeline_tightens_sla_breach_on_kev(tmp_path):
     """A KEV finding surfaces an sla_breach on its tightened deadline even though
     it is on-track on the plain severity window — the timeline threat-annotates

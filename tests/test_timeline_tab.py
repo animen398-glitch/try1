@@ -152,6 +152,22 @@ def test_on_loaded_stores_tool_runs_for_export(qapp):
     assert 'header_audit' in csv_text and 'When,Tool,Findings' in csv_text
 
 
+def test_on_loaded_stores_retest_runs_for_export(qapp):
+    from core.report_export import retest_runs_csv
+    w = _window(qapp)
+    w.timeline_project.addItem('x.com', 'x.com')
+    w._on_timeline_loaded({
+        'slug': 'x.com', 'events': [], 'series': [],
+        'retest_runs': [{'retest_run_id': 'rt-abc', 'engagement_id': 'eng-1',
+                         'status': 'completed', 'created_at': '2026-07-01T10:00:00Z',
+                         'summary': {'total': 2, 'fixed': 1, 'open': 1,
+                                     'accepted': 0, 'missing': 0}}],
+    })
+    assert len(w._timeline_retest_runs_data) == 1
+    csv_text = retest_runs_csv(w._timeline_retest_runs_data)
+    assert 'eng-1' in csv_text and 'When,Engagement,Status,Fixed' in csv_text
+
+
 def test_event_labels_cover_all_event_types():
     # Every event type the timeline can render needs a RU label, else the feed
     # shows its raw key. Guards against adding a diff/lifecycle/asset event type

@@ -65,6 +65,13 @@ _TOOL_RUNS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('assets', 'Assets'), ('scan_id', 'Scan ID'),
 )
 
+_RETEST_RUNS_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('created_at', 'When'), ('engagement_id', 'Engagement'),
+    ('status', 'Status'), ('fixed', 'Fixed'), ('open', 'Open'),
+    ('accepted', 'Accepted'), ('missing', 'Missing'), ('total', 'Total'),
+    ('retest_run_id', 'Run ID'),
+)
+
 _HISTORY_COLUMNS: Sequence[Tuple[str, str]] = (
     ('at', 'When'), ('scan_id', 'Scan'), ('risk_level', 'Risk'),
     ('risk_score', 'Risk Score'), ('attack_surface', 'Attack Surface'),
@@ -200,6 +207,29 @@ def tool_runs_csv(runs) -> str:
     ingested (the same rows that drive the ``tool_run`` timeline events)."""
     rows = runs.get('tool_runs') if isinstance(runs, dict) else runs
     return _rows_to_csv(rows, _TOOL_RUNS_COLUMNS)
+
+
+def retest_runs_csv(runs) -> str:
+    """CSV of a project's retest runs (``timeline.build_timeline`` 'retest_runs').
+
+    Accepts either the full ``build_timeline`` dict (``{'retest_runs': [...]}``) or
+    a bare row list; the nested outcome ``summary`` is flattened into
+    fixed/open/accepted/missing/total columns — one line per persisted retest
+    snapshot."""
+    rows = runs.get('retest_runs') if isinstance(runs, dict) else runs
+    flat: List[Dict] = []
+    for r in rows or []:
+        s = r.get('summary') if isinstance(r.get('summary'), dict) else {}
+        flat.append({
+            'created_at': r.get('created_at'),
+            'engagement_id': r.get('engagement_id'),
+            'status': r.get('status'),
+            'fixed': s.get('fixed'), 'open': s.get('open'),
+            'accepted': s.get('accepted'), 'missing': s.get('missing'),
+            'total': s.get('total'),
+            'retest_run_id': r.get('retest_run_id'),
+        })
+    return _rows_to_csv(flat, _RETEST_RUNS_COLUMNS)
 
 
 def history_csv(series: Optional[List[Dict]]) -> str:

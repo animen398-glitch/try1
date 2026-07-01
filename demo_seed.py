@@ -250,10 +250,14 @@ def _seed_missions(missions_store, slug: str, audit_run_id: str,
 
 
 def _seed_engagement(engagements_store, slug: str, company: str, *,
-                     mission_id: str, audit_run_id: str, finding_id: str) -> int:
+                     mission_id: str, audit_run_id: str, finding_id: str,
+                     retest_store=None, findings_store=None) -> int:
     """Seed one authorized engagement on the demo project, mid-flight in
     'reporting', linking the demo mission + audit run + finding — so the whole
-    F1–F4 engagement backend (contract / store / links / report) is populated."""
+    F1–F4 engagement backend (contract / store / links / report) is populated.
+    When a ``retest_store`` is given, also take one persisted retest snapshot so
+    the Retest Run lifecycle (R1–R4) surfaces (history / timeline / CSV) show
+    data."""
     from core import engagement as eng
 
     e = eng.create_engagement(
@@ -271,6 +275,10 @@ def _seed_engagement(engagements_store, slug: str, company: str, *,
     e = eng.link_finding(e, finding_id)
     e = eng.advance_engagement_status(e, 'reporting')
     engagements_store.save_engagement(e, now='2026-06-28T11:00:00')
+    if retest_store is not None:
+        from core.retest_runner import run_retest
+        run_retest(e, now='2026-06-28T12:00:00', findings_store=findings_store,
+                   retest_store=retest_store)
     return 1
 
 
@@ -323,6 +331,7 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     from core.mission_store import MissionStore
     from core.project import ProjectStore
     from core.remediation import set_task
+    from core.retest_run_store import RetestRunStore
 
     pm = PathManager(data_root=data_root)
     findings = FindingsStore(db_path=pm.get_db_path('findings.db'))
@@ -330,6 +339,7 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     audits = AuditRunStore(db_path=pm.get_db_path('audit_runs.db'))
     missions = MissionStore(pm.get_db_path('missions.db'))
     engagements = EngagementStore(pm.get_db_path('engagements.db'))
+    retests = RetestRunStore(pm.get_db_path('retest_runs.db'))
     companies = CompanyRegistry(path=pm.get_db_path('companies.json'))
     store = ProjectStore(str(data_root))            # projects -> data_root/Projects
 
@@ -380,7 +390,8 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
                     n_engagement += _seed_engagement(
                         engagements, slug, company_name,
                         mission_id=seeded[0]['id'], audit_run_id=run_id,
-                        finding_id=active_rows[0]['id'])
+                        finding_id=active_rows[0]['id'],
+                        retest_store=retests, findings_store=findings)
 
     _seed_iac_sample(data_root)
 
@@ -398,6 +409,7 @@ def seed(data_root: Path, *, company_name: str = 'Acme Corp') -> Dict:
     return {'company': company_name, 'projects': n_proj, 'scans': n_scan,
             'findings': n_find, 'remediation': n_rem, 'audit_runs': n_audit,
             'missions': n_mission, 'engagements': n_engagement,
+            'retest_runs': len(retests.list_retest_runs()),
             'data_root': str(data_root)}
 
 
@@ -421,7 +433,7 @@ def main(argv=None) -> int:
     summary = seed(root)
     print('Demo workspace seeded:')
     for k in ('company', 'projects', 'scans', 'findings', 'remediation',
-              'audit_runs', 'missions', 'engagements'):
+              'audit_runs', 'missions', 'engagements', 'retest_runs'):
         print(f'  {k:12}: {summary[k]}')
     print(f'  location    : {summary["data_root"]}')
     print('\nLaunch the app against it:')

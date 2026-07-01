@@ -35,6 +35,7 @@ def test_seed_returns_portfolio_summary(tmp_path):
     assert s["audit_runs"] == 3
     assert s["missions"] == 3
     assert s["engagements"] == 1
+    assert s["retest_runs"] == 1
     assert s["company"] == "Acme Corp"
 
 
@@ -49,6 +50,15 @@ def test_seed_engagement_present_and_linked(tmp_path):
     assert payload["authorization"]["accepted"] is True
     assert payload["linked_mission_ids"] and payload["linked_audit_run_ids"]
     assert payload["linked_finding_ids"]
+
+
+def test_seed_retest_run_present(tmp_path):
+    root, _ = _seed(tmp_path)
+    from core.retest_run_store import RetestRunStore
+    runs = RetestRunStore(root / "data" / "retest_runs.db").list_retest_runs()
+    assert len(runs) == 1
+    assert runs[0]["status"] == "completed"
+    assert runs[0]["payload"]["summary"]["total"] >= 1
 
 
 def test_seed_writes_self_contained_layout(tmp_path):

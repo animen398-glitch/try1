@@ -564,6 +564,31 @@ def test_tool_runs_csv_empty():
     assert _parse(rx.tool_runs_csv(None))[0][0] == 'When'
 
 
+def test_retest_runs_csv_from_full_dict_flattens_summary():
+    tl = {'retest_runs': [
+        {'retest_run_id': 'rt-abc', 'engagement_id': 'eng-1',
+         'status': 'completed', 'created_at': '2026-07-01T10:00:00Z',
+         'summary': {'total': 3, 'fixed': 1, 'open': 1, 'accepted': 0,
+                     'missing': 1}},
+    ]}
+    table = _parse(rx.retest_runs_csv(tl))
+    assert table[0] == ['When', 'Engagement', 'Status', 'Fixed', 'Open',
+                        'Accepted', 'Missing', 'Total', 'Run ID']
+    row = table[1]
+    assert row[table[0].index('Engagement')] == 'eng-1'
+    assert row[table[0].index('Fixed')] == '1'
+    assert row[table[0].index('Total')] == '3'
+    assert row[table[0].index('Run ID')] == 'rt-abc'
+
+
+def test_retest_runs_csv_accepts_bare_list_and_empty():
+    table = _parse(rx.retest_runs_csv([{'retest_run_id': 'rt-x',
+                                        'engagement_id': 'eng-x',
+                                        'status': 'completed', 'summary': {}}]))
+    assert table[1][table[0].index('Run ID')] == 'rt-x'
+    assert _parse(rx.retest_runs_csv(None))[0][0] == 'When'
+
+
 def test_portfolio_csv_from_full_dict():
     portfolio = {'rows': [{'slug': 'x.com', 'url': 'https://x', 'risk_level': 'High',
                            'risk_score': 12, 'risk_delta': 50, 'attack_surface': 11,

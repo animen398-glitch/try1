@@ -97,7 +97,8 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  missions: Optional[List[Dict]] = None,
                  mission_runs: Optional[List[Dict]] = None,
                  tool_runs: Optional[List[Dict]] = None,
-                 engagements: Optional[List[Dict]] = None) -> List[Dict]:
+                 engagements: Optional[List[Dict]] = None,
+                 retest_runs: Optional[List[Dict]] = None) -> List[Dict]:
     """The change feed (pure).
 
     ``scans`` is ``[(scan_id, report_or_None)]`` ascending by scan id. Structural
@@ -287,6 +288,28 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                            'severity': 'info' if run_status == 'completed' else 'medium',
                            'section': 'missions'})
 
+    # Retest-run events (R5): one event per persisted retest snapshot, scoped to
+    # its engagement (section 'engagements'). Shaped by build_timeline; a failed
+    # snapshot is flagged medium. No second store — these are the RetestRunStore
+    # rows already loaded for the project.
+    for rt in retest_runs or []:
+        if not isinstance(rt, dict):
+            continue
+        run_id = str(rt.get('retest_run_id') or '').strip()
+        eid = str(rt.get('engagement_id') or '').strip()
+        if not run_id or not eid:
+            continue
+        status = str(rt.get('status') or '').strip().lower()
+        summary = rt.get('summary') if isinstance(rt.get('summary'), dict) else {}
+        fixed = int(summary.get('fixed') or 0)
+        total = int(summary.get('total') or 0)
+        events.append({'scan_id': None, 'at': rt.get('created_at'),
+                       'type': 'retest_run',
+                       'title': f"retest {run_id} — fixed {fixed}/{total} "
+                                f"({eid})",
+                       'severity': 'medium' if status == 'failed' else 'info',
+                       'section': 'engagements'})
+
     # Tool-run events: one summary per tool run that ingested findings/assets.
     # A tool run is not persisted as its own entity (no second store) — these
     # rows are derived on read from the ingested events' synthetic scan id.
@@ -405,6 +428,23 @@ def build_timeline(project) -> Dict:
         engagements = EngagementStore().list_engagements(project.slug)
     except Exception:   # noqa: BLE001 - timeline must render even if it fails
         engagements = []
+    # Retest-run events (R5): shape the persisted snapshots for the project into
+    # simple dicts so build_events stays a pure shaper (no payload digging there).
+    retest_runs: List[Dict] = []
+    try:
+        from core.retest_run_store import RetestRunStore
+        for rt in RetestRunStore().list_retest_runs(project=project.slug):
+            payload = rt.get('payload')
+            payload = payload if isinstance(payload, dict) else {}
+            retest_runs.append({
+                'retest_run_id': rt.get('id'),
+                'engagement_id': payload.get('engagement_id'),
+                'status': rt.get('status'),
+                'created_at': rt.get('created_at'),
+                'summary': payload.get('summary'),
+            })
+    except Exception:   # noqa: BLE001 - timeline must render even if it fails
+        retest_runs = []
     # Mission execution events (M8): resolve each mission's linked runs against
     # the audit runs already loaded above, so build_events stays a pure shaper.
     runs_by_id = {run.get('id'): run for run in audit_runs}
@@ -432,6 +472,7 @@ def build_timeline(project) -> Dict:
         'project': project.slug,
         'series': build_series(entries),
         'tool_runs': tool_runs,
+        'retest_runs': retest_runs,
         'events': build_events(
             scans,
             finding_events,
@@ -444,5 +485,6 @@ def build_timeline(project) -> Dict:
             mission_runs=mission_runs,
             tool_runs=tool_runs,
             engagements=engagements,
+            retest_runs=retest_runs,
         ),
     }

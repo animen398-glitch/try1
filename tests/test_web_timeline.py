@@ -114,3 +114,32 @@ def test_tool_runs_csv_endpoint(tmp_path, monkeypatch):
     lines = r.text.splitlines()
     assert lines[0].startswith('When,Tool,Findings,Assets')
     assert any('header_audit' in ln for ln in lines[1:])
+
+
+def test_retest_runs_csv_endpoint(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+
+    from core import engagement as eng
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    from core.retest_runner import run_retest
+    _seed(tmp_path)
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+
+    fid = FindingsStore().upsert('x.com', Finding(
+        category='vuln', rule_id='r', title='t', severity='high',
+        location='https://x.com/a').to_store(), scan_id='s1')['finding']['id']
+    e = eng.link_finding(eng.create_engagement('Acme', 'x.com'), fid)
+    run_retest(e, now='2026-07-01T10:00:00Z')
+
+    client = TestClient(wa.app)
+    r = client.get('/retest-runs.csv', params={'project': 'x.com'})
+    assert r.status_code == 200
+    assert r.headers['content-type'].startswith('text/csv')
+    lines = r.text.splitlines()
+    assert lines[0].startswith('When,Engagement,Status,Fixed')
+    assert any(e['engagement_id'] in ln for ln in lines[1:])

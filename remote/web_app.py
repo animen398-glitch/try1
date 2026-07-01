@@ -2200,6 +2200,13 @@ if _FASTAPI_OK:
         return Response(tool_runs_csv(tl.get('tool_runs') or []),
                         media_type='text/csv; charset=utf-8')
 
+    @app.get('/retest-runs.csv')
+    async def retest_runs_csv_route(project: Optional[str] = None):
+        from core.report_export import retest_runs_csv
+        tl = _timeline_view(project)
+        return Response(retest_runs_csv(tl.get('retest_runs') or []),
+                        media_type='text/csv; charset=utf-8')
+
     @app.get('/audit-runs')
     async def audit_runs(project: Optional[str] = None):
         return JSONResponse(_audit_runs_list(project))
