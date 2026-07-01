@@ -87,6 +87,12 @@ DEFAULT_SETTINGS = {
     # startup. Loopback with no token stays open (single-user desktop). The token
     # can also be supplied out-of-band via the ASA_WEB_TOKEN env var.
     'web_console': {'host': '127.0.0.1', 'allow_lan': False, 'token': ''},
+    # Crash reporting (core/crash_reporter.py) — local-first observability.
+    # 'enabled' writes a redacted JSON report on any crash and surfaces unseen
+    # ones on next launch. Nothing is ever sent automatically; 'endpoint' (empty
+    # by default) is an optional HTTPS URL the user can POST a report to
+    # explicitly from the startup dialog.
+    'crash_reporting': {'enabled': True, 'endpoint': ''},
 }
 
 MAX_TARGETS = 100

@@ -15,6 +15,13 @@ from core.paths import init_path_manager
 
 init_path_manager()
 
+# Install crash hooks before QApplication so every class of failure — main
+# thread, worker, hard Qt fatal, Qt log stream — is captured for the whole
+# GUI lifetime. Local-first: reports are only ever written to disk.
+from core import crash_reporter
+
+crash_reporter.install()
+
 from qtpy.QtWidgets import QApplication
 from gui.main_window import MainWindow
 
@@ -45,6 +52,15 @@ def main() -> int:
         n = tabs.count() if tabs is not None else 0
         print(f"self-check OK — {n} tab(s)")
         return 0
+
+    # Surface any crash report from a previous session (local-first; nothing is
+    # sent unless the user asks and an endpoint is configured).
+    crash_reporter.breadcrumb('app started')
+    try:
+        from gui.crash_dialog import maybe_show_crash_dialog
+        maybe_show_crash_dialog(window)
+    except Exception:
+        pass
 
     window.show()
     return app.exec()

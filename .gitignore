@@ -31,6 +31,9 @@ data/*.db-shm
 # Runtime system log
 data/*.log
 
+# Crash reports & faulthandler dump (WS2 crash reporter; runtime, local-first)
+data/crashes/
+
 # Secrets & local environment
 .env
 .env.*

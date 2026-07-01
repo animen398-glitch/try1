@@ -25,6 +25,8 @@ class _Worker(QObject):
             result = self._fn(*self._args, **self._kwargs)
             self.finished.emit(result if isinstance(result, dict) else {'result': result})
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 
@@ -64,6 +66,8 @@ class _SubdomainWorker(QObject):
             )
             self.finished.emit(result)
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 
@@ -86,6 +90,8 @@ class _CloneWorker(QObject):
             result = self._cloner.clone()
             self.finished.emit(result)
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 
@@ -105,6 +111,8 @@ class _CaptureWorker(QObject):
             result = self._capturer.run_capture()
             self.finished.emit(result)
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 
@@ -126,6 +134,8 @@ class _CollectionWorker(QObject):
             result = self._runner.run(self._url, self._output_base)
             self.finished.emit(result)
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 
@@ -150,6 +160,8 @@ class _SecurityWorker(QObject):
             result = self._auditor.audit(self._url)
             self.finished.emit(result)
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 
@@ -190,6 +202,8 @@ class _MonitorWorker(QObject):
                 on_event=lambda ev: self.log_message.emit(self._event_line(ev)))
             self.finished.emit({'ran': len(results), 'results': results})
         except Exception as e:
+            from core import crash_reporter
+            crash_reporter.report_exception(e, kind='worker')
             self.error.emit(str(e))
 
 

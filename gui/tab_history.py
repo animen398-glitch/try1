@@ -108,6 +108,11 @@ class HistoryTabMixin:
         self.history_count.setText("Записей: 0 (вид очищен — БД не затронута)")
 
     def _on_tab_changed(self, index: int):
+        try:
+            from core import crash_reporter
+            crash_reporter.breadcrumb(f'tab -> {self.tabs.tabText(index)}')
+        except Exception:
+            pass
         widget = self.tabs.widget(index)
         if widget is getattr(self, '_history_widget', None):
             if (not self._history_rows and not self._history_loading

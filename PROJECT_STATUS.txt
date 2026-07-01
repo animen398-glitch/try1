@@ -5525,3 +5525,59 @@ yt-dlp / ffmpeg / «извлечение медиа».
 (junit-xml; было 2549, WS1 удалил ~17 медиа-тестов). 1 известный Starlette/httpx
 deprecation warning. Локальные коммиты, без push.
 
+------------------------------------------------------------------------------
+DEV_PLAN WS2 — Crash-репортер и наблюдаемость (local-first) (2026-07-02)
+------------------------------------------------------------------------------
+По DEV_PLAN_CLAUDE_CODE.md (workstream WS2) добавлен local-first crash-репортер:
+ловит все классы падений (главный поток, фоновый воркер, hard Qt/C++ fatal,
+Qt-лог), пишет структурированный СЕКРЕТ-РЕДАКТИРОВАННЫЙ JSON-отчёт локально и
+показывает его на следующем старте. Ничего не отправляется автоматически —
+offline/privacy-позиционирование сохранено.
+
+Новый core/crash_reporter.py:
+  • install() — sys.excepthook + threading.excepthook + faulthandler.enable(
+    file=<crash_dir>/faulthandler.log) + qInstallMessageHandler. Идемпотентно;
+    excepthook/threading.excepthook ПИШУТ отчёт и затем зовут оригинальный хук
+    (никогда не глотают).
+  • breadcrumb()/breadcrumbs() — кольцевой deque(maxlen=50) последних действий,
+    редактируется и прикладывается к каждому отчёту.
+  • _redact() — вырезает authorization/cookie/set-cookie (до конца строки),
+    token/api_key/access_token/secret/password (key=value), Bearer, JWT и
+    значения URL query-string; обычный traceback-текст не трогает.
+  • _write_report(kind, detail) — JSON {kind,time,app_version,os,python,qt,
+    detail(redacted),breadcrumbs} в PathManager.get_crash_dir(); best-effort
+    (сбой записи отчёта не роняет процесс).
+  • report_exception(exc, kind) — отчёт для уже-пойманного исключения (воркеры).
+  • pending_crashes()/mark_seen() — unseen-отчёты (sibling .seen-маркер).
+  • send_report(report, endpoint) — opt-in, ТОЛЬКО https, никогда не бросает.
+
+Инфраструктура/интеграция:
+  • core/paths.py: get_crash_dir() — <data_root>/data/crashes (frozen-aware,
+    зеркало get_temp_path).
+  • core/config.py: DEFAULT_SETTINGS['crash_reporting'] = {enabled:True,
+    endpoint:''} — по умолчанию пишет локально, не шлёт.
+  • main.py: crash_reporter.install() ДО QApplication(); breadcrumb «app
+    started»; после MainWindow (не в --self-check) — gui.crash_dialog.
+    maybe_show_crash_dialog(window).
+  • gui/crash_dialog.py (new): тонкий startup-диалог «Прошлый сеанс завершился
+    аварийно» с Посмотреть / Копировать / Отправить (только если endpoint задан)
+    / Пропустить; помечает отчёты seen. Данные/решения — в core, здесь только
+    рендер.
+  • gui/workers.py: во ВСЕХ 7 воркерах (_Worker/_Subdomain/_Clone/_Capture/
+    _Collection/_Security/_Monitor) except-блок теперь report_exception(e,
+    kind='worker') перед self.error.emit(str(e)) — traceback фонового потока не
+    теряется; error-сигнал (контракт UI) сохранён.
+  • Breadcrumbs: gui/tab_history._on_tab_changed (смена вкладки),
+    gui/tab_collection._run_collection (старт Full Collection).
+  • Единый источник версии — существующий core.config.APP_VERSION (нового не
+    заводили).
+
+Тесты: tests/test_crash_reporter.py (12) — редакция (headers/token/JWT/URL;
+plain-текст цел), отчёт валидный JSON со всеми полями, breadcrumbs bounded до
+maxlen + редактируются, pending/mark_seen, excepthook И threading.excepthook
+пишут отчёт и зовут оригинал (не глотают), send-guards (нет endpoint / не-https).
+
+Проверено: ruff clean, self-check OK (29 вкладок), faulthandler-файл создаётся
+при install(), полный pytest зелёный — 2544 passed, 0 failed/error/skipped
+(junit-xml; 2532 → 2544, +12 crash-репортер тестов). Локальные коммиты, без push.
+

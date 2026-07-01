@@ -158,6 +158,14 @@ class PathManager:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def get_crash_dir(self) -> Path:
+        """Directory for local crash reports under the writable data root
+        (created). Frozen-aware like the DB/temp dirs so the reports land in the
+        %APPDATA% data root, not the ephemeral PyInstaller extraction dir."""
+        path = self._data_root / 'data' / 'crashes'
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
 
 # --------------------------------------------------------------- singleton
 

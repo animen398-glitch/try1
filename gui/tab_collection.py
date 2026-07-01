@@ -405,6 +405,9 @@ class FinalReportTabMixin:
             QMessageBox.warning(self, "Invalid cookies.txt", str(e))
             return
 
+        from core import crash_reporter
+        crash_reporter.breadcrumb(f'Full Collection start: {url}')
+
         self.collect_log.clear()
         self.collect_log.append_info(f"Запускаю Full Collection: {url}")
         if cookie_summary:
