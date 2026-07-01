@@ -22,6 +22,8 @@ import json
 from hashlib import sha1
 from typing import Any, Dict, List, Optional
 
+from core.finding_render import finding_html_table, finding_md_table
+
 
 def build_engagement_report(
     engagement: Dict[str, Any],
@@ -107,29 +109,6 @@ def build_engagement_report(
 
 # ── pure renderers ────────────────────────────────────────────────────────────
 
-def _refs(finding: Dict[str, Any]) -> str:
-    refs = finding.get("evidence_refs") or []
-    return ", ".join(str(ref) for ref in refs) if refs else "-"
-
-
-def _finding_md_table(rows: List[Dict[str, Any]]) -> str:
-    lines = [
-        "| Severity | Title | Validation | Confidence | Evidence |",
-        "|---|---|---|---:|---|",
-    ]
-    for finding in rows:
-        lines.append(
-            "| {severity} | {title} | {status} | {confidence} | {evidence} |".format(
-                severity=str(finding.get("severity", "")),
-                title=str(finding.get("title", "")).replace("|", "\\|"),
-                status=str(finding.get("validation_status", finding.get("status", ""))),
-                confidence=str(finding.get("confidence", "")),
-                evidence=_refs(finding).replace("|", "\\|"),
-            )
-        )
-    return "\n".join(lines)
-
-
 def render_markdown(report: Dict[str, Any]) -> str:
     eng = report.get("engagement") or {}
     summary = report.get("summary") or {}
@@ -186,13 +165,13 @@ def render_markdown(report: Dict[str, Any]) -> str:
         lines.append("**Client-facing findings**")
         lines.append("")
         client = run.get("client_findings") or []
-        lines.append(_finding_md_table(client) if client
+        lines.append(finding_md_table(client) if client
                      else "No client-facing findings passed the gate.")
         lines.append("")
         lines.append("**Review appendix**")
         lines.append("")
         review = run.get("review_findings") or []
-        lines.append(_finding_md_table(review) if review
+        lines.append(finding_md_table(review) if review
                      else "No rejected or review-only findings.")
         lines.append("")
     lines.extend(["## Linked Findings (appendix)", ""])
@@ -202,7 +181,7 @@ def render_markdown(report: Dict[str, Any]) -> str:
     else:
         present = [f for f in linked if not f.get("missing")]
         stale = [f for f in linked if f.get("missing")]
-        lines.append(_finding_md_table(present) if present
+        lines.append(finding_md_table(present) if present
                      else "No resolvable linked findings.")
         for stub in stale:
             lines.append("")
@@ -216,25 +195,7 @@ def render_html(report: Dict[str, Any]) -> str:
     summary = report.get("summary") or {}
     auth = eng.get("authorization") or {}
 
-    def table(rows: List[Dict[str, Any]]) -> str:
-        body = []
-        for finding in rows:
-            body.append(
-                "<tr>"
-                f"<td>{html.escape(str(finding.get('severity', '')))}</td>"
-                f"<td>{html.escape(str(finding.get('title', '')))}</td>"
-                f"<td>{html.escape(str(finding.get('validation_status', finding.get('status', ''))))}</td>"
-                f"<td>{html.escape(str(finding.get('confidence', '')))}</td>"
-                f"<td>{html.escape(_refs(finding))}</td>"
-                "</tr>"
-            )
-        if not body:
-            body.append('<tr><td colspan="5">None</td></tr>')
-        return (
-            "<table><thead><tr><th>Severity</th><th>Title</th><th>Validation</th>"
-            "<th>Confidence</th><th>Evidence</th></tr></thead><tbody>"
-            + "".join(body) + "</tbody></table>"
-        )
+    table = finding_html_table
 
     mission_items = []
     for m in report.get("missions") or []:
