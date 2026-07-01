@@ -1,7 +1,7 @@
 """utils/subprocess_utils.py — hidden-window child processes (offline).
 
 On Windows the helpers must inject CREATE_NO_WINDOW (+ a hidden STARTUPINFO) so
-external CLIs (amass/nuclei/katana/subfinder/bbot/yt-dlp/ffmpeg/scrapy…) never
+external CLIs (amass/nuclei/katana/subfinder/bbot/scrapy…) never
 flash a console window under the GUI; on POSIX they are pass-throughs. Tests are
 platform-aware so the suite passes on both.
 """

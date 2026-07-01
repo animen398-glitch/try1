@@ -34,7 +34,6 @@ REQUIRED = {
 # Optional features installable from PyPI → the pip arguments that install them.
 _PIP_INSTALL: Dict[str, List[str]] = {
     'playwright': ['playwright'],
-    'yt-dlp': ['yt-dlp'],
     'fastapi': ['fastapi', 'uvicorn[standard]'],
     'lxml': ['lxml'],
     'scrapy': ['scrapy'],
@@ -43,7 +42,6 @@ _PIP_INSTALL: Dict[str, List[str]] = {
 # External binaries — cannot be pip-installed (Go binaries / system tools); the
 # launcher shows where to get them and to put them on PATH (per the EPIC decision).
 _BINARY_HELP: Dict[str, str] = {
-    'ffmpeg': 'https://ffmpeg.org/download.html',
     'nuclei': 'https://github.com/projectdiscovery/nuclei',
     'katana': 'https://github.com/projectdiscovery/katana',
     'amass': 'https://github.com/owasp-amass/amass',

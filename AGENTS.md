@@ -105,7 +105,7 @@ memanto memory sync --project-dir .
 **Advanced Site Analyzer** — десктопный инструмент (Python 3.11+ / PySide6 через qtpy) для
 авторизованного анализа веб-сайтов: recon, перечисление субдоменов, перехват
 динамического трафика и API, аудит безопасности (секреты, source maps,
-cookie, GraphQL), захват и оффлайн-клонирование фронтенда, извлечение медиа.
+cookie, GraphQL), захват и оффлайн-клонирование фронтенда.
 
 Назначение — **только авторизованное тестирование безопасности, исследования
 и обучение**. Любая новая функциональность не меняет это назначение.
@@ -128,7 +128,6 @@ cookie, GraphQL), захват и оффлайн-клонирование фро
 - SQLite (реестры операций, индекс эндпоинтов, метаданные проектов)
 - Playwright (опц. — динамический анализ)
 - FastAPI + uvicorn (опц. — LAN web-консоль)
-- yt-dlp / ffmpeg (опц. — медиа)
 - PyInstaller (поставка `.exe`)
 - pytest (тесты, headless Qt `offscreen`, offline)
 
@@ -185,7 +184,7 @@ utils/                  # инфраструктура
   sqlite_store.py  operation_registry.py        # учёт операций (SQLite)
   endpoint_index.py  pattern_analyser.py        # нормализация/дедуп эндпоинтов
   exporter.py  data_viewer.py  site_extractor.py  task_manager.py  system_logger.py
-  image_processor.py  video_processor.py  file_compression.py
+  file_compression.py
   subprocess_utils.py   # run_hidden/popen_hidden/hidden_kwargs — единый запуск дочерних процессов без всплывающих cmd-окон (Windows CREATE_NO_WINDOW)
 
 gui/                    # ТОНКИЙ UI-слой (mixin-паттерн)
@@ -235,8 +234,8 @@ Projects/<домен>/
    Новый аналитик = `*.py` в `plugins/analyzers/`. Список вкладок собирается
    из `PluginManager`, не хардкодится.
 5. **frozen-aware.** Любые новые пути — через PathManager (работает и в `.exe`).
-6. **Опциональные зависимости — мягкая деградация.** Нет Playwright/yt-dlp/
-   fastapi → фича отключается с подсказкой, приложение не падает.
+6. **Опциональные зависимости — мягкая деградация.** Нет Playwright/
+   fastapi/scrapy → фича отключается с подсказкой, приложение не падает.
 7. **Backward compatibility.** Раскладка `Projects/<домен>/`, `metadata.json`,
    `report.json` и контракты `_start_task/_run_async/_set_busy/_browse` не ломать.
 
@@ -406,6 +405,9 @@ Dashboard и Reporting, риски и точки интеграции описа
 - `core/tool_runner.py` — End-to-End Tool-Run Orchestrator (капстоун tool-слоя) + scan-id SoT: `run_tool_for_mission(mission, tool, evidence, *, scan_id, project=None, target=None, findings_store=None, asset_store=None)` композитит `tool_pipeline.assemble_tool_run` + `tool_ingest_store.ingest_tool_run` в один вызов (зеркало `mission_runner.run_mission` поверх `audit_runner`+persist); `project` дефолтится из миссии; → `{result, ingest:{status,written,findings,assets}}`; blocked/skipped проходят насквозь как no-op. `tool_scan_id(tool, *, now=)`/`parse_tool_scan_id(scan_id)` — единый SoT синтетического scan_id `tool-<tool>-<unix_ts>` (используют GUI/web/timeline). Surfaces: GUI вкладка Missions «Run tool» (evidence-driven, gate по ROE) + web `POST /missions/{id}/tools/run` + timeline derive-on-read `tool_run` (через `timeline._derive_tool_runs`) + CSV `report_export.tool_runs_csv` (Timeline tab + `GET /tool-runs.csv`).
 - `core/retest_run.py` + `core/retest_run_store.py` + `core/retest_runner.py` (+`schemas/asa_retest_run.schema.json`) — Retest Run lifecycle: персистентный снимок исходов ретеста engagement'а (fixed/open/accepted/missing) как first-class «прогон» (ранее только derive-on-read view `engagement_retest`). R1 чистый контракт (create/normalize/validate/advance/to_json + render_json/markdown; lifecycle pending→completed|failed; summary всегда деривируется из результатов). R2 `RetestRunStore(SQLiteStore)` single-table events-less (зеркало MissionStore) + участие в `project_io` bundle (`retest_runs.json`, аддитивно). R3 `run_retest` замораживает live `engagement_retest.build_retest` в снимок и персистит (зеркало `mission_runner`; исходы не дублируются; engagement не мутируется — связь на `engagement_id` прогона). Surfaces: web `POST /engagements/{id}/retest/run`, `GET /engagements/{id}/retest-runs`, `GET /retest-runs/{id}[/report.md]`, `/retest-runs.csv`; GUI «Run retest» + история прогонов на вкладке Engagements; timeline `retest_run` события + `report_export.retest_runs_csv`; demo_seed снимок. Общая markdown-таблица retest-строк вынесена в `engagement_retest.retest_rows_markdown` (dedup).
 
+**Последние важные изменения на 2026-07-02 (DEV_PLAN WS1 — убрано скачивание видео/фото):**
+- По `DEV_PLAN_CLAUDE_CODE.md` WS1 продукт сужен до security/recon + оффлайн-клон сайта: удалено медиа-скачивание (видео/изображения, зависимости yt-dlp/ffmpeg). Удалены `utils/video_processor.py`, `utils/image_processor.py`, `gui/tab_media.py` (вкладки Video Downloader + Image Extractor → регистрация в `plugin_manager`/`main_window`), web-джобы images/video (`_run_images`/`_run_video` + JOBS-записи + импорты + `s.images` в dashboard JS), фаза Images в `collection_runner` (`_phase_images` + вызов + docstring + карта отчёта «Images (Media)» + doc-intel roots; перенумерация этапов 7→6: recon..vulns), фичи `features.has_ytdlp`/`has_ffmpeg` + записи в `OPTIONAL_FEATURES`, `launcher` install-maps (yt-dlp/ffmpeg), dead `window_helpers._save_video_log`, комментарий в `core/__init__`, yt-dlp/ffmpeg в docstring `subprocess_utils`, закомментированные yt-dlp/ffmpeg строки в `requirements.txt`. Оффлайн-клонирование (`frontend_cloner`/`content_capture`/`site_map`, вкладки Clone/Capture) сохранено. Доки (README/PROJECT_REPORT/CLAUDE/AGENTS/PROJECT_STATUS) вычищены от медиа-упоминаний. Тесты: удалён `test_media_processors.py`, `test_web_clone_video.py`→`test_web_clone.py` (video-тест убран, `_strip_heavy`-тест обобщён), video-тесты убраны из `test_optional_feature_gating`, `_phase_images` убран из `test_collection_runner`/`test_contracts`, `has_ytdlp`/`has_ffmpeg` из `test_features`, `ffmpeg`→`nuclei` в `test_first_run`. **Вкладок 31 → 29.** Проверено: ruff clean, self-check 29 вкладок, полный pytest зелёный (2549 → 2532; junit подтверждает 2532 passed/0 fail). Локальные коммиты, без push.
+
 **Последние важные изменения на 2026-07-01 (Retest Run lifecycle — R1–R5):**
 - Ретест engagement'а стал first-class персистентным «прогоном» (снимок исходов на момент времени) — ранее только derive-on-read view. Слои как в Mission Center: чистый контракт → стор → runner → тонкие surfaces, БЕЗ второго findings-стора и без новых атак-возможностей. **R1** `core/retest_run.py` (+`schemas/asa_retest_run.schema.json`+alias): create/normalize/validate/advance/to_json + render_json/markdown; lifecycle pending→completed|failed; summary всегда деривируется (инвариант). **R2** `core/retest_run_store.py` — `RetestRunStore(SQLiteStore)` single-table events-less (зеркало MissionStore) + `project_io` bundle `retest_runs.json` (аддитивно, FORMAT_VERSION=1; старый bundle → 0) + conftest-изоляция. **R3** `core/retest_runner.run_retest` — замораживает `engagement_retest.build_retest` в снимок, персистит, pending→completed (или failed с пробросом); исходы переиспользуются, engagement не мутируется (связь на `engagement_id`). **R4** surfaces: web `POST /engagements/{id}/retest/run`, `GET /engagements/{id}/retest-runs`, `GET /retest-runs/{id}`, `GET /retest-runs/{id}/report.md`; GUI «Run retest» + история на вкладке Engagements; общая markdown-таблица вынесена в `engagement_retest.retest_rows_markdown`. **R5** derive-on-read: timeline `retest_run` события (section engagements) + `report_export.retest_runs_csv` + web `/retest-runs.csv` + Timeline «Export retest runs» + demo_seed снимок. Коммиты b24ddb06/da0f1ac/94463b7/f3ec8ff/3c35c93c. Проверено: ruff clean, self-check 31 вкладка, полный pytest зелёный (рост 2496 → 2549). Локальные коммиты, без push.
 
@@ -551,7 +553,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
-- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-07-01 (после Retest Run lifecycle R1–R5) — 2549 offline/headless теста (зелёные, 1 Starlette/httpx warning; collect-only подтверждает 2549); GUI — 31 вкладка.
+- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-07-02 (после DEV_PLAN WS1 — удаление медиа-скачивания) — 2532 offline/headless теста (зелёные, 1 Starlette/httpx warning; junit-xml подтверждает 2532); GUI — 29 вкладок.
 - Перед релизной пометкой обязательно прогонять `pytest` и, если менялся GUI/frozen-контур, self-check окна/PyInstaller smoke.
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 

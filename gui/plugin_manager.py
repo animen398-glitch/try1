@@ -185,8 +185,6 @@ BUILTIN_TABS = [
     ("timeline",   "Timeline",                  "_build_timeline_tab",  "Управление", "top"),
     ("collection", "Final Report & Collection", "_build_collection_tab", "Отчёты", "top"),
     ("clone",      "Clone Frontend",            "_build_clone_tab",     "Инструменты", "top"),
-    ("video",      "Video Downloader",          "_build_video_tab",     "Инструменты", "top"),
-    ("image",      "Image Extractor",           "_build_image_tab",     "Инструменты", "top"),
     ("design",     "Design Lab",                "_build_design_tab",    "Инструменты", "top"),
     ("history",    "История операций",          "_build_history_tab",   "Система", "top"),
     ("system",     "System",                    "_build_system_tab",    "Система", "top"),

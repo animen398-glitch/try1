@@ -3,7 +3,7 @@
 
 # Upper bounds cap each dependency below its next major (or, for 0.x / ZeroVer
 # packages, below 1.0) to keep a known-good range and avoid surprise breaking
-# upgrades. yt-dlp is the deliberate exception (see below).
+# upgrades.
 
 # ── Core (required for the GUI / .exe build) ──────────────────────────────
 # GUI binding goes through the qtpy seam; the active binding is selected by
@@ -23,8 +23,6 @@ lxml>=5.1.0,<7.0            # faster HTML parsing (5.x/6.x are compatible)
 # Enable only if you use these; they bloat / complicate the PyInstaller build
 # and are NOT bundled into the .exe (external binaries).
 # playwright>=1.40.0,<2.0    # dynamic traffic analysis; then: python -m playwright install chromium
-# yt-dlp>=2024.1.0           # video downloader + Instagram/social (CalVer; intentionally UNcapped — stale yt-dlp breaks site support, keep it current)
-# ffmpeg                     # external binary; required to merge 4K/1080p video+audio
 # fastapi>=0.110.0,<1.0      # web console (main_orchestrator --web); 0.x ZeroVer
 # uvicorn[standard]>=0.27.0,<1.0
 # fpdf2>=2.7,<3.0            # PDF export of the vulnerability report

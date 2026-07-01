@@ -199,7 +199,7 @@ REPORT_KEYS = {
 SCOPE_GUARD_KEYS = {'rate_limit', 'skipped_active_phases'}
 
 _NETWORK_PHASES = ('_phase_recon', '_phase_api', '_phase_capture', '_phase_clone',
-                   '_phase_images', '_phase_cookies', '_phase_vulns')
+                   '_phase_cookies', '_phase_vulns')
 
 
 def test_report_json_contract(tmp_path, monkeypatch):

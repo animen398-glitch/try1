@@ -19,8 +19,8 @@ Advanced Site Analyzer — десктопный инструмент (Python 3.1
 комплексной разведки и анализа веб-сайтов. Программа объединяет в едином
 интерфейсе пассивную разведку (recon), перечисление субдоменов, перехват и
 анализ динамического трафика (API-эндпоинты, токены), обход paywall, захват
-и оффлайн-клонирование фронтенда, извлечение изображений/видео и анализ
-дизайн-системы (палитра, типографика).
+и оффлайн-клонирование фронтенда и анализ дизайн-системы (палитра,
+типографика).
 
 Сценарии запуска:
   • GUI       — main.py (основной режим, PyQt5, 18 вкладок).
@@ -5473,4 +5473,55 @@ RETEST RUN LIFECYCLE — R1–R5 (2026-07-01)
   test_report_export/test_web_timeline/test_timeline_tab/test_demo_seed).
   Проверено: ruff clean, self-check 31 вкладка, полный pytest зелёный
   (рост 2496 -> 2549; collect-only подтверждает 2549). Локальные коммиты, без push.
+
+------------------------------------------------------------------------------
+DEV_PLAN WS1 — Убрано скачивание видео/фото, оставлен клонер сайта (2026-07-02)
+------------------------------------------------------------------------------
+По DEV_PLAN_CLAUDE_CODE.md (workstream WS1) продукт сужен до одной аудитории:
+security/recon + оффлайн-клон сайта. Полностью удалено медиа-скачивание (видео/
+изображения, Instagram/соцсети) и зависимости yt-dlp/ffmpeg. Оффлайн-
+клонирование фронтенда и захват страниц СОХРАНЕНЫ (frontend_cloner,
+content_capture, site_map; вкладки Clone Frontend / Site Capture не тронуты).
+
+Удалено (код):
+  • utils/video_processor.py (VideoDownloader), utils/image_processor.py
+    (ImageExtractor) — файлы удалены (git rm).
+  • gui/tab_media.py (VideoTabMixin + ImageTabMixin → вкладки Video Downloader и
+    Image Extractor); их регистрация в gui/plugin_manager.py (строки video/image)
+    и базовые классы + импорт в gui/main_window.py.
+  • remote/web_app.py: _run_images/_run_video, JOBS-записи 'images'/'video',
+    импорты ImageExtractor/VideoDownloader, фрагмент 's.images' в dashboard JS.
+  • core/collection_runner.py: _phase_images + вызов фазы, упоминания в docstring,
+    карта отчёта «Images (Media)», images/ в doc-intel roots; перенумерация
+    журналируемых этапов Full Collection [N/7] → [N/6] (recon 1/6 … vulns 6/6).
+  • core/features.py: has_ytdlp/has_ffmpeg + записи 'yt-dlp'/'ffmpeg' в
+    OPTIONAL_FEATURES; core/launcher.py: 'yt-dlp' из _PIP_INSTALL, 'ffmpeg' из
+    _BINARY_HELP.
+  • gui/window_helpers.py: dead _save_video_log (звался только из tab_media).
+  • core/__init__.py: комментарий про media-экстракторы; utils/subprocess_utils.py
+    и tests/test_subprocess_utils.py: yt-dlp/ffmpeg из docstring-списка примеров.
+  • requirements.txt: закомментированные yt-dlp/ffmpeg строки + упоминание
+    «yt-dlp — исключение» в политике пинов.
+
+Тесты:
+  • Удалён tests/test_media_processors.py.
+  • tests/test_web_clone_video.py → tests/test_web_clone.py (video-джоб-тест
+    убран; _strip_heavy-тест обобщён с yt-dlp на generic job stdout).
+  • tests/test_optional_feature_gating.py: убраны два video-run теста (остались
+    playwright/recon).
+  • tests/test_collection_runner.py + tests/test_contracts.py: убран _phase_images
+    (монкейпатчи + контракт-кортеж; в render_html-тесте images-фаза заменена на
+    cookies-Error, чтобы сохранить покрытие [Error]-бейджа).
+  • tests/test_features.py: has_ytdlp/has_ffmpeg убраны из детектор-кортежа.
+  • tests/test_first_run.py: 'ffmpeg' (удалённая фича) → 'nuclei' в health-моке.
+  • tests/test_web_app.py: 'images' убран из ожидаемого набора JOBS.
+
+Доки: README.md, PROJECT_REPORT.md, CLAUDE.md/AGENTS.md (§1/§2/§3/§4/§12),
+PROJECT_STATUS.txt — вычищены упоминания Video Downloader / Image Extractor /
+yt-dlp / ffmpeg / «извлечение медиа».
+
+Итог: вкладок 31 → 29. Проверено: ruff clean, compileall чистый, self-check OK
+(29 вкладок), полный pytest зелёный — 2532 passed, 0 failed/error/skipped
+(junit-xml; было 2549, WS1 удалил ~17 медиа-тестов). 1 известный Starlette/httpx
+deprecation warning. Локальные коммиты, без push.
 

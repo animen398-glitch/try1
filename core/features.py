@@ -1,8 +1,8 @@
 """core/features.py
 Centralised detection of optional, externally-installed capabilities.
 
-The app's heavy features (dynamic sniffing, media download, 4K merge, the web
-console) depend on optional packages / binaries that are intentionally not
+The app's heavy features (dynamic sniffing, deep crawl, the web console)
+depend on optional packages / binaries that are intentionally not
 bundled. This module is the single place that answers "is X available?" so the
 GUI and CLI can surface what's enabled instead of scattering ad-hoc checks.
 """
@@ -25,14 +25,6 @@ def _has_binary(name: str) -> bool:
 
 def has_playwright() -> bool:
     return _has_module('playwright')
-
-
-def has_ytdlp() -> bool:
-    return _has_binary('yt-dlp') or _has_module('yt_dlp')
-
-
-def has_ffmpeg() -> bool:
-    return _has_binary('ffmpeg')
 
 
 def has_fastapi() -> bool:
@@ -134,8 +126,6 @@ def has_ollama() -> bool:
 # Optional feature -> (what it enables, detector).
 OPTIONAL_FEATURES = {
     'playwright': ('Dynamic API Sniffing (headless Chromium)', has_playwright),
-    'yt-dlp':     ('Video / Instagram download',               has_ytdlp),
-    'ffmpeg':     ('4K/1080p video merge',                     has_ffmpeg),
     'fastapi':    ('Web console (LAN)',                        has_fastapi),
     'lxml':       ('Faster HTML parsing',                      has_lxml),
     'scrapy':     ('Deep site crawl (subprocess)',             has_scrapy),

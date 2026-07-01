@@ -12,7 +12,7 @@ def test_summary_has_all_features():
 
 
 def test_detectors_return_bool():
-    for fn in (features.has_playwright, features.has_ytdlp, features.has_ffmpeg,
+    for fn in (features.has_playwright,
                features.has_fastapi, features.has_lxml, features.has_bbot,
                features.has_pdf_text, features.has_ocr, features.has_lift):
         assert isinstance(fn(), bool)

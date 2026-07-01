@@ -1,13 +1,12 @@
-"""Web console Clone Frontend and Video Download jobs (offline)."""
+"""Web console Clone Frontend job (offline)."""
 
 import remote.web_app as wa
 
 
-def test_clone_and_video_jobs_registered():
-    for name, label in (("clone", "Clone Frontend"), ("video", "Video Download")):
-        assert name in wa.JOBS
-        assert wa.JOBS[name]["label"] == label
-        assert callable(wa.JOBS[name]["fn"])
+def test_clone_job_registered():
+    assert "clone" in wa.JOBS
+    assert wa.JOBS["clone"]["label"] == "Clone Frontend"
+    assert callable(wa.JOBS["clone"]["fn"])
 
 
 def test_clone_job_captures_then_clones(monkeypatch):
@@ -49,22 +48,9 @@ def test_clone_job_errors_when_nothing_captured(monkeypatch):
     assert result["status"] == "Error"
 
 
-def test_video_job_forwards_result(monkeypatch):
-    class _FakeDL:
-        def set_progress_callback(self, cb): pass
-        def download_video(self, url, out):
-            return {"status": "Success", "file": "v.mp4", "quality": "best"}
-
-    monkeypatch.setattr(wa, "VideoDownloader", _FakeDL)
-    result = wa.JOBS["video"]["fn"]("https://youtube.com/watch?v=x", lambda m: None)
-    assert result["status"] == "Success"
-    assert result["quality"] == "best"
-    assert "output_dir" in result
-
-
-def test_yt_dlp_stdout_stripped_from_browser_payload():
-    # The noisy yt-dlp stdout ('output') must not be shipped to the browser.
+def test_heavy_stdout_stripped_from_browser_payload():
+    # A job's noisy stdout ('output') must not be shipped to the browser.
     out = wa._strip_heavy({"status": "Success", "output": "x" * 9000,
-                           "quality": "best"})
+                           "pages_processed": 2})
     assert "output" not in out
-    assert out["quality"] == "best"
+    assert out["pages_processed"] == 2

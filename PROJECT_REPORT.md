@@ -244,7 +244,7 @@ Criticality-вкладке (**project default + per-asset override**). Пофи�
 
 Десктопный инструмент (Python 3.11+/PySide6 через qtpy) для авторизованной разведки и
 анализа веб-сайтов: пассивная разведка, субдомены, перехват API-трафика, обход
-paywall, оффлайн-клон фронтенда, извлечение медиа, анализ дизайна, аудиты
+paywall, оффлайн-клон фронтенда, анализ дизайна, аудиты
 безопасности (cookie, секреты, source-map, уязвимости).
 
 **Точки входа:**
@@ -314,7 +314,7 @@ paywall, оффлайн-клон фронтенда, извлечение мед
 `http_retry` (retry+backoff+gzip/deflate), `browser_utils` (SessionBuilder),
 `sqlite_store`/`operation_registry`/`data_viewer`/`exporter`, `endpoint_index`,
 `pattern_analyser`, `scan_cache` (TTL), `rate_limiter`, `system_logger`,
-`file_compression`, `image_processor`, `video_processor`, `site_extractor`,
+`file_compression`, `site_extractor`,
 `task_manager`, `cloudflare_tools`.
 
 ### gui/ — PySide6/qfluent через qtpy (mixin-архитектура)
@@ -369,7 +369,7 @@ secret-regex в Capture, экранирование ResultsDisplay) + 4 «мёр
 |---|---|
 | Папка `~/` (литеральная) | [УДАЛЕНО] Маленький легаси-артефакт tilde-бага (gitignored). Прим.: ранняя оценка «~51 ГБ» была ошибкой измерения — `Get-ChildItem '~'` раскрылся в `$HOME`; реальная папка была небольшой. Дом. каталог не затронут. |
 | Внешние сервисы (ip-api, crt.sh, …) | Обёрнуто в retry+backoff, мягкая деградация. Остаётся сетевая хрупкость. |
-| Опц. тяжёлые зависимости | Playwright/yt-dlp/ffmpeg/fastapi/scrapy — guarded; на Windows yt-dlp/ffmpeg ставятся вручную (нет в .exe). |
+| Опц. тяжёлые зависимости | Playwright/fastapi/scrapy — guarded; ставятся вручную, не бандлятся в .exe. |
 | Web-консоль в LAN | Отдаёт найденные секреты по сети (by design для LAN-инструмента) — не выставлять наружу. |
 | UA-профиль в dynamic/paywall | Paywall теперь honor-ит профиль; Playwright-перехват использует свой UA браузера (ожидаемо). |
 | Security Audit вкладка | Нет кнопки Stop/прогресса (ограничена `max_scripts`, не критично). |

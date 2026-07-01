@@ -3,7 +3,7 @@
 Десктопный инструмент (Python 3.11+ / PySide6/qtpy) для комплексной разведки и анализа
 веб-сайтов: пассивная разведка, перечисление субдоменов, перехват динамического
 трафика и API-эндпоинтов, обход paywall, захват и оффлайн-клонирование
-фронтенда, извлечение медиа, анализ дизайн-системы и аудит безопасности cookie —
+фронтенда, анализ дизайн-системы и аудит безопасности cookie —
 всё в одном GUI, с CLI-пайплайном и опциональной web-консолью.
 
 > Назначение — авторизованное тестирование безопасности, исследовательские и
@@ -23,13 +23,11 @@ GUI содержит 25 вкладок (встроенные ASM/CSM/Intelligenc
 | API Key Scanner | Поиск утечек API-ключей/секретов на странице |
 | Site Capture | Обход и сохранение HTML-страниц сайта (с отменой) + визуальная карта сайта (дерево путей с HTTP-статусами 2xx/3xx/4xx/5xx) в `site_map.json` и HTML-отчёте |
 | Clone Frontend | Скачивание ассетов и переписывание ссылок → самодостаточная оффлайн-копия |
-| Video Downloader | yt-dlp: пресеты до 4K (merge через ffmpeg), сессионные cookies |
-| Image Extractor | Оригинальное разрешение без водяных знаков; Instagram/соцсети через yt-dlp |
 | Design Lab | Извлечение палитры/типографики, сравнение версий |
 | Cookie Security Audit | Аудит флагов HttpOnly / Secure / SameSite со скорингом и вердиктом |
 | Security Audit | Нативный сканер секретов + source-map (страница и её JS): утечки ключей, эндпоинты, открытые .js.map + GraphQL-discovery (probe /graphql* + introspection) + **оффлайн-валидация формата** найденных ключей (структурная проверка без сети — отсев плейсхолдеров, подтверждение vendor-формата/JWT/Basic) |
 | Final Report & Collection | «Run Full Collection» — прогон всех модулей в один скан проекта (`Projects/<домен>/scans/<timestamp>/`) + HTML/JSON/Markdown-отчёт (Executive Summary, интерактивный граф атак-поверхности, карта сайта, trends, Warnings по best-effort этапам; опц. Playwright/nuclei/katana/Ollama) + Scan Diff двух сканов проекта; каждый запуск журналируется в `operations.db` |
-| Dashboard | Сводка реестра (субдомены / IP / медиа / API / **takeover-кандидаты** / **source maps**) с дедупом эндпоинтов и drill-down + Security Overview (вердикт риска + **0–100** / Attack Surface Score / секреты / findings из последнего Full Collection) |
+| Dashboard | Сводка реестра (субдомены / IP / API / **takeover-кандидаты** / **source maps**) с дедупом эндпоинтов и drill-down + Security Overview (вердикт риска + **0–100** / Attack Surface Score / секреты / findings из последнего Full Collection) |
 | История операций | Журнал операций пайплайна (SQLite): Full Collection/alerts/etc., статус, длительность, warning-count и подсказка по warning-этапам |
 | System | Очередь задач, экспорт данных, системные логи |
 
@@ -43,9 +41,7 @@ pip install -r requirements.txt
 
 ```bash
 pip install playwright && python -m playwright install chromium   # Dynamic API Sniffing
-pip install yt-dlp                                                # Video / Instagram
 pip install "fastapi" "uvicorn[standard]"                          # web-консоль
-# ffmpeg — внешний бинарь; нужен для merge 4K/1080p (видео+аудио)
 # nuclei — внешний бинарь (projectdiscovery); опц. vuln-сканер в Full Collection
 #          (https://github.com/projectdiscovery/nuclei). Детект — в System-вкладке.
 # katana — внешний бинарь (projectdiscovery); опц. краулер эндпоинтов в Full Collection.
@@ -128,7 +124,7 @@ main.py                  # точка входа GUI
 main_orchestrator.py     # CLI-пайплайн из 6 фаз
 core/                    # движки анализа (recon, capture, clone, cookie_auditor,
                          #   collection_runner, dynamic_analyzer, vuln_scanner, …)
-utils/                   # инфраструктура (SQLite-реестры, экспорт, медиа, паттерны)
+utils/                   # инфраструктура (SQLite-реестры, экспорт, паттерны)
 gui/
   main_window.py         # тонкий контейнер: собирает окно из mixin'ов
   task_runner.py         # раннер фоновых задач _start_task (Signals/Slots)

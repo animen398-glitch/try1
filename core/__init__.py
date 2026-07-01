@@ -11,11 +11,6 @@ from core.recon_engine import ReconEngine
 from core.subdomain_scanner import SubdomainScanner
 from core.vuln_scanner import VulnScanner
 
-# Media extraction/downloading lives in utils/ (the upgraded, registry-aware
-# implementations): utils.image_processor.ImageExtractor and
-# utils.video_processor.VideoDownloader. The earlier core.* copies were
-# superseded and removed to kill the duplication.
-
 __all__ = [
     'AntiDetectSession',
     'ApiDumper',

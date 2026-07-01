@@ -52,9 +52,7 @@ from core.scan_diff import write_diff_report
 from core.security_auditor import SecurityAuditor
 from core.subdomain_scanner import SubdomainScanner
 from utils.data_viewer import DataViewer
-from utils.image_processor import ImageExtractor
 from utils.operation_registry import OperationRegistry
-from utils.video_processor import VideoDownloader
 
 def _configured_report_base() -> Path:
     """Reports/output base from settings.json (fallback preserves legacy default)."""
@@ -265,24 +263,6 @@ def _run_security(url: str, push: Callable) -> dict:
     return auditor.audit(url)
 
 
-def _run_images(url: str, push: Callable) -> dict:
-    out = _out_dir(url, 'images')
-    ex = ImageExtractor()
-    ex.set_progress_callback(lambda m: push(m))
-    result = ex.extract_images(url, str(out))
-    result['output_dir'] = str(out)
-    return result
-
-
-def _run_video(url: str, push: Callable) -> dict:
-    out = _out_dir(url, 'video')
-    dl = VideoDownloader()   # default preset 'best'; degrades if yt-dlp absent
-    dl.set_progress_callback(lambda m: push(m))
-    result = dl.download_video(url, str(out))
-    result['output_dir'] = str(out)
-    return result
-
-
 def _run_design(url: str, push: Callable) -> dict:
     out = _out_dir(url, 'design')
     cap = SiteContentCapture()
@@ -340,8 +320,6 @@ JOBS: Dict[str, dict] = {
     'paywall':    {'label': 'Bypass Paywall',  'fn': _run_paywall},
     'cookies':    {'label': 'Cookie Audit',    'fn': _run_cookies},
     'security':   {'label': 'Security Audit',  'fn': _run_security},
-    'images':     {'label': 'Images',          'fn': _run_images},
-    'video':      {'label': 'Video Download',  'fn': _run_video},
     'design':     {'label': 'Design Lab',      'fn': _run_design},
     'collection': {'label': 'Full Collection', 'fn': _run_collection},
     'scandiff':   {'label': 'Scan Diff',       'fn': _run_scandiff},
@@ -1626,7 +1604,7 @@ async function showData(){
     const r=await fetch('/data'); const d=await r.json();
     const s=d.summary||{};
     log('Registry: '+(s.total||0)+' records · '+(s.subdomains||0)+' subdomains · '
-        +(s.api_endpoints||0)+' endpoints · '+(s.images||0)+' images','data');
+        +(s.api_endpoints||0)+' endpoints','data');
     (d.records||[]).slice(0,20).forEach(rec=>{
       const c=(rec.content||'').slice(0,80);
       log('['+(rec.data_type||'')+'] '+c,'info');

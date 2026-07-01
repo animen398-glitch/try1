@@ -2,7 +2,7 @@
 Single seam for spawning child processes WITHOUT a flashing console window.
 
 On Windows every ``subprocess.run``/``Popen`` for a console program (amass,
-nuclei, katana, subfinder, bbot, yt-dlp, ffmpeg, rar, the Scrapy child, …) pops
+nuclei, katana, subfinder, bbot, rar, the Scrapy child, …) pops
 a transient ``cmd``/``conhost`` window when the parent is a GUI app. Passing
 ``CREATE_NO_WINDOW`` + a hidden ``STARTUPINFO`` suppresses it. On POSIX these
 flags don't exist and the helpers are plain pass-throughs.

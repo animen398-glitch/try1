@@ -229,6 +229,5 @@ class WindowChromeMixin:
             f"Advanced Site Analyzer v{APP_VERSION}\n\n"
             "• Поиск утечек API ключей\n"
             "• Захват структуры сайтов\n"
-            "• Загрузка видео (yt-dlp)\n"
-            "• Извлечение изображений"
+            "• Оффлайн-клонирование фронтенда"
         )

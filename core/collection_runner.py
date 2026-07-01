@@ -4,14 +4,12 @@ and emits an aggregated HTML + JSON report.
 
 Pipeline (each phase is guarded — a failure is recorded and the run continues):
     Recon  ->  API key scan  ->  Capture (frontend)  ->  Clone (frontend)
-           ->  Image collection (media)
 
 Layout produced under <base>/<domain>_<timestamp>/:
     recon/recon.json
     api/api_keys.json
     capture/…              (saved HTML pages + site_map.json)
     clone/…                (self-contained offline copy)
-    images/…               (downloaded images)
     report.json            (full aggregated result)
     report.html            (human-readable summary)
 """
@@ -67,7 +65,6 @@ from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
 from utils.atomic_io import atomic_write_json
-from utils.image_processor import ImageExtractor
 
 
 ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
@@ -181,7 +178,7 @@ class CollectionRunner:
         # tool); degrades to a skip when the binary is absent. (EXT-OSINT F1.)
         self.bbot = bbot
         # Opt-in Document Intelligence — mine documents already captured in the
-        # scan (PDF/images/config files under capture/clone/images) for secrets +
+        # scan (PDF/images/config files under capture/clone) for secrets +
         # sensitive data, via core.document_intelligence (+ optional lift if
         # installed). Local/passive (no new network); off by default. (EXT-OSINT F2.)
         self.documents = documents
@@ -455,13 +452,10 @@ class CollectionRunner:
         if not self._cancelled(report):
             report['phases']['clone'] = self._phase_clone(capture_dir, scan_dir,
                                                           report['phases'].get('capture', {}))
-        # 5. Images (media)
-        if not self._cancelled(report):
-            report['phases']['images'] = self._phase_images(url, scan_dir)
-        # 6. Cookie security audit
+        # 5. Cookie security audit
         if not self._cancelled(report):
             report['phases']['cookies'] = self._phase_cookies(url, scan_dir)
-        # 7. Vulnerability scan (aggregates recon + cookie findings)
+        # 6. Vulnerability scan (aggregates recon + cookie findings)
         if not self._cancelled(report):
             report['phases']['vulns'] = self._phase_vulns(report, scan_dir)
             # Fold leaked secrets (the always-on api phase) into the vuln phase as
@@ -738,7 +732,7 @@ class CollectionRunner:
             self._log(f'  Evidence manifest failed: {e}')
 
     def _phase_recon(self, url: str, project_dir: Path) -> Dict:
-        self._log('[1/7] Recon…')
+        self._log('[1/6] Recon…')
         try:
             engine = ReconEngine()
             engine.configure(profile=self.profile)
@@ -755,7 +749,7 @@ class CollectionRunner:
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_api(self, url: str, project_dir: Path) -> Dict:
-        self._log('[2/7] API key scan…')
+        self._log('[2/6] API key scan…')
         try:
             extractor = ApiKeyExtractor()
             extractor.set_target_url(url)
@@ -773,7 +767,7 @@ class CollectionRunner:
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_capture(self, url: str, capture_dir: Path) -> Dict:
-        self._log('[3/7] Capture (frontend)…')
+        self._log('[3/6] Capture (frontend)…')
         try:
             cap = SiteContentCapture()
             cap.configure(url, str(capture_dir), self.max_pages,
@@ -789,9 +783,9 @@ class CollectionRunner:
                      capture_phase: Dict) -> Dict:
         pages = capture_phase.get('data', {}).get('pages_captured', 0)
         if pages == 0:
-            self._log('[4/7] Clone — пропущено (нет захваченных страниц)')
+            self._log('[4/6] Clone — пропущено (нет захваченных страниц)')
             return {'status': 'Skipped', 'reason': 'no captured pages'}
-        self._log('[4/7] Clone (frontend)…')
+        self._log('[4/6] Clone (frontend)…')
         try:
             clone_dir = project_dir / 'clone'
             cloner = FrontendCloner()
@@ -803,20 +797,8 @@ class CollectionRunner:
             self._log(f'  Clone failed: {e}')
             return {'status': 'Error', 'error': str(e)}
 
-    def _phase_images(self, url: str, project_dir: Path) -> Dict:
-        self._log('[5/7] Images (media)…')
-        try:
-            images_dir = project_dir / 'images'
-            ex = ImageExtractor(profile=self.profile, cookies=self.cookies)
-            ex.set_progress_callback(self._log)
-            data = ex.extract_images(url, str(images_dir))
-            return {'status': 'Success', 'data': data}
-        except Exception as e:
-            self._log(f'  Images failed: {e}')
-            return {'status': 'Error', 'error': str(e)}
-
     def _phase_cookies(self, url: str, project_dir: Path) -> Dict:
-        self._log('[6/7] Cookie security audit…')
+        self._log('[5/6] Cookie security audit…')
         try:
             data = CookieAuditor(profile=self.profile).audit(url)
             out = project_dir / 'security'
@@ -831,7 +813,7 @@ class CollectionRunner:
             return {'status': 'Error', 'error': str(e)}
 
     def _phase_vulns(self, report: Dict, project_dir: Path) -> Dict:
-        self._log('[7/7] Vulnerability scan…')
+        self._log('[6/6] Vulnerability scan…')
         try:
             recon = report['phases'].get('recon', {}).get('data', {})
             cookies = report['phases'].get('cookies', {}).get('data', {})
@@ -1481,7 +1463,7 @@ class CollectionRunner:
         scan for secrets + sensitive data, folding the findings into the vuln
         phase (lifecycle / SLA / triage + risk via severity, like the other
         secret folders). Candidates are document/config files under
-        capture/clone/images (markup + our own artifacts excluded). The heavy
+        capture/clone (markup + our own artifacts excluded). The heavy
         ``lift`` provider is used additionally only when it is installed (a
         deliberate opt-in install); otherwise the lighter tiers run. Writes
         documents/documents.json (masked — no plaintext). Guarded; never sinks the
@@ -1489,8 +1471,7 @@ class CollectionRunner:
         self._log('[+] Document intelligence…')
         try:
             from core import document_intelligence as di
-            roots = [project_dir / 'capture', project_dir / 'clone',
-                     project_dir / 'images']
+            roots = [project_dir / 'capture', project_dir / 'clone']
             candidates = di.iter_candidate_documents(roots)
             if not candidates:
                 self._log('  Документы — кандидатов не найдено')
@@ -2906,17 +2887,6 @@ class CollectionRunner:
                        f'{e(clone.get("reason", "—"))}</p>'
         )
         body_parts.append(card('Clone (Frontend)', clone_body, clone.get('status', '—')))
-
-        # Images
-        img = phases.get('images', {})
-        imd = img.get('data', {})
-        body_parts.append(card(
-            'Images (Media)',
-            f'<p style="font-size:13px;">Найдено: {e(str(imd.get("found", 0)))}, '
-            f'загружено: <b>{e(str(imd.get("downloaded", 0)))}</b>, '
-            f'дубликатов: {e(str(imd.get("duplicates", 0)))}</p>',
-            img.get('status', '—'),
-        ))
 
         # Cookie security
         ck = phases.get('cookies', {})

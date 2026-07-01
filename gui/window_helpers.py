@@ -8,7 +8,6 @@ wrapper. Folded into MainWindow as a mixin so every tab reaches them as
 The host window is expected to provide:
   • ``self.settings``     dict — read by _make_archive (compression_format)
   • ``self.progress_bar`` / ``self.status_bar`` — driven by _set_busy
-  • ``self.video_results`` — append target of _save_video_log
 """
 
 from datetime import datetime
@@ -55,16 +54,6 @@ class WindowHelpersMixin:
             return FileCompressor.to_rar(source_dir, out) if fmt == 'rar' else FileCompressor.to_zip(source_dir, out)
         except Exception:
             return None
-
-    def _save_video_log(self, out_path: Path, url: str, status: str):
-        try:
-            log_file = out_path / 'video_links.txt'
-            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write(f"[{ts}] {status} | {url}\n")
-            self.video_results.append_info(f"Лог ссылок: {log_file}")
-        except Exception:
-            pass
 
     def _set_busy(self, busy: bool):
         self.progress_bar.setVisible(busy)

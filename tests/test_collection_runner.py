@@ -731,14 +731,14 @@ def test_render_html_contains_phase_sections():
             "api": {"status": "Success", "data": {"keys_found": 2}},
             "capture": {"status": "Success", "data": {"pages_captured": 3, "errors": []}},
             "clone": {"status": "Skipped", "reason": "no captured pages"},
-            "images": {"status": "Error", "error": "boom"},
+            "cookies": {"status": "Error", "error": "boom"},
         },
     }
     html = r._render_html(report)
     assert html.startswith("<!DOCTYPE html>")
     # Titles are HTML-escaped in the report ("&" -> "&amp;").
     for title in ("Recon &amp; Intel", "API Key Scan", "Capture (Frontend)",
-                  "Clone (Frontend)", "Images (Media)"):
+                  "Clone (Frontend)", "Cookie Security"):
         assert title in html
     assert "Collection Report" in html
     assert "[Success]" in html and "[Skipped]" in html and "[Error]" in html
@@ -850,8 +850,6 @@ def test_run_writes_scan_into_project_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(r, '_phase_capture',
                         lambda url, d: {'status': 'Success',
                                         'data': {'pages_captured': 0, 'errors': []}})
-    monkeypatch.setattr(r, '_phase_images',
-                        lambda url, d: {'status': 'Skipped'})
     monkeypatch.setattr(r, '_phase_cookies',
                         lambda url, d: {'status': 'Success',
                                         'data': {'total': 0, 'weak': 0}})
@@ -935,8 +933,6 @@ def _stub_base_run(monkeypatch, runner):
     monkeypatch.setattr(runner, '_phase_capture',
                         lambda url, d: {'status': 'Success',
                                         'data': {'pages_captured': 0, 'errors': []}})
-    monkeypatch.setattr(runner, '_phase_images',
-                        lambda url, d: {'status': 'Skipped'})
     monkeypatch.setattr(runner, '_phase_cookies',
                         lambda url, d: {'status': 'Success',
                                         'data': {'total': 0, 'weak': 0}})
@@ -1138,7 +1134,6 @@ def test_run_writes_evidence_manifest_and_finding_refs(tmp_path, monkeypatch):
     monkeypatch.setattr(r, '_phase_recon', recon)
     monkeypatch.setattr(r, '_phase_api', api)
     monkeypatch.setattr(r, '_phase_capture', capture)
-    monkeypatch.setattr(r, '_phase_images', lambda url, d: {'status': 'Skipped'})
     monkeypatch.setattr(r, '_phase_cookies', cookies)
     monkeypatch.setattr(r, '_phase_vulns', vulns)
 

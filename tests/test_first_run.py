@@ -12,7 +12,7 @@ _HEALTH_OK = {
     'python_version': '3.11.7',
     'required': [{'name': 'qtpy', 'ok': True}, {'name': 'requests', 'ok': True}],
     'required_ok': True,
-    'optional': {'playwright': {'available': True}, 'ffmpeg': {'available': False}},
+    'optional': {'playwright': {'available': True}, 'nuclei': {'available': False}},
     'data_root_writable': True,
     'ok': True,
 }
@@ -26,8 +26,8 @@ def test_report_text_ok():
     text = first_run.health_report_text(_HEALTH_OK)
     assert '3.11.7' in text
     assert 'ГОТОВ К РАБОТЕ' in text
-    assert '1/2 доступно' in text          # playwright present, ffmpeg missing
-    assert 'ffmpeg' in text                # listed as missing
+    assert '1/2 доступно' in text          # playwright present, nuclei missing
+    assert 'nuclei' in text                # listed as missing
 
 
 def test_report_text_not_ok():

@@ -8,7 +8,6 @@ from gui.tab_system import SystemTabMixin
 from gui.tab_api import ApiTabMixin
 from gui.tab_capture import CaptureTabMixin
 from gui.tab_design import DesignTabMixin
-from gui.tab_media import ImageTabMixin, VideoTabMixin
 from gui.tab_recon import ReconTabMixin
 from gui.tab_subdomain import SubdomainTabMixin
 from gui.tab_clone import CloneTabMixin
@@ -39,7 +38,7 @@ from utils.task_manager import TaskManager
 class MainWindow(FluentWindowBase, TaskRunnerMixin, MonitorRunnerMixin,
                  WindowChromeMixin,
                  WindowHelpersMixin, SystemTabMixin, ApiTabMixin,
-                 VideoTabMixin, ImageTabMixin, CaptureTabMixin,
+                 CaptureTabMixin,
                  DesignTabMixin, ReconTabMixin, SubdomainTabMixin,
                  CloneTabMixin, CookieAuditTabMixin, SecurityAuditTabMixin,
                  FinalReportTabMixin, FindingsTabMixin, RemediationTabMixin,
