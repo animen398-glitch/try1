@@ -5426,3 +5426,51 @@ VERIFICATION & STABILIZATION — Engagement epic (2026-07-01)
       (8x _run_async, 0 ручных QThread).
   Исправлений не потребовалось — регрессий/битых импортов/дублей не найдено.
 
+
+------------------------------------------------------------------------------
+RETEST RUN LIFECYCLE — R1–R5 (2026-07-01)
+------------------------------------------------------------------------------
+  Следующий roadmap-этап после Engagement-эпика: ретест engagement'а стал
+  first-class ПЕРСИСТЕНТНЫМ «прогоном» (снимок исходов связанных находок на
+  момент времени: fixed/open/accepted/missing) — раньше был только
+  derive-on-read view (core/engagement_retest). Слои как в Mission Center:
+  чистый контракт -> стор -> runner -> тонкие surfaces; БЕЗ второго
+  findings-стора и без новых атак-возможностей (client-safe, без сети).
+    R1 (b24ddb06) core/retest_run.py — чистый offline-контракт: create/
+      normalize/validate/advance_retest_run_status/retest_run_to_json +
+      render_json/markdown; lifecycle pending->completed|failed; summary всегда
+      деривируется из результатов (инвариант). schemas/asa_retest_run.schema.json
+      + alias в audit_schema. Per-finding маппинг статус->исход НЕ дублируется
+      (остаётся в engagement_retest.build_retest, переиспользуется в R3).
+    R2 (da0f1ac) core/retest_run_store.py — RetestRunStore(SQLiteStore),
+      single-table events-less (зеркало MissionStore): save (schema-validated,
+      idempotent)/get/list(by engagement и/или project)/delete/export. Участие в
+      project_io bundle (retest_runs.json, аддитивно, FORMAT_VERSION=1; старый
+      bundle без файла -> 0). conftest-изоляция _isolate_retest_runs_db.
+    R3 (94463b7) core/retest_runner.run_retest — замораживает live
+      engagement_retest.build_retest в снимок R1-контракта, персистит через
+      RetestRunStore, pending->completed (или failed с пробросом; run не залипает
+      в pending). Зеркало mission_runner.run_mission; engagement НЕ мутируется —
+      связь retest<->engagement на поле engagement_id прогона (без link_retest_run
+      в контракте engagement).
+    R4 (f3ec8ff) surfaces: web POST /engagements/{id}/retest/run, GET
+      /engagements/{id}/retest-runs, GET /retest-runs/{id}, GET
+      /retest-runs/{id}/report.md; GUI кнопка «Run retest» + история прогонов в
+      detail на вкладке Engagements. Общая markdown-таблица retest-строк вынесена
+      в engagement_retest.retest_rows_markdown (dedup; вывод engagement_retest
+      байт-в-байт прежний). Live GET /engagements/{id}/retest не тронут.
+    R5 (3c35c93c) derive-on-read: timeline retest_run события (section
+      engagements; failed->medium) через build_events(retest_runs=)+build_timeline
+      секция retest_runs; report_export.retest_runs_csv (summary flatten) + web
+      /retest-runs.csv + Timeline «Export retest runs»; demo_seed снимок (summary
+      += retest_runs). GUI-метка события «Прогон ретеста».
+  Файлы: core/retest_run.py, core/retest_run_store.py, core/retest_runner.py,
+  schemas/asa_retest_run.schema.json, core/audit_schema.py, core/project_io.py,
+  core/engagement_retest.py, core/timeline.py, core/report_export.py,
+  remote/web_app.py, gui/tab_engagement.py, gui/tab_timeline.py, demo_seed.py,
+  tests/conftest.py + целевые тесты (test_retest_run/_store/_runner, дополнения в
+  test_project_io/test_web_engagements/test_engagement_tab/test_timeline/
+  test_report_export/test_web_timeline/test_timeline_tab/test_demo_seed).
+  Проверено: ruff clean, self-check 31 вкладка, полный pytest зелёный
+  (рост 2496 -> 2549; collect-only подтверждает 2549). Локальные коммиты, без push.
+

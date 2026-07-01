@@ -201,6 +201,7 @@
 > Update 2026-07-01 (Engagement follow-ups): closed the deferred items — engagement_retest (re-check linked findings' current status: fixed/open/accepted/missing, web GET /engagements/{id}/retest + GUI export), engagement_overview + report_export.engagements_csv (web /engagements/overview + /engagements.csv + GUI export), and engagement.mission_roe_from_engagement (mission inherits the engagement's scope/ROE). Plus an Engagement portfolio card on the Overview tab. Engagement epic fully closed. Current scale: **full pytest 2484 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning.
 > Update 2026-07-01 (mission-under-engagement): create_mission_under_engagement (core/engagement_missions.py) spins up a client-safe mission inheriting the engagement's scope/ROE, persists + links it back — a real consumer for the inheritance helper; web POST /engagements/{id}/missions + a GUI 'Create mission' row. Current scale: **full pytest 2489 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning.
 > Update 2026-07-01 (dedup finding-render): the identical finding-table renderers in mission_report + engagement_report were extracted into core/finding_render.py (finding_refs / finding_md_table / finding_html_table; presentation-only, escaped) — no rendered-output change. Current scale: **full pytest 2496 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning (also extracted the shared HTML report-document envelope html_open/html_close across 5 renderers, byte-identical).
+> Update 2026-07-01 (Retest Run lifecycle R1–R5): retest is now a first-class persisted "run" — a point-in-time snapshot of an engagement's linked-finding outcomes (fixed/open/accepted/missing), not just a derive-on-read view. R1 pure contract core/retest_run.py (+asa_retest_run schema); R2 RetestRunStore (single-table, events-less; in the project_io bundle as retest_runs.json); R3 retest_runner.run_retest freezes engagement_retest.build_retest into a snapshot (engagement not mutated — link on the run's engagement_id); R4 web (POST /engagements/{id}/retest/run, GET /engagements/{id}/retest-runs, GET /retest-runs/{id}[/report.md]) + GUI "Run retest" + history on the Engagements tab; R5 timeline retest_run events + report_export.retest_runs_csv (+ /retest-runs.csv + Timeline export) + demo_seed snapshot. No second findings store; the retest-row markdown table is shared via engagement_retest.retest_rows_markdown. Current scale: **full pytest 2549 passed**, ruff clean, self-check 31 tabs, 1 existing Starlette/httpx warning.
 > Это навигабельная «карта проекта»: здоровье, структура, найденные ошибки и с
 > чего начинать работу. Подробный пофичный лог — в
 > [`PROJECT_STATUS.txt`](PROJECT_STATUS.txt); авторитетный статус — CLAUDE.md §12.
@@ -211,7 +212,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2496 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
+| Тесты | **2549 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

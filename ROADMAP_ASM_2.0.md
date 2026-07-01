@@ -2823,3 +2823,52 @@ inherits its scope+ROE). The Engagement epic (F1–F4 + S1–S4 + follow-ups) is
 fully complete.
 
 ---
+
+### Retest Run lifecycle — R1–R5 (CLOSED 2026-07-01)
+
+The tail of the engagement arc (… → Report → **Retest → Close**) becomes a
+first-class, persisted entity. Where `core.engagement_retest` is a live
+derive-on-read view (recomputed every call), a **retest run** freezes one such
+view into a point-in-time snapshot so an engagement accrues a history of retests
+and shows remediation progress. Same layering as Mission Center — pure contract →
+store → runner → thin surfaces — with no second findings store and no new attack
+capability (client-safe, offline, no tool execution).
+
+- **R1 `core/retest_run.py`** (commit `b24ddb06`): pure, deterministic, offline
+  contract (mirrors `core.engagement` / `core.pentest_mission`). `create /
+  normalize / validate / advance_retest_run_status / retest_run_to_json` +
+  `render_json / render_markdown`; short lifecycle `pending → completed | failed`;
+  the outcome `summary` is always derived from the results (invariant). The
+  per-finding status→outcome mapping is NOT duplicated — it stays in
+  `engagement_retest.build_retest` (reused by R3). `schemas/asa_retest_run.schema.json`
+  + alias.
+- **R2 `core/retest_run_store.py`** (commit `da0f1ac`): `RetestRunStore` —
+  single-table, events-less SQLite (mirrors `MissionStore`); schema-validated
+  idempotent save, list filtered by engagement and/or project, export. Wired into
+  the `core/project_io` bundle as `retest_runs.json` (additive, FORMAT_VERSION
+  stays 1; a bundle without it imports as 0). conftest DB isolation.
+- **R3 `core/retest_runner.py`** (commit `94463b7`): `run_retest` freezes a live
+  `engagement_retest.build_retest` view into a snapshot and persists it via the
+  store — mirrors `mission_runner.run_mission`. `pending → completed` (or
+  `failed`, persisted before re-raise). The engagement is not mutated; the
+  retest↔engagement link lives on the run's `engagement_id`.
+- **R4 surfaces** (commit `f3ec8ff`): web `POST /engagements/{id}/retest/run`,
+  `GET /engagements/{id}/retest-runs`, `GET /retest-runs/{id}`, `GET
+  /retest-runs/{id}/report.md`; a GUI **Run retest** button + retest-run history
+  on the Engagements tab. The live `GET /engagements/{id}/retest` view is
+  untouched. The retest-outcome markdown table is extracted into
+  `engagement_retest.retest_rows_markdown` and reused by both renderers (no
+  duplication; engagement_retest output byte-for-byte unchanged).
+- **R5 derive-on-read polish** (commit `3c35c93c`): timeline `retest_run` events
+  (section `engagements`) via `build_events(retest_runs=)` + a `retest_runs`
+  section in `build_timeline`; `report_export.retest_runs_csv` + web
+  `/retest-runs.csv` + a Timeline **Export retest runs** button; a `demo_seed`
+  snapshot so the whole R1–R5 lifecycle shows data.
+
+**Decisions (locked):** mirror the Mission Center backend layering; the retest
+run is a snapshot (not a live view); no second findings store (outcomes reused
+from `build_retest`); the engagement is not mutated (link on the run's
+`engagement_id`, so no `link_retest_run` in the engagement contract). Verified:
+ruff clean, self-check 31 tabs, full pytest green (2496 → 2549).
+
+---
