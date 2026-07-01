@@ -1177,6 +1177,47 @@ def _engagement_create_mission(engagement_id: str, objective: str,
         return {'error': str(e)}
 
 
+def _engagement_retest_run(engagement_id: str) -> dict:
+    """Take + persist a retest snapshot for an engagement (R4)."""
+    try:
+        from core.engagement_store import EngagementStore
+        from core.retest_runner import run_retest
+        row = EngagementStore().get_engagement(str(engagement_id))
+        if row is None:
+            return {'error': f'engagement not found: {engagement_id}'}
+        out = run_retest(row['payload'])
+        return {'retest_run_id': out['retest_run_id'], 'status': out['status'],
+                'summary': out['summary']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
+def _engagement_retest_runs(engagement_id: str) -> dict:
+    """List persisted retest runs for an engagement (newest snapshot first)."""
+    try:
+        from core.retest_run_store import RetestRunStore
+        rows = RetestRunStore().list_retest_runs(engagement_id=str(engagement_id))
+        return {'engagement_id': str(engagement_id), 'retest_runs': [
+            {'retest_run_id': r.get('id'), 'status': r.get('status'),
+             'created_at': r.get('created_at'),
+             'summary': (r.get('payload') or {}).get('summary')}
+            for r in rows]}
+    except Exception as e:
+        return {'engagement_id': str(engagement_id), 'retest_runs': [],
+                'error': str(e)}
+
+
+def _retest_run_view(run_id: str) -> dict:
+    try:
+        from core.retest_run_store import RetestRunStore
+        row = RetestRunStore().get_retest_run(str(run_id))
+        if row is None:
+            return {'error': f'retest run not found: {run_id}'}
+        return {'retest_run': row['payload']}
+    except Exception as e:
+        return {'error': str(e)}
+
+
 def _audit_compare_view(baseline_id: str, candidate_id: str) -> dict:
     try:
         from core.audit_store import AuditRunStore
@@ -2401,6 +2442,37 @@ if _FASTAPI_OK:
         await _push(f'[engagement] {engagement_id[:8]} → mission '
                     f'{out["mission_id"][:16]}', 'ok')
         return out
+
+    @app.post('/engagements/{engagement_id}/retest/run')
+    async def engagement_retest_run_route(engagement_id: str):
+        out = _engagement_retest_run(engagement_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[retest] {engagement_id[:8]} → '
+                    f'{out["retest_run_id"][:16]}', 'ok')
+        return out
+
+    @app.get('/engagements/{engagement_id}/retest-runs')
+    async def engagement_retest_runs_route(engagement_id: str):
+        return JSONResponse(_engagement_retest_runs(engagement_id))
+
+    @app.get('/retest-runs/{run_id}')
+    async def retest_run_view_route(run_id: str):
+        out = _retest_run_view(run_id)
+        code = 404 if out.get('error') and 'not found' in out['error'] else 200
+        return JSONResponse(out, status_code=code)
+
+    @app.get('/retest-runs/{run_id}/report.md')
+    async def retest_run_report_md(run_id: str):
+        from core import retest_run as _rr
+        out = _retest_run_view(run_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return Response(out['error'], media_type='text/plain; charset=utf-8',
+                            status_code=code)
+        return Response(_rr.render_markdown(out['retest_run']),
+                        media_type='text/markdown; charset=utf-8')
 
     @app.get('/intelligence')
     async def intelligence(project: Optional[str] = None):

@@ -83,6 +83,26 @@ def test_retest_overview_csv_helpers():
     assert saved["id"] in csv_text
 
 
+def test_retest_run_helpers():
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    saved = _save("Acme", "shop.io")
+    fid = FindingsStore().upsert("shop.io", Finding(
+        category="vuln", rule_id="r", title="t", severity="high",
+        location="https://shop.io/a").to_store(), scan_id="s1")["finding"]["id"]
+    wa._engagement_link(saved["id"], "finding", fid)
+    run = wa._engagement_retest_run(saved["id"])
+    assert "error" not in run and run["status"] == "completed"
+    rid = run["retest_run_id"]
+    lst = wa._engagement_retest_runs(saved["id"])
+    assert [r["retest_run_id"] for r in lst["retest_runs"]] == [rid]
+    view = wa._retest_run_view(rid)
+    assert view["retest_run"]["retest_run_id"] == rid
+    assert view["retest_run"]["summary"]["total"] == 1
+    assert "not found" in wa._engagement_retest_run("nope").get("error", "")
+    assert "not found" in wa._retest_run_view("rt-nope").get("error", "")
+
+
 def test_create_mission_under_engagement_helper():
     saved = _save("Acme", "shop.io")
     out = wa._engagement_create_mission(saved["id"], "External review",
@@ -168,3 +188,17 @@ def test_engagement_endpoints_with_testclient():
     assert r.status_code == 200 and r.json()["mission_id"]
     assert client.post("/engagements/missing/missions",
                        json={"objective": "x"}).status_code == 404
+
+    # persisted retest run: POST run → list → view → report.md
+    r = client.post(f"/engagements/{eid}/retest/run")
+    assert r.status_code == 200 and r.json()["status"] == "completed"
+    rid = r.json()["retest_run_id"]
+    assert client.post("/engagements/missing/retest/run").status_code == 404
+    r = client.get(f"/engagements/{eid}/retest-runs")
+    assert r.status_code == 200
+    assert rid in {x["retest_run_id"] for x in r.json()["retest_runs"]}
+    r = client.get(f"/retest-runs/{rid}")
+    assert r.status_code == 200 and r.json()["retest_run"]["retest_run_id"] == rid
+    assert client.get("/retest-runs/rt-nope").status_code == 404
+    r = client.get(f"/retest-runs/{rid}/report.md")
+    assert r.status_code == 200 and r.text.startswith("# Retest Run ")

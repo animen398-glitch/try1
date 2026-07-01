@@ -29,6 +29,7 @@ canonical export validates against ``schemas/asa_retest_run.schema.json`` via
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from hashlib import sha1
 from typing import Any, Dict, Iterable, List, Optional
@@ -227,3 +228,34 @@ def retest_run_to_json(run: Dict[str, Any]) -> Dict[str, Any]:
 
     validate_audit_payload(payload, "asa_retest_run")
     return payload
+
+
+def render_json(run: Dict[str, Any]) -> str:
+    """Canonical, deterministic JSON string for a retest-run snapshot."""
+    return json.dumps(normalize_retest_run(run), ensure_ascii=False, indent=2,
+                      sort_keys=True)
+
+
+def render_markdown(run: Dict[str, Any]) -> str:
+    """Human-readable retest-run deliverable (run metadata + outcome table).
+
+    Reuses :func:`core.engagement_retest.retest_rows_markdown` for the finding
+    table so the row shape is never duplicated. Pure, deterministic."""
+    from core.engagement_retest import retest_rows_markdown
+
+    normalized = normalize_retest_run(run)
+    s = normalized["summary"]
+    lines = [
+        f"# Retest Run {normalized['retest_run_id']}",
+        "",
+        f"- Engagement: {normalized['engagement_id']}",
+        f"- Client: {normalized['client']}",
+        f"- Project: {normalized['project']}",
+        f"- Status: {normalized['status']}",
+        f"- Taken: {normalized['created_at']}",
+        f"- Findings retested: {s['total']}",
+        f"- Fixed: {s['fixed']} · Still open: {s['open']} · "
+        f"Accepted: {s['accepted']} · Missing: {s['missing']}",
+        "",
+    ] + retest_rows_markdown(normalized["finding_results"])
+    return "\n".join(lines).rstrip() + "\n"

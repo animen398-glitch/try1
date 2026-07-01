@@ -116,3 +116,30 @@ def test_render_retest_and_csv_helpers(qapp):
     csv_text = EngagementsTabMixin._engagements_csv_text("shop.com")
     assert csv_text.splitlines()[0].startswith("Engagement ID,Client")
     assert saved["id"] in csv_text
+
+
+def test_do_run_engagement_retest_persists(qapp):
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    from core.retest_run_store import RetestRunStore
+    saved = _save("Acme", "shop.com")
+    fid = FindingsStore().upsert("shop.com", Finding(
+        category="vuln", rule_id="r", title="t", severity="high",
+        location="https://shop.com/a").to_store(), scan_id="s1")["finding"]["id"]
+    payload = eng.link_finding(saved["payload"], fid)
+    out = EngagementsTabMixin._do_run_engagement_retest(payload)
+    assert "error" not in out and "retest" in out["ok"]
+    runs = RetestRunStore().list_retest_runs(engagement_id=saved["id"])
+    assert len(runs) == 1 and runs[0]["status"] == "completed"
+
+
+def test_detail_shows_retest_run_history(qapp):
+    from core.retest_runner import run_retest
+    saved = _save("Acme", "shop.com")
+    run_retest(saved["payload"], now="2026-07-01T10:00:00Z")
+    w = EngagementsHost()
+    w._populate_engagements(EngagementsTabMixin._query_engagements("shop.com"))
+    w.engagement_table.selectRow(0)
+    detail = w.engagement_detail.toPlainText()
+    assert "Retest runs: 1" in detail
+    assert "completed" in detail

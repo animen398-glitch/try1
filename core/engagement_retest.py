@@ -68,6 +68,33 @@ def build_retest(engagement: Dict[str, Any], *,
             "findings": findings, "summary": summary}
 
 
+def retest_rows_markdown(
+        rows: Any,
+        *, empty_note: str = "No findings linked to this engagement",
+) -> List[str]:
+    """The shared retest-outcome markdown table (header + one row per finding, or
+    a single empty-note row). Reused by both this view and
+    :func:`core.retest_run.render_markdown` so the table shape lives in one place.
+    Each row is the ``{finding_id, outcome, title, severity, status}`` shape
+    produced by :func:`build_retest` / carried by a retest-run snapshot."""
+    lines = [
+        "| Outcome | Severity | Title | Status | Finding |",
+        "|---|---|---|---|---|",
+    ]
+    for f in rows or []:
+        lines.append(
+            "| {outcome} | {severity} | {title} | {status} | {fid} |".format(
+                outcome=f.get("outcome", ""),
+                severity=str(f.get("severity", "")),
+                title=str(f.get("title", "")).replace("|", "\\|"),
+                status=str(f.get("status", "")),
+                fid=str(f.get("finding_id", "")),
+            ))
+    if not (rows or []):
+        lines.append(f"| — | — | {empty_note} | — | — |")
+    return lines
+
+
 def render_markdown(retest: Dict[str, Any]) -> str:
     s = retest.get("summary") or {}
     lines = [
@@ -79,20 +106,7 @@ def render_markdown(retest: Dict[str, Any]) -> str:
         f"- Fixed: {s.get('fixed', 0)} · Still open: {s.get('open', 0)} · "
         f"Accepted: {s.get('accepted', 0)} · Missing: {s.get('missing', 0)}",
         "",
-        "| Outcome | Severity | Title | Status | Finding |",
-        "|---|---|---|---|---|",
-    ]
-    for f in retest.get("findings") or []:
-        lines.append(
-            "| {outcome} | {severity} | {title} | {status} | {fid} |".format(
-                outcome=f.get("outcome", ""),
-                severity=str(f.get("severity", "")),
-                title=str(f.get("title", "")).replace("|", "\\|"),
-                status=str(f.get("status", "")),
-                fid=str(f.get("finding_id", "")),
-            ))
-    if not (retest.get("findings") or []):
-        lines.append("| — | — | No findings linked to this engagement | — | — |")
+    ] + retest_rows_markdown(retest.get("findings"))
     return "\n".join(lines).rstrip() + "\n"
 
 

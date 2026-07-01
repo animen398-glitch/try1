@@ -211,3 +211,33 @@ def test_to_json_rejects_invalid_status():
     run = dict(run, status="weird")
     with pytest.raises(ValueError):
         rr.retest_run_to_json(run)
+
+
+# ── renderers ────────────────────────────────────────────────────────────────────
+
+def test_render_json_is_canonical():
+    import json as _json
+    run = rr.create_retest_run(_engagement(), created_at="t",
+                               finding_results=_findings())
+    parsed = _json.loads(rr.render_json(run))
+    assert parsed["summary"]["fixed"] == 1
+    assert parsed == rr.normalize_retest_run(run)
+
+
+def test_render_markdown_has_run_metadata_and_table():
+    run = rr.create_retest_run(_engagement(), created_at="2026-07-01T10:00:00Z",
+                               finding_results=_findings())
+    run = rr.advance_retest_run_status(run, "completed")
+    md = rr.render_markdown(run)
+    assert md.startswith("# Retest Run rt-")
+    assert "- Status: completed" in md
+    assert "- Taken: 2026-07-01T10:00:00Z" in md
+    assert "Fixed: 1" in md
+    assert "| Outcome | Severity | Title | Status | Finding |" in md
+    assert "XSS" in md            # a finding title reached the table
+
+
+def test_render_markdown_empty():
+    run = rr.create_retest_run(_engagement(), created_at="t")
+    md = rr.render_markdown(run)
+    assert "No findings linked" in md

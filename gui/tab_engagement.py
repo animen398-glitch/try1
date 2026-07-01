@@ -198,6 +198,13 @@ class EngagementsTabMixin:
         self.btn_engagement_report_html.clicked.connect(
             lambda: self._export_engagement_report("html"))
         report_row.addWidget(self.btn_engagement_report_html)
+        self.btn_engagement_run_retest = StyledButton("Run retest")
+        self.btn_engagement_run_retest.setToolTip(
+            "Снять и сохранить снимок ретеста (статусы связанных находок на "
+            "текущий момент). Client-safe, без сети.")
+        self.btn_engagement_run_retest.setEnabled(False)
+        self.btn_engagement_run_retest.clicked.connect(self._run_engagement_retest)
+        report_row.addWidget(self.btn_engagement_run_retest)
         self.btn_engagement_retest = StyledButton("Export retest", style="secondary")
         self.btn_engagement_retest.setToolTip(
             "Перепроверить статус связанных находок (fixed/open/accepted) и "
@@ -305,9 +312,11 @@ class EngagementsTabMixin:
             from core.engagement_store import EngagementStore
             from core.findings_store import FindingsStore
             from core.mission_store import MissionStore
+            from core.retest_run_store import RetestRunStore
             engagements = EngagementStore().list_engagements(project)
             mstore, astore, fstore = (MissionStore(), AuditRunStore(),
                                       FindingsStore())
+            rstore = RetestRunStore()
             try:
                 missions = mstore.list_missions(project)
             except Exception:  # noqa: BLE001 — link sources are best-effort
@@ -327,6 +336,11 @@ class EngagementsTabMixin:
                         audit_store=astore, findings_store=fstore)
                 except Exception:  # noqa: BLE001 — annotation is best-effort
                     e["_links"] = {}
+                try:
+                    e["_retest_runs"] = rstore.list_retest_runs(
+                        engagement_id=str(e.get("id") or ""))
+                except Exception:  # noqa: BLE001 — annotation is best-effort
+                    e["_retest_runs"] = []
             return {"project": project, "engagements": engagements,
                     "missions": missions, "runs": runs, "findings": findings}
         except Exception as e:  # noqa: BLE001
@@ -443,6 +457,16 @@ class EngagementsTabMixin:
                  + list(links.get("stale_findings") or []))
         if stale:
             lines.append(f"⚠ Stale links: {', '.join(stale)}")
+        retest_runs = e.get("_retest_runs") or []
+        if retest_runs:
+            lines.append(f"Retest runs: {len(retest_runs)} (newest first)")
+            for r in retest_runs[:3]:
+                rp = r.get("payload") if isinstance(r.get("payload"), dict) else {}
+                s = rp.get("summary") or {}
+                lines.append(
+                    f"  {r.get('created_at', '')} [{r.get('status', '')}] "
+                    f"fixed {s.get('fixed', 0)}/{s.get('total', 0)}, "
+                    f"open {s.get('open', 0)}")
         self.engagement_detail.setPlainText("\n".join(lines))
 
         status = str(e.get("status") or "").strip().lower()
@@ -465,7 +489,8 @@ class EngagementsTabMixin:
             idle and self.engagement_link_finding.count() > 0)
         self.btn_engagement_new_mission.setEnabled(idle)
         for btn in (self.btn_engagement_report_json, self.btn_engagement_report_md,
-                    self.btn_engagement_report_html, self.btn_engagement_retest):
+                    self.btn_engagement_report_html, self.btn_engagement_retest,
+                    self.btn_engagement_run_retest):
             btn.setEnabled(idle)
         links = e.get("_links") or {} if e else {}
         has_stale = bool(links.get("stale_missions") or links.get("stale_runs")
@@ -711,6 +736,25 @@ class EngagementsTabMixin:
         from core import engagement_retest
         return engagement_retest.render_markdown(
             engagement_retest.build_retest(payload))
+
+    def _run_engagement_retest(self):
+        payload = self._begin_engagement_action()
+        if not payload:
+            return
+        self.engagement_status.setText("Running retest...")
+        self._run_async(lambda p=payload: self._do_run_engagement_retest(p),
+                        self._on_engagement_action_done)
+
+    @staticmethod
+    def _do_run_engagement_retest(payload: Dict[str, Any]) -> dict:
+        try:
+            from core.retest_runner import run_retest
+            out = run_retest(payload)
+            s = out["summary"]
+            return {"ok": f"retest {out['retest_run_id']} — "
+                          f"fixed {s['fixed']}/{s['total']}, open {s['open']}"}
+        except Exception as e:  # noqa: BLE001
+            return {"error": str(e)}
 
     def _export_engagements_csv(self):
         project = self.engagement_project.currentData()
