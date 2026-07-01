@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Retest Run",
+  "type": "object",
+  "required": [
+    "retest_run_id",
+    "engagement_id",
+    "client",
+    "project",
+    "profile",
+    "status",
+    "created_at",
+    "finding_results",
+    "summary"
+  ],
+  "properties": {
+    "retest_run_id": {"type": "string"},
+    "engagement_id": {"type": "string"},
+    "client": {"type": "string"},
+    "project": {"type": "string"},
+    "profile": {"type": "string", "enum": ["client_safe"]},
+    "status": {"type": "string", "enum": ["pending", "completed", "failed"]},
+    "created_at": {"type": "string"},
+    "finding_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "missing", "outcome", "title", "severity",
+                     "status"],
+        "properties": {
+          "finding_id": {"type": "string"},
+          "missing": {"type": "boolean"},
+          "outcome": {
+            "type": "string",
+            "enum": ["fixed", "open", "accepted", "missing"]
+          },
+          "title": {"type": "string"},
+          "severity": {"type": "string"},
+          "status": {"type": "string"}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "fixed", "open", "accepted", "missing"],
+      "properties": {
+        "total": {"type": "integer"},
+        "fixed": {"type": "integer"},
+        "open": {"type": "integer"},
+        "accepted": {"type": "integer"},
+        "missing": {"type": "integer"}
+      }
+    }
+  }
+}
