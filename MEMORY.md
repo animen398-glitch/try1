@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-06-30 04:38:55  
-> Total memories: **88**  
-> Breakdown: instruction: 8, decision: 13, goal: 6, preference: 1, context: 3, event: 51, artifact: 2, error: 4
+> Generated: 2026-07-01 02:40:51  
+> Total memories: **73**  
+> Breakdown: instruction: 8, decision: 19, goal: 8, preference: 1, context: 3, event: 25, learning: 3, artifact: 2, error: 4
 
 ---
 
@@ -102,6 +102,12 @@ M2 (MissionStore persistence + project_io export) APPROVED by user (2026-06-28, 
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T12:29:49*
 
+### Added captured-scan -> tool-evidence bridge in try...
+
+Added captured-scan -> tool-evidence bridge in try1: core/tool_evidence.py. evidence_from_report(report, tool) maps a loaded scan report.json to the exact evidence shape the matching tool_parsers parser consumes (feeds tool_pipeline.assemble_tool_run/parse_tool_output) so tool runs can be driven from already-captured data instead of pasted JSON; {} when no extractor or no data; never raises. available_tools(report) lists bridgeable. ADDITIVE per-tool extractor registry EXTRACTORS (mirrors tool_parsers.PARSERS). Verified extractors this iteration (user-chosen scope): source_map_finder (from recon.data.source_maps[].url) + safe_active_prober (from subdomains.data.results[].subdomain + summary.takeover_candidates[].subdomain, deduped). Other tools absent -> manual evidence, additive later. Pure dict->dict over loaded report (caller uses project.load_scan_report); no I/O/network/store/tool-exec; reuses collection_runner report shapes. Commit 7ea4982c. tests/test_tool_evidence.py incl round-trip through parse_tool_output. Decision: pure mapper + additive registry; verified shapes only; NO surface wiring (Missions/web auto-evidence is additive follow-up). Remaining gaps: i18n, e2e/GUI tests, pagination of remaining tables, + tool-evidence surface wiring + more extractors.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T18:16:05*
+
 ### Workbench v2 epic COMPLETE + committed locally (ma...
 
 Workbench v2 epic COMPLETE + committed locally (master, commits 86e473f1 F1, 859d8249 F2, 3175fcfa F3, 98b0fcc5 F4, ab7ce310 F5, roadmap doc). All 5 features implemented with tests: F1 core/audit_templates.py (4 scenarios), F2 ROE templates in core/audit_scope.py, F3 core/audit_revalidation.py (overlay, no lifecycle writes), F4 core/audit_compare.py + schemas/asa_audit_compare.schema.json (derive-on-read, failed phase=inconclusive), F5 compare+scenario renderers in core/audit_report.py. Verified: ruff clean, full pytest 2064 passed (1 known Starlette warning), main.py --self-check 29 tabs. Single FindingsStore SoT preserved, schema growth additive/optional, all client-safe. DEFERRED to Codex (contract-only): GUI selectors/buttons in gui/tab_audit_runs.py, remote/web_app.py read parity, optional persisted 'compared' event. Roadmap section 'EPIC CLOSED - Workbench v2' added. CLAUDE.md/AGENTS.md/PROJECT_STATUS.txt status banners NOT yet synced.
@@ -119,6 +125,18 @@ Backend release-hardening (branch backend/release-hardening, ~23 commits, full-d
 KEV/EPSS Threat Intelligence Feed epic COMPLETE + committed locally (master). Commits: 3017251f F1 (core/threat_feed.py KEV+EPSS parsers + CVEStore.cve_threat table), c80c98af F2 (core/threat_intel.py enrich_cves/annotate/tier), 08acba60 F3 (intelligence._threat_tier enrichment-first + build_intelligence offline annotate, priority formula UNCHANGED), 888c292b F4 (opt-in _phase_threat not scope-gated + monitor/GUI parity), e9e8d90f F5 (report card + web /findings threat block + CSV columns), 64535490 doc sync. Single CVEStore cache (no new DB), derive-on-read enrichment, soft-degrade offline, client-safe (metadata about CVEs, no target traffic). Decisions: tier KEV->high/EPSS pct>=0.90->high/>=0.50->medium; priority only (KEV->SLA deferred); opt-in not under Scope Guard; TTL 24h. Verified: ruff clean, full pytest 2101 passed (1 Starlette warning), self-check 29 tabs. DEFERRED (not blockers): KEV->SLA tightening, timeline NEW_KEV event, KEV alert rule, findings-detail GUI badge.
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T02:25:54*
+
+### Added GUI table pagination in try1 (gap #3). gui/u...
+
+Added GUI table pagination in try1 (gap #3). gui/ui_components.TablePaginator — UI windowing (the slow part is populating QTableWidget, not holding rows; data layer untouched). set_rows(full list) renders one page via render_row(table,row,rec) callback; control strip First/◀/▶/Last + 'стр X/Y · показано a–b из N' + page-size combo 100/200/500/1000; record_at(table_row)/index_at map table row -> full-list record for selection; on_page_changed clears stale detail. Applied to 3 highest-volume tables: Findings, Assets, Timeline — each keeps full list (_findings_records/_assets_records/_timeline_events_data) for selection+CSV, renders only a page; selection handlers use paginator.record_at. Remaining ~17 table tabs are trivial follow-up on same helper. Decision: UI windowing not store limit/offset (sorting/filter/CSV stay over full list). Commit e8d1df4d. Tests test_ui_pagination.py + findings selection-mapping. Remaining gaps: i18n, e2e/GUI tests, captured-scan->tool-evidence bridge, finding assignment/comments triage.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T16:36:13*
+
+### Closed Scan Retention & Backup epic in try1 (chose...
+
+Closed Scan Retention & Backup epic in try1 (chosen after web-console-auth). Phase 1 retention: core/retention.py plan_retention(project,*,keep_last,keep_days,now) pure planner (always keep newest; keep_last/keep_days policy; no policy=keep all) + apply_retention deletes ONLY scans/<id>/ dir + marks metadata entry artifacts_pruned (index + history/<id>.json kept -> risk series intact, timeline degrades softly, findings never orphaned since scan_id is just a label); idempotent; policy_from_settings()/prune_project(). retention {enabled,keep_last,keep_days} in DEFAULT_SETTINGS off by default. collection_runner auto-prunes after Full Collection when enabled (best-effort). Overview 'Prune old scans' button. Decision (user): prune artifacts-only keep index. Commit db0aa9e3, tests/test_retention.py. Phase 2 backup: core/backup.py create_backup(dest,*,data_root=None,workspace=None) -> timestamped .zip; every *.db via sqlite online backup (WAL-safe, no sidecars) under data_root/, other files verbatim, workspace (Projects from output_dir) under workspace/ (skip if nested). backup_info reads manifest; restore_backup zip-slip guarded, skips existing unless replace=True. Overview 'Backup all…'/'Restore…' buttons. Stdlib only. Commit dd99e75e, tests/test_backup.py. Remaining gaps: GUI table pagination, i18n, e2e/GUI tests, captured-scan->tool-evidence bridge, finding assignment/comments triage.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T16:03:28*
 
 ### Architecture invariants
 
@@ -144,17 +162,47 @@ KEV->SLA tightening follow-up IMPLEMENTED (approved separately by user; was deci
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T08:49:20*
 
+### Added tool-evidence surface wiring in try1 (follow...
+
+Added tool-evidence surface wiring in try1 (follow-up to the bridge). core/tool_evidence.evidence_from_project_scan(project, tool, *, base=None, scan_id=None) — thin I/O loader (mirrors timeline.build_timeline) resolving project scan report (latest or explicit) via ProjectStore/load_scan_report then delegating to pure evidence_from_report; {} on missing, never raises; base defaults to settings output_dir. GUI Missions 'Run tool' panel: new «Из скана» button (btn_mission_tool_evidence) -> off-thread _do_fill_tool_evidence(project,tool)=evidence_from_project_scan -> _on_tool_evidence_filled fills mission_tool_evidence QPlainTextEdit with pretty JSON (operator reviews/edits then Run; manual flow untouched; button enabled with run button). Web POST /missions/{id}/tools/run gains from_scan:bool + optional scan_id; when set and no evidence given, _mission_run_tool pulls evidence via evidence_from_project_scan(base=_REPORT_BASE) before run. Decision (user): GUI fill-button (transparent) not auto-checkbox. Commit e64618e9. Tests test_tool_evidence.py(loader)/test_missions_tab.py(fill worker)/test_web_missions.py(from_scan->completed+assets). Remaining gaps: i18n, e2e/GUI tests, pagination of remaining tables, more tool-evidence extractors (header/cookie/dependency).
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T18:56:16*
+
 ### M1 Mission Center core contract APPROVED by user (...
 
 M1 Mission Center core contract APPROVED by user (2026-06-28, 'да делай'). Scope: PURE deterministic offline contract module ONLY, mirroring core/audit_workflow.py. Files: NEW core/pentest_mission.py (create_mission/normalize_mission/validate_mission/advance_mission_status/link_audit_run/link_finding/mission_to_json), NEW schemas/asa_pentest_mission.schema.json, NEW tests/test_pentest_mission.py, +1-line alias asa_pentest_mission in core/audit_schema.SCHEMA_ALIASES. Decisions: D1 pure-contract only (no MissionStore/SQLite/GUI/web/timeline — deferred to M2); D2 status map draft->{ready,archived}, ready->{running,draft,archived}, running->{completed,failed,archived}, completed->{archived}, failed->{ready,archived}, archived terminal; ->ready requires valid mission; D3 scope lives INSIDE roe (SSOT, no separate scope field); D4 link_finding does NOT check FindingsStore existence in M1; D5 module name core/pentest_mission.py. Reuse: audit_scope.normalize_roe/validate_roe/apply_roe_template, audit_templates.resolve_template/get_template, action_policy.evaluate_action_policy for allowed_actions guardrail, audit_schema.validate_audit_payload. No new second FindingsStore/AssetStore/Timeline; client-safe; no exploit/bruteforce/stealth/auto-login/auth-bypass/persistence. M1 files were absent in repo (Codex draft was in a separate worktree without git, lost).
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T12:02:16*
 
+### Closed the #1 stability/safety gap in try1: LAN we...
+
+Closed the #1 stability/safety gap in try1: LAN web console (remote/web_app.py) had mutating endpoints (mission run, tool-run->store ingestion) but bound 0.0.0.0 with NO auth. Added: resolve_web_console(host=None) -> (host,token) from settings web_console block + ASA_WEB_TOKEN env; default bind now 127.0.0.1 (LAN = explicit opt-in via web_console.allow_lan or non-loopback host); start_server default host changed 0.0.0.0->loopback. One app-wide require_token FastAPI dependency: token active -> every request outside _PUBLIC_PATHS={'/'} must send Authorization: Bearer or ?token= (hmac.compare_digest); 401 else. Loopback+no-token=open (single-user); LAN+no-token auto-generates+prints token (secrets.token_urlsafe) so never LAN-open unauthenticated. Dashboard JS shim attaches token (localStorage) to fetch+SSE. web_console {host,allow_lan,token} in DEFAULT_SETTINGS. No new deps. Committed 5c922062. tests/test_web_auth.py (8). Chosen by user as next epic when asked what project lacks; loopback-no-token=ok confirmed. Other gaps identified (deferred): scan retention/backup, GUI table pagination, i18n, e2e/GUI tests, tool-run real evidence bridge, finding assignment/comments triage.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T15:23:31*
+
+### Added finding assignment + comments triage in try1...
+
+Added finding assignment + comments triage in try1 (DefectDojo-style, gap #last). EVENT-SOURCED over finding_events (REMEDIATION feature is exact template) — NO second store, NO migration. core/findings_store.py: EVENT_TYPES += ASSIGNED,COMMENT; assign(fid,assignee)/get_assignee(fid) (latest ASSIGNED wins, ''=unassign)/assignees(project) (latest-per-finding map, cleared dropped); add_comment(fid,text,author='')/comments(fid) (append-only COMMENT, note=json{author,text}, oldest first); all validate finding exists (KeyError), route via _log_event; history in finding_events carried by project_io bundle. GUI Findings tab: 'Триаж' row (assignee field+Назначить, comment field+Добавить) on selected finding via _run_async; detail shows assignee + comment thread (raw COMMENT events hidden from generic history); assignee field prefills. Web: POST /findings/{id}/assign {assignee}, POST /findings/{id}/comment {text,author?}, GET /findings/{id}/triage; 404 unknown/400 empty, mirrors /status. Decision (user): event-sourced; surfaced in detail+web, NO new findings-table column. Commit 05e8f72f. Tests in test_findings_store.py/test_web_findings.py/test_findings_tab.py. This closes the last named gap from the gap-analysis; remaining: i18n, e2e/GUI tests, captured-scan->tool-evidence bridge, pagination of remaining tables.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T17:47:39*
+
 ---
 
 ## Goals
 
 *Objectives, targets, and milestones to track progress.*
+
+### User reaffirmed on 2026-07-01 that Advanced Site A...
+
+User reaffirmed on 2026-07-01 that Advanced Site Analyzer should continue moving toward an authorized pentest project; recommended direction is client-safe pentest workbench with ROE/scope, evidence-first validation, tool orchestration, reporting, and guardrails rather than destructive exploitation/bruteforce/stealth automation.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T22:02:30 | Tags: `pentest`, `client-safe`, `roadmap`, `asa`*
+
+### User reaffirmed on 2026-07-01 that Advanced Site A...
+
+User reaffirmed on 2026-07-01 that Advanced Site Analyzer should continue moving toward an authorized pentest project; recommended direction is client-safe pentest workbench with ROE/scope, evidence-first validation, tool orchestration, reporting, and guardrails rather than destructive exploitation/bruteforce/stealth automation.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T22:02:17 | Tags: `pentest`, `client-safe`, `roadmap`, `asa`*
 
 ### User wants to move Advanced Site Analyzer toward p...
 
@@ -267,6 +315,12 @@ Implemented W4 core audit report surface in commit baf61e0: added core/audit_rep
 Implemented independent audit evidence verification in commit 8b4f111. Added core.audit_evidence.verify_evidence_refs for offline deterministic checking of finding refs, safe-check refs, and artifact paths with traversal protection; Audit Runs now stores evidence_check in the independent_verification phase. Verified with 84 targeted audit/timeline tests, ruff, and python main.py --self-check.
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T22:47:31 | Tags: `asa`, `client-safe`, `evidence`, `release-readiness`*
+
+### Added web parity for tool runs in try1 (remote/web...
+
+Added web parity for tool runs in try1 (remote/web_app.py): _mission_run_tool(mission_id, tool, evidence) + POST /missions/{id}/tools/run (body {tool, evidence}, MissionToolRequest model) mirroring the Missions-tab Run tool surface. Synthetic scan_id=tool-<name>-<ts>, returns {mission_id, tool, status, written, findings, assets}; 404 unknown mission, 400 missing tool; blocked/skipped → 200 written:false (gated outcome, not error). Calls core.tool_runner.run_tool_for_mission; operator supplies captured evidence, tool never executed, gated by mission ROE, completed ingests into project stores. Tests in test_web_missions.py (4 helper + TestClient endpoint). Committed 44731ae3. Tool layer now full: contract->parsers->pipeline->bridge->report->ingest-store->runner->GUI(Missions)+web.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T13:06:46*
 
 ### Completed Stage 1 Client-Safe Pentest Workbench co...
 
@@ -388,173 +442,11 @@ User asked Codex to prepare a direct Claude Code prompt so Claude deeply underst
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T00:23:00*
 
-### Codex added Stage 1 Client-Safe Pentest Workbench ...
+### Engagement epic FULLY COMPLETE in try1 (backend F1...
 
-Codex added Stage 1 Client-Safe Pentest Workbench edge-test harness files for audit workflow, scope/action policies, finding validation/quality, and audit schemas. Ruff on new tests passed. Targeted pytest is blocked at collection because core.audit_workflow, core.finding_validation, core.finding_quality, and core.audit_schema modules (and schemas/) are absent from current/local worktrees; Codex did not implement core contract due explicit boundary.
+Engagement epic FULLY COMPLETE in try1 (backend F1-F4 + surfaces S1-S4), user gave full autonomy. Surfaces: S1 timeline.build_events(engagements=) -> engagement_created+status events section 'engagements', build_timeline loads EngagementStore (commit 2ed2a75a). S2 web remote/web_app.py: GET/POST /engagements + /{id} + /advance + /link(mission|audit_run|finding checked) + /links/prune + /report[.md] (commit 6301f6f2). S3 demo_seed _seed_engagement (authorized, reporting, linked mission+run+finding) (commit 919d1ad7). S4 GUI gui/tab_engagement.EngagementsTabMixin mirror of tab_missions (project/table/create/advance/link store-combos checked/prune/report JSON-MD-HTML via _run_async); registered plugin_manager.BUILTIN_TABS+main_window+tab_history lazy-load; EngagementsHost helper; GUI now 31 tabs (commit b301cc24). Docs synced 32250d63, count 2453->2472. Pattern reused throughout: mirror Mission Center (tab_missions/mission_report/mission_links/web missions). Deferred: retest workflow, engagement CSV/overview portfolio, engagement->mission scope/ROE inheritance. All LOCAL commits, NO push (push still needs explicit user request even under autonomy). No attack capabilities added (authorized-pentest only).
 
-*Confidence: 0.95 | Status: active | Created: 2026-06-27T17:05:38 | Tags: `client-safe-workbench`, `edge-tests`, `blocked-contract`, `ruff`*
-
-### Implemented Client-Safe Pentest Workbench timeline...
-
-Implemented Client-Safe Pentest Workbench timeline integration in commit 9679915. core.timeline now folds persisted AuditRunStore runs/events into the derived timeline as audit_run_started/completed/failed and audit_* events without a second findings source of truth. Verified with 81 targeted audit/timeline tests, ruff on changed files, and python main.py --self-check.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T22:45:36 | Tags: `asa`, `client-safe`, `timeline`, `release-readiness`*
-
-### Finalized Codex's uncommitted work in this worktre...
-
-Finalized Codex's uncommitted work in this worktree (user authorized: Codex inactive). Two coherent complete units committed: c51c1ba2 external_tools.command_error SSOT (rc+stderr tail) wired into nuclei/katana/amass/subfinder/httpx/bbot; d988da0f cookies.txt validation in core/cookie_auditor.py (read/validate/describe_cookies_txt + CookieFileError + mask_cookie_value, never exposes raw values) + GUI preflight in tab_collection/tab_media. Verified: ruff clean, targeted tests green, full pytest already 2074 green with these present, self-check 29 tabs. Working tree now clean (only auto-synced MEMORY.md). My Workbench v2 commits stayed scoped; these Codex commits are separate.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T01:29:56*
-
-### Built and pushed the safe pentest tool layer in tr...
-
-Built and pushed the safe pentest tool layer in try1 (above Mission Center): M3 Tool Adapter Contract (core/tool_adapter.py + asa_tool_run schema) -> per-tool offline parsers (core/tool_parsers.py, reuse core/audit_checks for header/cookie/source-map; safe_active_prober asset parser) -> offline tool-evidence pipeline (core/tool_pipeline.py: assemble_tool_run gates via evaluate_tool_allowed_for_mission, then parse+map; statuses blocked/skipped/completed). All pure/offline/deterministic: no tool execution, no network, no store writes, no new deps, no exploit/bruteforce/stealth/payload. Full pytest 2287 passed; pushed to origin/master tip ff6b6b54. Note: try2pentest already had its own M3 tool_adapter (different ROE-less mission contract) - left untouched.
-
-*Confidence: 1 | Status: active | Created: 2026-06-29T23:02:03*
-
-### Release/UX hardening task paused because active Cl...
-
-Release/UX hardening task paused because active Claude process PID 10336 changed the shared worktree/branch during Codex work: HEAD moved to 5a33dc12, unrelated project_io/sqlite_store edits appeared, and Codex hardening diff disappeared. Per user instruction, do not interfere while Claude is active.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T13:50:43 | Tags: `release-hardening`, `coordination`, `claude`, `paused`*
-
-### GUI polish completed in commits 31094a23, b0ddfcc,...
-
-GUI polish completed in commits 31094a23, b0ddfcc, 977e6e6, 47ab784, c2fe4f6: link helpers, settings dependency hint wrapping, and stale-state clearing for IaC, Remediation, Attack Paths, Exposure, Priorities, Technology Risk, and Scan Accuracy tabs. Targeted GUI tests, ruff, and main.py --self-check passed.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T15:48:35*
-
-### Release/UX hardening task paused because active Cl...
-
-Release/UX hardening task paused because active Claude process PID 10336 changed the shared worktree/branch during Codex work: HEAD moved to 5a33dc12, unrelated project_io/sqlite_store edits appeared, and Codex hardening diff disappeared. Per user instruction, do not interfere while Claude is active.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T13:51:13 | Tags: `release-hardening`, `coordination`, `claude`, `paused`*
-
-### Completed Stage 2 Client-Safe Pentest Workbench GU...
-
-Completed Stage 2 Client-Safe Pentest Workbench GUI in commit 9326ded: added thin gui/tab_audit_runs.py, registered Audit Runs tab in PluginManager/MainWindow, added AuditRunsHost and tests/test_audit_runs_tab.py. UI includes project selector, client_safe/scope display, Start Audit Run via _run_async, phase progress, validation/quality/confidence/evidence refs table, detail panel, deterministic JSON export. Verification passed: 36 Stage1+Audit GUI tests, 41 GUI/wiring tests, ruff changed files, python main.py --self-check (29 tabs).
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T17:20:51 | Tags: `client-safe-workbench`, `stage-2`, `gui`, `commit-9326ded`, `tests`*
-
-### Updated project status docs in commit b24d1a9 afte...
-
-Updated project status docs in commit b24d1a9 after Client-Safe Pentest Workbench closure: PROJECT_REPORT.md now reflects 2026-06-28 checkpoint, 2020 green tests, 29 GUI tabs, frozen self-check OK, and local ahead status; ROADMAP_ASM_2.0.md marks Client-Safe Pentest Workbench as EPIC CLOSED with implemented surfaces and Definition of Done status. No remote git actions.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T23:52:54 | Tags: `asa`, `docs`, `client-safe`, `roadmap`, `project-report`*
-
-### Final release-readiness sweep after Client-Safe Pe...
-
-Final release-readiness sweep after Client-Safe Pentest Workbench work: full 'ruff check .' passed; build/ and dist/ are ignored artifacts; latest commits are 9326ded Add audit runs GUI tab and 1c5a5a1 Add client-safe audit contract hardening; git status clean for code with only MEMANTO-managed MEMORY.md modified.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T17:38:23 | Tags: `client-safe-workbench`, `release-readiness`, `ruff`, `git-status`*
-
-### Final frozen smoke rerun used explicit QT_API=pysi...
-
-Final frozen smoke rerun used explicit QT_API=pyside6: 'pyinstaller build.spec --clean --noconfirm' selected PySide6 in hook-qtpy (no PyQt5 binding-selection warning), built dist/SiteAnalyzer.exe size 73,868,687 bytes, and frozen exe --self-check exited 0 with isolated ASA_DATA_ROOT. Temporary .frozen-smoke-data removed; build/ and dist/ remain ignored artifacts; code worktree clean except MEMANTO-managed MEMORY.md.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T17:44:37 | Tags: `client-safe-workbench`, `frozen-smoke`, `qt-api-pyside6`, `release-readiness`*
-
-### KEV->SLA tightening COMMITTED locally (master 2c4d...
-
-KEV->SLA tightening COMMITTED locally (master 2c4d4579). Full pytest green (exit 0; summary line dropped = Py3.14 quirk, not a failure), ruff clean. 7 files, +223/-19. Follow-up complete. Remaining KEV/EPSS deferred (not blockers): timeline NEW_KEV event, KEV alert rule, findings-detail GUI badge, full EPSS daily-CSV ingestion.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T08:53:03*
-
-### Implemented W1 Persistent Audit Runs core slice in...
-
-Implemented W1 Persistent Audit Runs core slice in commit 91ce78c: added core/audit_store.py backed by SQLiteStore with audit_runs/audit_events tables, schema-validated canonical payload save/load/list/delete/event/export APIs, default PathManager data/audit_runs.db without editing config.py, and tests/test_audit_store.py. Verification: pytest tests/test_audit_store.py tests/test_audit_workflow_edges.py tests/test_audit_schema_edges.py = 16 passed; ruff changed files passed; python main.py --self-check = 29 tabs.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T18:36:12 | Tags: `client-safe-workbench`, `w1`, `audit-store`, `commit-91ce78c`, `tests`*
-
-### Mission Center M1 core contract IMPLEMENTED + comm...
-
-Mission Center M1 core contract IMPLEMENTED + committed locally (master cb1fb1b9, 9 files +646/-4). NEW core/pentest_mission.py (pure/offline/deterministic, mirrors audit_workflow): create_mission/normalize_mission/validate_mission/advance_mission_status/link_audit_run/link_finding/mission_to_json. Mission shape: mission_id(sha1 project|objective), project, objective, profile=client_safe(fixed), template(opt, from audit_templates), roe(normalize_roe SSOT incl scope, no separate scope field), allowed_actions(gated by action_policy), status, report_orientation=evidence_first, linked_audit_run_ids/linked_finding_ids. Status machine: draft->{ready,archived}, ready->{running,draft,archived}, running->{completed,failed,archived}, completed->{archived}, failed->{ready,archived}, archived terminal; ->ready needs valid mission. NEW schemas/asa_pentest_mission.schema.json + 1-line alias in audit_schema.SCHEMA_ALIASES. NEW tests/test_pentest_mission.py (35). Decisions D1-D5 as approved. Full pytest 2162 green, ruff clean, docs synced (ROADMAP EPIC FUTURE Mission Center M1 section, CLAUDE/AGENTS/PROJECT_STATUS/PROJECT_REPORT). M2+ deferred: MissionStore+project_io export, read surfaces, timeline mission events, GUI tab, web parity. NOTE: working tree also has FOREIGN uncommitted changes NOT mine (demo_seed.py, gui/tab_iac.py, tests/test_demo_seed.py, tests/test_iac_tab.py, +158) likely Codex demo/IaC work - left untouched; my commit was scoped to the 9 M1 files only. Not pushed.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T12:17:56*
-
-### Extended the safe tool layer in try1 past the pure...
-
-Extended the safe tool layer in try1 past the pure stack: added core/tool_ingest.py (pure bridge ToolRunResult->canonical findings_adapter.Finding/asset_adapter.Asset via from_raw, no store writes), core/tool_report.py (pure JSON/MD/HTML renderer over tool_result_to_json), and core/tool_ingest_store.py (FIRST store-writing step: ingest_tool_run persists a completed result's findings/assets via FindingsStore.upsert + AssetStore.sync, gated on status=='completed' so blocked/skipped are no-ops, idempotent, reuses existing stores - no second store, no tool execution, no network). Full tool stack: M3 contract -> 8 parsers -> pipeline -> bridge -> report -> gated ingestion. Full pytest 2310 passed; pushed to origin/master tip a01788d1.
-
-*Confidence: 1 | Status: active | Created: 2026-06-30T01:38:37*
-
-### Packaging smoke audit passed on 2026-06-27: PyInst...
-
-Packaging smoke audit passed on 2026-06-27: PyInstaller 6.20.0 built SiteAnalyzer.exe with 'pyinstaller build.spec --clean --noconfirm' under local Python 3.14.5; dist/SiteAnalyzer.exe size 71,602,118 bytes (68.29 MiB); frozen smoke 'dist/SiteAnalyzer.exe --self-check' with QT_QPA_PLATFORM=offscreen exited 0. Build log included qtpy multi-binding warning and optional missing-module warnings, but frozen self-check passed. build/ and dist/ are gitignored.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T16:24:53*
-
-### NEW_KEV timeline event + KEV alert rule DONE + com...
-
-NEW_KEV timeline event + KEV alert rule DONE + committed locally (master 2dab7a10). threat_intel.kev_events(findings) -> timeline new_kev row per active KEV finding (at=first_seen_at, sev high, base sev in title); wired via new kev_events param in timeline.build_events off the same annotated active list as SLA (annotate once). alerts.collect_kev_alerts + notify_kev, type new_kev in ALERT_TYPES; FindingsStore.record_kev_alerts (marker KEV_ALERTED, reopen-resetting one-shot); dispatched in monitor._run alongside other finding-based channels; cold cache = nothing. GUI labels in gui/dialogs._ALERT_TYPE_LABELS + gui/tab_timeline._EVENT_LABELS. Tests in test_threat_intel/test_timeline/test_alerts. Full pytest green, ruff clean. 14 files +246/-14. Remaining KEV/EPSS deferred: full EPSS daily-CSV ingestion; findings-detail GUI badge.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T09:31:45*
-
-### Mission Center / Authorized Pentest Multitool comp...
-
-Mission Center / Authorized Pentest Multitool completed and pushed: full M1-M15 arc (contract, persistence+bundle, read/parity, execution, report, creation, overview, timeline events, recurring scheduling, scheduling auto-tick, link integrity, demo seed, CSV export, stale-link cleanup, run trend) + a quality review-pass dedup. Built on existing machinery, no second store, no new scanner. Final: full pytest 2266 passed, ruff clean, self-check 30 tabs. Pushed cb1fb1b9..8d1581f6 to origin/master (19 commits). Mission Center is feature-complete.
-
-*Confidence: 1 | Status: active | Created: 2026-06-29T21:07:40*
-
-### KEV->SLA tightening EXTENDED to Alert Center + Tim...
-
-KEV->SLA tightening EXTENDED to Alert Center + Timeline, COMMITTED locally (master a8e59322). Added threat_intel.annotate_offline (single best-effort offline SSOT seam); alerts.collect_sla_alerts and timeline.build_timeline->sla_events now annotate active findings from offline KEV/EPSS cache before computing breach, so KEV findings alert/timeline on the tightened deadline. Consolidated duplicate inline guards (collection_runner, intelligence._annotate_threat) onto annotate_offline. Tests added in test_alerts.py + test_timeline.py. Full pytest green (exit 0), ruff clean. 11 files +107/-17.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T09:07:29*
-
-### Completed the safe pentest tool layer in try1: all...
-
-Completed the safe pentest tool layer in try1: all 8 tool_adapter.TOOL_CAPABILITIES tools now have offline parsers (core/tool_parsers.py) — header/cookie/source-map (reuse audit_checks), safe_active_prober (assets), dependency_auditor (reuse dependency_audit.audit), iac_config_auditor (reuse iac_scanner.scan_path, local file read), graphql_introspector + tls_audit (small pure detection over captured evidence). Plus the offline pipeline core/tool_pipeline.assemble_tool_run (gate->parse->map; blocked/skipped/completed). All pure/offline/deterministic: no tool execution, no network, no store writes, no new deps. Full pytest 2293 passed; pushed to origin/master tip bd8d7b47.
-
-*Confidence: 1 | Status: active | Created: 2026-06-29T23:26:04*
-
-### EPIC FUTURE M3 Tool Adapter Contract Foundation im...
-
-EPIC FUTURE M3 Tool Adapter Contract Foundation implemented: core/tool_adapter.py (ToolCapability/ToolRunRequest/ToolRunResult/ToolFinding/ToolAsset + normalize_tool_name/build_tool_request/tool_result_to_json/map_tool_result_to_findings/evaluate_tool_allowed_for_mission), schemas/asa_tool_run.schema.json, alias in core/audit_schema.py, tests/test_tool_adapter.py (21 green). Pure/offline/deterministic; policy delegates to scope_policy/action_policy/scope_guard; no stores/GUI touched.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T00:27:19*
-
-### KEV/EPSS badge in findings detail DONE + committed...
-
-KEV/EPSS badge in findings detail DONE + committed locally (master 5a5ee204). gui/tab_findings.py: _query_findings_table threat-annotates rows (threat_intel.annotate_offline) BEFORE annotate_sla, so GUI SLA column is also tightened for KEV. Detail panel shows '⚠ Exploitability' badge via new threat_intel.threat_label (KEV explicit, EPSS percentile) + 'ужесточено: KEV/EPSS, базовое Nд' note. KEV row flagged in-list (critical-colour title + tooltip). No column-contract change. Tests in test_threat_intel (threat_label) + test_findings_tab. Full pytest green, ruff clean. 8 files +136/-4. This closes the entire KEV/EPSS tail EXCEPT full EPSS daily-CSV ingestion (only remaining deferred item). Note: web_app.py:392-395 still SLA-annotates BEFORE threat-annotate (web SLA not tightened) — known minor inconsistency, out of scope, candidate fix.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T10:12:23*
-
-### Release + UX hardening completed on current master...
-
-Release + UX hardening completed on current master. Existing commits c51c1ba2 and d988da0f centralize external CLI nonzero-exit errors and validate/mask cookies.txt in Collection/Media GUI. Follow-up commit 4adaeef8 adds Netscape #HttpOnly_ support, prevents failed CLI stdout from leaking into user-facing errors, validates image cookies before busy-state, and adds offline Nuclei/BBOT/cookie tests. Verified ruff clean, 63 targeted tests passed, main.py --self-check OK with 29 tabs. Unrelated M2 project_io/sqlite_store changes and old pytest artifact remain untouched.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T13:55:55 | Tags: `release-hardening`, `external-tools`, `cookies`, `commit-4adaeef8`*
-
-### Second GUI polish wave completed in commits 0f02da...
-
-Second GUI polish wave completed in commits 0f02da7, d55dcc0, 3c0fda7: stale-state clearing for lifecycle tabs (Assets, Findings, Criticality), Timeline, OSINT Catalog, and Dashboard table errors; added Timeline/Criticality lightweight test hosts to avoid Windows/offscreen MainWindow teardown exit-code quirks. Targeted GUI smoke (139 tests), ruff, and main.py --self-check passed.
-
-*Confidence: 1 | Status: active | Created: 2026-06-27T16:01:40*
-
-### EPSS daily-CSV bulk ingestion DONE + committed (ma...
-
-EPSS daily-CSV bulk ingestion DONE + committed (master 1fa84dd9) — LAST KEV/EPSS tail, epic now fully closed across all surfaces. Opt-in alt EPSS source: threat_feed.parse_epss_csv (pure, skips #-comment+header) + fetch_epss_csv (one gzip download; _get_text gunzips via magic-number, no bytes seam; 30s timeout). threat_intel.enrich_cves(epss_csv=True, epss_csv_get=...) fetches CSV once, picks wanted CVEs, persists only wanted (same footprint), falls back to per-CVE API on empty CSV. Wired opt-in sub-flag threat_epss_bulk (off by default): CollectionRunner ctor+configure+_phase_threat, monitor opts, GUI sub-checkbox in tab_collection. Default per-CVE path unchanged. Tests in test_threat_feed + test_threat_intel. Full pytest green, ruff clean. 11 files +216/-13.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T10:46:36*
-
-### Mission Center M2 COMMITTED locally (master 5a33dc...
-
-Mission Center M2 COMMITTED locally (master 5a33dc12, 11 files +439/-28). NOTE: a parallel Codex commit bf6ab2a5 'Improve demo workspace UX signals' (the previously-foreign demo_seed.py/gui/tab_iac.py/tests changes) landed on top of my M1 cb1fb1b9; my M2 sits on top of it, no conflict (Codex touched only demo/IaC). Full pytest 2177 green, ruff clean. M2 = core/mission_store.py (MissionStore single-table) + events-less PROJECT_EXPORT generalization in utils/sqlite_store.py + missions.json in core/project_io bundle (FORMAT_VERSION still 1). NOT pushed yet. M3+ deferred: timeline mission events, GUI Mission Center tab, web read parity.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T12:46:40*
-
-### Web SLA ordering fix DONE + committed (master 9a66...
-
-Web SLA ordering fix DONE + committed (master 9a660b90). remote/web_app._findings_list now threat-annotates (annotate_offline) BEFORE annotate_sla, so /findings SLA is tightened for KEV (parity with GUI/report). Test added in test_web_findings.py. Full pytest green, ruff clean. 6 files +31/-5. KEV/EPSS epic + all follow-ups (SLA tightening, alerts/timeline wiring, NEW_KEV event, KEV alert rule, GUI badge, web parity) now FULLY closed across all surfaces. Only remaining deferred KEV/EPSS item: full EPSS daily-CSV bulk ingestion (currently per-CVE).
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T10:21:24*
-
-### Codex completed release baseline + demo/UX audit f...
-
-Codex completed release baseline + demo/UX audit for Advanced Site Analyzer in commit bf6ab2a5. Baseline: ruff check . passed; full pytest with -p no:cacheprovider --basetemp .pytest-full-release-demo-clean-20260628-1550 passed 2164 tests with 1 known Starlette/httpx warning; python main.py --self-check reported 29 tabs; PyInstaller build.spec with QT_API=pyside6 passed; frozen dist/SiteAnalyzer.exe --self-check exited 0. Demo fix: demo_seed now seeds 3 audit runs and demo_iac sample, IaC tab preselects demo_iac when output_dir contains it, tests cover AuditRunStore and IaC demo content. Local commit only; no remote git.
-
-*Confidence: 1 | Status: active | Created: 2026-06-28T12:33:52 | Tags: `asa`, `release-baseline`, `demo-ux`, `commit-bf6ab2a5`*
+*Confidence: 1 | Status: active | Created: 2026-06-30T23:11:58*
 
 ---
 
@@ -562,7 +454,23 @@ Codex completed release baseline + demo/UX audit for Advanced Site Analyzer in c
 
 *Knowledge acquired from experience, corrections, and insights.*
 
-*No memories of this type.*
+### IMPORTANT correction in try1: user asked to 'gener...
+
+IMPORTANT correction in try1: user asked to 'generate 3 turnkey modules' (cloud_classifier, attack_paths engine, attack-surface GUI) but ALL THREE already existed — core/cloud_classifier.py (classify_cloud(provider,asn_name,asn,technologies,cname) — already consumes CNAME+CDN-tech signals), intelligence.build_attack_paths+correlation.py (entry/pivot/target/score/vector/band, shared-ip/subnet/asn clusters via ipaddress, blast radius), gui/tab_attack_paths.py (table+detail+async). Refused to duplicate (CLAUDE §5.2/5.3/6/10); audited + reported overlap; user chose to build only the genuinely-missing piece. Added gui/attack_graph_view.AttackGraphView(QGraphicsView): deterministic LAYERED Entry→Pivot→Targets node-edge graph (stdlib Qt, no graph lib), entry colored by severity, critical goal highlighted, targets capped MAX_TARGETS=12 + '+N more' overflow, node_clicked(node_id,role) signal, pure presentation over a loaded path record, headless-safe. Wired into tab_attack_paths below the table (select->render, node-click->detail, reload->clear), reuses load_attack_paths+_run_async. Commit 651c214f. tests test_attack_graph_view.py(6)+test_attack_paths_tab.py(+2). Lesson: always audit core/ before building 'new' modules — much ASM attack-path/cloud/correlation surface already exists.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T17:02:51*
+
+### Added header_audit + cookie_audit extractors to co...
+
+Added header_audit + cookie_audit extractors to core/tool_evidence.EXTRACTORS in try1. header_audit: {url, headers} from recon.data.security_headers (gated on key present = recon fetched; headers_check flags missing). cookie_audit: {url, cookies} from cookies-phase data.cookies (CookieAuditor.audit rows have name/secure/httponly = exactly cookie_flags_check shape). dependency_auditor DELIBERATELY NOT bridged: recon stores only audit RESULT (recon.data.dependencies), not raw scripts/html the parser re-audits, and dependency findings already in FindingsStore via vuln phase — bridging = persist raw HTML in report.json (scope creep) for redundant run. User chose: header+cookie now, dependency deferred. Registry now: source_map_finder/safe_active_prober/header_audit/cookie_audit (additive). Commit 93f0fb5f. Tests in test_tool_evidence.py (shapes, empty/unfetched->{}, round-trip via parse_tool_output, available_tools). Verified report shapes: recon.data has server_headers/security_headers/technologies/dependencies/cms (NOT raw scripts/html); cookies.data.cookies. Remaining gaps: i18n, e2e/GUI tests, pagination of remaining tables.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T19:32:51*
+
+### Added e2e/GUI click-driven tests in try1 (gap clos...
+
+Added e2e/GUI click-driven tests in try1 (gap closed). Harness in tests/gui_test_helpers.py: _SyncRunMixin overrides _run_async(work,on_done) to run inline (TaskRunnerMixin contract, synchronous, no QThread, deterministic) + reusable e2e hosts FindingsE2EHost(_SyncRunMixin,FindingsHost)/MissionsE2EHost(_SyncRunMixin,MissionsHost). tests/test_gui_e2e.py: genuine activations via QAbstractButton.click() (respects enabled-state, fires connected slot) over conftest-isolated stores — Findings select-row then assign/comment/status by click (assert store) + disabled-without-selection wiring; Missions run-tool by click (header_audit->finding ingested) + «Из скана» fill-evidence by click (monkeypatch core.config.load_settings output_dir to tmp, seed project scan with subdomains -> field auto-filled). Decision (user): synchronous _run_async; .click() activations (robust headless); representative scope (Findings+Missions), other tabs follow on same harness. Commit 3eb18aa6. Existing hosts/tests untouched. Pattern for future GUI e2e: subclass host with _SyncRunMixin + .click(). Remaining gaps: i18n, pagination of remaining tables.
+
+*Confidence: 1 | Status: active | Created: 2026-06-30T21:34:44*
 
 ---
 
