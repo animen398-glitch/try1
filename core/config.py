@@ -53,6 +53,13 @@ DEFAULT_SETTINGS = {
     'max_pages': 50,
     'request_delay': 500,
     'user_agent_profile': 'chrome_windows',
+    # Concurrent scan engine (core/scan_engine.py) — how many independent
+    # collection phases may run at once against one target. 1 = the classic
+    # sequential pipeline (byte-for-byte identical results, deterministic);
+    # >1 runs independent phases in parallel for a faster Full Collection.
+    # Kept modest by default so we stay polite to the target (the per-host
+    # rate limit from the scan's scope still paces network bursts).
+    'scan_concurrency': 4,
     'auto_compress': False,
     'compression_format': 'zip',
     # Alert Center (#9) — opt-in; off until a channel is configured. See

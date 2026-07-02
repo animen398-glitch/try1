@@ -1305,3 +1305,56 @@ def test_render_osint_catalog_card():
     assert 'Infrastructure Recon' in body
     assert CollectionRunner._render_osint_catalog_card('nope') == ''
     assert CollectionRunner._render_osint_catalog_card({'workflows': []}) == ''
+
+
+# ── WS3: concurrent scan engine ────────────────────────────────────────────────
+
+def test_scan_concurrency_setting_resolution():
+    # An explicit instance value wins over settings and is floored at 1.
+    assert CollectionRunner(scan_concurrency=1)._scan_concurrency() == 1
+    assert CollectionRunner(scan_concurrency=8)._scan_concurrency() == 8
+    assert CollectionRunner(scan_concurrency=0)._scan_concurrency() == 1
+    # None → falls back to the settings default (always >= 1).
+    assert CollectionRunner()._scan_concurrency() >= 1
+
+
+def _equiv_stubs(monkeypatch, r):
+    """Deterministic offline stubs for a run that folds takeover + dns findings."""
+    import core.collection_runner as cr
+    _stub_base_run(monkeypatch, r)
+    monkeypatch.setattr(r, '_phase_vulns', lambda report, d: {
+        'status': 'Success',
+        'summary': {'high': 0, 'medium': 0, 'info': 1, 'risk_score': 0},
+        'findings': [{'severity': 'Info', 'title': 'base', 'source': 'vuln',
+                      'category': 'misc', 'location': 'https://example.com'}]})
+    monkeypatch.setattr(r, '_phase_subdomains', lambda url, d: {
+        'status': 'Success', 'data': {'summary': {
+            'total': 1, 'live_count': 1,
+            'takeover_candidates': ['dangling.example.com']},
+            'results': []}})
+    monkeypatch.setattr(cr, 'discover_dns', lambda url: {
+        'status': 'Success', 'domain': 'example.com', 'records': {},
+        'email_auth': {'spf': False, 'dmarc': None, 'dkim_selectors': []},
+        'findings': [{'severity': 'Medium', 'title': 'weak dmarc', 'source': 'dns',
+                      'category': 'dns', 'location': 'example.com'}]})
+
+
+def test_scan_concurrency_produces_identical_results(tmp_path, monkeypatch):
+    # Same stubbed pipeline (base + subdomain-takeover fold + dns fold) run
+    # sequentially vs concurrently must yield byte-identical folded findings,
+    # summary and phase ordering — concurrency changes speed, never results.
+    def run_with(conc, base):
+        ProjectStore(base).get_or_create('https://example.com').set_scope(
+            {'allowed_domains': ['example.com'], 'active_scan_enabled': True})
+        r = CollectionRunner(subdomains=True, dns=True, scan_concurrency=conc)
+        _equiv_stubs(monkeypatch, r)
+        return r.run('https://example.com', str(base))
+
+    seq = run_with(1, tmp_path / 'seq')
+    conc = run_with(4, tmp_path / 'conc')
+
+    assert seq['phases']['vulns']['findings'] == conc['phases']['vulns']['findings']
+    assert seq['phases']['vulns']['summary'] == conc['phases']['vulns']['summary']
+    assert list(seq['phases']) == list(conc['phases'])          # canonical order
+    sources = {f['source'] for f in seq['phases']['vulns']['findings']}
+    assert {'vuln', 'subdomain-active', 'dns'} <= sources        # both folds ran

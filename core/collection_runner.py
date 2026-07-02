@@ -57,6 +57,7 @@ from core.llm_summary import generate_narrative as generate_llm_narrative
 from core.project import Project, ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
+from core.scan_engine import Task, run_dag
 from core.scope_guard import active_phase_decision
 from core.screenshot import ScreenshotCapturer
 from core.screenshot import select_targets as select_screenshot_targets
@@ -87,6 +88,17 @@ ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
 )
 
 
+# Canonical phase ordering — used to make a concurrent run's report['phases'] and
+# scope_guard['skipped_active_phases'] byte-identical to a sequential run (their
+# insertion order is otherwise dependent on which thread finished first).
+_PHASE_ORDER: tuple[str, ...] = (
+    'recon', 'api', 'capture', 'clone', 'cookies', 'vulns', 'nuclei',
+    'security', 'subdomains', 'certificate', 'openapi', 'historical', 'dns',
+    'emails', 'employees', 'ct', 'asn_intel', 'osv', 'bbot', 'documents',
+    'iac', 'katana', 'screenshot', 'analyzers',
+)
+
+
 def _domain_slug(url: str) -> str:
     """Backward-compatible alias — the canonical slug lives in core.project."""
     return project_slug(url)
@@ -107,7 +119,8 @@ class CollectionRunner:
                  osv: bool = False, security: bool = False,
                  bbot: bool = False, documents: bool = False,
                  iac: bool = False, iac_path: Optional[str] = None,
-                 threat_feed: bool = False, threat_epss_bulk: bool = False):
+                 threat_feed: bool = False, threat_epss_bulk: bool = False,
+                 scan_concurrency: Optional[int] = None):
         self.profile = profile
         self.max_pages = max_pages
         self.cookies = cookies
@@ -188,6 +201,11 @@ class CollectionRunner:
         # only (no cloud API in phase 1); off by default; needs an explicit path.
         self.iac = iac
         self.iac_path = iac_path
+        # Concurrent scan engine — how many independent phases may run at once.
+        # None → read core.config settings ('scan_concurrency', default 4);
+        # 1 = the classic sequential pipeline. An explicit value here wins (used
+        # by tests to pin the concurrency for determinism / equivalence checks).
+        self.scan_concurrency = scan_concurrency
         self.progress_callback: Optional[Callable] = None
         self._cancel = threading.Event()
 
@@ -216,9 +234,12 @@ class CollectionRunner:
                   iac: Optional[bool] = None,
                   iac_path: Optional[str] = None,
                   threat_feed: Optional[bool] = None,
-                  threat_epss_bulk: Optional[bool] = None):
+                  threat_epss_bulk: Optional[bool] = None,
+                  scan_concurrency: Optional[int] = None):
         if profile:
             self.profile = profile
+        if scan_concurrency is not None:
+            self.scan_concurrency = scan_concurrency
         if max_pages is not None:
             self.max_pages = max_pages
         if cookies is not None:
@@ -381,6 +402,154 @@ class CollectionRunner:
         self._log(f'  {phase} - skipped ({reason})')
         return {'status': 'Skipped', 'reason': reason, 'scope_guard': entry}
 
+    # ── concurrent scan engine (WS3) ───────────────────────────────────────────
+
+    def _scan_concurrency(self) -> int:
+        """Effective max phase concurrency: the explicit instance value if set,
+        else the ``scan_concurrency`` setting (default 4). Always >= 1."""
+        if self.scan_concurrency is not None:
+            try:
+                return max(1, int(self.scan_concurrency))
+            except (TypeError, ValueError):
+                return 1
+        try:
+            from core.config import load_settings
+            return max(1, int(load_settings().get('scan_concurrency', 4)))
+        except Exception:  # noqa: BLE001 — a bad setting must never sink a scan
+            return 4
+
+    @staticmethod
+    def _set_phase(report: Dict, key: str, result: Dict) -> Dict:
+        """Store a phase result under its key and return it (task closure body)."""
+        report.setdefault('phases', {})[key] = result
+        return result
+
+    def _build_phase_tasks(self, url: str, scan_dir: Path, capture_dir: Path,
+                           report: Dict) -> List[Task]:
+        """Assemble the concurrent DAG of phases that DON'T mutate the shared vuln
+        findings: the always-on base pipeline (recon/api/capture/clone/cookies/
+        vulns) plus the opt-in phases whose only output is their own
+        ``report['phases'][key]``. The vuln-mutating phases (security/dns/osv/bbot/
+        documents/iac + secret/takeover folds) are handled serially afterwards in
+        :meth:`_run_active_phases`. Closures read predecessors' data at call time,
+        so the declared ``deps`` guarantee it is present."""
+
+        def phase(key: str, fn: Callable[[], Dict]) -> Callable[[], Dict]:
+            return lambda: self._set_phase(report, key, fn())
+
+        def guarded(key: str, fn: Callable[[], Dict]) -> Callable[[], Dict]:
+            def _run() -> Dict:
+                skipped = self._scope_skip_active(report, key, url)
+                return self._set_phase(report, key, skipped or fn())
+            return _run
+
+        tasks: List[Task] = [
+            Task('recon', phase('recon',
+                 lambda: self._phase_recon(url, scan_dir))),
+            Task('api', phase('api',
+                 lambda: self._phase_api(url, scan_dir))),
+            Task('capture', phase('capture',
+                 lambda: self._phase_capture(url, capture_dir))),
+            Task('cookies', phase('cookies',
+                 lambda: self._phase_cookies(url, scan_dir))),
+            Task('clone', phase('clone', lambda: self._phase_clone(
+                 capture_dir, scan_dir, report['phases'].get('capture', {}))),
+                 deps=('capture',)),
+            Task('vulns', phase('vulns',
+                 lambda: self._phase_vulns(report, scan_dir)),
+                 deps=('recon', 'cookies')),
+        ]
+        if self.subdomains:
+            tasks.append(Task('subdomains', guarded(
+                'subdomains', lambda: self._phase_subdomains(url, scan_dir))))
+        if self.certificate:
+            tasks.append(Task('certificate', guarded(
+                'certificate', lambda: self._phase_certificate(url, scan_dir))))
+        if self.openapi:
+            tasks.append(Task('openapi', guarded(
+                'openapi', lambda: self._phase_openapi(url, scan_dir))))
+        if self.historical:
+            tasks.append(Task('historical', guarded(
+                'historical', lambda: self._phase_historical(url, scan_dir))))
+        if self.emails:
+            tasks.append(Task('emails', guarded(
+                'emails', lambda: self._phase_emails(url, scan_dir))))
+        if self.employees:
+            tasks.append(Task('employees', guarded(
+                'employees', lambda: self._phase_employees(url, scan_dir))))
+        if self.ct:
+            tasks.append(Task('ct', guarded(
+                'ct', lambda: self._phase_ct(url, scan_dir))))
+        if self.asn_intel:
+            tasks.append(Task('asn_intel', guarded(
+                'asn_intel', lambda: self._phase_asn_intel(report, scan_dir)),
+                deps=('recon',)))
+        if self.katana:
+            tasks.append(Task('katana', guarded(
+                'katana', lambda: self._phase_katana(url))))
+        if self.screenshots:
+            tasks.append(Task('screenshot', guarded(
+                'screenshot', lambda: self._phase_screenshot(url, scan_dir, report)),
+                deps=('capture',)))
+        return tasks
+
+    def _fold_into_vulns(self, report: Dict, added: List[Dict]) -> None:
+        """Append derived findings to the vuln phase + recompute its summary — the
+        shared fold used by the always-on secret + subdomain-takeover folders."""
+        vulns = report.get('phases', {}).get('vulns')
+        if added and isinstance(vulns, dict):
+            findings = vulns.get('findings', []) + added
+            vulns['findings'] = findings
+            vulns['summary'] = VulnScanner.summarize(findings)
+
+    def _run_active_phases(self, url: str, scan_dir: Path, report: Dict) -> None:
+        """Serially fold the always-on secret findings + run the opt-in audit
+        phases that mutate the shared vuln findings, in the exact historical order.
+        Kept on the calling thread so the folded findings are byte-for-byte
+        identical to the old sequential pipeline regardless of scan_concurrency."""
+        # Leaked secrets from the always-on api phase → High findings folded in.
+        self._fold_into_vulns(report, self._secret_findings(report))
+        # Security audit (opt-in) → folds its exposures into vulns internally.
+        if self.security and not self._cancelled(report):
+            skipped = self._scope_skip_active(report, 'security', url)
+            self._set_phase(report, 'security',
+                            skipped or self._phase_security(url, scan_dir, report))
+        # Subdomain-takeover candidates (from the opt-in subdomain phase) → folded.
+        self._fold_into_vulns(report, self._takeover_findings(report))
+        if self.dns and not self._cancelled(report):
+            skipped = self._scope_skip_active(report, 'dns', url)
+            self._set_phase(report, 'dns',
+                            skipped or self._phase_dns(url, scan_dir, report))
+        if self.osv and not self._cancelled(report):
+            skipped = self._scope_skip_active(report, 'osv', url)
+            self._set_phase(report, 'osv',
+                            skipped or self._phase_osv(report, scan_dir))
+        if self.bbot and not self._cancelled(report):
+            skipped = self._scope_skip_active(report, 'bbot', url)
+            self._set_phase(report, 'bbot',
+                            skipped or self._phase_bbot(url, scan_dir, report))
+        if self.documents and not self._cancelled(report):
+            self._set_phase(report, 'documents',
+                            self._phase_documents(scan_dir, report))
+        if self.iac and self.iac_path and not self._cancelled(report):
+            self._set_phase(report, 'iac', self._phase_iac(report))
+
+    @staticmethod
+    def _normalize_report_order(report: Dict) -> None:
+        """Reorder report['phases'] + skipped_active_phases into the canonical
+        phase sequence, so a concurrent run's report is byte-identical to a
+        sequential one (both are otherwise completion-order-dependent)."""
+        idx = {p: i for i, p in enumerate(_PHASE_ORDER)}
+        phases = report.get('phases')
+        if isinstance(phases, dict):
+            report['phases'] = dict(sorted(
+                phases.items(), key=lambda kv: idx.get(kv[0], len(idx))))
+        sg = report.get('scope_guard')
+        if isinstance(sg, dict) and isinstance(sg.get('skipped_active_phases'), list):
+            sg['skipped_active_phases'].sort(
+                key=lambda e: idx.get(e.get('phase') if isinstance(e, dict) else e,
+                                      len(idx)))
+
     def run(self, url: str, output_base: str) -> Dict:
         self._active_operation = (None, None)
         self._active_report = None
@@ -438,138 +607,44 @@ class CollectionRunner:
         self._active_operation = (op_registry, op_id)
         self._active_report = report
 
-        # 1. Recon
-        if not self._cancelled(report):
-            report['phases']['recon'] = self._phase_recon(url, scan_dir)
-        # 2. API key scan
-        if not self._cancelled(report):
-            report['phases']['api'] = self._phase_api(url, scan_dir)
-        # 3. Capture (frontend)
         capture_dir = scan_dir / 'capture'
+
+        # ── phase execution ─────────────────────────────────────────────────
+        # Independent phases run concurrently via the scan DAG (core.scan_engine),
+        # bounded by scan_concurrency; a dependent (vulns←recon/cookies,
+        # clone←capture, asn_intel←recon, screenshot←capture) starts only once its
+        # predecessors finish. Every concurrent phase writes ONLY its own
+        # report['phases'][key] (GIL-atomic, disjoint keys); the phases that mutate
+        # the shared vuln findings run serially afterwards (_run_active_phases) in
+        # a fixed canonical order, so the result is byte-for-byte identical to a
+        # sequential run. scan_concurrency <= 1 runs the DAG in that exact
+        # sequential order on this thread.
+        tasks = self._build_phase_tasks(url, scan_dir, capture_dir, report)
+        results = run_dag(tasks, max_concurrency=self._scan_concurrency(),
+                          cancel_event=self._cancel)
+        # An unexpected exception inside a phase is captured by the scheduler as
+        # that task's result. Re-raise it (canonical order) so run()'s wrapper
+        # still marks the operation failed and leaves a readable partial report —
+        # the same contract as the old straight-line pipeline.
+        for name in _PHASE_ORDER:
+            r = results.get(name)
+            if isinstance(r, BaseException):
+                raise r
+
+        # Serial aggregation: the always-on secret fold, the subdomain-takeover
+        # fold, and the opt-in audit phases that append to the shared vuln
+        # findings — kept on this thread, in the historical order, for determinism.
         if not self._cancelled(report):
-            report['phases']['capture'] = self._phase_capture(url, capture_dir)
-        # 4. Clone (frontend) — only if capture produced pages
-        if not self._cancelled(report):
-            report['phases']['clone'] = self._phase_clone(capture_dir, scan_dir,
-                                                          report['phases'].get('capture', {}))
-        # 5. Cookie security audit
-        if not self._cancelled(report):
-            report['phases']['cookies'] = self._phase_cookies(url, scan_dir)
-        # 6. Vulnerability scan (aggregates recon + cookie findings)
-        if not self._cancelled(report):
-            report['phases']['vulns'] = self._phase_vulns(report, scan_dir)
-            # Fold leaked secrets (the always-on api phase) into the vuln phase as
-            # first-class High findings — so they persist through Findings
-            # Management (lifecycle / SLA / triage) and are counted once via their
-            # severity, not a second time as a dedicated risk factor. A high-value
-            # key still forces a Critical verdict via executive_summary._risk_level
-            # (same pattern as takeovers / security-audit exposures).
-            added = self._secret_findings(report)
-            vulns = report['phases'].get('vulns')
-            if added and isinstance(vulns, dict):
-                vulns['findings'] = vulns.get('findings', []) + added
-                vulns['summary'] = VulnScanner.summarize(vulns['findings'])
-        # 7a. Security audit (opt-in) → secrets in served JS, leaking source
-        # maps, reachable GraphQL endpoints. Feeds the risk engine (source-map
-        # leaks + GraphQL introspection) and the attack-surface graph.
-        if self.security and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'security', url)
-            report['phases']['security'] = skipped or self._phase_security(
-                url, scan_dir, report)
-        # 7b. Subdomain enumeration (opt-in) → feeds the takeover risk signal
-        # and the Scan Diff subdomain section.
-        if self.subdomains and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'subdomains', url)
-            report['phases']['subdomains'] = skipped or self._phase_subdomains(
-                url, scan_dir)
-            # Fold each takeover candidate into the vuln phase as a first-class
-            # finding (lifecycle / SLA / triage; counted once via its severity,
-            # not a second time as a dedicated risk factor — same pattern as the
-            # security-audit exposures). The verdict still forces Critical on any
-            # takeover via executive_summary._risk_level.
-            added = self._takeover_findings(report)
-            vulns = report['phases'].get('vulns')
-            if added and isinstance(vulns, dict):
-                vulns['findings'] = vulns.get('findings', []) + added
-                vulns['summary'] = VulnScanner.summarize(vulns['findings'])
-        # 7c. TLS certificate (opt-in) → Scan Diff certificate section.
-        if self.certificate and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'certificate', url)
-            report['phases']['certificate'] = skipped or self._phase_certificate(
-                url, scan_dir)
-        # 7d. OpenAPI/Swagger discovery (opt-in) → API map for report/surface/diff.
-        if self.openapi and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'openapi', url)
-            report['phases']['openapi'] = skipped or self._phase_openapi(
-                url, scan_dir)
-        # 7e. Historical URL intelligence (opt-in) → archived URLs classified.
-        if self.historical and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'historical', url)
-            report['phases']['historical'] = skipped or self._phase_historical(
-                url, scan_dir)
-        # 7f. DNS intelligence (opt-in) → records + email-auth; findings fold
-        # into the vuln phase so the risk engine accounts for them.
-        if self.dns and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'dns', url)
-            report['phases']['dns'] = skipped or self._phase_dns(
-                url, scan_dir, report)
-        # 7g. Email intelligence (opt-in) → harvested + grouped addresses.
-        if self.emails and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'emails', url)
-            report['phases']['emails'] = skipped or self._phase_emails(
-                url, scan_dir)
-        # 7h. Employee intelligence (opt-in) → named people + e-mail scheme.
-        if self.employees and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'employees', url)
-            report['phases']['employees'] = skipped or self._phase_employees(
-                url, scan_dir)
-        # 7i. CT history (opt-in) → certificate-transparency timeline (crt.sh).
-        if self.ct and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'ct', url)
-            report['phases']['ct'] = skipped or self._phase_ct(url, scan_dir)
-        # 7j. Active ASN/netblock recon (opt-in) → CIDR + ASN prefixes +
-        # reverse-IP co-hosted hosts (needs the recon-derived ip/asn).
-        if self.asn_intel and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'asn_intel', url)
-            report['phases']['asn_intel'] = skipped or self._phase_asn_intel(
-                report, scan_dir)
-        # 7k. CVE correlation via OSV.dev (opt-in, active) → live advisories per
-        # detected JS library; supersedes the bundled dependency-audit table and
-        # folds its findings into the vuln phase (so risk/summary account for them).
-        if self.osv and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'osv', url)
-            report['phases']['osv'] = skipped or self._phase_osv(report, scan_dir)
-        # 7l. External recon (BBOT, opt-in, external AGPL tool) → enrich the asset
-        # inventory (subdomains/ips/asns/netblocks/endpoints/technologies) and fold
-        # its findings into the vuln phase. Run as a subprocess; never imported.
-        if self.bbot and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'bbot', url)
-            report['phases']['bbot'] = skipped or self._phase_bbot(
-                url, scan_dir, report)
-        # 7m. Document Intelligence (opt-in) → mine documents already captured in
-        # this scan (PDF/images/config files) for secrets + sensitive data; folds
-        # findings into the vuln phase. Local/passive (reads files only) → not
-        # scope-gated; the capture/clone that produced them already were.
-        if self.documents and not self._cancelled(report):
-            report['phases']['documents'] = self._phase_documents(scan_dir, report)
-        # 7n. IaC / container config ingestion (opt-in, EPIC NEXT F7) → parse local
-        # IaC/config files at iac_path into findings (misconfig + secrets) + assets
-        # (images). Local only (no cloud API) → not scope-gated (reads files).
-        if self.iac and self.iac_path and not self._cancelled(report):
-            report['phases']['iac'] = self._phase_iac(report)
-        # 8. Katana crawl (opt-in, external) → endpoints for the graph/report
-        if self.katana and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'katana', url)
-            report['phases']['katana'] = skipped or self._phase_katana(url)
-        # 8b. Screenshot (opt-in, Playwright) — captured last; non-fatal/skippable
-        if self.screenshots and not self._cancelled(report):
-            skipped = self._scope_skip_active(report, 'screenshot', url)
-            report['phases']['screenshot'] = skipped or self._phase_screenshot(
-                url, scan_dir, report)
-        # 9. Analyzer plugins (user-supplied) — see the whole report; their
+            self._run_active_phases(url, scan_dir, report)
+        # Analyzer plugins last — they see the whole (folded) report; their
         # findings fold into vulns so the summary/exec/graph reflect them.
-        if not self._cancelled(report):
+        if not report.get('cancelled'):
             report['phases']['analyzers'] = self._phase_analyzers(report)
+
+        # Reorder phases + skip list into the canonical sequence so a concurrent
+        # run's report is byte-identical to a sequential one (insertion order is
+        # otherwise completion-order-dependent).
+        self._normalize_report_order(report)
 
         report['finished_at'] = datetime.now().isoformat(timespec='seconds')
 
