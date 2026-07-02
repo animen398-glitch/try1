@@ -5838,3 +5838,65 @@ self-check OK (29 вкладок), полный pytest зелёный — 2573 �
 Дальше по DEV_PLAN: остаток WS6 (update-check, user-facing error messages, аудит
 ~192 проглатываемых except Exception — связка с WS2-breadcrumb).
 
+
+================================================================================
+2026-07-02 — DEV_PLAN остаток WS6: update-check + user-facing errors + observability
+================================================================================
+
+Закрыт «остаток WS6» — три полировочных пункта надёжности. Все opt-in/аддитивные,
+поведение best-effort фаз не менялось.
+
+A) Opt-in проверка обновлений — `core/update_check.py` (new, чистый/offline,
+transport инъектируется как в crash_reporter/http_retry):
+  • `check_for_update(*, current=APP_VERSION, endpoint=settings, fetch=_fetch)` —
+    одиночный HTTPS GET на настраиваемый endpoint, отдающий JSON
+    `{"version","url"}`; сравнение с `config.APP_VERSION` через `parse_version`
+    (numeric-tuple, игнорит `v`/pre-release); статусы disabled/update_available/
+    up_to_date/error; НИЧЕГО не качается/ставится (без авто-апдейта); никогда не
+    райзит (сеть/парс-сбой → error). `_fetch` — HTTPS-only (не-https → ValueError,
+    как send_report). `update_line` — pure строка для health-экрана.
+  • `core/config.py`: `update_check {enabled:False, endpoint:''}` (off by default,
+    без сети). `gui/first_run.py`: `health_report_text(health, update=None)`
+    добавляет строку обновления ТОЛЬКО если проверка реально бежала
+    (status!='disabled') → дефолт (выкл) байт-в-байт как раньше; `show_health_dialog`
+    зовёт `check_for_update()` best-effort (guarded). Тесты `test_update_check.py`
+    (9): parse_version-порядок, update_available/up_to_date, disabled без endpoint,
+    error-captured-not-raised, no-version, non-https reject, чтение настроек,
+    update_line-форматы.
+
+B) Понятные сообщения об ошибках в GUI вместо сырых `str(e)` — `gui/task_runner.py`:
+  • `friendly_error_text(raw)` (pure, Qt-free): оборачивает лаконичную причину +
+    указывает, что тех.детали записаны в локальный отчёт о сбое; берёт только
+    первую строку (страховка от утечки stack-подобного блоба). `_run_async`
+    error-path теперь `QMessageBox.critical(self,"Ошибка",friendly_error_text(e))`
+    — центральная точка, покрывает все async-операции. Уточнение: сырые traceback
+    в диалоги и раньше не попадали (WS2: воркеры шлют `str(e)`, traceback уходит в
+    crash-репорт через `report_exception`) — здесь дожата формулировка для
+    пользователя. Per-tab CSV-диалоги уже несут контекст-префикс. Тесты
+    `test_task_runner_errors.py` (3).
+
+C) Наблюдаемость проглатываемых исключений — `core/crash_reporter.py`:
+  • `note_swallowed(context, exc)` — тонкая breadcrumb-обёртка (redacted, never
+    raises, thread-safe deque) для намеренно-тихих `except: pass`: сбой оставляет
+    след в crash-контексте БЕЗ смены control flow. Применено к кураторскому набору
+    высокоценных тихих swallow'ов (не hot-path, error-handling/финализация):
+    `collection_runner._finish_operation` (op-журнал), `_persist_error_report`
+    (запись error-отчёта), `project.record_scan` history-snapshot. Остальные
+    `except: pass` в core (crash_reporter own-guards, config load/save fallbacks,
+    cache/validator hot-path) осознанно оставлены тихими; `note_swallowed` —
+    стандартный способ сделать будущие/оставшиеся наблюдаемыми. Тесты
+    `test_crash_reporter.py` (+2: breadcrumb записан+redacted, never-raises).
+
+«Единый источник версии» (ещё один пункт WS6) уже удовлетворён `config.APP_VERSION`
+(используется update-check). Файлы: `core/update_check.py`(new), `core/config.py`,
+`core/crash_reporter.py`, `core/collection_runner.py`, `core/project.py`,
+`gui/first_run.py`, `gui/task_runner.py` + 3 теста. Проверено: ruff clean,
+self-check OK (29 вкладок), полный pytest зелёный — 2577 → 2591 (+14). Локальные
+коммиты, без push.
+
+Статус DEV_PLAN: WS1–WS6 закрыты (WS1/WS2/WS6-quick — ранее; WS3 конкурентный
+DAG-движок, WS4 Slack-алертинг, WS5 нативные субдомен-источники+secret-паттерны,
+остаток WS6 — эта сессия). Возможные будущие инкременты (не в scope плана):
+ещё keyless subdomain-источники; параллелизм внутренних под-шагов recon_engine;
+пер-request rate-limit движков.
+
