@@ -356,8 +356,9 @@ class CollectionRunner:
                 'failed' if error else 'success')
             registry.finish(op_id, status=status, error=error,
                             metadata=CollectionRunner._operation_metadata(report))
-        except Exception:
-            pass
+        except Exception as e:
+            from core import crash_reporter
+            crash_reporter.note_swallowed('operation-journal finish', e)
 
     @staticmethod
     def _persist_error_report(report: Dict, error: Exception) -> None:
@@ -377,8 +378,9 @@ class CollectionRunner:
             path = Path(scan_dir) / 'report.json'
             report['report_json'] = str(path)
             atomic_write_json(path, report)
-        except Exception:
-            pass
+        except Exception as e:
+            from core import crash_reporter
+            crash_reporter.note_swallowed('persist error report', e)
 
     def _cancelled(self, report: Dict) -> bool:
         if self._cancel.is_set():

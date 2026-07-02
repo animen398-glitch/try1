@@ -109,6 +109,16 @@ def breadcrumbs() -> List[str]:
     return list(_BREADCRUMBS)
 
 
+def note_swallowed(context: str, exc: BaseException) -> None:
+    """Record that a best-effort ``except`` swallowed ``exc`` at ``context`` (WS6).
+
+    A thin breadcrumb wrapper for intentionally-silent ``except: pass`` sites, so
+    a swallowed failure still leaves a trace in the crash context — making the
+    problem observable without changing control flow. Never raises; the message
+    is redacted like any breadcrumb."""
+    breadcrumb(f'swallowed {context}: {type(exc).__name__}: {exc}')
+
+
 # --------------------------------------------------------------- report I/O
 
 def _app_version() -> str:

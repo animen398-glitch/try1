@@ -185,8 +185,11 @@ class Project:
         try:
             hist = self.root / 'history'
             atomic_write_json(hist / f"{entry['id']}.json", entry)
-        except Exception:
-            pass   # a history snapshot is best-effort; never fail a scan over it
+        except Exception as e:
+            # A history snapshot is best-effort; never fail a scan over it — but
+            # leave a trace so a silent write failure is still observable (WS6).
+            from core import crash_reporter
+            crash_reporter.note_swallowed('history snapshot write', e)
         return entry
 
     def scans(self) -> List[Dict]:

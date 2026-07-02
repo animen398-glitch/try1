@@ -82,6 +82,22 @@ def test_breadcrumbs_bounded(crash_dir):
     assert not any('action 0' == c.split()[-1] for c in crumbs)  # oldest evicted
 
 
+def test_note_swallowed_records_observable_breadcrumb(crash_dir):
+    try:
+        raise OSError('disk full')
+    except OSError as e:
+        cr.note_swallowed('history snapshot write', e)
+    crumbs = cr.breadcrumbs()
+    assert any('swallowed history snapshot write' in c and 'OSError' in c
+               and 'disk full' in c for c in crumbs)
+
+
+def test_note_swallowed_never_raises_and_redacts(crash_dir):
+    # Must be safe to call from a bare best-effort except and must redact.
+    cr.note_swallowed('auth', ValueError('authorization: Bearer hush123'))
+    assert 'hush123' not in ' '.join(cr.breadcrumbs())
+
+
 def test_breadcrumbs_redacted_and_attached(crash_dir):
     cr.breadcrumb('open url http://x/?token=hush123')
     try:
