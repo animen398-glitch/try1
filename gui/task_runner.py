@@ -19,6 +19,22 @@ from qtpy.QtWidgets import QMessageBox
 from gui.workers import _TaskHandle, _Worker
 
 
+def friendly_error_text(raw: str) -> str:
+    """Turn a worker's error string into a user-oriented dialog message (WS6).
+
+    Workers emit ``str(exc)`` (never a full traceback — that already goes to the
+    crash report via ``crash_reporter.report_exception``). This frames that
+    concise reason for the user and points them at where the technical detail was
+    recorded, so a GUI dialog never shows a bare/cryptic exception. Pure and
+    Qt-free, so it is unit-tested directly. Only the first line is kept, guarding
+    against a multi-line message leaking a stack-like blob into the dialog."""
+    text = str(raw or '').strip() or 'неизвестная ошибка'
+    reason = text.splitlines()[0].strip()
+    return (f"Операция не выполнена: {reason}\n\n"
+            "Технические детали записаны в локальный отчёт о сбое "
+            "(«Состояние системы»). Ничего не отправляется автоматически.")
+
+
 class TaskRunnerMixin:
     """QThread lifecycle + concurrency bookkeeping for MainWindow.
 
@@ -96,7 +112,7 @@ class TaskRunnerMixin:
             on_finished=on_done,
             on_error=lambda e: (
                 self._set_busy(False),
-                QMessageBox.critical(self, "Ошибка", e),
+                QMessageBox.critical(self, "Ошибка", friendly_error_text(e)),
                 self._on_worker_error(),
             ),
         )
