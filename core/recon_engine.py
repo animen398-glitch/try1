@@ -2,6 +2,7 @@ import json
 import re
 import socket
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
@@ -196,6 +197,19 @@ class ReconEngine:
             pass
         return {}
 
+    def _resolve_ip_and_geo(self, domain: str) -> Tuple[Optional[str], Dict]:
+        """Resolve the domain's IP + its GeoIP as one unit and return ``(ip, geo)``.
+
+        The geo lookup needs the IP, so the two stay sequential *within* this
+        task — but the whole chain is returned so :meth:`run_recon` can overlap it
+        with the independent main-page fetch. No DB writes happen here
+        (``_record_discovery`` stays on the caller's thread — SQLite connections
+        are single-thread), and both calls are thread-safe (``gethostbyname`` +
+        ``urlopen`` with an explicit timeout)."""
+        ip = self._resolve_ip(domain)
+        geo = self._geoip(ip) if ip else {}
+        return ip, geo
+
     # ---------------------------------------------------------------- CMS
 
     def _detect_cms(
@@ -311,11 +325,21 @@ class ReconEngine:
             'status': 'Failed',
         }
 
+        # The IP→GeoIP chain and the main-page fetch are independent network work,
+        # so run them concurrently (the geo call still follows the resolve *within*
+        # its own task). All result assembly + DB writes happen back on this thread
+        # after the join, so shared/SQLite state is never touched concurrently and
+        # the output is byte-identical to the old sequential path.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            ip_geo_future = pool.submit(self._resolve_ip_and_geo, domain)
+            page_future = pool.submit(self._fetch_with_headers, url)
+            ip, geo = ip_geo_future.result()
+            raw, resp_headers, final_url = page_future.result()
+
         # IP + geo
-        ip = self._resolve_ip(domain)
         result['ip'] = ip
         if ip:
-            result['geo'] = self._geoip(ip)
+            result['geo'] = geo
 
         # Infrastructure intelligence (Domain → ASN → IP → Provider) derived
         # from the GeoIP fields (as/org/isp) ip-api already returns.
@@ -333,8 +357,7 @@ class ReconEngine:
                 metadata={'domain': domain, 'geo': result['geo']},
             )
 
-        # Fetch main page
-        raw, resp_headers, final_url = self._fetch_with_headers(url)
+        # Main page (fetched above, concurrently with the IP/geo chain)
         if raw is None:
             result['error'] = 'Failed to fetch main page'
             return result

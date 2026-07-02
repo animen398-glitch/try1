@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация): 2594 passed / 0 skipped.
+  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel): 2595 passed / 0 skipped.
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
@@ -5945,4 +5945,28 @@ bounded-small (capped top-N / per-scan) — сознательно не паги
 (over-engineering). Тесты: `test_ui_pagination.py` (+1: reveal navigates+maps).
 Проверено: ruff clean, self-check 29 вкладок, полный pytest 2593 → 2594 (+1).
 Локальные коммиты, без push.
+
+
+================================================================================
+2026-07-02 — Пост-план опция 4: параллелизм внутри recon_engine
+================================================================================
+
+WS3 сознательно оставил recon одним DAG-узлом; здесь распараллелены его
+внутренние сетевые под-шаги. В `core/recon_engine.run_recon` цепочка IP→GeoIP и
+загрузка главной страницы — независимая сетевая работа, теперь исполняются
+конкурентно через `ThreadPoolExecutor(max_workers=2)`: новый
+`_resolve_ip_and_geo(domain)->(ip,geo)` (geo следует за resolve ВНУТРИ задачи) в
+одном потоке, `_fetch_with_headers(url)` — в другом; join, затем ВСЯ сборка
+`result` + `_record_discovery` (SQLite — single-thread) на вызывающем потоке →
+вывод байт-в-байт как в последовательном пути. Thread-safety проверена:
+`_resolve_ip` = чистый `socket.gethostbyname` (без глобального
+`setdefaulttimeout`, в отличие от subdomain_scanner), fetch'и — `urlopen` с явным
+таймаутом; единственный shared-hazard (`_record_discovery`/DataRegistry) оставлен
+на главном потоке. Порядок сборки result (incl. ранний выход при raw is None)
+сохранён. Прочие под-шаги (favicons/tech/deps — чистый парсинг html;
+pwa_manifest — сеть, зависит от html) остались последовательными после fetch
+(мелкая выгода не оправдывает усложнение). Тесты `test_recon_engine.py` (+1:
+Barrier-доказательство, что IP/geo и fetch реально конкурентны). Проверено: ruff
+clean, self-check 29 вкладок, полный pytest 2594 → 2595 (+1). Локальные коммиты,
+без push.
 

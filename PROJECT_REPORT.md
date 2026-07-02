@@ -212,7 +212,7 @@
 
 | Метрика | Значение |
 |---|---|
-| Тесты | **2594 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning; после DEV_PLAN WS1–WS6 + RapidDNS + пагинация) |
+| Тесты | **2595 собрано, зелёные** (0 FAILED/ERROR; offline/headless Qt; 1 Starlette/httpx deprecation-warning; после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel) |
 | Линтер (ruff) | ✅ чисто |
 | Компиляция всех модулей | ✅ 0 ошибок |
 | `except:` без типа | 0 |

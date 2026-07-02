@@ -1,6 +1,7 @@
 """ReconEngine — report pruning and dynamic-CMS enrichment (offline)."""
 
 import json
+import threading
 
 from core.recon_engine import ReconEngine, enrich_cms_with_dynamic
 
@@ -8,6 +9,31 @@ from core.recon_engine import ReconEngine, enrich_cms_with_dynamic
 class _FakeRegistry:
     def add_record(self, *a, **k):
         pass
+
+
+def test_recon_overlaps_ip_geo_with_page_fetch():
+    """The IP/geo chain and the main-page fetch run concurrently: a Barrier that
+    only releases when both are in flight would break (and surface as an error)
+    if they ran sequentially."""
+    eng = ReconEngine(data_registry=_FakeRegistry())
+    barrier = threading.Barrier(2, timeout=5)
+
+    def resolve(domain):
+        barrier.wait()
+        return "1.2.3.4"
+
+    def fetch(url):
+        barrier.wait()
+        return b"<html></html>", {}, url
+
+    eng._resolve_ip = resolve
+    eng._geoip = lambda ip: {"country": "US"}
+    eng._fetch_with_headers = fetch
+
+    result = eng.run_recon("https://example.com")
+    assert result["ip"] == "1.2.3.4"
+    assert result["geo"] == {"country": "US"}
+    assert result["status"] == "Success"
 
 
 def test_recon_report_excludes_large_pwa_manifest(tmp_path):
