@@ -15,6 +15,11 @@ from core.finding_render import html_close, html_open
 
 from core.audit_schema import validate_audit_payload
 from core.audit_workflow import audit_run_to_json
+from core.coverage import (
+    coverage_from_audit_run,
+    render_coverage_html,
+    render_coverage_markdown,
+)
 
 
 def _findings(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -143,6 +148,7 @@ def render_markdown(run: Dict[str, Any]) -> str:
     lines.extend(["", "## Review Appendix", ""])
     review = review_findings(payload)
     lines.append(_md_table(review) if review else "No rejected or review-only findings.")
+    lines.extend(["", render_coverage_markdown(coverage_from_audit_run(payload)).rstrip()])
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -198,6 +204,7 @@ def render_html(run: Dict[str, Any]) -> str:
         f"{table(client_findings(payload))}"
         "<h2>Review Appendix</h2>"
         f"{table(review_findings(payload))}"
+        + render_coverage_html(coverage_from_audit_run(payload))
         + html_close(markdown)
     )
 
