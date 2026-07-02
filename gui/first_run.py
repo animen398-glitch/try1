@@ -24,9 +24,11 @@ def _mark_first_run_done() -> None:
     save_settings(load_settings())
 
 
-def health_report_text(health: dict) -> str:
+def health_report_text(health: dict, update: Optional[dict] = None) -> str:
     """Human-readable health summary (pure). ``health`` is the dict from
-    ``core.launcher.health_check``."""
+    ``core.launcher.health_check``; ``update`` (optional) is a
+    ``core.update_check.check_for_update`` result — its status line is appended
+    only when the opt-in check actually ran (``status != 'disabled'``)."""
     lines = [f"Python: {health.get('python_version', '?')}"]
     ok = '✓' if health.get('data_root_writable') else '✗'
     lines.append(f"Каталог данных доступен на запись: {ok}")
@@ -50,6 +52,13 @@ def health_report_text(health: dict) -> str:
     lines.append("")
     lines.append("Состояние: " + ("ГОТОВ К РАБОТЕ ✓" if health.get('ok')
                                    else "НЕ ХВАТАЕТ ОБЯЗАТЕЛЬНЫХ ЗАВИСИМОСТЕЙ ✗"))
+
+    # Opt-in update check (WS6): shown only when the feature is configured, so a
+    # default (disabled) run is byte-identical to before.
+    if update and update.get('status') != 'disabled':
+        from core.update_check import update_line
+        lines.append("")
+        lines.append(update_line(update))
     return "\n".join(lines)
 
 
@@ -62,7 +71,14 @@ def show_health_dialog(parent, *, health: Optional[dict] = None,
     from core.launcher import health_check
     health = health if health is not None else health_check()
 
-    text = health_report_text(health)
+    # Opt-in update check — best-effort and offline by default (returns
+    # 'disabled' without touching the network unless the user configured it).
+    try:
+        from core.update_check import check_for_update
+        update = check_for_update()
+    except Exception:  # noqa: BLE001 — the health screen must always render
+        update = None
+    text = health_report_text(health, update)
     if onboarding:
         text = ("Добро пожаловать в Advanced Site Analyzer.\n"
                 "Инструмент для АВТОРИЗОВАННОГО анализа безопасности.\n\n"

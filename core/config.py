@@ -99,6 +99,11 @@ DEFAULT_SETTINGS = {
     # only expose the console on a trusted network even with a token.
     'web_console': {'host': '127.0.0.1', 'allow_lan': False, 'token': '',
                     'rate_limit_per_min': 60},
+    # Update check (core/update_check.py) — opt-in, local-first. When 'enabled'
+    # with an HTTPS 'endpoint' returning {"version": "...", "url": "..."}, the
+    # system-health screen reports whether a newer version exists. Nothing is ever
+    # downloaded or installed (no auto-update); off by default (no network).
+    'update_check': {'enabled': False, 'endpoint': ''},
     # Crash reporting (core/crash_reporter.py) — local-first observability.
     # 'enabled' writes a redacted JSON report on any crash and surfaces unseen
     # ones on next launch. Nothing is ever sent automatically; 'endpoint' (empty
