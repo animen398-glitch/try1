@@ -5762,3 +5762,47 @@ build_channels includes slack, skips slack без url), tests/test_alerts_gui.py
 затем остаток WS6 (update-check, user-facing error messages, аудит проглатываемых
 except).
 
+
+================================================================================
+2026-07-02 — DEV_PLAN WS5 (инкремент 1): нативные пассивные источники субдоменов
+================================================================================
+
+WS5 — «долгий трек» снятия зависимости от внешних бинарников. Аудит трёх
+кандидатов плана (урок WS3/WS4 — сначала аудит core):
+  • #2 Секрет-сканер: core/secret_scanner.py уже несёт 28 правил (JWT, AWS,
+    Google, Stripe ×4, GitHub +fine-grained PAT, Slack token+webhook, Twilio,
+    Mailgun, SendGrid, npm, PayPal/Braintree, Square, Authorization Basic, Bearer,
+    Private Key, Generic) — плановые «vendor-форматы/JWT/Basic» уже покрыты.
+    Возможный будущий инкремент — несколько современных ключей (OpenAI sk-,
+    GitLab glpat-, Azure) + записи в secret_validator; отложено (низкий приоритет).
+  • #3 Краулер эндпоинтов: уже нативный (content_capture/site_map/scrapy_crawler);
+    katana — опция, не требование. Готово.
+  • #1 Пассивное перечисление субдоменов — наибольшая польза: расширено.
+
+Инкремент 1 (этот блок): core/subdomain_scanner.py — добавлены ДВА keyless
+пассивных источника по существующему паттерну (URL-константа + `_fetch_X`
+classmethod (сеть+парс через urlopen_retry/_names_in_domain) + `_passive_X`
+cache-обёртка (_PASSIVE_CACHE, 1ч TTL, failure→[]) + фаза в scan()):
+  • Cert Spotter (api.certspotter.com issuances, keyless): flatten `dns_names`
+    (SAN) каждого issuance → CT-источник, дополняющий crt.sh (другой лог/свежесть).
+    source-метка 'certspotter'.
+  • urlscan.io (search API, keyless): собирает page/task `domain` из results →
+    пассивный URL-corpus источник (хосты, реально загруженные в браузер-скане),
+    отличный от CT/passive-DNS. source-метка 'urlscan'.
+Итого keyless-источников 4 → 6 (crt.sh, HackerTarget, AlienVault, Anubis,
+Cert Spotter, urlscan) → полезное пассивное перечисление «из коробки», а
+subfinder/amass остаются опциональным усилением, не требованием. Оба кэшируются
+и мягко деградируют при сбое/офлайне (как остальные). Оригинальный код по
+описанию поведения API — чужие исходники не транслировались.
+
+Тесты: tests/test_subdomain_cache.py — `_no_dns` fixture теперь глушит и новые
+источники (набор офлайн); +3 теста (certspotter+urlscan записаны с верными
+source-метками и кэшируются; парсинг `_fetch_certspotter` flatten dns_names +
+фильтр по домену; парсинг `_fetch_urlscan` page/task domains + фильтр). Проверено:
+ruff clean, self-check OK (29 вкладок), полный pytest зелёный — 2570 → 2573 (+3).
+Локальные коммиты, без push.
+
+Дальше по DEV_PLAN: возможные доп. инкременты WS5 (современные secret-паттерны;
+ещё keyless-источники субдоменов), затем остаток WS6 (update-check, user-facing
+error messages, аудит проглатываемых except).
+

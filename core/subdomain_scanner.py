@@ -1,9 +1,13 @@
 """
 SubdomainScanner — passive enumeration (crt.sh, HackerTarget, AlienVault OTX,
-Anubis/jldc) + active DNS brute-force with concurrent resolution.
+Anubis/jldc, Cert Spotter, urlscan.io) + active DNS brute-force with concurrent
+resolution.
 
 All passive sources are keyless and free; the keyed/heavyweight backends from
-dedicated tools (subfinder/amass) are intentionally not reimplemented.
+dedicated tools (subfinder/amass) are intentionally not reimplemented. The broad
+native source set (six keyless HTTP APIs) means a useful passive enumeration runs
+out of the box, with subfinder/amass staying an optional enrichment rather than a
+requirement.
 """
 import concurrent.futures
 import json
@@ -22,6 +26,9 @@ _CRTSH_URL        = 'https://crt.sh/?q=%.{domain}&output=json'
 _HACKERTARGET_URL = 'https://api.hackertarget.com/hostsearch/?q={domain}'
 _ALIENVAULT_URL   = 'https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns'
 _ANUBIS_URL       = 'https://jldc.me/anubis/subdomains/{domain}'
+_CERTSPOTTER_URL  = ('https://api.certspotter.com/v1/issuances?domain={domain}'
+                     '&include_subdomains=true&expand=dns_names')
+_URLSCAN_URL      = 'https://urlscan.io/api/v1/search/?q=domain:{domain}&size=1000'
 _FETCH_TIMEOUT    = 10
 _DNS_TIMEOUT      = 3
 
@@ -90,7 +97,8 @@ class SubdomainScanner:
     """
     Enumerates subdomains via:
     1. Passive:   crt.sh certificate transparency + HackerTarget +
-                  AlienVault OTX + Anubis (all keyless, free, cached)
+                  AlienVault OTX + Anubis + Cert Spotter + urlscan.io
+                  (all keyless, free, cached)
     2. Active:    DNS brute-force against a built-in wordlist
     """
 
@@ -213,6 +221,20 @@ class SubdomainScanner:
                 if self._cancel.is_set():
                     break
                 _record(name, _resolve(name) or '', 'anubis')
+
+        # ── Phase 2c2: Cert Spotter (certificate transparency, keyless) ──
+        if passive and not self._cancel.is_set():
+            for name in self._passive_certspotter(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'certspotter')
+
+        # ── Phase 2c3: urlscan.io (passive URL corpus, keyless) ──────────
+        if passive and not self._cancel.is_set():
+            for name in self._passive_urlscan(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'urlscan')
 
         # ── Phase 2d: amass passive (external binary, opt-in) ─────────────
         if amass and not self._cancel.is_set():
@@ -353,6 +375,26 @@ class SubdomainScanner:
         except Exception:
             return []
 
+    def _passive_certspotter(self, domain: str, use_cache: bool) -> List[str]:
+        """Return Cert Spotter (certificate-transparency) names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('certspotter', domain), lambda: self._fetch_certspotter(domain))
+            return self._fetch_certspotter(domain)
+        except Exception:
+            return []
+
+    def _passive_urlscan(self, domain: str, use_cache: bool) -> List[str]:
+        """Return urlscan.io passive-corpus names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('urlscan', domain), lambda: self._fetch_urlscan(domain))
+            return self._fetch_urlscan(domain)
+        except Exception:
+            return []
+
     def _passive_amass(self, domain: str) -> List[str]:
         """Return amass passive subdomains (external binary, opt-in, guarded).
 
@@ -453,6 +495,51 @@ class SubdomainScanner:
         body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
         data = json.loads(body.decode('utf-8', errors='ignore'))
         return cls._names_in_domain(data if isinstance(data, list) else [], domain)
+
+    @classmethod
+    def _fetch_certspotter(cls, domain: str) -> List[str]:
+        """Fetch + parse Cert Spotter issuances (network, keyless).
+
+        The keyless endpoint returns a JSON array of issuance objects, each with a
+        ``dns_names`` list (the certificate's SANs). We flatten every SAN and keep
+        the in-domain names — a certificate-transparency source that complements
+        crt.sh (different log coverage / freshness)."""
+        req = urllib.request.Request(
+            _CERTSPOTTER_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
+        names: list = []
+        for entry in (data if isinstance(data, list) else []):
+            if isinstance(entry, dict):
+                names.extend(entry.get('dns_names') or [])
+        return cls._names_in_domain(names, domain)
+
+    @classmethod
+    def _fetch_urlscan(cls, domain: str) -> List[str]:
+        """Fetch + parse urlscan.io search results (network, keyless).
+
+        The keyless search API returns ``{"results": [{"page": {"domain": ...},
+        "task": {"domain": ...}}, ...]}``; we harvest the page/task hostnames and
+        keep the in-domain ones — a passive URL-corpus source distinct from CT and
+        passive-DNS (it sees hosts that were actually loaded in a browser scan)."""
+        req = urllib.request.Request(
+            _URLSCAN_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        data = json.loads(body.decode('utf-8', errors='ignore'))
+        results = data.get('results', []) if isinstance(data, dict) else []
+        names: list = []
+        for rec in results:
+            if not isinstance(rec, dict):
+                continue
+            for section in ('page', 'task'):
+                sub = rec.get(section)
+                if isinstance(sub, dict) and sub.get('domain'):
+                    names.append(sub['domain'])
+        return cls._names_in_domain(names, domain)
 
     def _run_active(self, found: Dict[str, Dict],
                     on_progress: Optional[Callable[[int, int], None]],

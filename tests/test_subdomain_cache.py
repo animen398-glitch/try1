@@ -4,6 +4,8 @@ The crt.sh / HackerTarget fetches are stubbed; we assert the TTL cache spares
 repeat network calls within a session and that ``use_cache=False`` bypasses it.
 """
 
+import json
+
 import core.subdomain_scanner as ss
 from core.subdomain_scanner import SubdomainScanner
 
@@ -15,6 +17,10 @@ def _no_dns(monkeypatch):
     monkeypatch.setattr(SubdomainScanner, "_fetch_alienvault",
                         classmethod(lambda cls, d: []))
     monkeypatch.setattr(SubdomainScanner, "_fetch_anubis",
+                        classmethod(lambda cls, d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_certspotter",
+                        classmethod(lambda cls, d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_urlscan",
                         classmethod(lambda cls, d: []))
 
 
@@ -92,6 +98,52 @@ def test_extra_passive_sources_recorded_and_cached(monkeypatch):
     _passive_only(scanner, "example.com")          # second scan hits the cache
     assert av_calls == ["example.com"]
     assert an_calls == ["example.com"]
+
+
+def test_certspotter_and_urlscan_recorded_and_cached(monkeypatch):
+    ss._PASSIVE_CACHE.clear()
+    _no_dns(monkeypatch)
+    monkeypatch.setattr(SubdomainScanner, "_fetch_crtsh", staticmethod(lambda d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_hackertarget",
+                        staticmethod(lambda d: []))
+    cs_calls, us_calls = [], []
+    monkeypatch.setattr(SubdomainScanner, "_fetch_certspotter",
+                        classmethod(lambda cls, d: cs_calls.append(d) or ["cs.example.com"]))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_urlscan",
+                        classmethod(lambda cls, d: us_calls.append(d) or ["us.example.com", "example.com"]))
+
+    scanner = SubdomainScanner()
+    res = _passive_only(scanner, "example.com")
+    sources = {e["subdomain"]: e["source"] for e in res["results"]}
+    assert sources.get("cs.example.com") == "certspotter"
+    assert sources.get("us.example.com") == "urlscan"
+
+    _passive_only(scanner, "example.com")          # second scan hits the cache
+    assert cs_calls == ["example.com"]
+    assert us_calls == ["example.com"]
+
+
+def test_fetch_certspotter_flattens_dns_names(monkeypatch):
+    payload = json.dumps([
+        {"dns_names": ["a.example.com", "*.b.example.com", "example.com"]},
+        {"dns_names": ["c.other.org"]},          # out of domain → filtered
+        "junk",                                   # non-dict → skipped
+    ]).encode()
+    monkeypatch.setattr(ss, "urlopen_retry", lambda req, t, **k: (payload, {}))
+    assert SubdomainScanner._fetch_certspotter("example.com") == [
+        "a.example.com", "b.example.com", "example.com"]
+
+
+def test_fetch_urlscan_harvests_page_and_task_domains(monkeypatch):
+    payload = json.dumps({"results": [
+        {"page": {"domain": "a.example.com"}, "task": {"domain": "b.example.com"}},
+        {"page": {"domain": "x.other.org"}},     # out of domain → filtered
+        {"task": {}},                            # no domain → skipped
+        "junk",                                  # non-dict → skipped
+    ]}).encode()
+    monkeypatch.setattr(ss, "urlopen_retry", lambda req, t, **k: (payload, {}))
+    assert SubdomainScanner._fetch_urlscan("example.com") == [
+        "a.example.com", "b.example.com"]
 
 
 def test_extra_source_out_of_domain_names_filtered():
