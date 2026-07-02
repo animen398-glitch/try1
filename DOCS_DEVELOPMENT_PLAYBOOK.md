@@ -40,7 +40,7 @@ Engineering invariants carried from `CLAUDE.md`:
 
 | Epic | Name | Summary | Status |
 |---|---|---|---|
-| **E1** | Passive OSINT Intelligence Layer | Shodan, Censys, Cert Logs integrations with **zero target traffic**. | `[IN PROGRESS]` |
+| **E1** | Passive OSINT Intelligence Layer | Shodan, Censys, Cert Logs integrations with **zero target traffic**. | `[DONE]` (keyless + keyed) |
 | **E2** | Coverage Gate & Capability Awareness | Explicit tracking of what was skipped/failed and **why**. | `[DONE]` |
 | **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[DONE]` (contract) |
 | **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[DONE]` (accuracy layer) |
@@ -176,6 +176,39 @@ adds. No spoofing / anti-detection — a faithful render of an in-scope page onl
 **Deferred (increment 2):** an opt-in collection phase that renders the target
 and folds the accuracy delta into the report / E2 coverage (heavy + Playwright-
 dependent, so kept out of this offline-tested core).
+
+---
+
+### Stage 14 — E1 increment 3: keyed passive providers (Shodan API / Censys) — `[DONE]`
+
+**Goal:** add the keyed Shodan/Censys sources behind an opt-in configured key,
+still zero target traffic, keeping the keyless path byte-identical.
+
+**Delivered:**
+- `core/passive_osint.py` — two new registry entries (`shodan_api`, `censys`,
+  `requires_key=True`) and, mirroring the InternetDB seam (injectable `_fetch`,
+  never-raises, soft-degrade to `{}`):
+  - `parse_shodan_host` / `query_shodan(ip, api_key, …)` — Shodan Host API,
+    flattens `data[].cpe/vulns` into the common `{ip,ports,hostnames,cpes,tags,
+    vulns}` shape; empty without a key.
+  - `parse_censys_host` / `query_censys(ip, api_id, api_secret, …)` — Censys
+    Hosts API v2 with HTTP Basic auth (`_fetch_basic`); empty without both creds.
+  - `query_best(ip, config, fetch_map)` — prefers a keyed provider when its key
+    is configured (Shodan → Censys), else falls back to keyless InternetDB.
+    Keyed calls are guarded (fall through on failure); the final InternetDB call
+    is left bare so it composes with the scan phase's backstop.
+- `core/config.py` — `passive_osint` gains `shodan_api_key` / `censys_api_id` /
+  `censys_api_secret` (all empty = keyless-only, unchanged default behaviour).
+- `core/collection_runner.py` — `_phase_passive_osint` now calls `query_best`
+  (one line); **byte-identical without keys** (falls back to InternetDB), so the
+  E1 inc-2 scan tests pass unchanged.
+- `tests/test_passive_osint.py` — keyed registry, Shodan/Censys parse + query
+  (key-required, injected fetch, soft-degrade), and `query_best` provider
+  preference (keyed-first / keyless-fallback / censys-only).
+
+**Guardrails:** still zero target traffic (queries the provider's dataset, not
+the target); opt-in (no key → keyless); keys read from settings, never bundled.
+Epic E1 is now complete (keyless InternetDB + keyed Shodan/Censys, scan-wired).
 
 ---
 
@@ -562,7 +595,6 @@ OSINT: contract + opt-in scan phase); E3/E5/E7/E8/E4 (contract / planner / seam 
 accuracy layer).
 
 **Remaining work is depth (increment 2s), all offline and self-contained:**
-- E1-3 — keyed passive providers (Shodan API / Censys) behind a configured key.
 - E3-2 — scan-time `ip_authorized` enforcement seam (refuse an unauthorized
   target IP).
 - E4-2 — opt-in render phase folding the accuracy delta into report / coverage.

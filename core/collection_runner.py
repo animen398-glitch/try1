@@ -1554,7 +1554,10 @@ class CollectionRunner:
             for ip in ips:
                 if self._cancelled(report):
                     break
-                data = passive_osint.query_internetdb(ip)
+                # Use the richest available source: keyed Shodan/Censys when a
+                # key is configured, else keyless InternetDB (E1-3). Zero target
+                # traffic either way; falls back byte-identically without keys.
+                data = passive_osint.query_best(ip)
                 if data:
                     results.append(data)
             if not results:

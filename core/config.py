@@ -117,8 +117,11 @@ DEFAULT_SETTINGS = {
     # traffic); keyless. Discovered hosts/technologies fold into the asset
     # inventory; CVE associations are shown as intel only (not promoted to
     # authoritative findings — they are unverified CPE inferences). Off by
-    # default; soft-degrades to a skip when offline.
-    'passive_osint': {'enabled': False},
+    # default; soft-degrades to a skip when offline. Optional keyed providers
+    # (opt-in, empty = keyless InternetDB only): a Shodan API key and/or Censys
+    # API id+secret unlock richer per-IP data — still zero target traffic.
+    'passive_osint': {'enabled': False, 'shodan_api_key': '',
+                      'censys_api_id': '', 'censys_api_secret': ''},
 }
 
 MAX_TARGETS = 100

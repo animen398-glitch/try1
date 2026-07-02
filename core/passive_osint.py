@@ -24,6 +24,7 @@ Design (mirrors ``core.update_check`` / ``core.threat_feed``)
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import json
 import urllib.request
@@ -48,9 +49,25 @@ PASSIVE_SOURCES: Dict[str, PassiveSource] = {
         description="Shodan InternetDB — open ports/CPEs/CVEs for an IP (keyless, "
                     "zero target traffic).",
     ),
+    "shodan_api": PassiveSource(
+        name="shodan_api",
+        requires_key=True,
+        target_kind="ip",
+        description="Shodan Host API — richer ports/hostnames/CPEs/CVEs for an IP "
+                    "(needs an API key; zero target traffic).",
+    ),
+    "censys": PassiveSource(
+        name="censys",
+        requires_key=True,
+        target_kind="ip",
+        description="Censys Hosts API — services/ports/DNS/software for an IP "
+                    "(needs API id+secret; zero target traffic).",
+    ),
 }
 
 _INTERNETDB_URL = "https://internetdb.shodan.io/{ip}"
+_SHODAN_HOST_URL = "https://api.shodan.io/shodan/host/{ip}?key={key}"
+_CENSYS_HOST_URL = "https://search.censys.io/api/v2/hosts/{ip}"
 _USER_AGENT = "AdvancedSiteAnalyzer-PassiveOSINT"
 
 
@@ -135,6 +152,213 @@ def query_internetdb(
     except Exception:
         return {}
     return parse_internetdb(payload)
+
+
+# --- keyed providers (opt-in, behind a configured key) -----------------------
+
+def _fetch_basic(url: str, timeout: float, api_id: str, api_secret: str) -> Dict[str, Any]:
+    """HTTPS-only GET with HTTP Basic auth (for Censys); raises on failure."""
+    if not str(url).lower().startswith("https://"):
+        raise ValueError("passive OSINT endpoint must be https://")
+    token = base64.b64encode(f"{api_id}:{api_secret}".encode()).decode("ascii")
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json", "User-Agent": _USER_AGENT,
+        "Authorization": f"Basic {token}"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — https-only, checked
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
+def parse_shodan_host(payload: Any) -> Dict[str, Any]:
+    """Normalize a Shodan Host API response to the common shape.
+
+    Shodan returns ``ip_str``/``ports``/``hostnames``/``tags`` plus a ``data``
+    list of service banners carrying ``cpe``/``cpe23`` and per-service ``vulns``.
+    Flattened into the same ``{ip, ports, hostnames, cpes, tags, vulns}`` shape
+    as InternetDB.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    ip = str(payload.get("ip_str") or payload.get("ip") or "").strip()
+    if not ip:
+        return {}
+    ports: List[int] = []
+    for raw in payload.get("ports") or []:
+        try:
+            port = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if port not in ports:
+            ports.append(port)
+    cpes: List[str] = []
+    vulns: List[str] = list(payload.get("vulns") or [])
+    for svc in payload.get("data") or []:
+        if not isinstance(svc, dict):
+            continue
+        for key in ("cpe23", "cpe"):
+            cpes.extend(svc.get(key) or [])
+        svc_vulns = svc.get("vulns")
+        if isinstance(svc_vulns, dict):
+            vulns.extend(svc_vulns.keys())
+        elif isinstance(svc_vulns, list):
+            vulns.extend(svc_vulns)
+    return {
+        "ip": ip,
+        "ports": sorted(ports),
+        "hostnames": _str_list(payload.get("hostnames")),
+        "cpes": _str_list(cpes),
+        "tags": _str_list(payload.get("tags")),
+        "vulns": _str_list(vulns),
+        "source": "shodan_api",
+    }
+
+
+def query_shodan(
+    ip: str,
+    api_key: str,
+    *,
+    fetch: Optional[Callable[[str, float], Dict[str, Any]]] = None,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    """Look an IP up via the keyed Shodan Host API (opt-in, best-effort).
+
+    Returns ``{}`` when ``api_key`` is empty, the IP is invalid, or the request
+    fails — never raises. ``fetch`` is injectable for offline tests.
+    """
+    key = str(api_key or "").strip()
+    if not key:
+        return {}
+    try:
+        addr = ipaddress.ip_address(str(ip).strip())
+    except ValueError:
+        return {}
+    getter = fetch if fetch is not None else _fetch
+    try:
+        payload = getter(_SHODAN_HOST_URL.format(ip=addr, key=key), timeout)
+    except Exception:
+        return {}
+    return parse_shodan_host(payload)
+
+
+def parse_censys_host(payload: Any) -> Dict[str, Any]:
+    """Normalize a Censys Hosts API v2 response to the common shape.
+
+    Censys nests the host under ``result`` with ``services[].port`` and DNS
+    names under ``dns``/``services[].dns``. CVEs are not part of the base host
+    view, so ``vulns`` is typically empty here.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+    ip = str(result.get("ip") or "").strip()
+    if not ip:
+        return {}
+    ports: List[int] = []
+    cpes: List[str] = []
+    for svc in result.get("services") or []:
+        if not isinstance(svc, dict):
+            continue
+        try:
+            port = int(svc.get("port"))
+        except (TypeError, ValueError):
+            port = None
+        if port is not None and port not in ports:
+            ports.append(port)
+        for sw in svc.get("software") or []:
+            if isinstance(sw, dict) and sw.get("uniform_resource_identifier"):
+                cpes.append(sw["uniform_resource_identifier"])
+    dns = result.get("dns") if isinstance(result.get("dns"), dict) else {}
+    hostnames = dns.get("names") or (dns.get("reverse_dns") or {}).get("names") or []
+    return {
+        "ip": ip,
+        "ports": sorted(ports),
+        "hostnames": _str_list(hostnames),
+        "cpes": _str_list(cpes),
+        "tags": _str_list(result.get("labels")),
+        "vulns": [],
+        "source": "censys",
+    }
+
+
+def query_censys(
+    ip: str,
+    api_id: str,
+    api_secret: str,
+    *,
+    fetch: Optional[Callable[[str, float], Dict[str, Any]]] = None,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    """Look an IP up via the keyed Censys Hosts API (opt-in, best-effort).
+
+    Returns ``{}`` without both credentials, on an invalid IP, or on request
+    failure — never raises. ``fetch`` is injectable for offline tests; the real
+    default uses HTTP Basic auth with the id+secret.
+    """
+    cid = str(api_id or "").strip()
+    secret = str(api_secret or "").strip()
+    if not (cid and secret):
+        return {}
+    try:
+        addr = ipaddress.ip_address(str(ip).strip())
+    except ValueError:
+        return {}
+    getter = fetch if fetch is not None else (
+        lambda u, t: _fetch_basic(u, t, cid, secret))
+    try:
+        payload = getter(_CENSYS_HOST_URL.format(ip=addr), timeout)
+    except Exception:
+        return {}
+    return parse_censys_host(payload)
+
+
+def _osint_config() -> Dict[str, Any]:
+    """The ``passive_osint`` settings block (best-effort; ``{}`` on any error)."""
+    try:
+        from core.config import load_settings
+        cfg = load_settings().get("passive_osint")
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception:
+        return {}
+
+
+def query_best(
+    ip: str,
+    *,
+    config: Optional[Dict[str, Any]] = None,
+    fetch_map: Optional[Dict[str, Callable[[str, float], Dict[str, Any]]]] = None,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    """Enrich an IP from the richest available passive source.
+
+    Prefers keyed providers when a key is configured (Shodan API, then Censys),
+    falling back to keyless InternetDB. Keyed lookups are guarded so a keyed
+    failure falls through; the final InternetDB call is left bare (it already
+    soft-degrades to ``{}``), so this composes with the scan phase's backstop.
+    """
+    cfg = config if isinstance(config, dict) else _osint_config()
+    fetches = fetch_map or {}
+
+    shodan_key = str(cfg.get("shodan_api_key") or "").strip()
+    if shodan_key:
+        try:
+            result = query_shodan(ip, shodan_key,
+                                  fetch=fetches.get("shodan_api"), timeout=timeout)
+        except Exception:
+            result = {}
+        if result:
+            return result
+
+    censys_id = str(cfg.get("censys_api_id") or "").strip()
+    censys_secret = str(cfg.get("censys_api_secret") or "").strip()
+    if censys_id and censys_secret:
+        try:
+            result = query_censys(ip, censys_id, censys_secret,
+                                  fetch=fetches.get("censys"), timeout=timeout)
+        except Exception:
+            result = {}
+        if result:
+            return result
+
+    return query_internetdb(ip, fetch=fetches.get("shodan_internetdb"), timeout=timeout)
 
 
 # --- mapping into canonical DTOs (no store writes) ---------------------------
