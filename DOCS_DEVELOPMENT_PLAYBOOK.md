@@ -47,7 +47,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[DONE]` (planner) |
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[DONE]` (backend seam) |
-| **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[DONE]` (contract) |
+| **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[DONE]` (contract + store/dispatcher) |
 | **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[DONE]` |
 | **E10** | Parser Hardening & Input Limits | Guard core parsers against JSON bombs and huge-file DoS. | `[DONE]` |
 
@@ -176,6 +176,45 @@ adds. No spoofing / anti-detection — a faithful render of an in-scope page onl
 **Deferred (increment 2):** an opt-in collection phase that renders the target
 and folds the accuracy delta into the report / E2 coverage (heavy + Playwright-
 dependent, so kept out of this offline-tested core).
+
+---
+
+### Stage 13 — E8 increment 2: JobStore / NodeStore + dispatcher — `[DONE]`
+
+**Goal:** persist the orchestration contract and run a claimed job via its
+kind's runner.
+
+**Delivered:**
+- `core/job_store.py` — `JobStore` (the queue) + `NodeStore` (the explicit-node
+  registry), each a single-table `SQLiteStore` mirroring `MissionStore`;
+  **schema-validates the canonical payload before every write**
+  (`asa_job` / `asa_worker_node`). Jobs: `save_job` (idempotent, preserves
+  `created_at`), `get_job`, `list_jobs(project/status, priority-ordered)`,
+  `delete_job`, and `claim_next_job(node)` — runs the pure scheduler over the
+  pending **payloads** (not store rows) then persists the authorization-gated
+  claim. Nodes: `save_node` / `get_node` / `list_nodes(authorized)` /
+  `delete_node`.
+- `core/job_dispatcher.py` — `run_job(job, runners, store=…)` moves a *claimed*
+  job running→completed|failed via the **injected** runner map (real runners
+  bound later via thin adapters), persisting each step; a missing runner or a
+  runner exception is recorded as `failed` (transient `_error`) rather than
+  raised, so a dispatch loop keeps draining. `dispatch_next(node, runners,
+  store)` = claim + run. Accepts a pure job or a store row (`_pure`).
+- `tests/test_job_store.py` — store CRUD + idempotence + ordering + claim
+  persistence + incapable-node refusal; node CRUD; dispatcher complete /
+  no-runner / runner-error / non-claimed-raises / dispatch_next drain.
+
+**Note (bug caught in review):** the first cut passed store **rows** (job nested
+under `payload`) to the pure scheduler, which mis-normalized them (fresh ids /
+empty targets) and left the original row pending. Fixed by extracting the pure
+payloads before scheduling — verified by the drain test.
+
+**Backward-compatibility:** touches **no existing file** — two new stores + a
+dispatcher + the E8 schemas already present. Not wired into `project_io` bundles
+(operational infra, not project artifacts). No hot-path change.
+
+**Deferred:** binding the real runners (collection/audit/mission/tool/retest) and
+a GUI/web/CLI surface for the queue.
 
 ---
 
