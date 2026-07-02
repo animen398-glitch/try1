@@ -43,7 +43,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E1** | Passive OSINT Intelligence Layer | Shodan, Censys, Cert Logs integrations with **zero target traffic**. | `[IN PROGRESS]` |
 | **E2** | Coverage Gate & Capability Awareness | Explicit tracking of what was skipped/failed and **why**. | `[DONE]` |
 | **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[DONE]` (contract) |
-| **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[NOT STARTED]` |
+| **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[DONE]` (accuracy layer) |
 | **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[DONE]` (planner) |
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[DONE]` (backend seam) |
@@ -139,6 +139,43 @@ identically for legitimate inputs.
 
 **Verification:** `ruff check core/safe_parse.py core/project.py
 core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
+### Stage 12 — E4: Browser-Backed Accuracy Mode — `[DONE]` (accuracy layer)
+
+**Goal:** use a headless render to parse the assets a single-page app only
+materializes after its JS runs, and *measure* the gap against static parsing —
+an accuracy aid, never an evasion/bypass tool.
+
+**Delivered:**
+- `core/browser_accuracy.py`:
+  - **Pure** DOM extraction — `extract_dom_assets(html, base_url)` parses the
+    rendered DOM (stdlib `html.parser`, no new dependency) for links (split
+    internal vs external by apex), form targets and subresource hosts; resolves
+    against the base URL, deduped/sorted, malformed-safe.
+  - **Pure** `accuracy_delta(static, rendered)` → per-category `added` lists +
+    a summary (static/rendered totals, added count, `gain_pct`) — a concrete
+    measure of what a static-only scan would have missed.
+    `build_browser_accuracy(static_html, rendered_html, base_url)` combines them.
+  - **Injectable, feature-gated render seam** — `capture_rendered_html(url,
+    render_fn=None)`: a test injects `render_fn`; in production it renders via
+    Playwright *only when installed* (`features.has_playwright`) and otherwise
+    returns `status='unavailable'` (soft degrade); never raises. `_playwright_render`
+    is a minimal goto + `page.content()` (network interception stays in
+    `dynamic_analyzer`).
+- `tests/test_browser_accuracy.py` — extraction/classification, dedup, scheme
+  filtering, malformed-safe, delta (rendered-only assets + gain), the injected
+  render path (success / error / unavailable) and an end-to-end offline run.
+
+**Why complementary, not duplicate:** `core.dynamic_analyzer` intercepts network
+traffic + probes runtime globals; it does not read the rendered DOM's asset
+graph (anchor links / forms / subresource hosts), which is what accuracy mode
+adds. No spoofing / anti-detection — a faithful render of an in-scope page only.
+
+**Deferred (increment 2):** an opt-in collection phase that renders the target
+and folds the accuracy delta into the report / E2 coverage (heavy + Playwright-
+dependent, so kept out of this offline-tested core).
 
 ---
 
@@ -480,11 +517,20 @@ suite green.
 
 ## 3. Next up
 
-**Done so far:** E2, E9, E10, E6, E3 (contract), E7 (backend seam), E5 (planner),
-E8 (contract), and E1 (increments 1–2). **All 10 epics now have a landed
-increment.** The last full epic without one is **E4 (Browser-Backed Accuracy
-Mode — Playwright for dynamic asset parsing)** — an opt-in, dependency-gated
-enrichment (soft-degrades when Playwright is absent), the natural next big piece.
-**Pending sub-increments (smaller, offline):** E3 inc-2 (scan-time `ip_authorized`
-enforcement seam), E1 inc-3 (keyed Shodan API / Censys), E7 inc-2 (Postgres
-dialect ops), E5 inc-2 (throttled probe phase), E8 inc-2 (JobStore + dispatcher).
+**Every one of the 10 roadmap epics (E1–E10) now has a landed, tested
+increment.** Foundational passes done: E2/E6/E9/E10 fully wired; E1 (passive
+OSINT: contract + opt-in scan phase); E3/E5/E7/E8/E4 (contract / planner / seam /
+accuracy layer).
+
+**Remaining work is depth (increment 2s), all offline and self-contained:**
+- E1-3 — keyed passive providers (Shodan API / Censys) behind a configured key.
+- E3-2 — scan-time `ip_authorized` enforcement seam (refuse an unauthorized
+  target IP).
+- E4-2 — opt-in render phase folding the accuracy delta into report / coverage.
+- E5-2 — opt-in scope-gated, throttled probe phase that executes a plan.
+- E7-2 — Postgres dialect ops (placeholder / `user_version` / `table_info` /
+  upsert) + a real `PostgresBackend`.
+- E8-2 — `JobStore`/`NodeStore` + a dispatcher that runs a claimed job via its
+  mapped runner.
+
+Pick any; each is a small, low-risk follow-up on an existing contract.
