@@ -42,7 +42,7 @@ Engineering invariants carried from `CLAUDE.md`:
 |---|---|---|---|
 | **E1** | Passive OSINT Intelligence Layer | Shodan, Censys, Cert Logs integrations with **zero target traffic**. | `[IN PROGRESS]` |
 | **E2** | Coverage Gate & Capability Awareness | Explicit tracking of what was skipped/failed and **why**. | `[DONE]` |
-| **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[NOT STARTED]` |
+| **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[DONE]` (contract) |
 | **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[NOT STARTED]` |
 | **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[NOT STARTED]` |
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
@@ -139,6 +139,41 @@ identically for legitimate inputs.
 
 **Verification:** `ruff check core/safe_parse.py core/project.py
 core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
+### Stage 8 — E3: Authorized Network Execution Profiles — `[DONE]` (contract)
+
+**Goal:** declare the network boundaries and legal basis of an authorized run —
+the IP dimension the domain/action ROE lacks.
+
+**Delivered:**
+- `core/execution_profile.py` — pure/offline contract (mirrors the
+  `pentest_mission` / `engagement` idiom): `create` / `normalize` / `validate` /
+  `ip_authorized` / `profile_expired` / `summary` / `to_json`. Fields:
+  `allowed_ips` / `denied_ips` (validated IP/CIDR via stdlib `ipaddress`;
+  host-bits normalized, invalid dropped), `source_nodes` (declared testing
+  origins for client allowlisting / auditability), and `legal`
+  (authorized_by / reference / contract_id / valid_from / valid_until / notes).
+  - **Default-deny:** an empty allowlist authorizes nothing; an explicit
+    `denied_ips` match wins over the allowlist; a malformed target IP is denied.
+  - `validate_execution_profile` gates a profile as *binding* (non-empty
+    allowlist + legal authorized_by/reference; malformed IP/CIDR flagged).
+- `schemas/asa_execution_profile.schema.json` + `audit_schema` alias
+  (`asa_execution_profile`) — `to_json` output is schema-valid.
+- `tests/test_execution_profile.py` — normalize/CIDR, validation gates,
+  default-deny `ip_authorized` (allow / deny-wins / outside / empty / malformed /
+  single-host), expiry window, summary, schema conformance.
+
+**Why complementary, not duplicate:** the engagement schema records
+`scope.allowed_ips` as bare strings but nothing validates them as CIDR, enforces
+membership, declares source nodes, or checks a validity window — this is the
+operational network-authorization layer that answers "is this target IP
+authorized right now?".
+
+**Deferred (increment 2):** a store + scan-time enforcement seam (consult the
+active profile's `ip_authorized` before touching a resolved target IP) and GUI/
+config surfaces — kept out of this contract-first increment.
 
 ---
 
@@ -337,12 +372,9 @@ suite green.
 
 ## 3. Next up
 
-**Done so far:** E2, E9, E10, E6, and E1 (increments 1–2; keyed providers
-pending). **Stage 8 candidates:** E1 increment 3 (keyed Shodan API / Censys
-behind a configured key), or **E3 Authorized Network Execution Profiles**
-(allowlist IPs / declared source nodes / legal refs — a config + ROE-adjacent
-contract, offline and self-contained), or **E7 Storage Abstraction** (a thin DB
-layer prepping the SQLite stores for a future Postgres backend). E4 (browser
-accuracy), E5 (wordlists), E8 (worker orchestration) are larger. Recommend E3
-next: smallest, offline, high governance value, and it composes with the ROE /
-scope layer already in the codebase.
+**Done so far:** E2, E9, E10, E6, E3 (contract), and E1 (increments 1–2; keyed
+providers pending). **Stage 9 candidates:** E3 increment 2 (store + scan-time
+`ip_authorized` enforcement seam), E1 increment 3 (keyed Shodan API / Censys),
+or **E7 Storage Abstraction** (a thin repository layer prepping the SQLite stores
+for a future Postgres backend — offline, self-contained). E4 (browser accuracy),
+E5 (wordlists), E8 (worker orchestration) are larger integration efforts.

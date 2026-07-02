@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Execution Profile",
+  "type": "object",
+  "required": [
+    "profile_id",
+    "name",
+    "profile",
+    "allowed_ips",
+    "denied_ips",
+    "source_nodes",
+    "legal"
+  ],
+  "properties": {
+    "profile_id": {"type": "string"},
+    "name": {"type": "string"},
+    "label": {"type": "string"},
+    "profile": {"type": "string", "enum": ["client_safe"]},
+    "allowed_ips": {"type": "array", "items": {"type": "string"}},
+    "denied_ips": {"type": "array", "items": {"type": "string"}},
+    "source_nodes": {"type": "array", "items": {"type": "string"}},
+    "legal": {
+      "type": "object",
+      "required": ["authorized_by", "reference", "contract_id", "valid_from",
+                   "valid_until", "notes"],
+      "properties": {
+        "authorized_by": {"type": "string"},
+        "reference": {"type": "string"},
+        "contract_id": {"type": "string"},
+        "valid_from": {"type": "string"},
+        "valid_until": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

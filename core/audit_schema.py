@@ -20,6 +20,7 @@ SCHEMA_ALIASES = {
     "asa_tool_run": "asa_tool_run.schema.json",
     "asa_engagement": "asa_engagement.schema.json",
     "asa_retest_run": "asa_retest_run.schema.json",
+    "asa_execution_profile": "asa_execution_profile.schema.json",
 }
 
 
