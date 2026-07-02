@@ -142,6 +142,53 @@ core/project_io.py` clean; targeted + full offline suite green.
 
 ---
 
+### Stage 6 — E1: Passive OSINT opt-in scan-path wiring — `[DONE]` (increment 2)
+
+**Goal:** wire the keyless InternetDB provider into Full Collection as an opt-in
+phase that enriches the asset inventory and shows in the Coverage Gate — zero
+target traffic, off by default.
+
+**Delivered:**
+- `core/collection_runner.py`:
+  - Opt-in `passive_osint` flag (ctor + `configure`), resolved via
+    `_passive_osint_enabled()` which also honours the `passive_osint.enabled`
+    setting (so it can be turned on without a GUI toggle; mirrors
+    `_scan_concurrency`'s settings read).
+  - `_phase_passive_osint(report)` — looks the recon-resolved IP(s) up via
+    `passive_osint.query_internetdb` (zero target traffic), rolls up
+    ports/hostnames/CPEs/CVEs; soft-degrades to `Skipped` (no IP / no data) and
+    backstops any unexpected error to `Error` — never sinks a scan.
+  - `_osint_target_ips(report)` — recon IP + infra-chain IP, validated/deduped.
+  - Added to the concurrent DAG (deps `recon`, **not** scope-gated — it queries
+    Shodan's dataset, like the threat feed) and to `_PHASE_ORDER`, so a
+    concurrent run stays byte-identical. HTML report gains a Passive OSINT card;
+    the phase automatically appears in the E2 Coverage Gate.
+- `core/asset_adapter.py` — `derive_assets` folds the `passive_osint` phase's
+  hosts/IPs/CPEs into the inventory with `source='passive_osint'` (added last, so
+  first-wins dedup never disrupts native assets; correct per-phase GONE-gating).
+- `core/passive_osint.py` — `osint_to_assets` gains a `source` override.
+- `core/config.py` — `passive_osint: {enabled: False}` (off by default; keyless,
+  zero target traffic; CVEs are intel-only, not promoted to findings).
+- `tests/test_passive_osint_scan.py` — gating, IP resolution, phase
+  success/skip/error backstop, asset fold, HTML card, coverage appearance.
+
+**Backward-compatibility notes:** off by default (flag + setting), so existing
+scans are unchanged; `sync` only upserts the new assets (GONE-gating keys on the
+new `passive_osint` source, so no existing asset can flap); CVE associations stay
+out of the authoritative findings store (client-safe — they are unverified CPE
+inferences). The sequential↔concurrent equality test still passes.
+
+**Design decision (locked):** CVEs from passive OSINT are *intel only*
+(shown in the report/card, counted in coverage) and are **not** promoted to
+`FindingsStore`, to avoid unverified CPE→CVE associations inflating a
+client-facing risk verdict. `osint_to_findings` remains available for a future
+keyed-provider increment where a confirmed source justifies promotion.
+
+**Verification:** `ruff` clean; passive OSINT + asset + collection_runner (incl.
+seq↔concurrent equality) + full offline suite green.
+
+---
+
 ### Stage 5 — E1: Passive OSINT layer — provider contract + first keyless source — `[DONE]` (increment 1)
 
 **Goal:** start E1 with a keyless, **zero-target-traffic** passive OSINT layer,
@@ -255,10 +302,10 @@ suite green.
 
 ## 3. Next up
 
-**Stage 6 → E1 increment 2 (opt-in scan-path wiring):** enrich the IP assets a
-scan already discovers via Shodan InternetDB, behind an opt-in setting
-(`passive_osint.enabled`, off by default), feeding `_sync_assets` and the E2
-Coverage Gate as a new phase — soft-degrading, zero target traffic. Then E1
-increment 3: keyed providers (Shodan API / Censys) behind configured keys. E3–E8
-(network profiles, browser-accuracy, wordlists, origin-exposure, Postgres
-readiness, worker orchestration) remain larger integration efforts afterward.
+**Stage 7 → E1 increment 3 (keyed providers) or E6 (Origin Exposure):** either
+add opt-in keyed passive providers (Shodan API / Censys) behind a configured key
+(same registry, injectable fetch, soft-skip when no key), or pivot to **E6
+Origin Exposure & Cloud Edge Intelligence** — passively compute direct-IP leaks
+behind a CDN by correlating the passive-OSINT IPs/hostnames with the recon
+infrastructure chain (a natural consumer of Stage 5–6 data, still zero target
+traffic). E3–E5, E7–E8 remain larger integration efforts to sequence afterward.

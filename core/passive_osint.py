@@ -139,18 +139,20 @@ def query_internetdb(
 
 # --- mapping into canonical DTOs (no store writes) ---------------------------
 
-def osint_to_assets(result: Dict[str, Any]) -> List["Any"]:
+def osint_to_assets(result: Dict[str, Any], *, source: Optional[str] = None) -> List["Any"]:
     """Map a parsed passive result into ``asset_adapter.Asset`` DTOs.
 
     The IP itself (with ports/tags as context), each resolved hostname, and each
     CPE (as a technology) become assets tagged with the discovering source. No
-    persistence — the caller decides whether to sync them.
+    persistence — the caller decides whether to sync them. ``source`` overrides
+    the stored source label (the scan integration passes the phase name
+    ``passive_osint`` so the asset lifecycle gates GONE on that phase).
     """
     from core.asset_adapter import Asset
 
     if not isinstance(result, dict) or not result.get("ip"):
         return []
-    source = result.get("source") or "passive_osint"
+    source = source or result.get("source") or "passive_osint"
     assets: List[Any] = []
     ip_attrs = {"source": source}
     if result.get("ports"):

@@ -110,6 +110,15 @@ DEFAULT_SETTINGS = {
     # by default) is an optional HTTPS URL the user can POST a report to
     # explicitly from the startup dialog.
     'crash_reporting': {'enabled': True, 'endpoint': ''},
+    # Passive OSINT enrichment (core/passive_osint.py, Roadmap E1) — opt-in.
+    # When 'enabled', a Full Collection looks the target's resolved IP up in
+    # Shodan's InternetDB (open ports / hostnames / CPEs / CVE ids). It reads
+    # Shodan's dataset by IP, so NO packet is sent to the target (zero target
+    # traffic); keyless. Discovered hosts/technologies fold into the asset
+    # inventory; CVE associations are shown as intel only (not promoted to
+    # authoritative findings — they are unverified CPE inferences). Off by
+    # default; soft-degrades to a skip when offline.
+    'passive_osint': {'enabled': False},
 }
 
 MAX_TARGETS = 100

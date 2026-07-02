@@ -96,8 +96,8 @@ ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
 _PHASE_ORDER: tuple[str, ...] = (
     'recon', 'api', 'capture', 'clone', 'cookies', 'vulns', 'nuclei',
     'security', 'subdomains', 'certificate', 'openapi', 'historical', 'dns',
-    'emails', 'employees', 'ct', 'asn_intel', 'osv', 'bbot', 'documents',
-    'iac', 'katana', 'screenshot', 'analyzers',
+    'emails', 'employees', 'ct', 'asn_intel', 'passive_osint', 'osv', 'bbot',
+    'documents', 'iac', 'katana', 'screenshot', 'analyzers',
 )
 
 
@@ -122,6 +122,7 @@ class CollectionRunner:
                  bbot: bool = False, documents: bool = False,
                  iac: bool = False, iac_path: Optional[str] = None,
                  threat_feed: bool = False, threat_epss_bulk: bool = False,
+                 passive_osint: bool = False,
                  scan_concurrency: Optional[int] = None):
         self.profile = profile
         self.max_pages = max_pages
@@ -203,6 +204,14 @@ class CollectionRunner:
         # only (no cloud API in phase 1); off by default; needs an explicit path.
         self.iac = iac
         self.iac_path = iac_path
+        # Opt-in Passive OSINT enrichment (Roadmap E1) — look the target's
+        # resolved IP up in Shodan's InternetDB (open ports / hostnames / CPEs /
+        # CVE ids). Reads Shodan's dataset by IP, so NO packet is sent to the
+        # target (zero target traffic); keyless. Discovered hosts/technologies
+        # fold into the asset inventory; CVE associations are intel-only (not
+        # promoted to authoritative findings). Off by default; degrades to a skip
+        # when offline. Not scope-gated (metadata about an IP, like threat_feed).
+        self.passive_osint = passive_osint
         # Concurrent scan engine — how many independent phases may run at once.
         # None → read core.config settings ('scan_concurrency', default 4);
         # 1 = the classic sequential pipeline. An explicit value here wins (used
@@ -237,6 +246,7 @@ class CollectionRunner:
                   iac_path: Optional[str] = None,
                   threat_feed: Optional[bool] = None,
                   threat_epss_bulk: Optional[bool] = None,
+                  passive_osint: Optional[bool] = None,
                   scan_concurrency: Optional[int] = None):
         if profile:
             self.profile = profile
@@ -280,6 +290,8 @@ class CollectionRunner:
             self.threat_feed = threat_feed
         if threat_epss_bulk is not None:
             self.threat_epss_bulk = threat_epss_bulk
+        if passive_osint is not None:
+            self.passive_osint = passive_osint
         if security is not None:
             self.security = security
         if bbot is not None:
@@ -422,6 +434,19 @@ class CollectionRunner:
         except Exception:  # noqa: BLE001 — a bad setting must never sink a scan
             return 4
 
+    def _passive_osint_enabled(self) -> bool:
+        """Whether the opt-in Passive OSINT phase (E1) should run: the explicit
+        instance flag, else the ``passive_osint.enabled`` setting (so a user can
+        turn it on in settings.json without a GUI toggle; mirrors how
+        :meth:`_scan_concurrency` reads settings). Off by default."""
+        if self.passive_osint:
+            return True
+        try:
+            from core.config import load_settings
+            return bool((load_settings().get('passive_osint') or {}).get('enabled'))
+        except Exception:  # noqa: BLE001 — a bad setting must never sink a scan
+            return False
+
     @staticmethod
     def _set_phase(report: Dict, key: str, result: Dict) -> Dict:
         """Store a phase result under its key and return it (task closure body)."""
@@ -487,6 +512,13 @@ class CollectionRunner:
         if self.asn_intel:
             tasks.append(Task('asn_intel', guarded(
                 'asn_intel', lambda: self._phase_asn_intel(report, scan_dir)),
+                deps=('recon',)))
+        if self._passive_osint_enabled():
+            # Not scope-gated: it queries Shodan's dataset about an IP, never the
+            # target (zero target traffic), like the threat feed. Depends on recon
+            # for the resolved IP; writes only its own report['phases'] entry.
+            tasks.append(Task('passive_osint', phase(
+                'passive_osint', lambda: self._phase_passive_osint(report)),
                 deps=('recon',)))
         if self.katana:
             tasks.append(Task('katana', guarded(
@@ -1498,6 +1530,69 @@ class CollectionRunner:
         except Exception as e:   # noqa: BLE001 — threat feed is best-effort
             self._log(f'  KEV/EPSS feed failed: {e}')
             return {'status': 'Error', 'error': str(e)}
+
+    def _phase_passive_osint(self, report: Dict) -> Dict:
+        """Passive OSINT enrichment (Roadmap E1, opt-in). Looks the target's
+        resolved IP up in Shodan's InternetDB (open ports / hostnames / CPEs /
+        CVE ids). Reads Shodan's dataset by IP, so NO packet reaches the target
+        (zero target traffic); keyless. Discovered hosts/CPEs fold into the asset
+        inventory via ``asset_adapter.derive_assets``; CVE ids are intel-only.
+        Best-effort — soft-degrades to a skip when offline or no IP resolved."""
+        self._log('[+] Passive OSINT (Shodan InternetDB)…')
+        try:
+            from core import passive_osint
+            ips = self._osint_target_ips(report)
+            if not ips:
+                self._log('  Passive OSINT — целевой IP не определён')
+                return {'status': 'Skipped', 'reason': 'no target IP resolved'}
+            results = []
+            for ip in ips:
+                if self._cancelled(report):
+                    break
+                data = passive_osint.query_internetdb(ip)
+                if data:
+                    results.append(data)
+            if not results:
+                self._log('  Passive OSINT — данных нет (офлайн или пусто)')
+                return {'status': 'Skipped', 'reason': 'no passive OSINT data'}
+            ports = sorted({p for r in results for p in r.get('ports', [])})
+            hosts = sorted({h for r in results for h in r.get('hostnames', [])})
+            cves = sorted({c for r in results for c in r.get('vulns', [])})
+            self._log(f"  Passive OSINT: {len(results)} IP, {len(ports)} порт(ов), "
+                      f"{len(hosts)} хост(ов), {len(cves)} CVE")
+            return {'status': 'Success', 'data': {
+                'results': results,
+                'summary': {'ips': len(results), 'ports': len(ports),
+                            'hostnames': len(hosts), 'cves': len(cves)},
+            }}
+        except Exception as e:  # noqa: BLE001 — passive OSINT is best-effort
+            self._log(f'  Passive OSINT failed: {e}')
+            return {'status': 'Error', 'error': str(e)}
+
+    @staticmethod
+    def _osint_target_ips(report: Dict) -> List[str]:
+        """The target IP(s) to enrich passively — the recon-resolved IP plus any
+        in the infrastructure chain, de-duplicated. Only well-formed IPs (a
+        non-IP is never looked up)."""
+        import ipaddress
+        recon = report.get('phases', {}).get('recon', {})
+        data = recon.get('data', {}) if isinstance(recon, dict) else {}
+        candidates: List[str] = []
+        if data.get('ip'):
+            candidates.append(str(data['ip']))
+        infra = data.get('infrastructure')
+        if isinstance(infra, dict) and infra.get('ip'):
+            candidates.append(str(infra['ip']))
+        out: List[str] = []
+        for c in candidates:
+            c = c.strip()
+            try:
+                ipaddress.ip_address(c)
+            except ValueError:
+                continue
+            if c not in out:
+                out.append(c)
+        return out
 
     def _phase_bbot(self, url: str, project_dir: Path, report: Dict) -> Dict:
         """External recon via BBOT (opt-in, external AGPL tool). BBOT is never
@@ -2781,6 +2876,23 @@ class CollectionRunner:
                 'ASN Intelligence', render_asn_intel(asn_phase.get('data')),
                 asn_phase.get('status', '—'),
             ))
+
+        # Passive OSINT (E1, opt-in) — Shodan InternetDB view of the target IP:
+        # open ports / hostnames / CPEs / CVE ids, with zero target traffic.
+        posint_phase = phases.get('passive_osint')
+        if isinstance(posint_phase, dict) and posint_phase.get('status') == 'Success':
+            ps = (posint_phase.get('data') or {}).get('summary') or {}
+            posint_body = (
+                f'<p style="font-size:13px;margin:4px 0;">'
+                f'IP: {e(str(ps.get("ips", 0)))} · '
+                f'Открытых портов: {e(str(ps.get("ports", 0)))} · '
+                f'Хостов: {e(str(ps.get("hostnames", 0)))} · '
+                f'CVE (intel): {e(str(ps.get("cves", 0)))}</p>'
+                f'<p style="font-size:11px;color:#888;margin:0;">'
+                f'Shodan InternetDB — passive, zero target traffic; CVE ids are '
+                f'unverified CPE associations (intel only, not findings).</p>')
+            body_parts.append(card('Passive OSINT (Shodan InternetDB)',
+                                   posint_body, posint_phase.get('status', '—')))
 
         # Exploitability (KEV/EPSS, opt-in) — how many of this scan's CVEs are
         # known-exploited or high-EPSS (drives priority, not the risk verdict).

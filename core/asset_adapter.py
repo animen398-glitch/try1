@@ -312,6 +312,19 @@ def derive_assets(report: Dict) -> List[Asset]:
             attrs.update(_present(version=t.get('version')))
             out.append(Asset('technology', t['name'], attrs=attrs))
 
+    # Passive OSINT (E1, opt-in) — the hosts/CPEs Shodan's dataset already knows
+    # for the target IP (zero target traffic). Added LAST with source
+    # 'passive_osint' so native phases win identity on overlap (_dedup is
+    # first-wins) and the store gates their GONE on the 'passive_osint' phase.
+    posint = _phase(report, 'passive_osint')
+    posint_results = posint.get('results') if isinstance(
+        posint.get('results'), list) else []
+    if posint_results:
+        from core.passive_osint import osint_to_assets
+        for res in posint_results:
+            if isinstance(res, dict):
+                out.extend(osint_to_assets(res, source='passive_osint'))
+
     return _dedup(out)
 
 
