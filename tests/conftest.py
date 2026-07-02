@@ -120,6 +120,22 @@ def _reset_web_throttle():
 
 
 @pytest.fixture(autouse=True)
+def _reset_host_throttle():
+    """Clear any per-host HTTP throttle between tests (Opt-5).
+
+    ``utils.http_retry._HOST_THROTTLE`` is a module global a scan installs; a
+    leak would make later tests actually sleep on request spacing. Only acts if
+    the module is imported, so non-network tests pay nothing."""
+    import sys
+    hr = sys.modules.get('utils.http_retry')
+    if hr is not None:
+        hr.set_host_throttle(None)
+    yield
+    if hr is not None:
+        hr.set_host_throttle(None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_operations_db(request, tmp_path_factory, monkeypatch):
     """Redirect the global operations DB to a per-test temp file.
 

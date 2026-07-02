@@ -22,6 +22,21 @@ import urllib.request
 import zlib
 from typing import Callable, Optional
 
+# Optional per-host throttle hook (WS6 / Opt-5). A scan installs a
+# ``HostThrottle.acquire`` via :func:`set_host_throttle`; ``urlopen_retry`` then
+# spaces every attempt per target host so all engines that use this seam honour
+# the scope rate limit. Default ``None`` → no-op (old behaviour preserved).
+_HOST_THROTTLE: Optional[Callable[[str], float]] = None
+
+
+def set_host_throttle(fn: Optional[Callable[[str], float]]) -> None:
+    """Install (or clear, with ``None``) the per-host throttle used by
+    :func:`urlopen_retry`. Scan-scoped: the caller sets it at scan start and
+    clears it in a ``finally``."""
+    global _HOST_THROTTLE
+    _HOST_THROTTLE = fn
+
+
 # Statuses worth retrying: rate-limit + transient upstream/server errors.
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 # Cap a server-provided Retry-After so a hostile/huge value can't stall a scan.
@@ -94,6 +109,12 @@ def urlopen_retry(req, timeout: float, *, return_final_url: bool = False, **kw):
     retried once consumed). Extra kwargs pass through to :func:`retry`.
     """
     def _once():
+        throttle = _HOST_THROTTLE
+        if throttle is not None:
+            try:
+                throttle(getattr(req, 'host', '') or '')
+            except Exception:
+                pass   # a misbehaving throttle must never break a fetch
         with urllib.request.urlopen(req, timeout=timeout) as r:
             if return_final_url:
                 return r.read(), r.headers, r.geturl()

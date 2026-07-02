@@ -66,6 +66,8 @@ from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
 from utils.atomic_io import atomic_write_json
+from utils.host_throttle import HostThrottle, rate_per_sec
+from utils.http_retry import set_host_throttle
 
 
 ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
@@ -569,6 +571,9 @@ class CollectionRunner:
         finally:
             self._active_operation = (None, None)
             self._active_report = None
+            # Drop any per-host throttle installed for this scan (Opt-5), so it
+            # never leaks into a later scan / other code sharing the process.
+            set_host_throttle(None)
 
     def _run_impl(self, url: str, output_base: str) -> Dict:
         if not url.startswith(('http://', 'https://')):
@@ -587,6 +592,14 @@ class CollectionRunner:
         # scan id is the directory name, so report/op stay consistent with disk.
         stamp = scan_dir.name
         scope = project.get_scope()
+
+        # Enforce the scope's rate limit (Opt-5): install a per-host throttle at
+        # the shared HTTP seam so every engine + the concurrent phases space their
+        # requests to a host. No rate configured → no throttle (old behaviour).
+        # Cleared in run()'s finally.
+        rps = rate_per_sec(scope.get('rate_limit'))
+        if rps > 0:
+            set_host_throttle(HostThrottle(rps).acquire)
 
         report: Dict = {
             'url': url,

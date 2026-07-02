@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel + engagement-e2e): 2597 passed / 0 skipped.
+  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel + engagement-e2e + rate-limit): 2603 passed / 0 skipped.
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
@@ -5986,4 +5986,31 @@ accepted authorization — задаётся в форме). e2e-тестов 6 �
 hosts/тесты не тронуты; паттерн будущего e2e-охвата остальных вкладок — тот же
 (subclass host + `_SyncRunMixin` + `.click()`). Проверено: ruff clean, self-check
 29 вкладок, полный pytest 2595 → 2597 (+2). Локальные коммиты, без push.
+
+
+================================================================================
+2026-07-02 — Пост-план опция 5: enforce scope rate_limit (per-host throttle)
+================================================================================
+
+Ранее `scope.rate_limit` был ТОЛЬКО метаданными (scope_guard: «not enforced»).
+Теперь он реально применяется — per-host троттлинг на общем HTTP-шве, поэтому все
+18 recon/audit-движков (все ходят через `utils.http_retry`) и конкурентные фазы
+WS3 пейсят запросы к хосту. Выбран вариант B (центральный шов, не по-движковый
+рефактор). Новый `utils/host_throttle.py`: `HostThrottle(rate)` — реестр per-host
+`RateLimiter` (reuse `utils.rate_limiter`; thread-safe; injectable clock;
+`acquire(host)` блокирует до разрешённого слота, rate<=0 → no-op) + `rate_per_sec(spec)`
+парсер («N»/«N rps»/«N/s»/«N/min»/«N/hour» → req/s; None/мусор → 0). `utils/http_retry.py`:
+модульный хук `set_host_throttle(fn)` (default None → no-op); `urlopen_retry`
+перед каждой попыткой зовёт `fn(req.host)` (guarded — кривой хук не ломает fetch).
+`core/collection_runner._run_impl`: при `rate_per_sec(scope.rate_limit)>0` ставит
+`set_host_throttle(HostThrottle(rps).acquire)`; `run()` finally всегда чистит
+(`set_host_throttle(None)`) — не течёт между сканами. Safe-by-default: rate не
+задан → no-op → байт-в-байт старое поведение. Под WS3 общий throttle сериализует
+same-host запросы между потоками — ровно нужная вежливость. `conftest`: autouse
+`_reset_host_throttle` (сброс глобального хука вокруг каждого теста, как
+`_reset_web_throttle`). 8 прямых `urlopen` в обход шва (внутренности http_retry,
+crash/update-сендеры) осознанно не троттлятся. Тесты `test_host_throttle.py` (6):
+парсер, disabled, per-host spacing (fake clock), независимость хостов, http_retry
+зовёт хук с правильным хостом, no-op без хука. Проверено: ruff clean, self-check
+29 вкладок, полный pytest 2597 → 2603 (+6). Локальные коммиты, без push.
 
