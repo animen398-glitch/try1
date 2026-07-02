@@ -188,3 +188,7 @@ class FindingsE2EHost(_SyncRunMixin, FindingsHost):
 
 class MissionsE2EHost(_SyncRunMixin, MissionsHost):
     """MissionsHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class EngagementsE2EHost(_SyncRunMixin, EngagementsHost):
+    """EngagementsHost whose _run_async runs inline (for click-driven e2e tests)."""

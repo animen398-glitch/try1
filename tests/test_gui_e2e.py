@@ -9,7 +9,9 @@ Qt); the stores are isolated per test by the conftest fixtures.
 """
 
 from core.findings_store import FindingsStore
-from tests.gui_test_helpers import FindingsE2EHost, MissionsE2EHost
+from tests.gui_test_helpers import (
+    EngagementsE2EHost, FindingsE2EHost, MissionsE2EHost,
+)
 
 
 # ── Findings: select a row, then assign / comment / change status by click ───────
@@ -117,3 +119,38 @@ def test_e2e_missions_fill_evidence_from_scan_by_click(qapp, tmp_path, monkeypat
     w.btn_mission_tool_evidence.click()         # → fill evidence from the scan
     filled = json.loads(w.mission_tool_evidence.toPlainText())
     assert filled['subdomains'] == ['a.shop.io']
+
+
+# ── Engagements: create + advance status by real button clicks ───────────────────
+
+def _fill_engagement_create(w, *, client='Acme', project='shop.io'):
+    w.engagement_create_client.setText(client)
+    w.engagement_create_project.setText(project)
+    w.engagement_create_domains.setText('shop.io')
+    w.engagement_create_accepted.setChecked(True)      # so draft→authorized is legal
+    w.engagement_create_authby.setText('CISO')
+
+
+def test_e2e_engagement_create_by_click(qapp):
+    from core.engagement_store import EngagementStore
+    w = EngagementsE2EHost()
+    _fill_engagement_create(w)
+    w.btn_engagement_create.click()                    # → _do_create_engagement → store
+    engagements = EngagementStore().list_engagements('shop.io')
+    assert len(engagements) == 1
+    assert engagements[0]['status'] == 'draft'
+
+
+def test_e2e_engagement_advance_status_by_click(qapp):
+    from core.engagement_store import EngagementStore
+    w = EngagementsE2EHost()
+    _fill_engagement_create(w)
+    w.btn_engagement_create.click()                    # create + auto-refresh
+    assert w.engagement_table.rowCount() >= 1
+    w.engagement_table.selectRow(0)                    # fills the advance combo
+    idx = w.engagement_advance_status.findData('authorized')
+    assert idx >= 0                                    # draft→authorized offered
+    w.engagement_advance_status.setCurrentIndex(idx)
+    assert w.btn_engagement_advance.isEnabled()
+    w.btn_engagement_advance.click()                   # → _do_advance_engagement → store
+    assert EngagementStore().list_engagements('shop.io')[0]['status'] == 'authorized'

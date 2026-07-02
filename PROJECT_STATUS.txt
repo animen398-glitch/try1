@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel): 2595 passed / 0 skipped.
+  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel + engagement-e2e): 2597 passed / 0 skipped.
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
@@ -5969,4 +5969,21 @@ pwa_manifest — сеть, зависит от html) остались после
 Barrier-доказательство, что IP/geo и fetch реально конкурентны). Проверено: ruff
 clean, self-check 29 вкладок, полный pytest 2594 → 2595 (+1). Локальные коммиты,
 без push.
+
+
+================================================================================
+2026-07-02 — Пост-план опция 3: e2e/GUI-тесты для вкладки Engagements
+================================================================================
+
+Расширен headless e2e-слой (harness `_SyncRunMixin` — `_run_async` инлайн, реальные
+`QAbstractButton.click()`): новый `EngagementsE2EHost` (в `tests/gui_test_helpers.py`,
+зеркало `MissionsE2EHost`) + 2 click-driven теста в `tests/test_gui_e2e.py`,
+покрывающих полную цепочку click→handler→worker→store для вкладки Engagements:
+create engagement кнопкой → запись в (conftest-изолированный) `EngagementStore`;
+select-row → advance draft→authorized кнопкой → статус в сторе изменился (combo
+целей заполняется из `ENGAGEMENT_TRANSITIONS` при выборе; draft→authorized требует
+accepted authorization — задаётся в форме). e2e-тестов 6 → 8. Существующие
+hosts/тесты не тронуты; паттерн будущего e2e-охвата остальных вкладок — тот же
+(subclass host + `_SyncRunMixin` + `.click()`). Проверено: ruff clean, self-check
+29 вкладок, полный pytest 2595 → 2597 (+2). Локальные коммиты, без push.
 
