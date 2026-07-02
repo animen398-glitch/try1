@@ -44,7 +44,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E2** | Coverage Gate & Capability Awareness | Explicit tracking of what was skipped/failed and **why**. | `[DONE]` |
 | **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[DONE]` (contract) |
 | **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[NOT STARTED]` |
-| **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[NOT STARTED]` |
+| **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[DONE]` (planner) |
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[DONE]` (backend seam) |
 | **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[NOT STARTED]` |
@@ -139,6 +139,42 @@ identically for legitimate inputs.
 
 **Verification:** `ruff check core/safe_parse.py core/project.py
 core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
+### Stage 10 — E5: Context-Aware Wordlist Manager — `[DONE]` (planner)
+
+**Goal:** turn detected technologies + the ROE budget into a *small, targeted,
+bounded* list of paths worth checking — never a blind mega-dictionary brute
+force.
+
+**Delivered:**
+- `core/wordlist_manager.py` — pure/offline **planner** (selects + caps
+  candidates; never sends a request):
+  - Curated, precision-first path dictionaries by category (baseline
+    generic/config/vcs + api + per-tech wordpress/php/django/laravel/spring/
+    nodejs/tomcat). `categories_for` / `select_paths` map detected technologies →
+    relevant paths (deterministic, deduped); `technologies_from_report` reads the
+    recon fingerprint.
+  - `budget_from_roe` derives a request cap from the ROE `rate_limit` via the
+    SSOT `host_throttle.rate_per_sec` (rate × window, floored at 1, hard-capped
+    at 500; conservative default 50 when no rate declared).
+  - `plan_wordlist(technologies, roe, …)` → `{authorized, reason, candidates,
+    total_available, budget, truncated, categories}`. **Refuses to plan
+    (authorized=False, empty candidates) when the ROE is passive-only /
+    active-disabled** — path probing is an active action — and otherwise caps
+    the list to the smaller of the ROE budget and any explicit `max_candidates`.
+- `tests/test_wordlist_manager.py` — category/path selection, dedup/determinism,
+  budget math + cap, and the ROE gate (active authorizes, passive refuses,
+  truncation, explicit max, default-passive ROE).
+
+**Guardrails:** it plans, never probes; no brute force (`action_policy` forbids
+it); it stays within the authorized request budget and honors passive-only ROE.
+Purely additive — a new module + test, nothing else touched, no new dependency.
+
+**Deferred:** an opt-in active probe phase that *executes* a plan (scope-gated,
+throttled via the existing per-host throttle) is a future increment; the plan is
+the safe half.
 
 ---
 
@@ -409,13 +445,13 @@ suite green.
 
 ## 3. Next up
 
-**Done so far:** E2, E9, E10, E6, E3 (contract), E7 (backend seam), and E1
-(increments 1–2; keyed providers pending). **Remaining full epics:** E4
-(Browser-Backed Accuracy Mode — Playwright for dynamic asset parsing), E5
-(Context-Aware Wordlist Manager — tech-targeted safe dictionaries within ROE
-budget), E8 (Authorized Worker Orchestration — a job queue + node framework).
-**Pending sub-increments:** E3 inc-2 (scan-time `ip_authorized` enforcement seam),
-E1 inc-3 (keyed Shodan API / Censys), E7 inc-2 (dialect ops for a real Postgres
-backend). Recommend **E5 next** (offline, self-contained, high day-to-day value:
-a ROE-budgeted, technology-targeted wordlist/dictionary manager — no exploit,
-no brute force, honors the rate/scope budget).
+**Done so far:** E2, E9, E10, E6, E3 (contract), E7 (backend seam), E5 (planner),
+and E1 (increments 1–2). **Remaining full epics:** E4 (Browser-Backed Accuracy
+Mode — Playwright for dynamic asset parsing) and E8 (Authorized Worker
+Orchestration — a job queue + node framework); both are larger and more
+integration-heavy. **Pending sub-increments (smaller):** E3 inc-2 (scan-time
+`ip_authorized` enforcement seam), E1 inc-3 (keyed Shodan API / Censys), E7 inc-2
+(dialect ops for a real Postgres backend), E5 inc-2 (opt-in scope-gated,
+throttled probe phase that executes a plan). Recommend an E8 contract-first
+increment (a job/queue model + node registry, offline) or any of the pending
+sub-increments next.
