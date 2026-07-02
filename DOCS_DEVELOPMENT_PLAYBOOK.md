@@ -46,7 +46,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[NOT STARTED]` |
 | **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[NOT STARTED]` |
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
-| **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[NOT STARTED]` |
+| **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[DONE]` (backend seam) |
 | **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[NOT STARTED]` |
 | **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[DONE]` |
 | **E10** | Parser Hardening & Input Limits | Guard core parsers against JSON bombs and huge-file DoS. | `[DONE]` |
@@ -139,6 +139,43 @@ identically for legitimate inputs.
 
 **Verification:** `ruff check core/safe_parse.py core/project.py
 core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
+### Stage 9 — E7: Storage Abstraction / PostgreSQL readiness — `[DONE]` (backend seam)
+
+**Goal:** stop the stores from hard-coding `sqlite3` — introduce the seam a
+future PostgreSQL backend plugs into — with byte-identical current behaviour.
+
+**Delivered:**
+- `utils/db_backend.py` — `DatabaseBackend` interface (owns *connection creation
+  + per-connection dialect setup*; exposes `dialect` / `placeholder` /
+  `supports_pragmas` for future dialect-aware SQL) and `SQLiteBackend` (reproduces
+  the old `sqlite3.connect` + `Row` factory + durability PRAGMAs exactly).
+  `resolve_backend(dsn)` factory: bare path / `sqlite://…` / `:memory:` →
+  `SQLiteBackend`; `postgres://` / `postgresql://` → a documented
+  `NotImplementedError` (the wiring point for later); empty → `ValueError`.
+- `utils/sqlite_store.py` — `SQLiteStore.__init__(db_path, *, backend=None)` now
+  builds (or accepts an injected) backend; `_connect` gets the connection from
+  `backend.connect()` **outside** the try (connect-time corruption raises as
+  before) and calls `backend.prepare()` (row factory + PRAGMAs) **inside** the
+  try (leak-safe). `_apply_pragmas` is preserved as a public delegator to the
+  backend. No store subclass changed — they all inherit the seam.
+- `tests/test_db_backend.py` — backend connect/prepare/WAL, DSN resolution
+  (path / scheme / memory / postgres-seam / empty), and `SQLiteStore` routing
+  through the default and an injected backend.
+
+**Backward-compatibility notes:** the transaction lifecycle
+(commit/rollback/close) and the exact connect-outside-try / prepare-inside-try
+ordering are unchanged; every store keeps working through the default
+`SQLiteBackend`; `backend=` is keyword-only, so all `super().__init__(db_path)`
+calls are unaffected. `core/backup.py`'s SQLite online-backup is a separate
+concern, intentionally left as-is.
+
+**Deferred:** the remaining dialect ops a Postgres backend needs (parameter
+placeholder in generated SQL, `user_version`→a metadata table, `PRAGMA
+table_info`→`information_schema`, `INSERT OR REPLACE`→`ON CONFLICT`) are the
+next increment; the seam and metadata for them now exist.
 
 ---
 
@@ -372,9 +409,13 @@ suite green.
 
 ## 3. Next up
 
-**Done so far:** E2, E9, E10, E6, E3 (contract), and E1 (increments 1–2; keyed
-providers pending). **Stage 9 candidates:** E3 increment 2 (store + scan-time
-`ip_authorized` enforcement seam), E1 increment 3 (keyed Shodan API / Censys),
-or **E7 Storage Abstraction** (a thin repository layer prepping the SQLite stores
-for a future Postgres backend — offline, self-contained). E4 (browser accuracy),
-E5 (wordlists), E8 (worker orchestration) are larger integration efforts.
+**Done so far:** E2, E9, E10, E6, E3 (contract), E7 (backend seam), and E1
+(increments 1–2; keyed providers pending). **Remaining full epics:** E4
+(Browser-Backed Accuracy Mode — Playwright for dynamic asset parsing), E5
+(Context-Aware Wordlist Manager — tech-targeted safe dictionaries within ROE
+budget), E8 (Authorized Worker Orchestration — a job queue + node framework).
+**Pending sub-increments:** E3 inc-2 (scan-time `ip_authorized` enforcement seam),
+E1 inc-3 (keyed Shodan API / Censys), E7 inc-2 (dialect ops for a real Postgres
+backend). Recommend **E5 next** (offline, self-contained, high day-to-day value:
+a ROE-budgeted, technology-targeted wordlist/dictionary manager — no exploit,
+no brute force, honors the rate/scope budget).

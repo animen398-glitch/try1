@@ -84,9 +84,17 @@ class SQLiteStore:
     _CORRUPTION_MARKERS: tuple = (
         'not a database', 'malformed', 'file is encrypted', 'disk image is malformed')
 
-    def __init__(self, db_path: Union[str, Path]):
+    def __init__(self, db_path: Union[str, Path], *, backend=None):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Storage backend seam (E7): connection creation + dialect setup live
+        # behind a pluggable backend so a future non-SQLite backend can be
+        # injected without touching the stores. Defaults to a SQLiteBackend built
+        # from this store's durability knobs — byte-identical to the old inline
+        # ``sqlite3.connect`` path.
+        from utils.db_backend import SQLiteBackend
+        self._backend = backend or SQLiteBackend(
+            self.db_path, busy_timeout_ms=self.BUSY_TIMEOUT_MS, wal=self.WAL)
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -167,22 +175,22 @@ class SQLiteStore:
 
     def _apply_pragmas(self, conn: sqlite3.Connection) -> None:
         """Durability/concurrency PRAGMA, применяемые к каждому соединению.
-        Контракт и обоснование — в docstring класса. ``busy_timeout`` и
-        ``synchronous`` per-connection; ``journal_mode=WAL`` persistent (no-op на
-        уже-WAL БД). Никогда не роняет соединение (PRAGMA — безопасные no-fail)."""
-        conn.execute(f'PRAGMA busy_timeout = {int(self.BUSY_TIMEOUT_MS)}')
-        conn.execute('PRAGMA synchronous = NORMAL')
-        if self.WAL:
-            conn.execute('PRAGMA journal_mode = WAL')
+        Контракт и обоснование — в docstring класса. Делегирует активному backend
+        (E7); для SQLite это те же ``busy_timeout``/``synchronous``/WAL. Сохранён
+        как публичный метод для обратной совместимости."""
+        self._backend.apply_pragmas(conn)
 
     @contextmanager
     def _connect(self):
-        conn = sqlite3.connect(str(self.db_path), timeout=self.BUSY_TIMEOUT_MS / 1000)
+        # Connection creation is the backend's job (E7 seam); it is done OUTSIDE
+        # the try so a connect-time corruption raises before we own a connection,
+        # exactly as before.
+        conn = self._backend.connect()
         try:
-            conn.row_factory = sqlite3.Row
-            # Inside the try so a PRAGMA failure (e.g. a corrupt DB) still closes
-            # the connection — otherwise it leaks and locks the file on Windows.
-            self._apply_pragmas(conn)
+            # ``prepare`` (row factory + PRAGMAs) is INSIDE the try so a failure
+            # (e.g. a corrupt DB) still closes the connection — otherwise it leaks
+            # and locks the file on Windows.
+            self._backend.prepare(conn)
             yield conn
             conn.commit()
         except Exception:
