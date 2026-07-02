@@ -40,7 +40,7 @@ Engineering invariants carried from `CLAUDE.md`:
 
 | Epic | Name | Summary | Status |
 |---|---|---|---|
-| **E1** | Passive OSINT Intelligence Layer | Shodan, Censys, Cert Logs integrations with **zero target traffic**. | `[NOT STARTED]` |
+| **E1** | Passive OSINT Intelligence Layer | Shodan, Censys, Cert Logs integrations with **zero target traffic**. | `[IN PROGRESS]` |
 | **E2** | Coverage Gate & Capability Awareness | Explicit tracking of what was skipped/failed and **why**. | `[DONE]` |
 | **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[NOT STARTED]` |
 | **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[NOT STARTED]` |
@@ -142,6 +142,40 @@ core/project_io.py` clean; targeted + full offline suite green.
 
 ---
 
+### Stage 5 — E1: Passive OSINT layer — provider contract + first keyless source — `[DONE]` (increment 1)
+
+**Goal:** start E1 with a keyless, **zero-target-traffic** passive OSINT layer,
+contract-first and fully offline-testable, before any scan-path wiring.
+
+**Delivered:**
+- `core/passive_osint.py` — pure/offline, mirrors the `update_check` /
+  `threat_feed` seam pattern (injectable `_fetch`, HTTPS-only, never raises):
+  - `PassiveSource` registry (`PASSIVE_SOURCES`) + `list_sources` — keyless-first;
+    keyed providers (Shodan API, Censys) plug in here later behind an opt-in key.
+  - First provider **Shodan InternetDB** (`internetdb.shodan.io/{ip}`): reads
+    Shodan's dataset by IP, so our process sends **no packet to the target** —
+    the canonical E1 "zero target traffic" source, keyless. `query_internetdb`
+    validates the IP locally (no request for a non-IP), `parse_internetdb`
+    normalizes ports/hostnames/cpes/tags/vulns.
+  - `osint_to_assets` / `osint_to_findings` — map into the canonical
+    `asset_adapter.Asset` / `findings_adapter.from_raw` DTOs (CVEs get canonical
+    identity so they dedup with scanner findings; emitted at `Info` +
+    "passive/unverified" detail). **No store writes, no risk-score impact.**
+- `tests/test_passive_osint.py` — registry, parse normalization/edge cases,
+  injected-transport query (non-IP short-circuits, soft-degrade on error,
+  IPv6), HTTPS-only guard, and DTO mapping.
+
+**Backward-compatibility notes:** purely additive — a new module + test, no
+existing file touched, no new dependency (stdlib `urllib`/`ipaddress`/`json`).
+Nothing runs unless a caller invokes it.
+
+**Next E1 increments (deferred):** opt-in scan-path wiring (enrich synced IP
+assets via InternetDB, gated by a setting, feeding `_sync_assets`/coverage), then
+keyed providers (Shodan API / Censys) behind configured keys, then a cert-log
+provider consolidating existing CT usage.
+
+---
+
 ### Stage 4 — E2: Coverage Gate wired to live scan phase statuses — `[DONE]`
 
 **Goal:** turn the E2 coverage summary from a derived report-time fallback into
@@ -221,10 +255,10 @@ suite green.
 
 ## 3. Next up
 
-**Stage 5 → E1 (Passive OSINT Intelligence Layer):** keyless-first passive OSINT
-provider scaffolding (Shodan / Censys / Cert-log adapters) with **zero target
-traffic**, opt-in, soft-degrading. Reuse the injectable-`_fetch` seam pattern
-(`update_check` / `threat_feed`) so it stays offline-testable; feed results into
-existing asset/finding adapters rather than a new store. E3–E8 (network profiles,
-browser-accuracy, wordlists, origin-exposure, Postgres readiness, worker
-orchestration) remain larger integration efforts to sequence afterward.
+**Stage 6 → E1 increment 2 (opt-in scan-path wiring):** enrich the IP assets a
+scan already discovers via Shodan InternetDB, behind an opt-in setting
+(`passive_osint.enabled`, off by default), feeding `_sync_assets` and the E2
+Coverage Gate as a new phase — soft-degrading, zero target traffic. Then E1
+increment 3: keyed providers (Shodan API / Censys) behind configured keys. E3–E8
+(network profiles, browser-accuracy, wordlists, origin-exposure, Postgres
+readiness, worker orchestration) remain larger integration efforts afterward.
