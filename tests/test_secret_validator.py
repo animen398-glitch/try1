@@ -26,6 +26,16 @@ def test_stripe_prefix_and_length():
     assert validate('Stripe Secret', 'sk_live_short')['status'] == INVALID
 
 
+def test_modern_provider_keys_exact_format():
+    assert validate('OpenAI API Key', 'sk-' + 'a' * 24)['status'] == VALID
+    assert validate('OpenAI API Key', 'sk-short')['status'] == INVALID
+    assert validate('Anthropic API Key', 'sk-ant-' + 'b' * 24)['status'] == VALID
+    assert validate('GitLab PAT', 'glpat-' + 'c' * 20)['status'] == VALID
+    assert validate('GitLab PAT', 'glpat-short')['status'] == INVALID
+    assert validate('Hugging Face Token', 'hf_' + 'd' * 34)['status'] == VALID
+    assert validate('Hugging Face Token', 'hf_tooshort')['status'] == INVALID
+
+
 # ── JWT: real base64url + JSON header decode ────────────────────────────────
 
 def test_jwt_valid_header_decodes_to_json_with_alg():

@@ -71,6 +71,33 @@ def test_detects_harvested_secretfinder_formats():
     assert "GitHub URL Credentials" in types
 
 
+def test_detects_modern_provider_keys():
+    openai = "sk-" + "A1b2C3d4E5f6G7h8I9j0"          # 20 body chars
+    gitlab = "glpat-" + "aB3dE5gH7jK9mN1pQ3sT"
+    hf = "hf_" + "a" * 34
+    text = f"o='{openai}';g='{gitlab}';h='{hf}';"
+    types = _types(scan_text(text))
+    assert {"OpenAI API Key", "GitLab PAT", "Hugging Face Token"} <= types
+
+
+def test_anthropic_prefix_wins_over_openai():
+    # ``sk-ant-…`` must be reported as the more specific Anthropic type, not
+    # swallowed by the broader OpenAI ``sk-`` rule (order + value-dedup).
+    key = "sk-ant-api03-" + "Z9y8X7w6V5u4T3s2R1q0"
+    findings = scan_text(key)
+    assert len(findings) == 1
+    assert findings[0]["type"] == "Anthropic API Key"
+    assert findings[0]["match"] == key
+
+
+def test_stripe_underscore_not_matched_by_openai_rule():
+    # OpenAI uses ``sk-`` (hyphen); Stripe uses ``sk_live_`` (underscore) — the
+    # OpenAI rule must not claim a Stripe key.
+    types = _types(scan_text("sk_live_" + "a" * 24))
+    assert "OpenAI API Key" not in types
+    assert "Stripe Secret" in types
+
+
 def test_clean_text_yields_nothing():
     assert scan_text("just some perfectly ordinary prose, nothing secret here") == []
     assert SecretScanner().scan_text("") == []

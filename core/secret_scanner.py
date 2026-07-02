@@ -47,6 +47,13 @@ RULES: List[SecretRule] = [
     SecretRule('Stripe Test Key',  re.compile(r'\bsk_test_[0-9a-zA-Z]{24,}\b')),
     SecretRule('GitHub Token',     re.compile(r'\bgh[pousr]_[A-Za-z0-9_]{36,}\b')),
     SecretRule('GitHub Fine-grained PAT', re.compile(r'\bgithub_pat_[A-Za-z0-9_]{22,}\b')),
+    # Modern AI / DevOps provider keys. Anthropic (``sk-ant-``) is listed BEFORE
+    # OpenAI (``sk-``) so the more specific prefix claims the value first — the
+    # scanner de-dups by matched value, so whichever rule matches first wins.
+    SecretRule('Anthropic API Key', re.compile(r'\bsk-ant-[A-Za-z0-9_-]{20,}\b')),
+    SecretRule('OpenAI API Key',   re.compile(r'\bsk-[A-Za-z0-9_-]{20,}\b')),
+    SecretRule('GitLab PAT',       re.compile(r'\bglpat-[A-Za-z0-9_-]{20,}\b')),
+    SecretRule('Hugging Face Token', re.compile(r'\bhf_[A-Za-z0-9]{34,}\b')),
     SecretRule('Slack Token',      re.compile(r'\bxox[baprs]-[0-9A-Za-z\-]{10,}\b')),
     SecretRule('Slack Webhook',    re.compile(r'https://hooks\.slack\.com/services/[A-Za-z0-9+/]{40,}')),
     SecretRule('Twilio SID Key',   re.compile(r'\bSK[0-9a-fA-F]{32}\b')),

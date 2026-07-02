@@ -140,6 +140,10 @@ _VALIDATORS: Dict[str, Callable[[str], _Result]] = {
     'Stripe Restricted Key': _re_exact(r'rk_live_[0-9a-zA-Z]{24,}'),
     'GitHub Token': _re_exact(r'gh[pousr]_[A-Za-z0-9_]{36,}'),
     'GitHub Fine-grained PAT': _re_exact(r'github_pat_[A-Za-z0-9_]{22,}'),
+    'Anthropic API Key': _re_exact(r'sk-ant-[A-Za-z0-9_-]{20,}'),
+    'OpenAI API Key': _re_exact(r'sk-[A-Za-z0-9_-]{20,}'),
+    'GitLab PAT': _re_exact(r'glpat-[A-Za-z0-9_-]{20,}'),
+    'Hugging Face Token': _re_exact(r'hf_[A-Za-z0-9]{34,}'),
     'Slack Token': _re_exact(r'xox[baprs]-[0-9A-Za-z\-]{10,}'),
     'Mailgun Key': _re_exact(r'key-[0-9a-zA-Z]{32}'),
 }

@@ -5806,3 +5806,35 @@ ruff clean, self-check OK (29 вкладок), полный pytest зелёны�
 ещё keyless-источники субдоменов), затем остаток WS6 (update-check, user-facing
 error messages, аудит проглатываемых except).
 
+
+================================================================================
+2026-07-02 — DEV_PLAN WS5 (инкремент 2): современные secret-паттерны
+================================================================================
+
+Кандидат #2 WS5 (нативный секрет-сканер без внешнего SecretFinder/GPL): к 28
+правилам добавлены 4 современных высокоценных vendor-ключа (оригинальные
+паттерны по публичной форме префикса, не транслированы чужие исходники;
+precision-first — жёсткие префиксы + минимум длины, минимум FP на минифицированном
+JS):
+  • Anthropic API Key — `\bsk-ant-[A-Za-z0-9_-]{20,}\b`
+  • OpenAI API Key    — `\bsk-[A-Za-z0-9_-]{20,}\b`
+  • GitLab PAT        — `\bglpat-[A-Za-z0-9_-]{20,}\b`
+  • Hugging Face Token— `\bhf_[A-Za-z0-9]{34,}\b`
+Порядок в RULES: Anthropic ПЕРЕД OpenAI — `sk-ant-…` заявляется более
+специфичным правилом (scanner дедупит по matched-value, первое совпадение
+побеждает). OpenAI-правило требует дефис `sk-`, поэтому НЕ ловит Stripe `sk_live_`
+(подчёркивание). Новые типы не в `_GENERIC_SECRET_TYPES` → `is_high_value_secret`
+классифицирует их high-value автоматически (тир не менялся). `core/secret_validator`:
+для всех 4 добавлены `_re_exact`-валидаторы (VALID при точной форме, INVALID при
+коротком/битом) — как у AWS/Stripe/GitHub.
+
+Файлы: `core/secret_scanner.py` (RULES +4), `core/secret_validator.py`
+(_VALIDATORS +4). Тесты: `tests/test_secret_scanner.py` (+3: детект 3 форм;
+Anthropic-prefix-wins-over-OpenAI; Stripe-underscore не матчится OpenAI-правилом),
+`tests/test_secret_validator.py` (+1: exact-format 4 типов). Проверено: ruff clean,
+self-check OK (29 вкладок), полный pytest зелёный — 2573 → 2577 (+4). Локальные
+коммиты, без push.
+
+Дальше по DEV_PLAN: остаток WS6 (update-check, user-facing error messages, аудит
+~192 проглатываемых except Exception — связка с WS2-breadcrumb).
+
