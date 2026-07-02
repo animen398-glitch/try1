@@ -49,7 +49,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[NOT STARTED]` |
 | **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[NOT STARTED]` |
 | **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[NOT STARTED]` |
-| **E10** | Parser Hardening & Input Limits | Guard core parsers against JSON bombs and huge-file DoS. | `[NOT STARTED]` |
+| **E10** | Parser Hardening & Input Limits | Guard core parsers against JSON bombs and huge-file DoS. | `[DONE]` |
 
 ---
 
@@ -98,9 +98,53 @@ unchanged.
 
 ---
 
+### Stage 2 — E10: Parser Hardening & Input Limits — `[DONE]`
+
+**Goal:** stand a DoS-resistance layer between the app's core parsers and
+untrusted/oversized input (corrupt/tampered `report.json`, shared `.zip`
+project bundles), with explicit, configurable limits.
+
+**Delivered:**
+- `core/safe_parse.py` — offline, stdlib-only guards:
+  - Named configurable defaults: `MAX_JSON_BYTES` (64 MiB), `MAX_JSON_DEPTH`
+    (200), `MAX_JSON_ITEMS` (10M), `MAX_MEMBER_BYTES` (64 MiB). Every entry
+    point takes explicit overrides (configurable without a config-schema change).
+  - `ParseLimitError(ValueError)` — subclassing `ValueError` keeps existing
+    degrade-not-raise handlers working unchanged.
+  - `json_nesting_depth` — linear, recursion-free, string-aware depth scan
+    (strips string literals in C first, so brackets inside strings never count)
+    → rejects JSON bombs **before** `json.loads` builds the graph.
+  - `count_elements` — iterative (explicit stack) element budget; measures even
+    interpreter-recursion-exceeding structures without `RecursionError`.
+  - `safe_json_loads` / `safe_read_bytes` / `safe_read_text` / `safe_read_json`
+    — byte-size + depth + element limits over strings, bytes, and files.
+  - `safe_zip_read` / `safe_zip_json` / `member_within_limit` — decompression
+    (zip) bomb guard on a member's *declared* uncompressed size before reading.
+- Wired into the untrusted-input seams (behavior preserved for legitimate data):
+  - `core/project.py::load_scan_report` → `safe_read_json`; oversized/bomb
+    `report.json` now degrades to the existing `None` path.
+  - `core/project_io.py` import → manifest and all DB-slice JSON members read via
+    `safe_zip_json`; `_safe_extract` rejects an over-limit member up front
+    (`member_within_limit`), complementing the existing zip-slip guard.
+- `core/iac_scanner.py` already had its own `_MAX_FILE_BYTES` guard — left
+  untouched (no need to churn working code).
+- `tests/test_safe_parse.py` — depth scan (incl. brackets-in-strings), JSON-bomb
+  rejection, iterative element counting on deep input, size limits, file
+  readers, and the zip decompression-bomb guard.
+
+**Backward-compatibility notes:** no schema/contract change; limits are
+generous defaults with per-call overrides; the export path (`json.dumps`) is
+untouched; `project_io` round-trip and `load_scan_report` callers behave
+identically for legitimate inputs.
+
+**Verification:** `ruff check core/safe_parse.py core/project.py
+core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
 ## 3. Next up
 
-**Stage 2 → E10 (Parser Hardening & Input Limits):** guard core parsers
-(JSON/report/IaC/document ingestion) against JSON bombs, deeply-nested
-structures, and huge-file DoS with explicit, configurable size/depth limits and
-safe truncation — offline, no new deps.
+**Stage 3 → E9 (Sensitive Data Governance):** redact raw secrets/credentials
+from client-facing report outputs (reuse the `secret_scanner` SSOT for
+detection; mask values while keeping type/location context) — offline, no new
+deps, no change to stored evidence.

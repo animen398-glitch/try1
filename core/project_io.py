@@ -33,6 +33,8 @@ import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Dict, Optional, Union
 
+from core.safe_parse import member_within_limit, safe_zip_json
+
 FORMAT_VERSION = 1
 _MANIFEST = 'manifest.json'
 _FINDINGS = 'findings.json'
@@ -59,7 +61,7 @@ def _validate_bundle_slug(slug: object) -> str:
 
 
 def _read_manifest(zf: zipfile.ZipFile) -> Dict:
-    manifest = json.loads(zf.read(_MANIFEST))
+    manifest = safe_zip_json(zf, _MANIFEST)
     if not isinstance(manifest, dict):
         raise ValueError('not a project bundle: manifest.json must be an object')
     fmt = manifest.get('format_version')
@@ -161,6 +163,9 @@ def _safe_extract(zf: zipfile.ZipFile, dest_dir: Path) -> int:
         target = (dest_dir / rel).resolve()
         if not target.is_relative_to(dest_root):
             raise ValueError(f'unsafe path in bundle: {name}')
+        # Reject a decompression-bomb member on its declared size before reading
+        # it into memory (E10 — zip-bomb guard, complements the zip-slip guard).
+        member_within_limit(zf, name)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(zf.read(name))
         n += 1
@@ -190,13 +195,13 @@ def import_project(src: Union[str, Path], base: Union[str, Path], *,
             if not replace:
                 return {'slug': slug, 'skipped': True, 'reason': 'project exists'}
 
-        findings = json.loads(zf.read(_FINDINGS)) if _FINDINGS in names else {}
-        assets = json.loads(zf.read(_ASSETS)) if _ASSETS in names else {}
-        audit_runs = json.loads(zf.read(_AUDIT_RUNS)) if _AUDIT_RUNS in names else {}
-        missions = json.loads(zf.read(_MISSIONS)) if _MISSIONS in names else {}
-        engagements = (json.loads(zf.read(_ENGAGEMENTS))
+        findings = safe_zip_json(zf, _FINDINGS) if _FINDINGS in names else {}
+        assets = safe_zip_json(zf, _ASSETS) if _ASSETS in names else {}
+        audit_runs = safe_zip_json(zf, _AUDIT_RUNS) if _AUDIT_RUNS in names else {}
+        missions = safe_zip_json(zf, _MISSIONS) if _MISSIONS in names else {}
+        engagements = (safe_zip_json(zf, _ENGAGEMENTS)
                        if _ENGAGEMENTS in names else {})
-        retest_runs = (json.loads(zf.read(_RETEST_RUNS))
+        retest_runs = (safe_zip_json(zf, _RETEST_RUNS)
                        if _RETEST_RUNS in names else {})
 
         (findings_store, assets_store, audit_store, mission_store,

@@ -203,8 +203,11 @@ class Project:
         """
         path = self.root / 'scans' / scan_id / 'report.json'
         try:
-            return json.loads(path.read_text(encoding='utf-8'))
+            from core.safe_parse import safe_read_json
+            return safe_read_json(path)
         except Exception:
+            # Absent, corrupt, or over an input limit (JSON bomb / huge file):
+            # the report is unusable either way, so degrade to None (E10).
             return None
 
     def latest_scan(self) -> Optional[Dict]:
