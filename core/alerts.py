@@ -23,6 +23,8 @@ per-project metadata files)::
       "types": ["new_secret", "takeover", "cert_change"],   # omit/empty = all
       "telegram": {"token": "...", "chat_id": "..."},
       "discord":  {"webhook_url": "https://discord.com/api/webhooks/..."},
+      "slack":    {"webhook_url": "https://hooks.slack.com/services/..."},
+      "webhook":  {"url": "https://my-siem.example/ingest"},   # generic JSON
       "email":    {"host": "smtp.example.com", "port": 587,
                    "username": "u", "password": "p",
                    "from": "bot@example.com", "to": "me@example.com",
@@ -170,6 +172,26 @@ class EmailChannel:
         return {'channel': self.name, 'status': 'ok'}
 
 
+class SlackChannel:
+    """Slack incoming webhook — a first-class named channel (WS4), parallel to
+    Discord. Slack reads the ``text`` field of the JSON body and returns HTTP 200
+    ("ok") on success. The generic ``WebhookChannel`` already produces a
+    Slack-compatible body, but a dedicated slot gives users an explicit "Slack"
+    config field and a clear ``slack`` entry in the delivery journal. urllib only,
+    no new dependency."""
+    name = 'slack'
+
+    def __init__(self, webhook_url: str):
+        self.webhook_url = webhook_url
+
+    def send(self, subject: str, body: str) -> Dict:
+        payload = json.dumps({'text': f'*{subject}*\n{body}'}).encode('utf-8')
+        status = _http_post(self.webhook_url, payload,
+                            {'Content-Type': 'application/json'})
+        return {'channel': self.name,
+                'status': 'ok' if status == 200 else f'http {status}'}
+
+
 class WebhookChannel:
     """Generic JSON webhook (EPIC 16 F3) — the universal outbound primitive.
 
@@ -198,6 +220,9 @@ def build_channels(config: Dict) -> List:
     dc = config.get('discord') or {}
     if dc.get('webhook_url'):
         channels.append(DiscordChannel(dc['webhook_url']))
+    sl = config.get('slack') or {}
+    if sl.get('webhook_url'):
+        channels.append(SlackChannel(sl['webhook_url']))
     em = config.get('email') or {}
     if em.get('host') and em.get('from') and em.get('to'):
         channels.append(EmailChannel(em))

@@ -5709,3 +5709,56 @@ ruff clean, self-check OK (29 вкладок), полный pytest зелёны�
 (отдельный будущий шаг). Дальше по DEV_PLAN: WS4 (алертинг), WS5 (нативные
 реализации), затем остаток WS6.
 
+
+================================================================================
+2026-07-02 — DEV_PLAN WS4: алертинг поверх мониторинга (дожать, не строить с нуля)
+================================================================================
+
+Аудит показал: почти весь WS4 уже реализован в предыдущих эпиках. Честная
+оценка перед кодом (урок WS3 — аудитить core перед «новым»):
+  • Generic webhook — УЖЕ есть (core/alerts.WebhookChannel, EPIC 16 F3): POSTит
+    JSON {text, subject, body} на любой HTTPS endpoint (Slack/Teams/Zapier/n8n/
+    SIEM). Slack incoming webhook читает `text` → уже работал.
+  • diff→alert проводка — ПОЛНАЯ. core/monitor.run_project дёргает alerts.notify
+    (диф) + все finding-based каналы (sla/secret/finding/kev). Проверено, что
+    core/scan_diff.diff_events эмитит КАЖДЫЙ тип из alerts.ALERT_TYPES
+    (new_subdomain, takeover, new_attack_path, attack_path_escalated,
+    dns_email_auth_weakened, attack_surface/exposure/criticality_drift, secret/
+    cert/graphql/sourcemap/cookie/dependency/header) — обрывов проводки нет ни в
+    одну сторону.
+  • Дедуп/anti-spam — есть: диф по своей природе only-new; finding-based каналы
+    (SLA/secret/finding/KEV) используют one-shot маркеры в FindingsStore
+    (reopen-resetting). Повтор не шлётся.
+  • Секреты не логируются: конфиг каналов (токены/URL) живёт в settings.json;
+    журнал доставки (_record_delivery) пишет только имена каналов + статус +
+    замаскированные заголовки алертов — токенов/URL там нет.
+  • Surfaces уже были: web read-only статус + `/alerts/test` (POST) send-test;
+    GUI вкладка «Уведомления» (Telegram/Discord/Webhook/Email + тест); CLI
+    monitor_cli рендерит alert-события через monitor.format_event.
+
+Единственный реальный пробел vs DEV_PLAN — выделенный канал Slack (item #1;
+«по форме идентичен Discord»). Добавлен как first-class именованный канал (не
+дублирование транспорта — тот же channel-паттерн, что Telegram/Discord/Webhook):
+
+core/alerts.py:
+  • Новый SlackChannel(webhook_url) (name='slack'): POSTит {"text": "*subj*\nbody"}
+    (каноничная форма Slack incoming webhook); успех = HTTP 200 ("ok"), иначе
+    "http N". urllib, без новых зависимостей.
+  • build_channels: слот `slack.webhook_url` (после discord, перед email) →
+    SlackChannel. Docstring config shape += slack + webhook.
+
+gui/dialogs.py: в вкладке «Уведомления» группа «Slack» (webhook URL) между
+Discord и generic Webhook; _collect_alerts_config += 'slack':
+{'webhook_url': ...}. (Existing generic-Webhook слот с подсказкой «Slack/Teams/…»
+сохранён — Slack теперь и явный, и generic-путь.)
+
+Тесты: tests/test_alerts.py (+3: SlackChannel text-payload/status-mapping,
+build_channels includes slack, skips slack без url), tests/test_alerts_gui.py
+(+1: populate slack из настроек; round-trip-тест расширен slack-проверкой).
+Проверено: ruff clean, self-check OK (29 вкладок), полный pytest зелёный —
+2566 → 2570 (+4). Локальные коммиты, без push.
+
+Дальше по DEV_PLAN: WS5 (нативные реализации функций внешних инструментов),
+затем остаток WS6 (update-check, user-facing error messages, аудит проглатываемых
+except).
+

@@ -281,6 +281,16 @@ class SettingsDialog(QDialog):
         dc_grp.setLayout(dcl)
         layout.addWidget(dc_grp)
 
+        sl = cfg.get('slack') or {}
+        sl_grp = SectionGroupBox("Slack")
+        sll = QVBoxLayout()
+        self.alert_sl_webhook = QLineEdit(sl.get('webhook_url', ''))
+        self.alert_sl_webhook.setPlaceholderText(
+            "Incoming webhook URL (https://hooks.slack.com/services/…)")
+        sll.addWidget(self.alert_sl_webhook)
+        sl_grp.setLayout(sll)
+        layout.addWidget(sl_grp)
+
         wh = cfg.get('webhook') or {}
         wh_grp = SectionGroupBox("Webhook (generic)")
         whl = QVBoxLayout()
@@ -338,6 +348,7 @@ class SettingsDialog(QDialog):
             'telegram': {'token': self.alert_tg_token.text().strip(),
                          'chat_id': self.alert_tg_chat.text().strip()},
             'discord': {'webhook_url': self.alert_dc_webhook.text().strip()},
+            'slack': {'webhook_url': self.alert_sl_webhook.text().strip()},
             'webhook': {'url': self.alert_wh_url.text().strip()},
             'email': {'host': self.alert_em_host.text().strip(),
                       'port': self.alert_em_port.value(),

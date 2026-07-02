@@ -79,11 +79,38 @@ def test_build_channels_by_present_fields():
     cfg = {
         'telegram': {'token': 't', 'chat_id': 'c'},
         'discord': {'webhook_url': 'https://d'},
+        'slack': {'webhook_url': 'https://hooks.slack.com/services/x'},
         'email': {'host': 'h', 'from': 'a@b', 'to': 'c@d'},
         'webhook': {'url': 'https://hook'},
     }
     names = {c.name for c in alerts.build_channels(cfg)}
-    assert names == {'telegram', 'discord', 'email', 'webhook'}
+    assert names == {'telegram', 'discord', 'slack', 'email', 'webhook'}
+
+
+def test_build_channels_skips_slack_without_url():
+    assert all(c.name != 'slack'
+               for c in alerts.build_channels({'slack': {}}))
+
+
+def test_slack_channel_posts_text_payload(monkeypatch):
+    import json as _json
+    captured = {}
+
+    def _fake(url, data, headers, timeout=10.0):
+        captured['url'] = url
+        captured['payload'] = _json.loads(data.decode('utf-8'))
+        return 200                          # Slack returns 200 "ok"
+
+    monkeypatch.setattr(alerts, '_http_post', _fake)
+    res = alerts.SlackChannel('https://hooks.slack.com/services/x').send('Subj', 'Body')
+    assert res == {'channel': 'slack', 'status': 'ok'}
+    assert captured['url'] == 'https://hooks.slack.com/services/x'
+    assert captured['payload'] == {'text': '*Subj*\nBody'}   # Slack reads `text`
+
+
+def test_slack_channel_non_200_status(monkeypatch):
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 500)
+    assert 'http 500' in alerts.SlackChannel('https://s').send('s', 'b')['status']
 
 
 def test_build_channels_skips_webhook_without_url():
