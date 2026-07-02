@@ -28,7 +28,7 @@ from core.business_context import (
 )
 from gui import theme
 from gui.ui_components import (
-    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
 )
 
 # criticality band → severity-ish colour key (reuses the themed severity palette so
@@ -96,6 +96,12 @@ class CriticalityTabMixin:
         header.setSectionResizeMode(3, QHeaderView.Stretch)  # asset value fills space
         self.crit_table.itemSelectionChanged.connect(self._on_crit_row_selected)
         layout.addWidget(self.crit_table, stretch=1)
+        # Page the per-asset criticality list so a large inventory never freezes
+        # the widget; the full list stays in _crit_records for selection.
+        self._crit_paginator = TablePaginator(
+            self.crit_table, self._render_crit_row,
+            on_page_changed=lambda: self.crit_detail.clear())
+        layout.addWidget(self._crit_paginator.widget)
 
         # ── detail panel (factors) ──────────────────────────────────────────
         detail_grp = SectionGroupBox("Из чего критичность (факторы)")
@@ -307,36 +313,38 @@ class CriticalityTabMixin:
 
     def _populate_crit_table(self, items: list):
         self._crit_records = items
-        self.crit_table.setRowCount(0)
-        for rec in items:
-            r = self.crit_table.rowCount()
-            self.crit_table.insertRow(r)
-            band = str(rec.get('band', '')).lower()
-            values = [
-                str(rec.get('criticality', '')),
-                band,
-                rec.get('type', ''),
-                rec.get('value', ''),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 1:   # band cell — themed colour
-                    color = theme.severity_color(_BAND_SEVERITY.get(band, ''))
-                    if color:
-                        item.setForeground(QColor(color))
-                self.crit_table.setItem(r, col, item)
+        self._crit_paginator.set_rows(items)
         # Restore the previously selected asset after an apply/clear reload so the
-        # editor stays on the same asset; selectRow re-fires the detail/editor fill.
+        # editor stays on the same asset; reveal navigates to its page first, and
+        # selectRow re-fires the detail/editor fill.
         target = self._crit_reselect_fp
         self._crit_reselect_fp = None
         if target:
-            for r, rec in enumerate(items):
+            for idx, rec in enumerate(items):
                 if rec.get('fp') == target:
-                    self.crit_table.selectRow(r)
+                    tr = self._crit_paginator.reveal(idx)
+                    if tr >= 0:
+                        self.crit_table.selectRow(tr)
                     break
         if not self.crit_table.selectionModel().selectedRows():
             self.crit_detail.clear()
             self._populate_biz_asset(None)
+
+    def _render_crit_row(self, table, r, rec):
+        band = str(rec.get('band', '')).lower()
+        values = [
+            str(rec.get('criticality', '')),
+            band,
+            rec.get('type', ''),
+            rec.get('value', ''),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 1:   # band cell — themed colour
+                color = theme.severity_color(_BAND_SEVERITY.get(band, ''))
+                if color:
+                    item.setForeground(QColor(color))
+            table.setItem(r, col, item)
 
     # ── selection / detail ────────────────────────────────────────────────────
 
@@ -344,10 +352,7 @@ class CriticalityTabMixin:
         sel = self.crit_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._crit_records)):
-            return {}
-        return self._crit_records[idx]
+        return self._crit_paginator.record_at(sel[0].row()) or {}
 
     def _on_crit_row_selected(self):
         rec = self._selected_crit()

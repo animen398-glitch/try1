@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS): 2593 passed / 0 skipped.
+  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация): 2594 passed / 0 skipped.
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
@@ -5918,4 +5918,31 @@ AlienVault/Anubis/Cert Spotter/urlscan/RapidDNS). Кэш + мягкая дегр
 HTML-парсинг с фильтром по домену, incl. отсечение notexample.com). Проверено:
 ruff clean, self-check 29 вкладок, полный pytest 2591 → 2593 (+2). Локальные
 коммиты, без push.
+
+
+================================================================================
+2026-07-02 — Пост-план опция 2: пагинация оставшихся крупных таблиц
+================================================================================
+
+Уточнение к прошлой заметке «остальные таблицы bounded-small»: три таблицы на
+деле грузят крупный список разом — History (`OperationRegistry.history(limit=1000)`
+до 1000 строк), Exposure и Criticality (полный per-asset `items`, не capped
+top-N). Применён существующий `gui/ui_components.TablePaginator` (тот же паттерн,
+что Findings/Assets/Timeline): полный список хранится (selection + CSV по полному
+набору), в `QTableWidget` рисуется одна страница; selection через
+`paginator.record_at(table_row)`; row-рендер вынесен в `_render_*_row`.
+  • `gui/tab_history.py`: `_history_paginator`; `_render_history_row`; populate →
+    `set_rows`; clear-view → `set_rows([])`; selection → `record_at`.
+  • `gui/tab_exposure.py`: `_exp_paginator`; `_render_exp_row`; `_selected_exp` →
+    `record_at`.
+  • `gui/tab_criticality.py`: `_crit_paginator`; `_render_crit_row`;
+    reselect-after-reload (по `fp`) теперь page-aware через новый
+    `TablePaginator.reveal(index)->table_row` (переходит на страницу с записью и
+    отдаёт локальную строку для `selectRow`); selection → `record_at`.
+`TablePaginator.reveal` — единственное дополнение к helper'у. Прочие табличные
+вкладки (technology-risk/osint/remediation/security/attack-paths) действительно
+bounded-small (capped top-N / per-scan) — сознательно не пагинируются
+(over-engineering). Тесты: `test_ui_pagination.py` (+1: reveal navigates+maps).
+Проверено: ruff clean, self-check 29 вкладок, полный pytest 2593 → 2594 (+1).
+Локальные коммиты, без push.
 

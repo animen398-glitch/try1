@@ -50,6 +50,15 @@ def test_record_at_maps_table_row_to_full_list(qapp):
     assert p.record_at(99) is None           # out of range → None
 
 
+def test_reveal_navigates_to_page_and_returns_local_row(qapp):
+    p = TablePaginator(_table(), _render, page_size=10)
+    p.set_rows(_rows(25))
+    tr = p.reveal(23)                         # full-list index 23 lives on page 3
+    assert p._page == 2 and tr == 3           # local row 3 == full index 23
+    assert p.record_at(tr)['v'] == 23         # round-trips back to the record
+    assert p.reveal(99) == -1                 # out of range
+
+
 def test_page_size_change_keeps_first_visible(qapp):
     p = TablePaginator(_table(), _render, page_size=100)
     p.set_rows(_rows(1000))

@@ -24,7 +24,7 @@ from qtpy.QtWidgets import (
 
 from gui import theme
 from gui.ui_components import (
-    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton,
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
 )
 
 # exposure band → severity-ish colour key (reuses the themed severity palette so
@@ -92,6 +92,12 @@ class ExposureTabMixin:
         header.setSectionResizeMode(3, QHeaderView.Stretch)  # asset value fills space
         self.exp_table.itemSelectionChanged.connect(self._on_exp_row_selected)
         layout.addWidget(self.exp_table, stretch=1)
+        # Page the per-asset exposure list so a large inventory never freezes the
+        # widget; the full list stays in _exp_records for selection.
+        self._exp_paginator = TablePaginator(
+            self.exp_table, self._render_exp_row,
+            on_page_changed=lambda: self.exp_detail.clear())
+        layout.addWidget(self._exp_paginator.widget)
 
         # ── detail panel (factors) ──────────────────────────────────────────
         detail_grp = SectionGroupBox("Из чего экспозиция (факторы)")
@@ -218,25 +224,24 @@ class ExposureTabMixin:
 
     def _populate_exp_table(self, items: list):
         self._exp_records = items
-        self.exp_table.setRowCount(0)
-        for rec in items:
-            r = self.exp_table.rowCount()
-            self.exp_table.insertRow(r)
-            band = str(rec.get('band', '')).lower()
-            values = [
-                str(rec.get('exposure', '')),
-                band,
-                rec.get('type', ''),
-                rec.get('value', ''),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 1:   # band cell — themed colour
-                    color = theme.severity_color(_BAND_SEVERITY.get(band, ''))
-                    if color:
-                        item.setForeground(QColor(color))
-                self.exp_table.setItem(r, col, item)
+        self._exp_paginator.set_rows(items)
         self.exp_detail.clear()
+
+    def _render_exp_row(self, table, r, rec):
+        band = str(rec.get('band', '')).lower()
+        values = [
+            str(rec.get('exposure', '')),
+            band,
+            rec.get('type', ''),
+            rec.get('value', ''),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 1:   # band cell — themed colour
+                color = theme.severity_color(_BAND_SEVERITY.get(band, ''))
+                if color:
+                    item.setForeground(QColor(color))
+            table.setItem(r, col, item)
 
     # ── selection / detail ────────────────────────────────────────────────────
 
@@ -244,10 +249,7 @@ class ExposureTabMixin:
         sel = self.exp_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._exp_records)):
-            return {}
-        return self._exp_records[idx]
+        return self._exp_paginator.record_at(sel[0].row()) or {}
 
     def _on_exp_row_selected(self):
         rec = self._selected_exp()

@@ -15,7 +15,9 @@ from qtpy.QtWidgets import (
 )
 
 from gui.constants import OPERATIONS_DB
-from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import (
+    ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
+)
 from utils.operation_registry import OperationRegistry
 
 
@@ -80,6 +82,12 @@ class HistoryTabMixin:
         header.setSectionResizeMode(1, QHeaderView.Stretch)  # Target column fills space
         self.history_table.itemSelectionChanged.connect(self._on_history_row_selected)
         table_layout.addWidget(self.history_table)
+        # Page the operations journal (up to 1000 rows) so the widget never
+        # freezes; the full list stays in _history_rows for selection.
+        self._history_paginator = TablePaginator(
+            self.history_table, self._render_history_row,
+            on_page_changed=lambda: self.history_meta.clear())
+        table_layout.addWidget(self._history_paginator.widget)
         table_grp.setLayout(table_layout)
         layout.addWidget(table_grp, stretch=3)
 
@@ -103,7 +111,7 @@ class HistoryTabMixin:
         """
         self._history_rows = []
         self._history_view_cleared = True
-        self.history_table.setRowCount(0)
+        self._history_paginator.set_rows([])
         self.history_meta.clear()
         self.history_count.setText("Записей: 0 (вид очищен — БД не затронута)")
 
@@ -186,54 +194,53 @@ class HistoryTabMixin:
         rows = result.get('rows', [])
         self._history_rows = rows
 
-        self.history_table.setRowCount(0)
-        for row in rows:
-            r = self.history_table.rowCount()
-            self.history_table.insertRow(r)
-            values = [
-                row.get('id'),
-                row.get('target'),
-                row.get('phase'),
-                row.get('status'),
-                row.get('started_at'),
-                self._history_warning_count(row),
-                row.get('duration_ms'),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem('' if val is None else str(val))
-                if col in (0, 5, 6):
-                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if col == 3:  # Status colouring
-                    status = (row.get('status') or '').lower()
-                    if status == 'success':
-                        item.setForeground(QColor('#2e7d32'))
-                    elif status == 'failed':
-                        item.setForeground(QColor('#d32f2f'))
-                    elif status == 'running':
-                        item.setForeground(QColor('#0078d4'))
-                    elif status == 'cancelled':
-                        item.setForeground(QColor('#ef6c00'))
-                if col == 5:
-                    tip = self._history_warning_tooltip(row)
-                    if tip:
-                        item.setToolTip(tip)
-                        item.setForeground(QColor('#ef6c00'))
-                self.history_table.setItem(r, col, item)
+        self._history_paginator.set_rows(rows)
 
         self.history_count.setText(f"Записей: {len(rows)}")
         self.history_meta.clear()
         if not rows:
             self.history_meta.append_info("История пуста — операции ещё не записаны.")
 
+    def _render_history_row(self, table, r, row):
+        """Render one operations-journal row (one page at a time via the paginator)."""
+        values = [
+            row.get('id'),
+            row.get('target'),
+            row.get('phase'),
+            row.get('status'),
+            row.get('started_at'),
+            self._history_warning_count(row),
+            row.get('duration_ms'),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem('' if val is None else str(val))
+            if col in (0, 5, 6):
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            if col == 3:  # Status colouring
+                status = (row.get('status') or '').lower()
+                if status == 'success':
+                    item.setForeground(QColor('#2e7d32'))
+                elif status == 'failed':
+                    item.setForeground(QColor('#d32f2f'))
+                elif status == 'running':
+                    item.setForeground(QColor('#0078d4'))
+                elif status == 'cancelled':
+                    item.setForeground(QColor('#ef6c00'))
+            if col == 5:
+                tip = self._history_warning_tooltip(row)
+                if tip:
+                    item.setToolTip(tip)
+                    item.setForeground(QColor('#ef6c00'))
+            table.setItem(r, col, item)
+
     def _on_history_row_selected(self):
         rows = self.history_table.selectionModel().selectedRows()
         self.history_meta.clear()
         if not rows:
             return
-        idx = rows[0].row()
-        if not (0 <= idx < len(self._history_rows)):
+        record = self._history_paginator.record_at(rows[0].row())
+        if not record:
             return
-        record = self._history_rows[idx]
 
         error = record.get('error')
         if error:

@@ -321,6 +321,15 @@ class TablePaginator:
         idx = self.index_at(table_row)
         return self._rows[idx] if 0 <= idx < len(self._rows) else None
 
+    def reveal(self, index: int) -> int:
+        """Navigate to the page holding full-list ``index`` and return its row on
+        that page (or -1 if out of range) — so a caller can re-select a record
+        that may live on a different page after a reload."""
+        if not (0 <= index < len(self._rows)):
+            return -1
+        self.go_to(index // self._page_size)
+        return index - self.page_start()
+
     def go_to(self, page: int) -> None:
         page = max(0, min(int(page), self.page_count() - 1))
         if page != self._page:
