@@ -1,16 +1,17 @@
 """
 SubdomainScanner — passive enumeration (crt.sh, HackerTarget, AlienVault OTX,
-Anubis/jldc, Cert Spotter, urlscan.io) + active DNS brute-force with concurrent
-resolution.
+Anubis/jldc, Cert Spotter, urlscan.io, RapidDNS) + active DNS brute-force with
+concurrent resolution.
 
 All passive sources are keyless and free; the keyed/heavyweight backends from
 dedicated tools (subfinder/amass) are intentionally not reimplemented. The broad
-native source set (six keyless HTTP APIs) means a useful passive enumeration runs
-out of the box, with subfinder/amass staying an optional enrichment rather than a
-requirement.
+native source set (seven keyless HTTP APIs) means a useful passive enumeration
+runs out of the box, with subfinder/amass staying an optional enrichment rather
+than a requirement.
 """
 import concurrent.futures
 import json
+import re
 import socket
 import threading
 import time
@@ -29,6 +30,7 @@ _ANUBIS_URL       = 'https://jldc.me/anubis/subdomains/{domain}'
 _CERTSPOTTER_URL  = ('https://api.certspotter.com/v1/issuances?domain={domain}'
                      '&include_subdomains=true&expand=dns_names')
 _URLSCAN_URL      = 'https://urlscan.io/api/v1/search/?q=domain:{domain}&size=1000'
+_RAPIDDNS_URL     = 'https://rapiddns.io/subdomain/{domain}?full=1'
 _FETCH_TIMEOUT    = 10
 _DNS_TIMEOUT      = 3
 
@@ -97,8 +99,8 @@ class SubdomainScanner:
     """
     Enumerates subdomains via:
     1. Passive:   crt.sh certificate transparency + HackerTarget +
-                  AlienVault OTX + Anubis + Cert Spotter + urlscan.io
-                  (all keyless, free, cached)
+                  AlienVault OTX + Anubis + Cert Spotter + urlscan.io +
+                  RapidDNS (all keyless, free, cached)
     2. Active:    DNS brute-force against a built-in wordlist
     """
 
@@ -235,6 +237,13 @@ class SubdomainScanner:
                 if self._cancel.is_set():
                     break
                 _record(name, _resolve(name) or '', 'urlscan')
+
+        # ── Phase 2c4: RapidDNS (passive DNS scrape, keyless) ────────────
+        if passive and not self._cancel.is_set():
+            for name in self._passive_rapiddns(domain, use_cache):
+                if self._cancel.is_set():
+                    break
+                _record(name, _resolve(name) or '', 'rapiddns')
 
         # ── Phase 2d: amass passive (external binary, opt-in) ─────────────
         if amass and not self._cancel.is_set():
@@ -395,6 +404,16 @@ class SubdomainScanner:
         except Exception:
             return []
 
+    def _passive_rapiddns(self, domain: str, use_cache: bool) -> List[str]:
+        """Return RapidDNS-scraped subdomain names for ``domain`` (cached)."""
+        try:
+            if use_cache:
+                return _PASSIVE_CACHE.get_or_compute(
+                    ('rapiddns', domain), lambda: self._fetch_rapiddns(domain))
+            return self._fetch_rapiddns(domain)
+        except Exception:
+            return []
+
     def _passive_amass(self, domain: str) -> List[str]:
         """Return amass passive subdomains (external binary, opt-in, guarded).
 
@@ -540,6 +559,24 @@ class SubdomainScanner:
                 if isinstance(sub, dict) and sub.get('domain'):
                     names.append(sub['domain'])
         return cls._names_in_domain(names, domain)
+
+    @classmethod
+    def _fetch_rapiddns(cls, domain: str) -> List[str]:
+        """Fetch + parse RapidDNS subdomains (network, keyless).
+
+        RapidDNS serves an HTML table of discovered hosts (no JSON API). Rather
+        than depend on the exact table markup, we extract every hostname ending in
+        the queried domain straight from the page text with a domain-anchored
+        regex — resilient to layout changes — then keep the in-domain names. A
+        passive-DNS scrape source distinct from CT / passive-DNS / URL-corpus."""
+        req = urllib.request.Request(
+            _RAPIDDNS_URL.format(domain=domain),
+            headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html'},
+        )
+        body, _ = urlopen_retry(req, _FETCH_TIMEOUT)
+        text = body.decode('utf-8', errors='ignore')
+        rx = re.compile(r'[A-Za-z0-9_](?:[A-Za-z0-9_-]*\.)+' + re.escape(domain))
+        return cls._names_in_domain(rx.findall(text), domain)
 
     def _run_active(self, found: Dict[str, Dict],
                     on_progress: Optional[Callable[[int, int], None]],

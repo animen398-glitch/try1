@@ -22,6 +22,8 @@ def _no_dns(monkeypatch):
                         classmethod(lambda cls, d: []))
     monkeypatch.setattr(SubdomainScanner, "_fetch_urlscan",
                         classmethod(lambda cls, d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_rapiddns",
+                        classmethod(lambda cls, d: []))
 
 
 def _passive_only(scanner, domain, **kw):
@@ -132,6 +134,37 @@ def test_fetch_certspotter_flattens_dns_names(monkeypatch):
     monkeypatch.setattr(ss, "urlopen_retry", lambda req, t, **k: (payload, {}))
     assert SubdomainScanner._fetch_certspotter("example.com") == [
         "a.example.com", "b.example.com", "example.com"]
+
+
+def test_rapiddns_recorded_and_cached(monkeypatch):
+    ss._PASSIVE_CACHE.clear()
+    _no_dns(monkeypatch)
+    monkeypatch.setattr(SubdomainScanner, "_fetch_crtsh", staticmethod(lambda d: []))
+    monkeypatch.setattr(SubdomainScanner, "_fetch_hackertarget",
+                        staticmethod(lambda d: []))
+    calls = []
+    monkeypatch.setattr(SubdomainScanner, "_fetch_rapiddns",
+                        classmethod(lambda cls, d: calls.append(d) or ["rd.example.com"]))
+
+    scanner = SubdomainScanner()
+    res = _passive_only(scanner, "example.com")
+    sources = {e["subdomain"]: e["source"] for e in res["results"]}
+    assert sources.get("rd.example.com") == "rapiddns"
+
+    _passive_only(scanner, "example.com")          # cached second scan
+    assert calls == ["example.com"]
+
+
+def test_fetch_rapiddns_extracts_in_domain_hosts_from_html(monkeypatch):
+    html = (
+        "<table><tr><td>a.example.com</td><td>1.2.3.4</td></tr>"
+        "<tr><td>b.sub.example.com</td></tr>"
+        "<tr><td>evil.com</td><td>x.other.org</td></tr>"   # out of domain
+        "<tr><td>notexample.com</td></tr></table>"          # not a subdomain
+    ).encode()
+    monkeypatch.setattr(ss, "urlopen_retry", lambda req, t, **k: (html, {}))
+    assert SubdomainScanner._fetch_rapiddns("example.com") == [
+        "a.example.com", "b.sub.example.com"]
 
 
 def test_fetch_urlscan_harvests_page_and_task_domains(monkeypatch):

@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6): 2591 passed / 0 skipped.
+  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS): 2593 passed / 0 skipped.
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
@@ -5900,4 +5900,22 @@ DAG-движок, WS4 Slack-алертинг, WS5 нативные субдом�
 остаток WS6 — эта сессия). Возможные будущие инкременты (не в scope плана):
 ещё keyless subdomain-источники; параллелизм внутренних под-шагов recon_engine;
 пер-request rate-limit движков.
+
+
+================================================================================
+2026-07-02 — Пост-план опция 1: RapidDNS (7-й keyless subdomain-источник)
+================================================================================
+
+`core/subdomain_scanner.py`: добавлен 7-й keyless пассивный источник RapidDNS
+(rapiddns.io) по тому же паттерну (URL-константа + `_fetch_rapiddns` classmethod +
+`_passive_rapiddns` cache-обёртка + фаза 2c4 + source-метка 'rapiddns'). RapidDNS
+отдаёт HTML-таблицу (нет JSON API) — вместо привязки к разметке хосты
+извлекаются domain-anchored regex'ом прямо из текста страницы (устойчиво к смене
+верстки), затем `_names_in_domain`. Keyless-источников 6 → 7 (crt.sh/HackerTarget/
+AlienVault/Anubis/Cert Spotter/urlscan/RapidDNS). Кэш + мягкая деградация как у
+остальных; оригинальный код по поведению, не транслирован. `_no_dns` fixture
+глушит и RapidDNS (офлайн). Тесты `test_subdomain_cache.py` (+2: record+cache;
+HTML-парсинг с фильтром по домену, incl. отсечение notexample.com). Проверено:
+ruff clean, self-check 29 вкладок, полный pytest 2591 → 2593 (+2). Локальные
+коммиты, без push.
 
