@@ -51,9 +51,15 @@ def finding_refs(finding: Dict[str, Any]) -> str:
 
 
 def finding_md_table(rows: List[Dict[str, Any]]) -> str:
-    """Markdown table of findings (severity/title/validation/confidence/evidence)."""
+    """Markdown table of findings (severity/title/validation/confidence/evidence).
+
+    Rows are governed (E9): any raw secret embedded in a free-text cell is masked
+    at this client-facing boundary. Normal rows are unchanged.
+    """
+    from core.data_governance import govern_rows
+
     lines = [_MD_HEADER]
-    for finding in rows:
+    for finding in govern_rows(rows):
         lines.append(
             "| {severity} | {title} | {status} | {confidence} | {evidence} |".format(
                 severity=str(finding.get("severity", "")),
@@ -67,9 +73,15 @@ def finding_md_table(rows: List[Dict[str, Any]]) -> str:
 
 
 def finding_html_table(rows: List[Dict[str, Any]]) -> str:
-    """HTML table of findings; every cell escaped. Empty rows → a ``None`` row."""
+    """HTML table of findings; every cell escaped. Empty rows → a ``None`` row.
+
+    Rows are governed (E9) so a raw secret in a free-text cell is masked before
+    escaping/rendering.
+    """
+    from core.data_governance import govern_rows
+
     body = []
-    for finding in rows:
+    for finding in govern_rows(rows):
         body.append(
             "<tr>"
             f"<td>{html.escape(str(finding.get('severity', '')))}</td>"

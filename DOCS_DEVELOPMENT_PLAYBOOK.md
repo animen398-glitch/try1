@@ -48,7 +48,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[NOT STARTED]` |
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[NOT STARTED]` |
 | **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[NOT STARTED]` |
-| **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[NOT STARTED]` |
+| **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[DONE]` |
 | **E10** | Parser Hardening & Input Limits | Guard core parsers against JSON bombs and huge-file DoS. | `[DONE]` |
 
 ---
@@ -142,9 +142,54 @@ core/project_io.py` clean; targeted + full offline suite green.
 
 ---
 
+### Stage 3 — E9: Sensitive Data Governance — `[DONE]`
+
+**Goal:** guarantee no raw secret/credential value reaches a client-facing
+report, even if an upstream field held plaintext — defense-in-depth at the
+report boundary (findings are already masked at capture/store time).
+
+**Delivered:**
+- `core/data_governance.py` — pure/offline render-time redaction, reusing the
+  single sources of truth (no second detector/masker):
+  - detection = `core.secret_scanner.RULES`; masking =
+    `core.finding_fingerprint.mask_value` (`prefix…len` — keeps vendor/type
+    context, drops the secret body).
+  - `redact_text` — mask any embedded secret in a string (group-aware, so
+    `Bearer <tok>` / `api_key="<v>"` keep their label); idempotent; non-strings
+    pass through.
+  - `is_sensitive_key` / `redact_data` — recursive structure redaction: a
+    string under a sensitive key (password/token/secret/authorization/cookie/
+    `match`/…) is masked wholesale; non-string values (ints/bools) are never
+    masked, so false friends (`match_count`, `auth_context`) are safe. Input is
+    never mutated.
+  - `redact_finding` / `govern_rows` — governed copies of finding rows.
+- Wired at the client-facing finding-table choke points (a no-op on clean rows,
+  so existing report output is byte-identical):
+  - `core/finding_render.py` `finding_md_table` / `finding_html_table` (covers
+    mission + engagement reports).
+  - `core/audit_report.py` `_md_table` + the inline HTML `table()`.
+- `tests/test_data_governance.py` — vendor-key/JWT/Bearer/contextual masking,
+  idempotence, sensitive-key rules, non-mutation, and report-boundary
+  integration (a planted raw secret never appears in the rendered Markdown/HTML;
+  clean reports unchanged).
+
+**Backward-compatibility notes:** governance only rewrites string content that
+matches a secret rule or sits under a sensitive key, so normal findings render
+identically; no schema/contract/stored-evidence change; masking style matches
+the existing `mask_value` convention used elsewhere in reports.
+
+**Verification:** `ruff check core/data_governance.py core/finding_render.py
+core/audit_report.py` clean; governance + all report suites + full offline
+suite green.
+
+---
+
 ## 3. Next up
 
-**Stage 3 → E9 (Sensitive Data Governance):** redact raw secrets/credentials
-from client-facing report outputs (reuse the `secret_scanner` SSOT for
-detection; mask values while keeping type/location context) — offline, no new
-deps, no change to stored evidence.
+**Stage 4 → E2-adjacent wiring or E1 (Passive OSINT Intelligence Layer):** the
+remaining epics (E1, E3–E8) are larger, integration-heavy features. Recommended
+next is either (a) surface the E2 coverage summary through the live
+`collection_runner` phase statuses (turning the derived fallback into real
+per-scan coverage), or (b) begin E1 passive OSINT provider scaffolding (Shodan/
+Censys/Cert-log adapters, keyless-first, zero target traffic, opt-in) — pick per
+product priority.

@@ -102,11 +102,13 @@ def _scenario_html(payload: Dict[str, Any]) -> str:
 
 
 def _md_table(rows: Iterable[Dict[str, Any]]) -> str:
+    from core.data_governance import govern_rows
+
     lines = [
         "| Severity | Title | Validation | Confidence | Evidence |",
         "|---|---|---|---:|---|",
     ]
-    for finding in rows:
+    for finding in govern_rows(list(rows)):
         lines.append(
             "| {severity} | {title} | {status} | {confidence} | {evidence} |".format(
                 severity=str(finding.get("severity", "")),
@@ -160,8 +162,10 @@ def render_html(run: Dict[str, Any]) -> str:
     summary = audit_summary(payload)
 
     def table(rows: List[Dict[str, Any]]) -> str:
+        from core.data_governance import govern_rows
+
         body = []
-        for finding in rows:
+        for finding in govern_rows(rows):
             body.append(
                 "<tr>"
                 f"<td>{html.escape(str(finding.get('severity', '')))}</td>"
