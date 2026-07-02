@@ -602,6 +602,20 @@ def report_markdown(report: Optional[Dict]) -> str:
                  if isinstance(w, dict) else str(w)
              ))
 
+    # Limitations & Coverage (E2): which phases ran / were skipped / failed and
+    # why. Use the coverage summary the scan attached, else derive from phases so
+    # older reports still surface it. Best-effort — never break the deliverable.
+    try:
+        from core.coverage import coverage_from_scan_report, render_coverage_markdown
+        cov = report.get('coverage')
+        if not (isinstance(cov, dict) and cov.get('items')):
+            cov = coverage_from_scan_report(report)
+        if cov.get('items'):
+            out.append(render_coverage_markdown(cov).rstrip())
+            out.append('')
+    except Exception:  # noqa: BLE001 — coverage section is a best-effort add-on
+        pass
+
     return '\n'.join(out).rstrip() + '\n'
 
 

@@ -258,6 +258,65 @@ def _phase_detail(phase: Dict[str, Any]) -> str:
     return ""
 
 
+# How a Full-Collection scan phase status (Title-case, from collection_runner)
+# maps into coverage vocabulary.
+_SCAN_STATUS_MAP = {
+    "success": ("full", None),
+    "error": ("failed", "failed_phase"),
+    "skipped": ("skipped", "skipped_phase"),
+}
+
+# Substrings in a skip reason that indicate an optional capability was absent.
+_MISSING_DEP_HINTS = (
+    "not installed", "not available", "unavailable", "missing", "no binary",
+    "requires ", "dependency", "playwright", "optional",
+)
+
+
+def _scan_skip_reason(result: Dict[str, Any], detail: str) -> str:
+    """Classify a scan phase skip into a coverage reason code."""
+    if result.get("scope_guard") or detail.lower().startswith("scope guard"):
+        return "scope_denied"
+    low = detail.lower()
+    if any(hint in low for hint in _MISSING_DEP_HINTS):
+        return "missing_dependency"
+    return "skipped_phase"
+
+
+def coverage_from_scan_report(report: Any, *, max_detail: int = 160) -> Dict[str, Any]:
+    """Derive real per-scan coverage from a Full-Collection ``report`` dict.
+
+    Reads ``report['phases']`` (each ``{status: Success|Error|Skipped, …}``) and
+    turns the live phase outcomes into a coverage summary: a ``Success`` phase is
+    ``full``, an ``Error`` is ``failed``/``failed_phase``, a ``Skipped`` phase is
+    ``skipped`` with its reason classified (``scope_denied`` when Scope Guard
+    blocked it, ``missing_dependency`` when an optional capability was absent,
+    else ``skipped_phase``). Malformed input never raises.
+    """
+    if not isinstance(report, dict):
+        return build_coverage_summary([])
+    phases = report.get("phases")
+    if not isinstance(phases, dict):
+        return build_coverage_summary([])
+
+    items: List[Dict[str, Any]] = []
+    for name, result in phases.items():
+        if not isinstance(result, dict):
+            continue
+        clean_name = _clean(name)
+        if not clean_name:
+            continue
+        raw_status = _clean(result.get("status")).lower()
+        status, reason = _SCAN_STATUS_MAP.get(raw_status, ("unavailable", None))
+        detail = _clean(result.get("reason") or result.get("error"))
+        if status == "skipped":
+            reason = _scan_skip_reason(result, detail)
+        if len(detail) > max_detail:
+            detail = detail[:max_detail].rstrip() + "…"
+        items.append(coverage_item(clean_name, status, reason, detail))
+    return build_coverage_summary(items)
+
+
 # --- Rendering ---------------------------------------------------------------
 
 _STATUS_LABEL = {

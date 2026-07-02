@@ -725,6 +725,10 @@ class CollectionRunner:
         # scan exercised — a derive-on-read guide over report['phases']; never
         # affects the risk score.
         self._build_osint_catalog(report)
+        # Coverage Gate (E2): which phases ran / were skipped / failed and why —
+        # real per-scan coverage over the live phase statuses. Display/governance
+        # only; never affects the risk score.
+        self._build_coverage(report)
 
         # Executive summary: deterministic risk verdict + recommendations over
         # the phases above (no model, no network). This stays authoritative.
@@ -2165,6 +2169,23 @@ class CollectionRunner:
             self._log(f'  OSINT catalog failed: {e}')
             self._warn(report, 'osint_catalog', 'OSINT catalog derivation failed', e)
 
+    def _build_coverage(self, report: Dict) -> None:
+        """Derive per-scan Coverage Gate metadata (E2, best-effort).
+
+        Read-only over ``report['phases']`` — which phases ran, were skipped or
+        failed, and why (scope-denied / missing-dependency / skipped / failed).
+        Attaches ``report['coverage']`` for the report surfaces; the risk verdict
+        is untouched. A failure must never sink a scan."""
+        try:
+            from core.coverage import coverage_from_scan_report
+            report['coverage'] = coverage_from_scan_report(report)
+            cov = report['coverage']
+            self._log(f"  Coverage: {cov.get('covered', 0)}/{cov.get('total', 0)} "
+                      f"phase(s) fully covered ({cov.get('overall_status', '')})")
+        except Exception as e:  # noqa: BLE001 — coverage must not fail a scan
+            self._log(f'  Coverage summary failed: {e}')
+            self._warn(report, 'coverage', 'Coverage summary derivation failed', e)
+
     @staticmethod
     def _render_osint_catalog_card(data: Dict) -> str:
         """Offline HTML for the OSINT Workflow Coverage card: each curated workflow
@@ -3177,6 +3198,17 @@ class CollectionRunner:
             body_parts.append(card(
                 'OSINT Workflow Coverage', self._render_osint_catalog_card(oscat),
                 f"{ossum.get('covered', 0)}/{ossum.get('total', 0)} covered"))
+
+        # Coverage Gate (E2) — which phases ran / were skipped / failed and why.
+        # render_coverage_html carries its own <h2>, so wrap it in a plain
+        # card-styled section rather than card() (which would add a second title).
+        cov = report.get('coverage')
+        if isinstance(cov, dict) and cov.get('items'):
+            from core.coverage import render_coverage_html
+            body_parts.append(
+                '<section style="border:1px solid #ddd;border-left:5px solid '
+                '#607d8b;border-radius:6px;margin:12px 0;padding:12px 16px;">'
+                f'{render_coverage_html(cov)}</section>')
 
         # Screenshot (opt-in) — gallery of the captured page types.
         shot = phases.get('screenshot')

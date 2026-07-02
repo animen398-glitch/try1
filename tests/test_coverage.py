@@ -12,6 +12,7 @@ from core.coverage import (
     build_coverage_summary,
     coverage_for_dependency,
     coverage_from_audit_run,
+    coverage_from_scan_report,
     coverage_item,
     render_coverage_html,
     render_coverage_markdown,
@@ -221,6 +222,66 @@ def test_explicit_coverage_bare_list_is_accepted():
     assert summary["overall_status"] == "full"
 
 
+# --- coverage_from_scan_report (live Full-Collection phase statuses) ----------
+
+def _scan_report():
+    return {
+        "phases": {
+            "recon": {"status": "Success", "data": {}},
+            "vulns": {"status": "Success", "findings": []},
+            "dynamic": {"status": "Skipped", "reason": "playwright not installed"},
+            "subdomains": {
+                "status": "Skipped",
+                "reason": "scope guard: out of scope",
+                "scope_guard": {"phase": "subdomains"},
+            },
+            "certificate": {"status": "Error", "error": "no certificate retrieved"},
+        }
+    }
+
+
+def test_scan_report_maps_all_phase_outcomes():
+    summary = coverage_from_scan_report(_scan_report())
+    by = {i["phase"]: i for i in summary["items"]}
+    assert by["recon"]["status"] == "full"
+    assert by["vulns"]["status"] == "full"
+    assert by["dynamic"]["status"] == "skipped"
+    assert by["dynamic"]["reason"] == "missing_dependency"
+    assert by["subdomains"]["status"] == "skipped"
+    assert by["subdomains"]["reason"] == "scope_denied"
+    assert by["certificate"]["status"] == "failed"
+    assert by["certificate"]["reason"] == "failed_phase"
+    assert by["certificate"]["detail"] == "no certificate retrieved"
+    assert summary["overall_status"] == "partial"
+    assert summary["total"] == 5
+    assert summary["covered"] == 2
+
+
+def test_scan_report_all_success_is_full():
+    report = {"phases": {"recon": {"status": "Success"}, "api": {"status": "Success"}}}
+    assert coverage_from_scan_report(report)["overall_status"] == "full"
+
+
+def test_scan_report_detail_is_truncated():
+    report = {"phases": {"x": {"status": "Error", "error": "z" * 500}}}
+    item = coverage_from_scan_report(report, max_detail=50)["items"][0]
+    assert len(item["detail"]) <= 51
+    assert item["detail"].endswith("…")
+
+
+def test_scan_report_missing_or_bad_input_is_safe():
+    for bad in (None, {}, {"phases": None}, {"phases": [1, 2]}, "x"):
+        summary = coverage_from_scan_report(bad)
+        assert summary["overall_status"] == "unavailable"
+        assert summary["total"] == 0
+
+
+def test_scan_report_skips_non_dict_phase_entries():
+    report = {"phases": {"ok": {"status": "Success"}, "bad": "not-a-dict"}}
+    summary = coverage_from_scan_report(report)
+    assert summary["total"] == 1
+
+
 # --- render_coverage_markdown (escaping) -------------------------------------
 
 def test_markdown_has_titled_section_and_ratio():
@@ -284,3 +345,27 @@ def test_audit_report_backward_compatible_when_no_coverage_data():
     text = render_markdown(run)
     assert "## Limitations & Coverage" in text
     assert "Overall coverage" in text
+
+
+# --- scan report_markdown integration (Full Collection surface) --------------
+
+def test_scan_markdown_report_appends_coverage_section():
+    from core.report_export import report_markdown
+
+    report = {
+        "domain": "shop.com",
+        "phases": {
+            "recon": {"status": "Success"},
+            "dynamic": {"status": "Skipped", "reason": "playwright not installed"},
+        },
+    }
+    text = report_markdown(report)
+    assert "## Limitations & Coverage" in text
+    assert "dynamic" in text
+
+
+def test_scan_markdown_without_phases_has_no_coverage_section():
+    from core.report_export import report_markdown
+
+    text = report_markdown({"domain": "shop.com", "summary": {}})
+    assert "## Limitations & Coverage" not in text

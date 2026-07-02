@@ -142,6 +142,41 @@ core/project_io.py` clean; targeted + full offline suite green.
 
 ---
 
+### Stage 4 — E2: Coverage Gate wired to live scan phase statuses — `[DONE]`
+
+**Goal:** turn the E2 coverage summary from a derived report-time fallback into
+**real per-scan coverage** sourced from Full Collection's live phase outcomes,
+and surface it in the scan deliverables.
+
+**Delivered:**
+- `core/coverage.py` — new `coverage_from_scan_report(report)` adapter: maps
+  each `report['phases'][name]` outcome (`Success`→`full`, `Error`→`failed`/
+  `failed_phase`, `Skipped`→`skipped` with the reason classified as
+  `scope_denied` / `missing_dependency` / `skipped_phase`) into a coverage
+  summary. Never raises on malformed input; details are truncated.
+- `core/collection_runner.py` — `_build_coverage(report)` (best-effort, mirrors
+  `_build_osint_catalog`) attaches `report['coverage']` right after the OSINT
+  catalog / before the executive summary; the risk verdict is untouched. The
+  HTML report gains a "Limitations & Coverage" card (reuses
+  `coverage.render_coverage_html`).
+- `core/report_export.py` — `report_markdown` appends the "Limitations &
+  Coverage" section from `report['coverage']` (or derives it from phases, so
+  older reports still surface it).
+- `tests/test_coverage.py` — scan-adapter mapping (all outcomes + reason
+  classification), detail truncation, malformed-input safety, and the
+  `report_markdown` integration (section appended when phases exist, absent
+  otherwise).
+
+**Backward-compatibility notes:** `report['coverage']` is additive to the free
+`report.json`; no schema/contract change. Coverage build is best-effort and
+never fails a scan. Reports without phases render exactly as before.
+
+**Verification:** `ruff check` clean; coverage + report_export +
+collection_runner (incl. the sequential↔concurrent equality test) + full
+offline suite green.
+
+---
+
 ### Stage 3 — E9: Sensitive Data Governance — `[DONE]`
 
 **Goal:** guarantee no raw secret/credential value reaches a client-facing
@@ -186,10 +221,10 @@ suite green.
 
 ## 3. Next up
 
-**Stage 4 → E2-adjacent wiring or E1 (Passive OSINT Intelligence Layer):** the
-remaining epics (E1, E3–E8) are larger, integration-heavy features. Recommended
-next is either (a) surface the E2 coverage summary through the live
-`collection_runner` phase statuses (turning the derived fallback into real
-per-scan coverage), or (b) begin E1 passive OSINT provider scaffolding (Shodan/
-Censys/Cert-log adapters, keyless-first, zero target traffic, opt-in) — pick per
-product priority.
+**Stage 5 → E1 (Passive OSINT Intelligence Layer):** keyless-first passive OSINT
+provider scaffolding (Shodan / Censys / Cert-log adapters) with **zero target
+traffic**, opt-in, soft-degrading. Reuse the injectable-`_fetch` seam pattern
+(`update_check` / `threat_feed`) so it stays offline-testable; feed results into
+existing asset/finding adapters rather than a new store. E3–E8 (network profiles,
+browser-accuracy, wordlists, origin-exposure, Postgres readiness, worker
+orchestration) remain larger integration efforts to sequence afterward.
