@@ -5634,3 +5634,78 @@ passed, 0 failed/error/skipped (junit-xml; 2544 → 2550, +6 тестов). Ло
 диалогах (traceback → crash-репорт из WS2), аудит ~192 проглатываемых
 except Exception в core (добавить breadcrumb/лог — связка с WS2).
 
+
+================================================================================
+2026-07-02 — DEV_PLAN WS3: конкурентный движок сканирования (DAG)
+================================================================================
+
+По DEV_PLAN_CLAUDE_CODE.md WS3 (следующий по очереди после WS1/WS2/WS6-quick)
+независимые фазы Full Collection теперь исполняются конкурентно, БЕЗ изменения
+результата. Транспорт — ThreadPoolExecutor (не asyncio): весь код синхронный/
+потоковый (SubdomainScanner уже на пуле, rate_limiter/http_retry блокирующие,
+GUI гоняет раннер в QThread), поэтому существующие блокирующие движки
+планируются без переписывания.
+
+core/scan_engine.py (НОВЫЙ, чистый/offline): DAG-планировщик задач.
+  • Task(name, fn, deps) + run_dag(tasks, *, max_concurrency, cancel_event,
+    on_error) -> {name: result}. Независимые задачи идут параллельно (пул,
+    ограничен max_concurrency); зависимая стартует только когда ВСЕ её deps
+    завершены. max_concurrency<=1 → тот же топологический порядок на вызывающем
+    потоке (детерминизм, точный «старый» последовательный путь).
+  • Изоляция ошибок: исключение задачи ПЕРЕХВАТЫВАЕТСЯ (результат задачи =
+    исключение или on_error()), её зависимые всё равно исполняются — как в
+    пайплайне, где упавшая фаза пишет status:'Error' и скан продолжается.
+  • Отмена: при set(cancel_event) новые задачи не планируются, in-flight
+    доигрывают, возвращается частичный результат (семантика границы фазы).
+  • Детерминированный порядок готовых узлов (declared order). Валидация графа
+    (unknown dep / cycle / duplicate → ValueError).
+  • tests/test_scan_engine.py (14): топо-порядок, реальная конкуренция (Barrier +
+    peak-счётчик, без хрупких таймингов), граница concurrency, изоляция ошибок +
+    on_error, cancel (до/в процессе), seq==concurrent, cycle/unknown/dup raise.
+
+core/config.py: DEFAULT_SETTINGS += 'scan_concurrency': 4 (1 = классический
+последовательный пайплайн; caps одновременных фаз против одной цели; per-host
+rate-limit из scope скана по-прежнему пейсит сетевые всплески).
+
+core/collection_runner.py: _run_impl переведён на DAG.
+  • _build_phase_tasks: DAG фаз, НЕ мутирующих общие vuln-находки — always-on
+    (recon/api/capture/clone/cookies/vulns) + opt-in (subdomains/certificate/
+    openapi/historical/emails/employees/ct/asn_intel/katana/screenshot). Каждая
+    закрытие пишет ТОЛЬКО свой report['phases'][key] (GIL-атомарно, непересекающиеся
+    ключи); scope-skip для активных фаз внутри closure. Deps: vulns←recon,cookies;
+    clone←capture; asn_intel←recon; screenshot←capture.
+  • _run_active_phases (СЕРИЙНО, на вызывающем потоке, в точном историческом
+    порядке): secret-fold → security → takeover-fold → dns → osv → bbot →
+    documents → iac. Фазы, мутирующие общий список находок, не гоняются
+    конкурентно между собой → порядок фолдинга детерминирован = как в
+    последовательном прогоне. Методы _phase_* НЕ тронуты (их фолд-контракты и
+    юнит-тесты целы).
+  • Аналайзер-плагины по-прежнему последними (видят весь свёрнутый отчёт).
+  • Неожиданное исключение фазы (перехвачено планировщиком) ре-райзится в
+    каноническом порядке → обёртка run() всё так же метит операцию failed и
+    оставляет читаемый частичный report.json.
+  • _normalize_report_order: report['phases'] + scope_guard.skipped_active_phases
+    переупорядочиваются в фиксированную каноническую последовательность
+    (_PHASE_ORDER) → конкурентный прогон байт-в-байт совпадает с последовательным
+    (порядок вставки иначе зависит от того, какой поток финишировал первым).
+  • CollectionRunner(scan_concurrency=…)/configure(...) + _scan_concurrency()
+    (явное значение инстанса > настройка > дефолт 4; всегда >=1) — тесты пинят
+    concurrency для детерминизма/equivalence.
+
+Решения (locked): транспорт ThreadPoolExecutor; concurrency on-by-default
+(модест 4), 1=точный старый путь; scope = только phase-level DAG в
+collection_runner (recon_engine внутри пока последовательный — отдельный
+будущий шаг); методы _phase_* и их фолды не трогаем (сериализуем через
+_run_active_phases) → нулевой test-churn фаз + детерминизм.
+
+Тесты: tests/test_collection_runner.py (+2: seq(1)↔concurrent(4) равенство
+свёрнутых находок/summary/порядка фаз; резолюция scan_concurrency). Проверено:
+ruff clean, self-check OK (29 вкладок), полный pytest зелёный — 2566 passed,
+0 failed/error/skipped (junit-xml; 2550 → 2566, +16). Локальные коммиты, без push.
+
+Осознанно вне scope WS3 (стабильность): глубокий per-request rate-limit каждого
+движка (крупный инвазивный рефактор) — политесс обеспечивают max_concurrency +
+существующие per-engine лимитеры; параллелизм внутренних под-шагов recon_engine
+(отдельный будущий шаг). Дальше по DEV_PLAN: WS4 (алертинг), WS5 (нативные
+реализации), затем остаток WS6.
+
