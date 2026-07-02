@@ -753,6 +753,11 @@ class CollectionRunner:
         # technologies and JS dependencies. It does not add scanners or alter the
         # authoritative risk score.
         self._build_technology_risk(report)
+        # Origin Exposure & Cloud Edge Intelligence (E6): passive CDN-bypass check
+        # — names in the footprint resolving to non-CDN IPs while the apex is
+        # behind a CDN edge. Derive-on-read over recon/subdomains; display-only,
+        # never alters the risk verdict.
+        self._build_origin_exposure(report)
         # OSINT Workflow Coverage (EXT-OSINT F3): which curated recon workflows this
         # scan exercised — a derive-on-read guide over report['phases']; never
         # affects the risk score.
@@ -2248,6 +2253,23 @@ class CollectionRunner:
             self._log(f'  Technology risk failed: {e}')
             self._warn(report, 'technology_risk', 'Technology risk derivation failed', e)
 
+    def _build_origin_exposure(self, report: Dict) -> None:
+        """Derive Origin Exposure / Cloud Edge intelligence (E6, best-effort).
+
+        Read-only over recon + the subdomain phase — flags candidate origin IPs
+        that could bypass a CDN edge. Display/intel only; the risk verdict is
+        untouched. A failure must never sink a scan."""
+        try:
+            from core.origin_exposure import build_origin_exposure
+            data = build_origin_exposure(report)
+            report['origin_exposure'] = data
+            if data.get('exposed'):
+                self._log(f"  Origin exposure: {len(data['candidates'])} candidate "
+                          f"origin IP(s) behind {data['edge'].get('cloud', 'CDN')} edge")
+        except Exception as e:  # noqa: BLE001 — origin exposure must not fail a scan
+            self._log(f'  Origin exposure failed: {e}')
+            self._warn(report, 'origin_exposure', 'Origin exposure derivation failed', e)
+
     def _build_osint_catalog(self, report: Dict) -> None:
         """Derive OSINT workflow coverage (EXT-OSINT F3, best-effort).
 
@@ -2876,6 +2898,32 @@ class CollectionRunner:
                 'ASN Intelligence', render_asn_intel(asn_phase.get('data')),
                 asn_phase.get('status', '—'),
             ))
+
+        # Origin Exposure (E6) — candidate origin IPs that could bypass a CDN edge.
+        oe = report.get('origin_exposure')
+        if isinstance(oe, dict) and oe.get('behind_cdn'):
+            cands = oe.get('candidates') or []
+            edge_cloud = e(str((oe.get('edge') or {}).get('cloud', 'CDN')))
+            if cands:
+                rows = ''.join(
+                    '<tr>'
+                    f'<td>{e(str(c.get("ip", "")))}</td>'
+                    f'<td>{e(str(c.get("host", "")))}</td>'
+                    f'<td>{e(str(c.get("cloud", "")))}</td>'
+                    '</tr>' for c in cands if isinstance(c, dict))
+                oe_body = (
+                    f'<p style="font-size:13px;margin:4px 0;">Apex is behind a '
+                    f'<b>{edge_cloud}</b> edge, but {len(cands)} name(s) resolve to '
+                    f'non-CDN IPs — candidate <b>origin</b> servers that could be '
+                    f'reached directly, bypassing the edge.</p>'
+                    '<table style="font-size:13px;"><thead><tr><th>Candidate IP</th>'
+                    '<th>Host</th><th>Cloud</th></tr></thead>'
+                    f'<tbody>{rows}</tbody></table>'
+                    '<p style="font-size:11px;color:#888;margin:4px 0 0;">Passive, '
+                    'zero target traffic — leads to verify; recommend allowlisting '
+                    'the CDN at the origin.</p>')
+                body_parts.append(card('Origin Exposure (CDN bypass)', oe_body,
+                                       'Error' if oe.get('exposed') else '—'))
 
         # Passive OSINT (E1, opt-in) — Shodan InternetDB view of the target IP:
         # open ports / hostnames / CPEs / CVE ids, with zero target traffic.

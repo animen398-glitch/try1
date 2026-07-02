@@ -602,6 +602,21 @@ def report_markdown(report: Optional[Dict]) -> str:
                  if isinstance(w, dict) else str(w)
              ))
 
+    # Origin Exposure (E6): candidate origin IPs that could bypass a CDN edge.
+    oe = report.get('origin_exposure')
+    if isinstance(oe, dict) and oe.get('exposed'):
+        cands = oe.get('candidates') or []
+        edge_cloud = (oe.get('edge') or {}).get('cloud', 'CDN')
+        out.append('## Origin Exposure (potential CDN bypass)')
+        out.append(f'Apex is behind a **{edge_cloud}** edge, but '
+                   f'{len(cands)} name(s) resolve to non-CDN IPs — candidate origin '
+                   f'servers reachable directly (verify; allowlist the CDN at origin):')
+        for c in cands:
+            if isinstance(c, dict):
+                out.append(f"- {c.get('ip', '')}"
+                           f"{(' (' + str(c.get('host'))) + ')' if c.get('host') else ''}")
+        out.append('')
+
     # Limitations & Coverage (E2): which phases ran / were skipped / failed and
     # why. Use the coverage summary the scan attached, else derive from phases so
     # older reports still surface it. Best-effort — never break the deliverable.

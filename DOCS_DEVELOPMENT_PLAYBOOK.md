@@ -45,7 +45,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E3** | Authorized Network Execution Profiles | Allowlist IPs, declared source nodes, legal refs. | `[NOT STARTED]` |
 | **E4** | Browser-Backed Accuracy Mode | Playwright for **dynamic asset parsing**, not bypass. | `[NOT STARTED]` |
 | **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[NOT STARTED]` |
-| **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[NOT STARTED]` |
+| **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[NOT STARTED]` |
 | **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[NOT STARTED]` |
 | **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[DONE]` |
@@ -139,6 +139,41 @@ identically for legitimate inputs.
 
 **Verification:** `ruff check core/safe_parse.py core/project.py
 core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
+### Stage 7 — E6: Origin Exposure & Cloud Edge Intelligence — `[DONE]`
+
+**Goal:** passively flag a potential **CDN bypass** — when the apex is behind a
+pure CDN edge (Cloudflare/Fastly/Akamai) but names in the same footprint resolve
+to non-CDN IPs, those are candidate origin servers reachable directly.
+
+**Delivered:**
+- `core/origin_exposure.py` — pure/offline/derive-on-read over the scan report,
+  reusing `cloud_classifier` (SSOT) for edge-vs-origin classification:
+  `build_origin_exposure(report)` → `{behind_cdn, edge:{cloud,ip},
+  candidates:[{ip,host,source,cloud}], exposed, summary}`. `exposed` is True only
+  when the apex is behind a CDN edge **and** a non-CDN candidate exists. Skips
+  the apex edge IP and CDN-fronted subdomains; deduped by IP; never raises.
+- `core/collection_runner.py` — `_build_origin_exposure(report)` (best-effort,
+  after technology-risk) attaches `report['origin_exposure']`; HTML report gains
+  an "Origin Exposure (CDN bypass)" card. **Display/intel only — the risk verdict
+  is untouched** (like exposure/criticality).
+- `core/report_export.py` — `report_markdown` adds an "Origin Exposure" section
+  when exposed.
+- `tests/test_origin_exposure.py` — exposure detection, edge-IP / CDN-fronted
+  exclusions, dedup, derived edge cloud, malformed-input safety, and the
+  collection_runner / markdown / HTML surfaces.
+
+**Backward-compatibility notes:** purely additive and derive-on-read — no new
+scanner, no target traffic, no new dependency; consumes recon + the opt-in
+subdomain phase already in the report; the authoritative risk score is
+unchanged; candidates are framed as *leads to verify*, never asserted as the
+origin (client-safe, false-positive-averse).
+
+**Data source note:** increment 1 uses the subdomain phase's resolved A-records.
+Future sources (asn_intel reverse-IP co-hosts, cert-SAN / DNS history, running
+InternetDB on candidate IPs) can extend `_origin_candidates` additively.
 
 ---
 
@@ -302,10 +337,12 @@ suite green.
 
 ## 3. Next up
 
-**Stage 7 → E1 increment 3 (keyed providers) or E6 (Origin Exposure):** either
-add opt-in keyed passive providers (Shodan API / Censys) behind a configured key
-(same registry, injectable fetch, soft-skip when no key), or pivot to **E6
-Origin Exposure & Cloud Edge Intelligence** — passively compute direct-IP leaks
-behind a CDN by correlating the passive-OSINT IPs/hostnames with the recon
-infrastructure chain (a natural consumer of Stage 5–6 data, still zero target
-traffic). E3–E5, E7–E8 remain larger integration efforts to sequence afterward.
+**Done so far:** E2, E9, E10, E6, and E1 (increments 1–2; keyed providers
+pending). **Stage 8 candidates:** E1 increment 3 (keyed Shodan API / Censys
+behind a configured key), or **E3 Authorized Network Execution Profiles**
+(allowlist IPs / declared source nodes / legal refs — a config + ROE-adjacent
+contract, offline and self-contained), or **E7 Storage Abstraction** (a thin DB
+layer prepping the SQLite stores for a future Postgres backend). E4 (browser
+accuracy), E5 (wordlists), E8 (worker orchestration) are larger. Recommend E3
+next: smallest, offline, high governance value, and it composes with the ROE /
+scope layer already in the codebase.
