@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Orchestration Job",
+  "type": "object",
+  "required": [
+    "job_id",
+    "kind",
+    "project",
+    "target",
+    "params",
+    "priority",
+    "status",
+    "node_id",
+    "created_at",
+    "updated_at",
+    "result_ref"
+  ],
+  "properties": {
+    "job_id": {"type": "string"},
+    "kind": {
+      "type": "string",
+      "enum": ["full_collection", "audit_run", "mission_run", "tool_run",
+               "retest_run"]
+    },
+    "project": {"type": "string"},
+    "target": {"type": "string"},
+    "params": {"type": "object"},
+    "priority": {"type": "integer"},
+    "status": {
+      "type": "string",
+      "enum": ["pending", "claimed", "running", "completed", "failed",
+               "cancelled"]
+    },
+    "node_id": {"type": "string"},
+    "created_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "result_ref": {"type": "string"}
+  }
+}

@@ -47,7 +47,7 @@ Engineering invariants carried from `CLAUDE.md`:
 | **E5** | Context-Aware Wordlist Manager | Technology-targeted **safe** dictionary fuzzing within ROE budget. | `[DONE]` (planner) |
 | **E6** | Origin Exposure & Cloud Edge Intelligence | **Passive** calculation of direct IP leaks behind CDNs. | `[DONE]` |
 | **E7** | PostgreSQL Readiness / Storage Abstraction | Prepare local DB schema layer for enterprise scaling. | `[DONE]` (backend seam) |
-| **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[NOT STARTED]` |
+| **E8** | Authorized Worker Orchestration | Central job queue and explicit node execution framework. | `[DONE]` (contract) |
 | **E9** | Sensitive Data Governance | Redact raw secrets/credentials from client-facing reports. | `[DONE]` |
 | **E10** | Parser Hardening & Input Limits | Guard core parsers against JSON bombs and huge-file DoS. | `[DONE]` |
 
@@ -139,6 +139,41 @@ identically for legitimate inputs.
 
 **Verification:** `ruff check core/safe_parse.py core/project.py
 core/project_io.py` clean; targeted + full offline suite green.
+
+---
+
+### Stage 11 — E8: Authorized Worker Orchestration — `[DONE]` (contract)
+
+**Goal:** the model for a central job queue + explicit worker-node framework —
+so authorized scan/audit work can be scheduled across declared nodes.
+
+**Delivered:**
+- `core/orchestration.py` — pure/offline contract (holds no state, no threads,
+  no sockets, executes nothing):
+  - **Jobs**: `create/normalize/validate/advance_job_status/assign_job/job_to_json`
+    over the platform's existing client-safe run kinds (`full_collection`,
+    `audit_run`, `mission_run`, `tool_run`, `retest_run`). Lifecycle
+    pending→claimed→running→completed|failed (+cancel / release).
+  - **Nodes**: `register_node/normalize_node/node_can_run/node_to_json` — a node
+    is **inert until `authorized=True`**, must be `active`, and must **declare
+    the capability** for a kind.
+  - **Scheduler**: `assign_job` is authorization-gated (`node_can_run`);
+    `claim_next(jobs, node)` deterministically picks the best pending job the
+    node may run (priority, then age, then id). Pure — it selects; it never
+    mutates the queue or runs the job.
+- `schemas/asa_job.schema.json` + `asa_worker_node.schema.json` + `audit_schema`
+  aliases; `job_to_json` / `node_to_json` are schema-valid.
+- `tests/test_orchestration.py` — node authorization gate, job lifecycle +
+  illegal transitions, assignment refusals (unauthorized / incapable /
+  non-pending), scheduler ranking + filtering, schema conformance.
+
+**Authorization guardrails (in the contract):** no covert/auto node — a node
+must be registered *and* authorized *and* capability-declared before any job can
+reach it; job kinds are the existing client-safe run types only. Purely
+additive — new module + schemas + 2-line alias; no hot-path change.
+
+**Deferred:** a persistent JobStore/NodeStore and a real dispatcher (execute a
+claimed job via the mapped runner, heartbeat nodes) build on this contract next.
 
 ---
 
@@ -446,12 +481,10 @@ suite green.
 ## 3. Next up
 
 **Done so far:** E2, E9, E10, E6, E3 (contract), E7 (backend seam), E5 (planner),
-and E1 (increments 1–2). **Remaining full epics:** E4 (Browser-Backed Accuracy
-Mode — Playwright for dynamic asset parsing) and E8 (Authorized Worker
-Orchestration — a job queue + node framework); both are larger and more
-integration-heavy. **Pending sub-increments (smaller):** E3 inc-2 (scan-time
-`ip_authorized` enforcement seam), E1 inc-3 (keyed Shodan API / Censys), E7 inc-2
-(dialect ops for a real Postgres backend), E5 inc-2 (opt-in scope-gated,
-throttled probe phase that executes a plan). Recommend an E8 contract-first
-increment (a job/queue model + node registry, offline) or any of the pending
-sub-increments next.
+E8 (contract), and E1 (increments 1–2). **All 10 epics now have a landed
+increment.** The last full epic without one is **E4 (Browser-Backed Accuracy
+Mode — Playwright for dynamic asset parsing)** — an opt-in, dependency-gated
+enrichment (soft-degrades when Playwright is absent), the natural next big piece.
+**Pending sub-increments (smaller, offline):** E3 inc-2 (scan-time `ip_authorized`
+enforcement seam), E1 inc-3 (keyed Shodan API / Censys), E7 inc-2 (Postgres
+dialect ops), E5 inc-2 (throttled probe phase), E8 inc-2 (JobStore + dispatcher).

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ASA Worker Node",
+  "type": "object",
+  "required": [
+    "node_id",
+    "label",
+    "capabilities",
+    "authorized",
+    "status",
+    "last_seen"
+  ],
+  "properties": {
+    "node_id": {"type": "string"},
+    "label": {"type": "string"},
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["full_collection", "audit_run", "mission_run", "tool_run",
+                 "retest_run"]
+      }
+    },
+    "authorized": {"type": "boolean"},
+    "status": {"type": "string", "enum": ["active", "draining", "offline"]},
+    "last_seen": {"type": "string"}
+  }
+}

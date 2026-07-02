@@ -21,6 +21,8 @@ SCHEMA_ALIASES = {
     "asa_engagement": "asa_engagement.schema.json",
     "asa_retest_run": "asa_retest_run.schema.json",
     "asa_execution_profile": "asa_execution_profile.schema.json",
+    "asa_job": "asa_job.schema.json",
+    "asa_worker_node": "asa_worker_node.schema.json",
 }
 
 
