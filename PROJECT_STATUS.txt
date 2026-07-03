@@ -6,7 +6,8 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-02, после DEV_PLAN WS1–WS6 + RapidDNS + пагинация + recon-parallel + engagement-e2e + rate-limit): 2603 passed / 0 skipped.
+  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2): 2851 passed.
+  (Детальный лог трека E1–E10 — DOCS_DEVELOPMENT_PLAYBOOK.md, его единственный SoT.)
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
   >>> Навигабельная карта проекта (здоровье / структура / с чего начать):
@@ -6014,3 +6015,95 @@ crash/update-сендеры) осознанно не троттлятся. Те�
 зовёт хук с правильным хостом, no-op без хука. Проверено: ruff clean, self-check
 29 вкладок, полный pytest 2597 → 2603 (+6). Локальные коммиты, без push.
 
+
+
+================================================================================
+2026-07-03 — Authorized Enterprise Recon E1–E10 + increment-2 depth
+================================================================================
+
+Отдельный трек «Authorized Enterprise Recon & Client-Safe Scaling» (10 эпиков
+E1–E10) — его единственный подробный SoT — DOCS_DEVELOPMENT_PLAYBOOK.md (по
+стадиям Stage 1..18); здесь — только сводка, чтобы журнал не имел дыры. Базовые
+E1–E10 приземлены ранее в сессии: E1 passive OSINT (Shodan/Censys/InternetDB,
+zero target traffic), E2 Coverage Gate, E3 execution profiles (контракт), E4
+browser-accuracy (accuracy-слой), E5 context-aware wordlist planner, E6 origin-
+exposure & cloud-edge intel, E7 storage-backend seam, E8 worker orchestration
+(+JobStore/NodeStore/dispatcher), E9 sensitive-data governance, E10 parser
+hardening. Все гардрейлы authorized-only соблюдены: нет stealth/evasion, proxy-
+rotation, TOR/SOCKS5, JA3/JA4-spoof, un-throttled brute-force, авто-эксплойта,
+persistence-пейлоадов.
+
+Increment-2 depth (этот проход — 4 атомарных коммита, каждый с зелёным полным
+offline pytest; SQLite/дефолтное поведение байт-идентично):
+
+  • E3-2 (Stage 15, commit 0e193336) — scan-time execution-profile IP gate.
+    core/execution_profile.py: чистый enforce_target_ip(ip, profile, *, now,
+    enabled) = expiry-first (profile_expired) + ip_authorized, строго opt-in
+    (enabled=False / пустой профиль → enforced=False, allowed=True). core/
+    collection_runner.py: pre-flight _enforce_execution_profile(url) в _run_impl
+    ДО создания workspace (инъектируемый _ip_resolver = socket.gethostbyname;
+    резолв цели один раз; fail-closed — нерезолвящийся хост отклоняется, т.к.
+    scope недоказуем) + _execution_gate() (instance-override, иначе settings
+    execution_enforcement {enabled:False, profile:{}}). Исключение
+    ExecutionNotAuthorized; run()-обёртка pre-op-гардами оставляет чистый отказ
+    без orphan-скана. Тесты: test_execution_profile.py (+5), test_collection_
+    runner.py (+5: гейт off by default → резолвер не зовётся, authorized проходит,
+    unauthorized отбит, resolve-error fail-closed, settings-driven).
+
+  • E4-2 (Stage 16, commit bac7fd27) — browser-backed accuracy collection phase.
+    core/collection_runner.py: CollectionRunner(browser_accuracy=False) +
+    configure; инъектируемые seam'ы _accuracy_render_fn/_accuracy_static_fetch.
+    _fetch_static_html — статик-сторона по общему HTTP-шву (profile UA +
+    urlopen_retry + decompress + scan-scoped host throttle). _phase_browser_
+    accuracy — рендер через browser_accuracy.capture_rendered_html + build_
+    browser_accuracy (delta); Skip с playwright-причиной → E2 coverage
+    missing_dependency (авто), Error на сбое рендера, Success пишет
+    accuracy/browser_accuracy.json. guarded('browser_accuracy') в DAG (навигирует
+    цель), в ACTIVE_SCOPE_GUARDED_PHASES + _PHASE_ORDER. Report-card «Browser
+    Accuracy (rendered DOM)»; monitor + GUI (Playwright-gated чекбокс) parity.
+    Тесты: test_collection_runner.py (+6). Off by default.
+
+  • E5-2 (Stage 17, commit e680924a) — context-aware path-probe phase.
+    core/path_prober.py (new): чистый executor + injectable fetch seam —
+    classify_status (2xx/3xx→found, 401/403→protected, 404/410→absent, else→
+    other, None→error) + probe_paths(base, candidates, *, fetch, max_paths) →
+    {results, found, summary}; walk уже-ограниченного списка один раз, transport-
+    ошибка одного пути не рушит проход. core/collection_runner.py:
+    CollectionRunner(path_probe=False) + configure + инъектируемый _probe_fetch;
+    _default_probe_fetch — throttled HEAD по общему шву (4xx/5xx через
+    HTTPError.code); _phase_path_probe строит wordlist_manager.plan_wordlist(
+    technologies_from_report(report), report['scope']) → Skip на passive-only ROE
+    (planner отказывает), иначе probe + path_probe/path_probe.json. guarded
+    deps=recon; report-card + monitor/GUI parity. Дважды гейтед (Scope Guard +
+    planner), бюджет ROE ограничивает кол-во (не брутфорс). Findings-fold
+    обнаруженных путей отложен. Тесты: test_path_prober.py (8), test_collection_
+    runner.py (+4). Off by default.
+
+  • E7-2 (Stage 18, commit 669274d2) — dialect ops + реальный PostgresBackend.
+    utils/db_backend.py: DatabaseBackend/SQLiteBackend получили get/set_schema_
+    version, table_columns, build_upsert(table, columns, *, replace, key_columns)
+    — SQLite-реализации байт-идентичны старому inline SQL (PRAGMA user_version /
+    PRAGMA table_info / INSERT [OR REPLACE] ... VALUES (?,...)). PostgresBackend:
+    %s, ON CONFLICT (explicit key, default id; all-key → DO NOTHING),
+    information_schema.columns, metadata-таблица _asa_schema_version; connect()
+    открывает реальное соединение через lazy psycopg(v3)/psycopg2, обёрнутое в
+    _DBAPIConnectionAdapter (даёт DB-API 2.0 соединению execute/executescript +
+    txn-lifecycle, которые вызывает стор); driver-импорт инъектируем (connect_fn)
+    для offline-тестов, без драйвера connect() кидает понятный RuntimeError только
+    при использовании. resolve_backend('postgres://') → PostgresBackend (было
+    NotImplementedError). utils/sqlite_store.py: база роутит generic-ops через
+    backend (_apply_migrations/schema_version → get/set_schema_version; _columns →
+    table_columns; _insert_rows → build_upsert); _columns/_insert_rows стали
+    instance-методами (звались только через self.), _add_column остался static
+    SQLite-хелпером (миграции диалект-специфичны). Полный multi-store Postgres
+    (per-store DDL/SQL + conflict-ключи) — отдельный задокументированный трек.
+    Тесты: test_db_backend.py (+9, 1 переписан — Postgres upsert/adapter/
+    information_schema/missing-driver/SQLite-parity). SQLite-вывод байт-в-байт,
+    txn-lifecycle в _connect не тронут, Postgres opt-in по DSN с soft-optional
+    драйвером (в .exe ничего нового не бандлится).
+
+Проверено на каждом коммите: ruff clean, self-check 29 вкладок, полный offline
+pytest зелёный (exit 0; 1 известный Starlette/httpx warning). Итоговый масштаб
+набора: 2851 passed (рост с 2603 включает базовые E1–E10 и эти четыре increment-2
+пункта). Локальные коммиты, без push. Все E1–E10 (контракты + increment-2)
+закрыты.
