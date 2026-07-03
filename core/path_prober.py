@@ -101,3 +101,83 @@ def probe_paths(
             "by_state": by_state,
         },
     }
+
+
+# Curated map of genuinely-sensitive paths that, when publicly *readable*, are a
+# finding (not merely recon surface). Keyed by the exact candidate path from
+# core.wordlist_manager; the value is (severity, why). Paths absent here
+# (robots.txt, /login, /admin, /health, /sitemap.xml, API endpoints, expected
+# WordPress login pages, …) are normal surface and never become findings —
+# precision-first, the same ethos as the wordlists themselves.
+_SENSITIVE_PATHS = {
+    # Version control / source exposure.
+    "/.git/HEAD": ("High", "Exposed Git repository metadata"),
+    "/.git/config": ("High", "Exposed Git repository config"),
+    "/.svn/entries": ("High", "Exposed Subversion metadata"),
+    "/.hg/store": ("High", "Exposed Mercurial store"),
+    # Config / secrets / backups.
+    "/.env": ("High", "Exposed environment file (likely secrets)"),
+    "/.env.local": ("High", "Exposed environment file (likely secrets)"),
+    "/config.php.bak": ("High", "Exposed config backup"),
+    "/config.json": ("High", "Exposed configuration file"),
+    "/settings.py.bak": ("High", "Exposed settings backup"),
+    "/backup.zip": ("High", "Exposed backup archive"),
+    # WordPress.
+    "/wp-config.php.bak": ("High", "Exposed WordPress config backup"),
+    "/wp-json/wp/v2/users": ("Medium", "WordPress user-enumeration endpoint"),
+    "/xmlrpc.php": ("Low", "WordPress XML-RPC enabled"),
+    # PHP info disclosure.
+    "/info.php": ("Medium", "PHP info disclosure"),
+    "/phpinfo.php": ("Medium", "PHP info disclosure"),
+    "/test.php": ("Low", "Test script exposed"),
+    # Django.
+    "/__debug__/": ("High", "Django debug toolbar exposed"),
+    # Laravel.
+    "/telescope": ("High", "Laravel Telescope debug panel exposed"),
+    "/storage/logs/laravel.log": ("High", "Exposed Laravel application log"),
+    # Spring.
+    "/actuator": ("Medium", "Spring Boot Actuator exposed"),
+    "/actuator/env": ("High", "Spring Actuator env endpoint (secrets) exposed"),
+    # Node.js.
+    "/.npmrc": ("High", "Exposed .npmrc (likely an npm token)"),
+    "/server.js.map": ("Medium", "Exposed JavaScript source map"),
+    "/package.json": ("Low", "Exposed package.json"),
+    # Tomcat.
+    "/manager/html": ("High", "Tomcat Manager exposed"),
+    "/host-manager/html": ("High", "Tomcat Host Manager exposed"),
+    "/examples/": ("Medium", "Tomcat default example apps exposed"),
+}
+
+
+def exposure_findings(found, base_url: str = "") -> List[Dict[str, Any]]:
+    """Turn *readable* sensitive probe hits into raw finding dicts (E5-2 fold).
+
+    Only paths that are genuinely sensitive when public (:data:`_SENSITIVE_PATHS`)
+    **and** were actually readable (state ``found`` — a 2xx/3xx, not an auth-gated
+    ``protected``) become findings. Each is shaped like the other collection
+    folders (``{severity, title, detail, source, category, location}``) so it
+    flows through Findings Management (lifecycle / SLA / triage) and the risk
+    score. Pure, deterministic, deduped by path.
+    """
+    findings: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for r in found or []:
+        if not isinstance(r, dict) or r.get("state") != "found":
+            continue
+        path = r.get("path")
+        entry = _SENSITIVE_PATHS.get(path)
+        if not entry or path in seen:
+            continue
+        seen.add(path)
+        severity, why = entry
+        url = r.get("url") or (urljoin(base_url, path) if base_url else path)
+        findings.append({
+            "severity": severity,
+            "title": f"Exposed sensitive path: {path}",
+            "detail": f"{why} — {url} is publicly reachable "
+                      f"(HTTP {r.get('status')}).",
+            "source": "path-probe",
+            "category": "exposed_path",
+            "location": url,
+        })
+    return findings

@@ -268,8 +268,19 @@ safe half; this is its safe executor. Never a brute force.
 
 **Guardrails:** opt-in + off by default; scope-guarded active traffic; ROE-budget
 caps the candidate count (no brute force); passive-only ROE refuses; the transport
-is throttled by the scan's per-host limit. Findings-fold of exposed paths (e.g.
-`/.git/HEAD`) is a clean follow-up — this increment reports them as phase data.
+is throttled by the scan's per-host limit.
+
+**Follow-up — findings-fold of exposed paths (DONE):** `core/path_prober.py` gains
+a pure, precision-first `exposure_findings(found, base_url)` — a curated
+`_SENSITIVE_PATHS` map (VCS `/.git`, `/.env` + backups, `/actuator/env`, Laravel
+Telescope, Tomcat Manager, source maps, …; recon surface like `/robots.txt` /
+`/login` and auth-gated `protected` hits are **not** promoted) turns *readable*
+sensitive hits into raw finding dicts (`category='exposed_path'`, severity per
+path). `CollectionRunner._path_probe_findings(report)` reads the phase's `found`
+list and is folded into the shared vuln findings in `_run_active_phases` (serial,
+right after the takeover fold — the same pattern as `_takeover_findings`), so the
+exposures flow through Findings Management (lifecycle/SLA/triage) and the risk
+score. Tests: `test_path_prober.py` (+6), `test_collection_runner.py` (+4).
 
 ---
 

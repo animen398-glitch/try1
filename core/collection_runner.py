@@ -71,7 +71,7 @@ from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
 from core.browser_accuracy import build_browser_accuracy, capture_rendered_html
-from core.path_prober import probe_paths
+from core.path_prober import exposure_findings, probe_paths
 from core.wordlist_manager import plan_wordlist, technologies_from_report
 from utils.atomic_io import atomic_write_json
 from utils.browser_utils import SessionBuilder
@@ -679,6 +679,8 @@ class CollectionRunner:
                             skipped or self._phase_security(url, scan_dir, report))
         # Subdomain-takeover candidates (from the opt-in subdomain phase) → folded.
         self._fold_into_vulns(report, self._takeover_findings(report))
+        # Readable sensitive paths (from the opt-in path-probe phase, E5-2) → folded.
+        self._fold_into_vulns(report, self._path_probe_findings(report))
         if self.dns and not self._cancelled(report):
             skipped = self._scope_skip_active(report, 'dns', url)
             self._set_phase(report, 'dns',
@@ -1284,6 +1286,21 @@ class CollectionRunner:
                 'source': 'subdomain-active', 'category': 'takeover',
                 'location': host})
         return findings
+
+    @staticmethod
+    def _path_probe_findings(report: Dict) -> List[Dict]:
+        """Fold readable sensitive hits from the opt-in path-probe phase (E5-2)
+        into findings via :func:`core.path_prober.exposure_findings`.
+
+        Empty unless the phase ran and a genuinely sensitive path (e.g.
+        ``/.git/HEAD``, ``/.env``) was actually readable — recon surface
+        (``/robots.txt``, ``/login``) and auth-gated (``protected``) hits are not
+        promoted. Each hit is one stable Findings identity (category
+        ``exposed_path`` + the URL as location)."""
+        pp = (report.get('phases', {}).get('path_probe') or {}).get('data') or {}
+        found = pp.get('found') if isinstance(pp, dict) else None
+        return exposure_findings(found or [],
+                                 base_url=str(report.get('url') or ''))
 
     def _phase_analyzers(self, report: Dict) -> Dict:
         """Run user-supplied analyzer plugins over the whole report and fold any

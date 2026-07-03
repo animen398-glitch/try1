@@ -1560,3 +1560,52 @@ def test_render_html_path_probe_card():
     assert "Path Probe" in html_out
     assert "/robots.txt" in html_out and "/wp-login.php" in html_out
     assert "<script" not in html_out.lower()
+
+
+# --- E5-2 findings fold: exposed sensitive paths -> vuln findings ------------
+
+def test_path_probe_findings_reads_phase_data():
+    report = {"url": "https://x.com", "phases": {"path_probe": {"data": {"found": [
+        {"path": "/.git/HEAD", "url": "https://x.com/.git/HEAD",
+         "status": 200, "state": "found"},
+        {"path": "/robots.txt", "url": "https://x.com/robots.txt",
+         "status": 200, "state": "found"}]}}}}
+    findings = CollectionRunner._path_probe_findings(report)
+    # Only the sensitive /.git/HEAD is promoted; /robots.txt is recon surface.
+    assert [f["location"] for f in findings] == ["https://x.com/.git/HEAD"]
+    assert findings[0]["severity"] == "High"
+    assert findings[0]["category"] == "exposed_path"
+
+
+def test_path_probe_findings_fold_into_vulns():
+    r = CollectionRunner()
+    report = {"url": "https://x.com", "phases": {
+        "vulns": {"findings": [], "summary": {}},
+        "path_probe": {"data": {"found": [
+            {"path": "/.env", "url": "https://x.com/.env",
+             "status": 200, "state": "found"}]}}}}
+    r._fold_into_vulns(report, r._path_probe_findings(report))
+    titles = [f["title"] for f in report["phases"]["vulns"]["findings"]]
+    assert any("/.env" in t for t in titles)
+
+
+def test_path_probe_findings_absent_without_phase():
+    assert CollectionRunner._path_probe_findings({"phases": {}}) == []
+
+
+def test_phase_path_probe_then_fold_end_to_end(tmp_path):
+    # An active ROE + an injected transport where /.git/HEAD is readable: the
+    # phase records it, and the fold turns it into a High finding.
+    r = CollectionRunner(path_probe=True)
+    report = {
+        "url": "https://x.com",
+        "scope": {"allowed_domains": ["x.com"], "active_scan_enabled": True,
+                  "passive_only": False},
+        "phases": {"recon": {"status": "Success", "data": {"technologies": []}},
+                   "vulns": {"findings": [], "summary": {}}},
+    }
+    r._probe_fetch = lambda u: 200 if u.endswith("/.git/HEAD") else 404
+    report["phases"]["path_probe"] = r._phase_path_probe("https://x.com", tmp_path, report)
+    r._fold_into_vulns(report, r._path_probe_findings(report))
+    locs = [f["location"] for f in report["phases"]["vulns"]["findings"]]
+    assert "https://x.com/.git/HEAD" in locs
