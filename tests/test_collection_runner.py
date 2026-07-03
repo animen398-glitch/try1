@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from core.collection_runner import (
     ACTIVE_SCOPE_GUARDED_PHASES,
     CollectionRunner,
@@ -1358,3 +1360,67 @@ def test_scan_concurrency_produces_identical_results(tmp_path, monkeypatch):
     assert list(seq['phases']) == list(conc['phases'])          # canonical order
     sources = {f['source'] for f in seq['phases']['vulns']['findings']}
     assert {'vuln', 'subdomain-active', 'dns'} <= sources        # both folds ran
+
+
+# --- E3 increment 2: pre-flight execution-profile IP gate --------------------
+
+def _authorized_profile(ip_or_cidr="203.0.113.0/24"):
+    from core.execution_profile import create_execution_profile
+    return create_execution_profile(
+        "gate-test", allowed_ips=[ip_or_cidr],
+        legal={"authorized_by": "Client", "reference": "AUTH-1"})
+
+
+def test_execution_gate_off_by_default(monkeypatch):
+    # No config → gate is a strict no-op: the resolver is never consulted.
+    def boom(_host):
+        raise AssertionError("resolver must not run when enforcement is off")
+
+    r = CollectionRunner()
+    r._ip_resolver = boom
+    monkeypatch.setattr("core.config.load_settings", lambda: {})
+    r._enforce_execution_profile("https://example.com")  # must not raise
+
+
+def test_execution_gate_allows_authorized_ip():
+    r = CollectionRunner(execution_enforce=True,
+                         execution_profile=_authorized_profile())
+    r._ip_resolver = lambda host: "203.0.113.9"
+    r._enforce_execution_profile("https://example.com")  # authorized → no raise
+
+
+def test_execution_gate_refuses_unauthorized_ip():
+    from core.collection_runner import ExecutionNotAuthorized
+
+    r = CollectionRunner(execution_enforce=True,
+                         execution_profile=_authorized_profile())
+    r._ip_resolver = lambda host: "8.8.8.8"
+    with pytest.raises(ExecutionNotAuthorized) as exc:
+        r._enforce_execution_profile("https://example.com")
+    assert "not authorized" in str(exc.value)
+
+
+def test_execution_gate_fails_closed_on_resolve_error():
+    from core.collection_runner import ExecutionNotAuthorized
+
+    def boom(_host):
+        raise OSError("no DNS")
+
+    r = CollectionRunner(execution_enforce=True,
+                         execution_profile=_authorized_profile())
+    r._ip_resolver = boom
+    with pytest.raises(ExecutionNotAuthorized) as exc:
+        r._enforce_execution_profile("https://example.com")
+    assert "could not be resolved" in str(exc.value)
+
+
+def test_execution_gate_reads_settings(monkeypatch):
+    from core.collection_runner import ExecutionNotAuthorized
+
+    monkeypatch.setattr("core.config.load_settings", lambda: {
+        "execution_enforcement": {"enabled": True,
+                                  "profile": _authorized_profile()}})
+    r = CollectionRunner()  # no instance override → settings drive the gate
+    r._ip_resolver = lambda host: "8.8.8.8"
+    with pytest.raises(ExecutionNotAuthorized):
+        r._enforce_execution_profile("https://example.com")

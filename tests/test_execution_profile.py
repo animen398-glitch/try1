@@ -5,6 +5,7 @@ import pytest
 from core.audit_schema import validate_audit_payload
 from core.execution_profile import (
     create_execution_profile,
+    enforce_target_ip,
     execution_profile_summary,
     execution_profile_to_json,
     ip_authorized,
@@ -143,6 +144,38 @@ def test_profile_expired_by_window():
 def test_no_valid_until_never_expires():
     legal = {**_LEGAL, "valid_until": ""}
     assert profile_expired(_profile(legal=legal), now="2099-01-01") is False
+
+
+# --- enforce_target_ip (scan-time gate, E3 inc-2) ----------------------------
+
+def test_enforce_off_is_noop_allow():
+    res = enforce_target_ip("8.8.8.8", _profile(), now="2026-07-15", enabled=False)
+    assert res == {"allowed": True,
+                   "reason": "execution-profile enforcement is off",
+                   "enforced": False}
+
+
+def test_enforce_without_profile_is_noop_allow():
+    res = enforce_target_ip("8.8.8.8", {}, now="2026-07-15", enabled=True)
+    assert res["allowed"] is True and res["enforced"] is False
+
+
+def test_enforce_allows_authorized_ip():
+    res = enforce_target_ip("203.0.113.9", _profile(), now="2026-07-15")
+    assert res["allowed"] is True and res["enforced"] is True
+
+
+def test_enforce_denies_ip_outside_profile():
+    res = enforce_target_ip("8.8.8.8", _profile(), now="2026-07-15")
+    assert res["allowed"] is False and res["enforced"] is True
+    assert "outside" in res["reason"]
+
+
+def test_enforce_denies_when_window_expired():
+    # Authorized IP, but the authorization window has lapsed → expiry denies first.
+    res = enforce_target_ip("203.0.113.9", _profile(), now="2026-08-05")
+    assert res["allowed"] is False and res["enforced"] is True
+    assert "expired" in res["reason"]
 
 
 # --- summary + schema --------------------------------------------------------

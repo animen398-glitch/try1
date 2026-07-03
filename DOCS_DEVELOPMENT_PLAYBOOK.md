@@ -179,6 +179,50 @@ dependent, so kept out of this offline-tested core).
 
 ---
 
+### Stage 15 — E3 increment 2: scan-time execution-profile IP gate — `[DONE]`
+
+**Goal:** turn the E3 contract into an enforced pre-flight — refuse a Full
+Collection whose resolved target IP is outside the active execution profile,
+*before any workspace is created or any phase touches the target*.
+
+**Delivered:**
+- `core/execution_profile.py` — pure `enforce_target_ip(ip, profile, *, now,
+  enabled=True) -> {allowed, reason, enforced}`, combining the two questions a run
+  must answer up front: is the authorization window still valid (expiry denies
+  first), and is the IP inside the boundary (`ip_authorized`, default-deny within
+  the profile). **Strictly opt-in:** `enabled=False` *or* an empty profile →
+  `enforced=False, allowed=True` (no default-deny is imposed on users who never
+  declared a profile).
+- `core/config.py` — `execution_enforcement {enabled: False, profile: {}}` (off
+  with an empty profile → unconfigured runs are byte-identical).
+- `core/collection_runner.py`:
+  - `CollectionRunner(execution_enforce=None, execution_profile=None)` + matching
+    `configure(...)` params + an injectable `self._ip_resolver`
+    (`socket.gethostbyname`) so the gate is offline-testable.
+  - `_execution_gate()` resolves the effective `(enabled, profile)` — instance
+    override wins, else the `execution_enforcement` setting (mirrors
+    `_passive_osint_enabled`).
+  - `_enforce_execution_profile(url)` — no-op unless opted in; otherwise resolves
+    the target host once and raises `ExecutionNotAuthorized` if the IP is denied
+    (or if resolution fails — **fail-closed**, since we cannot prove scope).
+    Called first in `_run_impl`, before the project workspace exists; the existing
+    `run()` wrapper's pre-operation guards (`_finish_operation`/
+    `_persist_error_report` both early-return with no op/report) surface the
+    refusal cleanly with no orphan scan dir.
+- `tests/test_execution_profile.py` (+5) — off/no-profile no-op, authorized allow,
+  outside deny, expiry-denies-first. `tests/test_collection_runner.py` (+5) —
+  gate off by default (resolver never consulted), authorized passes, unauthorized
+  refuses, resolve-error fails closed, settings-driven gate.
+
+**Guardrails:** opt-in (off + empty profile default → no behaviour change);
+fail-closed; refuses before touching the target; resolver injectable so no
+network in tests.
+
+**Deferred:** an `ExecutionProfileStore` + GUI/web surfaces to author/select the
+active profile (this increment reads it from settings/instance).
+
+---
+
 ### Stage 14 — E1 increment 3: keyed passive providers (Shodan API / Censys) — `[DONE]`
 
 **Goal:** add the keyed Shodan/Censys sources behind an opt-in configured key,
@@ -595,13 +639,11 @@ OSINT: contract + opt-in scan phase); E3/E5/E7/E8/E4 (contract / planner / seam 
 accuracy layer).
 
 **Remaining work is depth (increment 2s), all offline and self-contained:**
-- E3-2 — scan-time `ip_authorized` enforcement seam (refuse an unauthorized
-  target IP).
+- ~~E3-2 — scan-time `ip_authorized` enforcement seam~~ — **DONE** (Stage 15).
 - E4-2 — opt-in render phase folding the accuracy delta into report / coverage.
 - E5-2 — opt-in scope-gated, throttled probe phase that executes a plan.
 - E7-2 — Postgres dialect ops (placeholder / `user_version` / `table_info` /
   upsert) + a real `PostgresBackend`.
-- E8-2 — `JobStore`/`NodeStore` + a dispatcher that runs a claimed job via its
-  mapped runner.
+- ~~E8-2 — `JobStore`/`NodeStore` + a dispatcher~~ — **DONE** (Stage 13).
 
 Pick any; each is a small, low-risk follow-up on an existing contract.

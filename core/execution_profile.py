@@ -200,6 +200,38 @@ def profile_expired(profile: Optional[Dict[str, Any]], *, now: str) -> bool:
     return _clean(now) > valid_until
 
 
+def enforce_target_ip(
+    ip: str,
+    profile: Optional[Dict[str, Any]],
+    *,
+    now: str,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    """Scan-time gate for a resolved target IP (Roadmap E3 increment 2).
+
+    Answers, in one call, the two questions a run must resolve before touching a
+    resolved target IP: is the engagement's authorization window still valid, and
+    is this IP inside the declared boundary? Returns ``{allowed, reason,
+    enforced}``.
+
+    Enforcement is **strictly opt-in**: when ``enabled`` is false or no profile is
+    configured, ``enforced`` is ``False`` and ``allowed`` is ``True`` — an
+    unconfigured run behaves exactly as before (the profile's default-deny is
+    *not* imposed on users who never declared one). When ``enabled`` and a profile
+    is present, an expired authorization window denies first, then
+    :func:`ip_authorized` decides (default-deny *within* the profile).
+    """
+    if not enabled or not profile:
+        return {"allowed": True, "reason": "execution-profile enforcement is off",
+                "enforced": False}
+    if profile_expired(profile, now=now):
+        return {"allowed": False, "reason": "authorization window has expired",
+                "enforced": True}
+    decision = ip_authorized(ip, profile)
+    return {"allowed": decision["allowed"], "reason": decision["reason"],
+            "enforced": True}
+
+
 def execution_profile_summary(profile: Optional[Dict[str, Any]]) -> str:
     n = normalize_execution_profile(profile)
     allowed = ", ".join(n["allowed_ips"]) or "none"

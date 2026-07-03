@@ -16,10 +16,12 @@ Layout produced under <base>/<domain>_<timestamp>/:
 
 import html
 import json
+import socket
 import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
+from urllib.parse import urlparse
 
 from core.analyzer_plugins import discover_analyzers, run_analyzers
 from core.api_key_extractor import ApiKeyExtractor
@@ -54,6 +56,7 @@ from core.llm_summary import DEFAULT_MODEL as _LLM_DEFAULT_MODEL
 from core.openapi_discovery import discover as discover_openapi
 from core.openapi_discovery import render_html as render_openapi
 from core.llm_summary import generate_narrative as generate_llm_narrative
+from core.execution_profile import enforce_target_ip
 from core.project import Project, ProjectStore, project_slug
 from core.recon_engine import ReconEngine
 from core.report_charts import stacked_bar
@@ -106,6 +109,12 @@ def _domain_slug(url: str) -> str:
     return project_slug(url)
 
 
+class ExecutionNotAuthorized(RuntimeError):
+    """A Full Collection was refused because the resolved target IP is outside the
+    active execution profile (Roadmap E3 increment 2). Raised pre-flight — before
+    any phase touches the target — so the run fails fast and audibly."""
+
+
 class CollectionRunner:
     """Sequentially drives every collection module into one project folder."""
 
@@ -123,6 +132,8 @@ class CollectionRunner:
                  iac: bool = False, iac_path: Optional[str] = None,
                  threat_feed: bool = False, threat_epss_bulk: bool = False,
                  passive_osint: bool = False,
+                 execution_enforce: Optional[bool] = None,
+                 execution_profile: Optional[Dict] = None,
                  scan_concurrency: Optional[int] = None):
         self.profile = profile
         self.max_pages = max_pages
@@ -212,6 +223,16 @@ class CollectionRunner:
         # promoted to authoritative findings). Off by default; degrades to a skip
         # when offline. Not scope-gated (metadata about an IP, like threat_feed).
         self.passive_osint = passive_osint
+        # Opt-in Authorized Network Execution Profile enforcement (Roadmap E3
+        # increment 2). When enabled with a configured profile, the run resolves
+        # the target IP pre-flight and refuses (ExecutionNotAuthorized) unless the
+        # IP is authorized by the profile. None → read core.config settings
+        # ('execution_enforcement'); off + empty profile leaves runs untouched.
+        self.execution_enforce = execution_enforce
+        self.execution_profile = execution_profile
+        # Injectable resolver (target hostname → IP) so the pre-flight gate is
+        # offline-testable; production uses the stdlib DNS lookup.
+        self._ip_resolver: Callable[[str], str] = socket.gethostbyname
         # Concurrent scan engine — how many independent phases may run at once.
         # None → read core.config settings ('scan_concurrency', default 4);
         # 1 = the classic sequential pipeline. An explicit value here wins (used
@@ -247,9 +268,15 @@ class CollectionRunner:
                   threat_feed: Optional[bool] = None,
                   threat_epss_bulk: Optional[bool] = None,
                   passive_osint: Optional[bool] = None,
+                  execution_enforce: Optional[bool] = None,
+                  execution_profile: Optional[Dict] = None,
                   scan_concurrency: Optional[int] = None):
         if profile:
             self.profile = profile
+        if execution_enforce is not None:
+            self.execution_enforce = execution_enforce
+        if execution_profile is not None:
+            self.execution_profile = execution_profile
         if scan_concurrency is not None:
             self.scan_concurrency = scan_concurrency
         if max_pages is not None:
@@ -447,6 +474,51 @@ class CollectionRunner:
         except Exception:  # noqa: BLE001 — a bad setting must never sink a scan
             return False
 
+    def _execution_gate(self) -> tuple:
+        """Effective (enabled, profile) for the E3 pre-flight IP gate.
+
+        The explicit instance values win (used by callers/tests); otherwise the
+        ``execution_enforcement`` setting is consulted so a user can opt in via
+        settings.json without a GUI toggle (mirrors :meth:`_passive_osint_enabled`).
+        Off with an empty profile by default → runs are unaffected."""
+        enabled = self.execution_enforce
+        profile = self.execution_profile
+        if enabled is None or profile is None:
+            try:
+                from core.config import load_settings
+                cfg = load_settings().get('execution_enforcement') or {}
+            except Exception:  # noqa: BLE001 — a bad setting must never sink a scan
+                cfg = {}
+            if enabled is None:
+                enabled = bool(cfg.get('enabled'))
+            if profile is None:
+                profile = cfg.get('profile') or {}
+        return bool(enabled), (profile or {})
+
+    def _enforce_execution_profile(self, url: str) -> None:
+        """Pre-flight E3 gate: refuse a run whose resolved target IP is not
+        authorized by the active execution profile. A strict no-op unless
+        enforcement is enabled AND a non-empty profile is configured — so default
+        (unconfigured) runs are byte-identical. Resolves the target host once via
+        the injectable resolver; a resolution failure is treated as unauthorized
+        (fail-closed) because we cannot prove the target is in scope."""
+        enabled, profile = self._execution_gate()
+        if not enabled or not profile:
+            return
+        host = urlparse(url).hostname or ''
+        try:
+            ip = self._ip_resolver(host)
+        except Exception:  # noqa: BLE001 — cannot resolve → cannot prove scope
+            raise ExecutionNotAuthorized(
+                f'target {host!r} could not be resolved to an IP; refusing under '
+                f'the active execution profile (fail-closed)')
+        now = datetime.now().isoformat(timespec='seconds')
+        decision = enforce_target_ip(ip, profile, now=now, enabled=True)
+        if not decision['allowed']:
+            raise ExecutionNotAuthorized(
+                f'target {host} ({ip}) is not authorized: {decision["reason"]}')
+        self._log(f'Профиль исполнения: {host} ({ip}) авторизован')
+
     @staticmethod
     def _set_phase(report: Dict, key: str, result: Dict) -> Dict:
         """Store a phase result under its key and return it (task closure body)."""
@@ -611,6 +683,11 @@ class CollectionRunner:
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
         self._cancel.clear()
+
+        # E3 pre-flight: refuse an unauthorized target IP before any workspace is
+        # created or any phase touches the target. No-op unless enforcement is
+        # opted in with a configured execution profile.
+        self._enforce_execution_profile(url)
 
         domain = _domain_slug(url)
         stamp = datetime.now().strftime('%Y%m%d_%H%M%S')

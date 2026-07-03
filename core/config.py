@@ -122,6 +122,15 @@ DEFAULT_SETTINGS = {
     # API id+secret unlock richer per-IP data — still zero target traffic.
     'passive_osint': {'enabled': False, 'shodan_api_key': '',
                       'censys_api_id': '', 'censys_api_secret': ''},
+    # Authorized Network Execution Profile enforcement (core/execution_profile.py,
+    # Roadmap E3 increment 2) — an opt-in scan-time IP gate. When 'enabled' AND a
+    # non-empty 'profile' is configured, a Full Collection resolves the target's
+    # IP and refuses the run unless that IP is inside the profile's allowed_ips
+    # (and the legal authorization window has not lapsed). Off by default and with
+    # an empty profile, so unconfigured runs are unaffected — no default-deny is
+    # imposed until you opt in. 'profile' is an execution-profile dict as produced
+    # by core.execution_profile.create_execution_profile / execution_profile_to_json.
+    'execution_enforcement': {'enabled': False, 'profile': {}},
 }
 
 MAX_TARGETS = 100
