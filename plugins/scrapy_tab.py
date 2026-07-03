@@ -20,6 +20,7 @@ from qtpy.QtWidgets import (
 from core.scrapy_crawler import ScrapyCrawler
 from gui.plugin_manager import TabPlugin
 from gui.ui_components import SectionGroupBox, StyledButton
+from utils.subprocess_utils import CancellationToken
 
 _COLUMNS = ["URL", "Status", "Title", "Depth", "Size"]
 
@@ -58,8 +59,16 @@ class _ScrapyTab(QWidget):
         self.btn = StyledButton("Crawl")
         self.btn.clicked.connect(self._run)
         row.addWidget(self.btn)
+
+        # Cancel the in-flight crawl (kills the child process tree); idle by default.
+        self.cancel_btn = StyledButton("Отменить", style='secondary')
+        self.cancel_btn.clicked.connect(self._cancel)
+        self.cancel_btn.setEnabled(False)
+        row.addWidget(self.cancel_btn)
+
         grp.setLayout(row)
         layout.addWidget(grp)
+        self._cancel_token = None
 
         self.status = QLabel()
         self.status.setStyleSheet(
@@ -95,17 +104,37 @@ class _ScrapyTab(QWidget):
         self.table.setRowCount(0)
         self.status.setText(f"Краулинг: {url} …")
         self.btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
         self._window._set_busy(True)
 
         crawler = ScrapyCrawler(
             max_pages=self.max_pages.value(),
             depth=self.depth.value(),
         )
+        # A cancellation token shared with the crawl subprocess: the Cancel button
+        # sets it from the GUI thread, the worker thread's poll loop sees it and
+        # kills the whole process tree — no console window, no orphaned children.
+        self._cancel_token = CancellationToken()
+        crawler.set_cancel_event(self._cancel_token)
         self._window._run_async(lambda u=url: crawler.crawl(u), self._on_done)
+
+    def _cancel(self):
+        """Request cancellation of the active crawl (best-effort, idempotent)."""
+        token = self._cancel_token
+        if token is not None:
+            token.cancel()
+            self.cancel_btn.setEnabled(False)
+            self.status.setText("Отмена…")
 
     def _on_done(self, result: dict):
         self._window._set_busy(False)
         self.btn.setEnabled(True)
+        self.cancel_btn.setEnabled(False)
+        self._cancel_token = None
+
+        if result.get('status') != 'Success' and result.get('error') == 'crawl cancelled':
+            self.status.setText("Операция отменена")
+            return
 
         if result.get('status') != 'Success':
             self.status.setText(f"Ошибка: {result.get('error', 'unknown')}")

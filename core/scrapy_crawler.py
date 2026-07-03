@@ -40,9 +40,15 @@ class ScrapyCrawler:
         self.obey_robots = obey_robots
         self.user_agent = user_agent
         self.progress_callback: Optional[Callable] = None
+        self.cancel_event = None
 
     def set_progress_callback(self, cb: Callable):
         self.progress_callback = cb
+
+    def set_cancel_event(self, ev) -> None:
+        """Cooperative cancellation seam — a set token kills the crawl subprocess
+        (and its tree) mid-run; partial pages already written are still returned."""
+        self.cancel_event = ev
 
     def _log(self, msg: str):
         if self.progress_callback:
@@ -85,16 +91,43 @@ class ScrapyCrawler:
         self._log(f'[Scrapy] crawling {url} (≤{self.max_pages} pages, depth {self.depth})')
         truncated = False
         stderr_tail = ''
+        t0 = time.monotonic()
+        run_info: Dict = {}
+        if self.cancel_event is not None:
+            # Cancellable path — poll loop kills the whole tree on cancel/timeout.
+            from utils.subprocess_utils import run_capture
+            res = run_capture(cmd, timeout=self.timeout,
+                              cancel_event=self.cancel_event)
+            run_info = res
+            stderr_tail = (res.get('stderr') or '')[-500:]
+            truncated = bool(res.get('timed_out'))
+            if res.get('cancelled'):
+                result['error'] = 'crawl cancelled'
+                self._log('[Scrapy] cancelled — returning partial results')
+            elif res.get('error'):
+                result['error'] = res['error']
+            elif res.get('rc') not in (0, None):
+                result['error'] = f'crawler exited {res.get("rc")}: {stderr_tail.strip()}'
+        else:
+            try:
+                proc = run_hidden(
+                    cmd, capture_output=True, text=True, timeout=self.timeout)
+                stderr_tail = (proc.stderr or '')[-500:]
+                run_info = {'rc': proc.returncode, 'stderr': proc.stderr or ''}
+                if proc.returncode not in (0, None):
+                    result['error'] = f'crawler exited {proc.returncode}: {stderr_tail.strip()}'
+            except subprocess.TimeoutExpired as e:
+                truncated = True
+                run_info = {'timed_out': True}
+                stderr_tail = (e.stderr or '')[-500:] if isinstance(e.stderr, str) else ''
+                self._log(f'[Scrapy] timed out after {self.timeout}s — returning partial results')
+
         try:
-            proc = run_hidden(
-                cmd, capture_output=True, text=True, timeout=self.timeout)
-            stderr_tail = (proc.stderr or '')[-500:]
-            if proc.returncode not in (0, None):
-                result['error'] = f'crawler exited {proc.returncode}: {stderr_tail.strip()}'
-        except subprocess.TimeoutExpired as e:
-            truncated = True
-            stderr_tail = (e.stderr or '')[-500:] if isinstance(e.stderr, str) else ''
-            self._log(f'[Scrapy] timed out after {self.timeout}s — returning partial results')
+            from utils.system_logger import journal_tool_run
+            journal_tool_run('scrapy', cmd, run_info,
+                             duration_ms=int((time.monotonic() - t0) * 1000))
+        except Exception:
+            pass
 
         items = self._read_feed(out_file)
         self._cleanup(out_file)

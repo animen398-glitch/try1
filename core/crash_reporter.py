@@ -90,6 +90,13 @@ def _redact(text: str) -> str:
     return out
 
 
+# Public alias — the single redaction routine, reused by the tool-run journal and
+# any other surface that must scrub secrets before persisting/showing text.
+def redact(text: str) -> str:
+    """Scrub credentials/tokens/cookies from ``text`` (public seam)."""
+    return _redact(text)
+
+
 # --------------------------------------------------------------- breadcrumbs
 
 def breadcrumb(msg: str) -> None:

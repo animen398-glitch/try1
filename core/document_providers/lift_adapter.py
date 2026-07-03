@@ -22,7 +22,7 @@ import tempfile
 from typing import Callable, Dict, List, Optional
 
 from core.document_intelligence import secret_finding
-from core.external_tools import run_command
+from core.external_tools import _invoke_runner, run_command
 from core.features import has_lift
 
 LIFT_HOMEPAGE = 'https://github.com/datalab-to/lift'
@@ -140,12 +140,17 @@ class LiftRunner:
         self._runner = runner or run_command
         self._detector = detector or has_lift
         self.progress_callback: Optional[Callable] = None
+        self.cancel_event = None
 
     def available(self) -> bool:
         return bool(self._detector())
 
     def set_progress_callback(self, cb: Callable) -> None:
         self.progress_callback = cb
+
+    def set_cancel_event(self, ev) -> None:
+        """Cooperative cancellation seam (mirrors the external-tool runners)."""
+        self.cancel_event = ev
 
     def _log(self, msg: str) -> None:
         if self.progress_callback:
@@ -188,7 +193,8 @@ class LiftRunner:
                     json.dump(self.schema, fh)
                 cmd = build_command(path, out_dir, schema_path)
                 self._log(f'[lift] extracting {os.path.basename(str(path))}')
-                run = self._runner(cmd, self.timeout)
+                run = _invoke_runner(self._runner, cmd, self.timeout, 'lift',
+                                     cancel_event=self.cancel_event)
                 if run.get('error'):
                     result['error'] = run['error']
                     self._log(f'[lift] failed: {run["error"]}')

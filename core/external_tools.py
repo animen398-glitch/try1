@@ -17,11 +17,13 @@ subfinder a thin, same-shaped addition when needed (see PROJECT_STATUS M3).
 
 import json
 import subprocess
+import time
 from typing import Callable, Dict, List, Optional
 
 from urllib.parse import urlparse
 
 from utils.subprocess_utils import run_hidden
+from utils.system_logger import journal_tool_run
 
 from core.features import (
     has_amass, has_httpx, has_katana, has_nuclei, has_subfinder,
@@ -48,7 +50,14 @@ def _cap_output(text: Optional[str], limit: int) -> tuple:
 
 
 def command_error(run: Dict, tool: str) -> Optional[str]:
-    """Return a concise user-facing error for a failed external tool run."""
+    """Return a concise user-facing error for a failed external tool run.
+
+    A cancelled run (``cancel_event`` was set) surfaces as a clear, non-technical
+    message; a timeout is treated as a partial success by callers (partial stdout
+    is still parsed) so it is not reported here.
+    """
+    if run.get('cancelled'):
+        return f'{tool}: операция отменена'
     if run.get('error'):
         return str(run['error'])
     rc = run.get('rc')
@@ -62,33 +71,97 @@ def command_error(run: Dict, tool: str) -> Optional[str]:
 
 def run_command(cmd: List[str], timeout: int,
                 input_text: Optional[str] = None,
-                max_output: Optional[int] = None) -> Dict:
+                max_output: Optional[int] = None, *,
+                cancel_event=None) -> Dict:
     """Run an external command. Never raises — returns a structured result.
 
-    ``{rc, stdout, stderr, timed_out, truncated, error?}``. A missing binary or OS
-    error is reported via ``error``; a timeout returns ``timed_out=True`` with
-    whatever partial stdout was captured. ``stdout`` is capped to ``max_output``
-    (default :data:`MAX_OUTPUT`) characters, with ``truncated`` flagging a cap.
+    ``{rc, stdout, stderr, timed_out, cancelled, truncated, error?}``. A missing
+    binary or OS error is reported via ``error``; a timeout returns
+    ``timed_out=True`` with whatever partial stdout was captured. ``stdout`` is
+    capped to ``max_output`` (default :data:`MAX_OUTPUT`) characters, with
+    ``truncated`` flagging a cap.
+
+    When ``cancel_event`` (a ``utils.subprocess_utils.CancellationToken`` or any
+    object with ``is_set()``) is supplied the run becomes cancellable: it routes
+    through the ``run_capture`` poll loop, and a set token kills the whole process
+    tree and returns ``cancelled=True``. Without a token the classic
+    ``run_hidden`` path is used unchanged (backward compatible).
     """
     limit = max_output if max_output is not None else MAX_OUTPUT
+    if cancel_event is not None:
+        from utils.subprocess_utils import run_capture
+        return run_capture(cmd, timeout=timeout, input_text=input_text,
+                           cancel_event=cancel_event, max_output=limit)
     try:
         proc = run_hidden(cmd, capture_output=True, text=True,
                           timeout=timeout, input=input_text)
         stdout, truncated = _cap_output(proc.stdout, limit)
         return {'rc': proc.returncode, 'stdout': stdout,
                 'stderr': (proc.stderr or '')[-1000:], 'timed_out': False,
-                'truncated': truncated}
+                'cancelled': False, 'truncated': truncated}
     except subprocess.TimeoutExpired as e:
         partial = e.stdout if isinstance(e.stdout, str) else ''
         stdout, truncated = _cap_output(partial, limit)
         return {'rc': None, 'stdout': stdout, 'stderr': '',
-                'timed_out': True, 'truncated': truncated}
+                'timed_out': True, 'cancelled': False, 'truncated': truncated}
     except FileNotFoundError:
         return {'rc': None, 'stdout': '', 'stderr': '', 'timed_out': False,
-                'truncated': False, 'error': 'binary not found on PATH'}
+                'cancelled': False, 'truncated': False,
+                'error': 'binary not found on PATH'}
     except OSError as e:  # noqa: BLE001 — surface, don't crash
         return {'rc': None, 'stdout': '', 'stderr': '', 'timed_out': False,
-                'truncated': False, 'error': str(e)}
+                'cancelled': False, 'truncated': False, 'error': str(e)}
+
+
+def _run_tool(tool: str, cmd: List[str], timeout: int, *,
+              input_text: Optional[str] = None, cancel_event=None) -> Dict:
+    """``run_command`` + a redacted, timed journal entry for one tool run.
+
+    The single place the external-tool runners funnel through, so every run is
+    both cancellable (``cancel_event``) and recorded in the system-log journal
+    the GUI shows — without each runner repeating the plumbing.
+    """
+    t0 = time.monotonic()
+    kwargs: Dict = {}
+    if input_text is not None:
+        kwargs['input_text'] = input_text
+    if cancel_event is not None:
+        kwargs['cancel_event'] = cancel_event
+    run = run_command(cmd, timeout, **kwargs)
+    journal_tool_run(tool, cmd, run,
+                     duration_ms=int((time.monotonic() - t0) * 1000))
+    return run
+
+
+def _invoke_runner(runner: Callable, cmd: List[str], timeout: int, tool: str, *,
+                   cancel_event=None) -> Dict:
+    """Call an *injectable* runner (default ``run_command``) + journal the run.
+
+    ``cancel_event`` is forwarded only when set, so lightweight ``(cmd, timeout)``
+    test doubles keep working while the real ``run_command`` gets cancellation.
+    Used by the adapters whose runner is injected (bbot, lift).
+    """
+    t0 = time.monotonic()
+    if cancel_event is not None:
+        run = runner(cmd, timeout, cancel_event=cancel_event)
+    else:
+        run = runner(cmd, timeout)
+    journal_tool_run(tool, cmd, run,
+                     duration_ms=int((time.monotonic() - t0) * 1000))
+    return run
+
+
+class _ToolRunnerMixin:
+    """Optional cooperative-cancellation seam shared by the tool runners.
+
+    Mirrors ``SecurityAuditor.set_cancel_event``: a GUI worker hands the runner a
+    ``CancellationToken`` (or any object with ``is_set()``) and can cancel the
+    in-flight child process from another thread. Default ``None`` → no change.
+    """
+    cancel_event = None
+
+    def set_cancel_event(self, ev) -> None:
+        self.cancel_event = ev
 
 
 # nuclei severities → our three-level model.
@@ -140,7 +213,7 @@ def parse_nuclei_jsonl(text: str) -> List[Dict]:
     return findings
 
 
-class NucleiRunner:
+class NucleiRunner(_ToolRunnerMixin):
     """Run nuclei against a URL and return normalised vulnerability findings."""
 
     def __init__(self, timeout: int = 120,
@@ -179,7 +252,7 @@ class NucleiRunner:
         cmd = ['nuclei', '-u', url, '-jsonl', '-silent',
                '-disable-update-check', '-timeout', '5'] + self.extra_args
         self._log(f'[nuclei] scanning {url}')
-        run = run_command(cmd, self.timeout)
+        run = _run_tool('nuclei', cmd, self.timeout, cancel_event=self.cancel_event)
         error = command_error(run, 'nuclei')
         if error:
             result['error'] = error
@@ -223,7 +296,7 @@ def parse_katana_lines(text: str) -> List[str]:
     return out
 
 
-class KatanaRunner:
+class KatanaRunner(_ToolRunnerMixin):
     """Run katana against a URL and return discovered endpoint URLs."""
 
     def __init__(self, timeout: int = 180, depth: int = 2,
@@ -258,7 +331,7 @@ class KatanaRunner:
         cmd = ['katana', '-u', url, '-silent', '-jsonl',
                '-d', str(self.depth)] + self.extra_args
         self._log(f'[katana] crawling {url} (depth {self.depth})')
-        run = run_command(cmd, self.timeout)
+        run = _run_tool('katana', cmd, self.timeout, cancel_event=self.cancel_event)
         error = command_error(run, 'katana')
         if error:
             result['error'] = error
@@ -298,7 +371,7 @@ def parse_fqdn_lines(text: str, domain: str) -> List[str]:
 parse_amass_lines = parse_fqdn_lines
 
 
-class AmassRunner:
+class AmassRunner(_ToolRunnerMixin):
     """Run amass passive enumeration and return in-scope subdomains."""
 
     def __init__(self, timeout: int = 180,
@@ -332,7 +405,7 @@ class AmassRunner:
         cmd = ['amass', 'enum', '-passive', '-d', domain,
                '-nocolor'] + self.extra_args
         self._log(f'[amass] passive enum {domain}')
-        run = run_command(cmd, self.timeout)
+        run = _run_tool('amass', cmd, self.timeout, cancel_event=self.cancel_event)
         error = command_error(run, 'amass')
         if error:
             result['error'] = error
@@ -349,7 +422,7 @@ class AmassRunner:
 
 # ─────────────────────────────── subfinder ─────────────────────────────────
 
-class SubfinderRunner:
+class SubfinderRunner(_ToolRunnerMixin):
     """Run subfinder passive enumeration and return in-scope subdomains.
 
     The projectdiscovery counterpart of AmassRunner — same passive-enum shape
@@ -388,7 +461,7 @@ class SubfinderRunner:
         cmd = ['subfinder', '-d', domain, '-silent',
                '-no-color'] + self.extra_args
         self._log(f'[subfinder] passive enum {domain}')
-        run = run_command(cmd, self.timeout)
+        run = _run_tool('subfinder', cmd, self.timeout, cancel_event=self.cancel_event)
         error = command_error(run, 'subfinder')
         if error:
             result['error'] = error
@@ -438,7 +511,7 @@ def parse_httpx_jsonl(text: str) -> List[Dict]:
     return out
 
 
-class HttpxRunner:
+class HttpxRunner(_ToolRunnerMixin):
     """Probe a list of hosts with httpx and return per-host HTTP metadata.
 
     Unlike the enumerators this consumes a host list (fed on stdin) rather than a
@@ -485,7 +558,9 @@ class HttpxRunner:
                '-status-code', '-title', '-web-server',
                '-tech-detect'] + self.extra_args
         self._log(f'[httpx] probing {len(hosts)} host(s)')
-        run = run_command(cmd, self.timeout, input_text='\n'.join(hosts) + '\n')
+        run = _run_tool('httpx', cmd, self.timeout,
+                        input_text='\n'.join(hosts) + '\n',
+                        cancel_event=self.cancel_event)
         error = command_error(run, 'httpx')
         if error:
             result['error'] = error

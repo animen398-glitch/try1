@@ -34,7 +34,7 @@ be confirmed against a real saved ``output.json`` without changing this shape).
 import json
 from typing import Callable, Dict, List, Optional
 
-from core.external_tools import command_error, run_command
+from core.external_tools import _invoke_runner, command_error, run_command
 from core.features import has_bbot
 from core.vuln_scanner import SEVERITY_HIGH, SEVERITY_INFO, SEVERITY_MEDIUM
 
@@ -296,12 +296,17 @@ class BBOTRunner:
         self._runner = runner or run_command
         self._detector = detector or has_bbot
         self.progress_callback: Optional[Callable] = None
+        self.cancel_event = None
 
     def available(self) -> bool:
         return bool(self._detector())
 
     def set_progress_callback(self, cb: Callable) -> None:
         self.progress_callback = cb
+
+    def set_cancel_event(self, ev) -> None:
+        """Cooperative cancellation seam (mirrors the external-tool runners)."""
+        self.cancel_event = ev
 
     def _log(self, msg: str) -> None:
         if self.progress_callback:
@@ -322,7 +327,8 @@ class BBOTRunner:
                             extra_args=self.extra_args)
         self._log(f'[bbot] scanning {target} '
                   f'(preset={self.preset}, passive={self.passive})')
-        run = self._runner(cmd, self.timeout)
+        run = _invoke_runner(self._runner, cmd, self.timeout, 'bbot',
+                             cancel_event=self.cancel_event)
         error = command_error(run, 'bbot')
         if error:
             result['error'] = error
