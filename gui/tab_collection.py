@@ -266,6 +266,19 @@ class FinalReportTabMixin:
             "запросов); опционально использует внешний lift, если он установлен. "
             "Значения маскируются; находки идут в общий жизненный цикл.")
         opt_row.addWidget(self.collect_documents)
+
+        # Opt-in Context-Aware Path Probe (E5) — execute the wordlist plan: a
+        # small, ROE-budgeted, technology-targeted list of high-signal paths,
+        # probed once each through the throttled seam. Active traffic (scope-gated).
+        self.collect_path_probe = QCheckBox("Проверка путей (wordlist по ROE)")
+        self.collect_path_probe.setToolTip(
+            "Точечная проверка путей: по обнаруженным технологиям строится "
+            "небольшой целевой список высокосигнальных путей (в пределах бюджета "
+            "ROE) и каждый проверяется одним запросом через троттлируемый seam. "
+            "Не брутфорс — количество ограничено бюджетом ROE; активный трафик, "
+            "поэтому требует разрешённого активного сканирования в scope. "
+            "Показывает, какие пути существуют (в т.ч. закрытые авторизацией).")
+        opt_row.addWidget(self.collect_path_probe)
         g.addLayout(opt_row)
 
         btn_row = QHBoxLayout()
@@ -400,6 +413,7 @@ class FinalReportTabMixin:
             'security': self.collect_security.isChecked(),
             'bbot': self.collect_bbot.isChecked(),
             'documents': self.collect_documents.isChecked(),
+            'path_probe': self.collect_path_probe.isChecked(),
         }
 
     def _run_collection(self):

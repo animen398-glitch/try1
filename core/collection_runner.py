@@ -18,6 +18,7 @@ import html
 import json
 import socket
 import threading
+import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -70,6 +71,8 @@ from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
 from core.browser_accuracy import build_browser_accuracy, capture_rendered_html
+from core.path_prober import probe_paths
+from core.wordlist_manager import plan_wordlist, technologies_from_report
 from utils.atomic_io import atomic_write_json
 from utils.browser_utils import SessionBuilder
 from utils.host_throttle import HostThrottle, rate_per_sec
@@ -93,6 +96,7 @@ ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
     'katana',
     'screenshot',
     'browser_accuracy',
+    'path_probe',
     'nuclei',
 )
 
@@ -104,7 +108,8 @@ _PHASE_ORDER: tuple[str, ...] = (
     'recon', 'api', 'capture', 'clone', 'cookies', 'vulns', 'nuclei',
     'security', 'subdomains', 'certificate', 'openapi', 'historical', 'dns',
     'emails', 'employees', 'ct', 'asn_intel', 'passive_osint', 'osv', 'bbot',
-    'documents', 'iac', 'katana', 'screenshot', 'browser_accuracy', 'analyzers',
+    'documents', 'iac', 'katana', 'screenshot', 'browser_accuracy', 'path_probe',
+    'analyzers',
 )
 
 
@@ -136,6 +141,7 @@ class CollectionRunner:
                  iac: bool = False, iac_path: Optional[str] = None,
                  threat_feed: bool = False, threat_epss_bulk: bool = False,
                  passive_osint: bool = False, browser_accuracy: bool = False,
+                 path_probe: bool = False,
                  execution_enforce: Optional[bool] = None,
                  execution_profile: Optional[Dict] = None,
                  scan_concurrency: Optional[int] = None):
@@ -241,6 +247,16 @@ class CollectionRunner:
         # over the shared HTTP seam).
         self._accuracy_render_fn: Optional[Callable[[str], str]] = None
         self._accuracy_static_fetch: Optional[Callable[[str], str]] = None
+        # Opt-in Context-Aware Path Probe (Roadmap E5 increment 2) — execute the
+        # wordlist_manager plan: a small, ROE-budgeted, technology-targeted list of
+        # high-signal paths, probed once each through the throttled HTTP seam. Off
+        # by default; scope-guarded (active traffic) and additionally refused by
+        # the planner on a passive-only ROE. Reports which paths exist; it does not
+        # brute-force (the candidate count is capped by the ROE budget).
+        self.path_probe = path_probe
+        # Injectable transport (url → HTTP status / None) so the phase is
+        # offline-testable; None → a throttled HEAD over the shared HTTP seam.
+        self._probe_fetch: Optional[Callable[[str], Optional[int]]] = None
         # Opt-in Authorized Network Execution Profile enforcement (Roadmap E3
         # increment 2). When enabled with a configured profile, the run resolves
         # the target IP pre-flight and refuses (ExecutionNotAuthorized) unless the
@@ -287,6 +303,7 @@ class CollectionRunner:
                   threat_epss_bulk: Optional[bool] = None,
                   passive_osint: Optional[bool] = None,
                   browser_accuracy: Optional[bool] = None,
+                  path_probe: Optional[bool] = None,
                   execution_enforce: Optional[bool] = None,
                   execution_profile: Optional[Dict] = None,
                   scan_concurrency: Optional[int] = None):
@@ -294,6 +311,8 @@ class CollectionRunner:
             self.profile = profile
         if browser_accuracy is not None:
             self.browser_accuracy = browser_accuracy
+        if path_probe is not None:
+            self.path_probe = path_probe
         if execution_enforce is not None:
             self.execution_enforce = execution_enforce
         if execution_profile is not None:
@@ -627,6 +646,14 @@ class CollectionRunner:
             tasks.append(Task('browser_accuracy', guarded(
                 'browser_accuracy',
                 lambda: self._phase_browser_accuracy(url, scan_dir))))
+        if self.path_probe:
+            # Scope-guarded active probing of a ROE-budgeted, tech-targeted path
+            # plan. Depends on recon (the plan reads its technology fingerprint);
+            # writes only its own report['phases'] entry.
+            tasks.append(Task('path_probe', guarded(
+                'path_probe',
+                lambda: self._phase_path_probe(url, scan_dir, report)),
+                deps=('recon',)))
         return tasks
 
     def _fold_into_vulns(self, report: Dict, added: List[Dict]) -> None:
@@ -2967,6 +2994,60 @@ class CollectionRunner:
                   f"рендер выявил ({summ['gain_pct']}% к статике)")
         return {'status': 'Success', 'data': accuracy}
 
+    def _default_probe_fetch(self, url: str) -> Optional[int]:
+        """Probe ``url`` with a lightweight HEAD over the shared HTTP seam and
+        return its HTTP status (or ``None`` on a transport error).
+
+        Uses the profile UA + retry + the scan-scoped host throttle, so every
+        probe is paced by the ROE rate limit. A 4xx/5xx surfaces via ``HTTPError``
+        (its ``.code`` is the status); a 2xx/3xx that ``urlopen`` follows returns
+        the final code. Never raises."""
+        try:
+            headers = SessionBuilder(self.profile).get_headers()
+            req = urllib.request.Request(url, headers=headers, method='HEAD')
+            _raw, _hdrs, _final = urlopen_retry(req, 15, return_final_url=True)
+            return 200  # urlopen followed redirects to a non-error response
+        except urllib.error.HTTPError as e:
+            return int(getattr(e, 'code', 0)) or None
+        except Exception:  # noqa: BLE001 — a transport error is a probe 'error'
+            return None
+
+    def _phase_path_probe(self, url: str, project_dir: Path, report: Dict) -> Dict:
+        """Execute the wordlist plan (Roadmap E5 increment 2): a ROE-budgeted,
+        technology-targeted list of high-signal paths, probed once each through
+        the throttled seam. Skips when the planner refuses (passive-only ROE →
+        E2 coverage). Reports which paths exist; never fatal, no brute force."""
+        self._log('[+] Проверка путей (по плану wordlist)…')
+        technologies = technologies_from_report(report)
+        plan = plan_wordlist(technologies, report.get('scope'))
+        if not plan.get('authorized'):
+            reason = plan.get('reason') or 'path probing not authorized by ROE'
+            self._log(f'  Проверка путей — пропущено ({reason})')
+            return {'status': 'Skipped', 'reason': reason}
+        candidates = plan.get('candidates') or []
+        if not candidates:
+            self._log('  Проверка путей — плановых кандидатов нет')
+            return {'status': 'No candidates',
+                    'data': {'plan': plan, 'summary': {'probed': 0, 'present': 0}}}
+        fetch = self._probe_fetch or self._default_probe_fetch
+        probe = probe_paths(url, candidates, fetch=fetch)
+        data = {
+            'plan': {'budget': plan.get('budget'),
+                     'total_available': plan.get('total_available'),
+                     'truncated': plan.get('truncated'),
+                     'categories': plan.get('categories')},
+            'found': probe['found'],
+            'results': probe['results'],
+            'summary': probe['summary'],
+        }
+        out = project_dir / 'path_probe'
+        out.mkdir(exist_ok=True)
+        atomic_write_json(out / 'path_probe.json', data)
+        s = probe['summary']
+        self._log(f"  Проверка путей: {s['present']}/{s['probed']} путь(ей) "
+                  f"обнаружен(о)")
+        return {'status': 'Success', 'data': data}
+
     def _phase_screenshot(self, url: str, project_dir: Path,
                           report: Dict) -> Dict:
         self._log('[8/8] Screenshot…')
@@ -3114,6 +3195,30 @@ class CollectionRunner:
                 f'после JS — мера точности, не находка (без обхода/маскировки).</p>')
             body_parts.append(card('Browser Accuracy (rendered DOM)', acc_body,
                                    acc_phase.get('status', '—')))
+
+        # Path probe (E5, opt-in) — which of the ROE-budgeted, tech-targeted
+        # candidate paths actually exist (found / auth-protected). Bounded, never
+        # a brute force; only runs when the ROE authorizes active probing.
+        probe_phase = phases.get('path_probe')
+        if isinstance(probe_phase, dict) and probe_phase.get('status') == 'Success':
+            pd = probe_phase.get('data') or {}
+            ps = pd.get('summary') or {}
+            rows = ''.join(
+                f'<li style="font-size:12px;">{e(str(r.get("path", "")))} '
+                f'<span style="color:#888;">({e(str(r.get("state", "")))} · '
+                f'{e(str(r.get("status", "")))})</span></li>'
+                for r in (pd.get('found') or [])[:25])
+            probe_body = (
+                f'<p style="font-size:13px;margin:4px 0;">'
+                f'Проверено: {e(str(ps.get("probed", 0)))} · '
+                f'<b>Обнаружено: {e(str(ps.get("present", 0)))}</b> · '
+                f'Бюджет ROE: {e(str((pd.get("plan") or {}).get("budget", 0)))}</p>'
+                f'<ul style="margin:4px 0 0 0;padding-left:18px;">{rows}</ul>'
+                f'<p style="font-size:11px;color:#888;margin:4px 0 0 0;">'
+                f'Targeted, ROE-budgeted path checks (not brute force); '
+                f'“protected” = exists but auth-gated.</p>')
+            body_parts.append(card('Path Probe (wordlist plan)', probe_body,
+                                   probe_phase.get('status', '—')))
 
         # Exploitability (KEV/EPSS, opt-in) — how many of this scan's CVEs are
         # known-exploited or high-EPSS (drives priority, not the risk verdict).

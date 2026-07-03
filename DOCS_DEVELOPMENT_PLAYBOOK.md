@@ -179,6 +179,52 @@ dependent, so kept out of this offline-tested core).
 
 ---
 
+### Stage 17 — E5 increment 2: context-aware path-probe phase — `[DONE]`
+
+**Goal:** execute the E5 wordlist plan (Stage 10) — a small, ROE-budgeted,
+technology-targeted list of high-signal paths — as an opt-in, scope-gated,
+throttled collection phase, and report which paths exist. The planner was the
+safe half; this is its safe executor. Never a brute force.
+
+**Delivered:**
+- `core/path_prober.py` — pure executor with an **injectable fetch seam**:
+  `classify_status(status)` (2xx/3xx→`found`, 401/403→`protected`, 404/410→
+  `absent`, else→`other`, `None`→`error`) and `probe_paths(base_url, candidates,
+  *, fetch, max_paths=None)` → `{results, found, summary}`. Walks the already-
+  bounded candidate list once; a transport error for one path is recorded and the
+  walk continues. No network of its own — the transport is injected.
+- `core/collection_runner.py`:
+  - `CollectionRunner(path_probe=False)` + `configure(...)` param + injectable
+    `self._probe_fetch`.
+  - `_default_probe_fetch(url)` — a lightweight **HEAD** over the shared HTTP seam
+    (profile UA + `urlopen_retry` + the scan-scoped host throttle), so every probe
+    is paced by the ROE rate limit; a 4xx/5xx surfaces via `HTTPError.code`.
+  - `_phase_path_probe(url, project_dir, report)` — builds the plan via
+    `wordlist_manager.plan_wordlist(technologies_from_report(report),
+    report['scope'])`; **Skips** when the planner refuses (passive-only ROE →
+    coverage); otherwise probes `plan['candidates']`, writes
+    `path_probe/path_probe.json`, returns the found paths. Never fatal.
+  - Wired as `guarded('path_probe', …)` with `deps=('recon',)` (the plan reads the
+    recon fingerprint); registered in `ACTIVE_SCOPE_GUARDED_PHASES` + `_PHASE_ORDER`.
+    So it is doubly gated: the Scope Guard skips it up front when active scanning
+    is off, and the planner refuses a passive ROE.
+  - Report card "Path Probe (wordlist plan)" (probed/present/budget + the found
+    paths with state); Coverage Gate fold is automatic.
+- `core/monitor.py` — `_build_run_fn` maps `path_probe` (monitor parity).
+- `gui/tab_collection.py` — "Проверка путей (wordlist по ROE)" checkbox + the
+  `path_probe` option key.
+- Tests: `tests/test_path_prober.py` (8) — classification + probe walk (found/
+  present, transport-error continues, `max_paths` cap, empty-safe).
+  `tests/test_collection_runner.py` (+4) — off by default, executes the plan via
+  injected transport, passive-ROE skip (nothing probed), the report card.
+
+**Guardrails:** opt-in + off by default; scope-guarded active traffic; ROE-budget
+caps the candidate count (no brute force); passive-only ROE refuses; the transport
+is throttled by the scan's per-host limit. Findings-fold of exposed paths (e.g.
+`/.git/HEAD`) is a clean follow-up — this increment reports them as phase data.
+
+---
+
 ### Stage 16 — E4 increment 2: browser-backed accuracy collection phase — `[DONE]`
 
 **Goal:** turn the E4 accuracy layer (Stage 12) into an opt-in Full-Collection
@@ -685,7 +731,8 @@ accuracy layer).
 - ~~E3-2 — scan-time `ip_authorized` enforcement seam~~ — **DONE** (Stage 15).
 - ~~E4-2 — opt-in render phase folding the accuracy delta into report / coverage~~
   — **DONE** (Stage 16).
-- E5-2 — opt-in scope-gated, throttled probe phase that executes a plan.
+- ~~E5-2 — opt-in scope-gated, throttled probe phase that executes a plan~~ —
+  **DONE** (Stage 17).
 - E7-2 — Postgres dialect ops (placeholder / `user_version` / `table_info` /
   upsert) + a real `PostgresBackend`.
 - ~~E8-2 — `JobStore`/`NodeStore` + a dispatcher~~ — **DONE** (Stage 13).

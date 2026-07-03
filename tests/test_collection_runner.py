@@ -1493,3 +1493,70 @@ def test_render_html_browser_accuracy_card(tmp_path):
     assert "Browser Accuracy" in html_out
     assert "66.7" in html_out
     assert "<script" not in html_out.lower()
+
+
+# --- E5 increment 2: context-aware path probe phase -------------------------
+
+def test_default_collection_has_path_probe_off():
+    assert CollectionRunner().path_probe is False
+
+
+def test_phase_path_probe_executes_plan(tmp_path):
+    # Active ROE authorizes probing; the transport is injected so it's offline.
+    r = CollectionRunner(path_probe=True)
+    report = {
+        "scope": {"allowed_domains": ["x.com"], "active_scan_enabled": True,
+                  "passive_only": False},
+        "phases": {"recon": {"status": "Success", "data": {
+            "technologies": [{"name": "WordPress"}]}}},
+    }
+
+    def fake_fetch(u):
+        if u.endswith("/robots.txt"):
+            return 200
+        if u.endswith("/wp-login.php"):
+            return 403          # exists but auth-gated
+        return 404
+
+    r._probe_fetch = fake_fetch
+    phase = r._phase_path_probe("https://x.com", tmp_path, report)
+
+    assert phase["status"] == "Success"
+    found = {f["path"] for f in phase["data"]["found"]}
+    assert "/robots.txt" in found
+    assert "/wp-login.php" in found          # protected counts as present
+    assert phase["data"]["summary"]["present"] >= 2
+    assert (tmp_path / "path_probe" / "path_probe.json").exists()
+
+
+def test_phase_path_probe_skips_passive_roe(tmp_path):
+    # A passive-only ROE makes the planner refuse — no probe is sent.
+    r = CollectionRunner(path_probe=True)
+    sent = []
+    r._probe_fetch = lambda u: sent.append(u)
+    report = {
+        "scope": {"allowed_domains": ["x.com"], "passive_only": True},
+        "phases": {"recon": {"status": "Success", "data": {"technologies": []}}},
+    }
+    phase = r._phase_path_probe("https://x.com", tmp_path, report)
+    assert phase["status"] == "Skipped"
+    assert "passive" in phase["reason"].lower()
+    assert sent == []                         # nothing was probed
+
+
+def test_render_html_path_probe_card():
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"path_probe": {"status": "Success", "data": {
+            "plan": {"budget": 50},
+            "summary": {"probed": 6, "present": 2},
+            "found": [{"path": "/robots.txt", "state": "found", "status": 200},
+                      {"path": "/wp-login.php", "state": "protected",
+                       "status": 403}]}}},
+    }
+    html_out = r._render_html(report)
+    assert "Path Probe" in html_out
+    assert "/robots.txt" in html_out and "/wp-login.php" in html_out
+    assert "<script" not in html_out.lower()
