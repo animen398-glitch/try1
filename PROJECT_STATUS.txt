@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2 + E5-2 findings-fold + E4-2 web parity + dashboard button): 2866 passed.
+  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2 + E5-2 findings-fold + E4-2 web parity + dashboard button + Windows CLI Process Hardening): 2905 passed.
   (Детальный лог трека E1–E10 — DOCS_DEVELOPMENT_PLAYBOOK.md, его единственный SoT.)
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
@@ -6134,3 +6134,75 @@ pytest зелёный (exit 0; 1 известный Starlette/httpx warning). И
 набора: 2866 passed (рост с 2603 включает базовые E1–E10, четыре increment-2
 пункта, E5-2 findings-fold и E4-2 web parity + dashboard button). Локальные
 коммиты, без push. Все E1–E10 (контракты + increment-2) закрыты.
+
+
+==============================================================================
+  Дополнено: 2026-07-03 — Windows CLI Process Hardening (скрытый запуск +
+  отменяемый контракт + AST-guard + redacted-журнал + промптная отмена).
+==============================================================================
+
+Отдельный проход надёжности запуска внешних CLI на Windows: ни одного всплывающего
+cmd/conhost/PowerShell-окна из GUI, единый отменяемый процессный контракт,
+архитектурный guard и redacted-журнал выполнения. Все изменения АДДИТИВНЫ; бизнес-
+логика сканеров и форматы находок не тронуты; build.spec console=False сохранён.
+Аудит показал: база уже дисциплинирована — весь prod-код шёл через run_hidden/
+popen_hidden/run_command; os.system/shell=True/QProcess/startDetached/check_* в
+prod отсутствуют. os.startfile (открытие каталога в Explorer) — не запуск CLI,
+оставлен как есть.
+
+  • AST-guard (commit c1d1603b) — tests/test_no_direct_subprocess.py: парсит AST
+    каждого prod-файла (core/gui/utils/remote/plugins + root-скрипты; tests/
+    vendor/tools/build исключены) и запрещает прямой spawn — subprocess.run/Popen/
+    call/check_call/check_output, os.system, shell=True — вне единственного шва
+    utils/subprocess_utils.py. Следует from-import алиасам (from subprocess import
+    Popen as P). Инвариант закреплён навсегда (не хрупкий grep). 5 тестов.
+
+  • Отменяемый скрытый контракт (commit c1d1603b) — utils/subprocess_utils.py:
+    run_capture (Popen + poll-loop: timeout + отмена + kill дерева процессов),
+    terminate_process_tree (taskkill /F /T на Windows, killpg на POSIX, fallback
+    proc.kill; safe на уже-мёртвом/None), CancellationToken (тонкая обёртка над
+    threading.Event, совместима с TaskRunnerMixin). Структурный результат
+    {rc, stdout, stderr, timed_out, cancelled, truncated, error}; никогда не
+    райзит; cap на объём вывода (MAX_CAPTURE ~8 МБ) + reader-треды (нет дедлока
+    pipe-буфера). core/external_tools.py: run_command += аддитивный cancel_event
+    — при заданном токене маршрутизируется в run_capture, без него дефолтный путь
+    (run_hidden/subprocess.run) БАЙТ-совместим (существующие монкипатчи целы);
+    command_error различает отмену. tests/test_subprocess_cancel.py (10).
+
+  • Журнал выполнения + redaction (commit c1d1603b) — utils/system_logger.py:
+    journal_tool_run — одна redacted-строка на прогон (tool/status/rc/duration +
+    хвост stderr на ошибке) в ТОТ ЖЕ system.log, что показывает System-таб (не
+    вторая система логирования); redact_command скрывает токены/секреты/
+    Authorization/Cookie/чувствительные аргументы флагов; статусы running/success/
+    error/timeout/cancelled. core/crash_reporter.py: публичный redact() —
+    переиспользуемый шов (журнал берёт именно его). Никогда не райзит.
+    tests/test_tool_journal.py (12).
+
+  • Адаптеры + GUI-кнопка Scrapy (commit c1d1603b) — _ToolRunnerMixin.
+    set_cancel_event на nuclei/katana/amass/subfinder/httpx; тот же шов на bbot/
+    lift/scrapy (scrapy получил отменяемую ветку через run_capture, дефолт остаётся
+    run_hidden). Централизация cancel + журнал в external_tools._run_tool/
+    _invoke_runner. plugins/scrapy_tab.py: кнопка «Отменить» активной операции
+    (общий CancellationToken между GUI-тредом и воркером). rar/winrar и
+    launcher._spawn_app уже на скрытом контракте. tests/test_tool_cancel_
+    passthrough.py (4) + tests/test_scrapy_cancel_gui.py (3, через синхронный
+    тестовый runner).
+
+  • Промптная отмена Full Collection + subdomain (commit dff008c) — кнопки
+    «Остановить»/«Stop» на обоих табах уже существовали и кооперативно отменяли
+    движок между фазами; теперь движки пробрасывают свой cancel-Event в внешние
+    runner'ы через set_cancel_event → прогон идёт по run_capture, и Stop сразу
+    убивает дерево дочерних процессов вместо ожидания их таймаута. core/
+    collection_runner.py: nuclei/katana/bbot/lift (зеркало уже существующего
+    вызова для SecurityAuditor). core/subdomain_scanner.py: amass/subfinder/httpx.
+    tests/test_cancel_wiring.py (6); bbot-тест-двойник получил set_cancel_event
+    (двойник зеркалит интерфейс runner'а).
+
+Проверено: ruff clean; полный offline pytest exit 0 (+39 тестов: 33 в первом
+коммите + 6 в промптной отмене, итог набора 2905 passed; 1 известный Starlette/
+httpx warning); self-check 29 вкладок; PyInstaller (QT_API=pyside6,
+console=False) собран, frozen self-check 29 вкладок; безопасный version-smoke
+реальных бинарников через скрытый
+seam — nuclei v3.9.0 / katana / amass v5.1.1 / subfinder v2.14.0 / httpx / bbot
+v2.8.4, rc=0, ни одного консольного окна; rar/winrar — SKIPPED (не установлены).
+Локальные коммиты (c1d1603b, dff008c), без push.
