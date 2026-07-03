@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2): 2851 passed.
+  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2 + E5-2 findings-fold): 2861 passed.
   (Детальный лог трека E1–E10 — DOCS_DEVELOPMENT_PLAYBOOK.md, его единственный SoT.)
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
@@ -6102,8 +6102,22 @@ offline pytest; SQLite/дефолтное поведение байт-идент
     txn-lifecycle в _connect не тронут, Postgres opt-in по DSN с soft-optional
     драйвером (в .exe ничего нового не бандлится).
 
+  • E5-2 follow-up (commit 4291a5df) — fold обнаруженных *читаемых* чувствительных
+    путей в находки. core/path_prober.py: чистый exposure_findings(found,
+    base_url) над курируемой картой _SENSITIVE_PATHS (VCS /.git/*, /.env +
+    бэкапы, /actuator/env, Laravel Telescope, Tomcat Manager, source maps, …) —
+    промоутятся только readable-хиты (state 'found' = 2xx/3xx); recon-поверхность
+    (/robots.txt, /login, /admin, /health, API-эндпоинты, WP-login) и auth-gated
+    'protected' находками НЕ становятся; category='exposed_path',
+    source='path-probe', location=URL, дедуп по пути. core/collection_runner.py:
+    _path_probe_findings(report) читает found фазы path_probe и фолдится в общие
+    vuln-находки в _run_active_phases (серийно, сразу после takeover-фолда —
+    паттерн _takeover_findings); no-op когда path_probe выключен → сканы без него
+    байт-идентичны. Тесты: test_path_prober.py (+6), test_collection_runner.py
+    (+4, вкл. e2e probe→fold). Off by default (наследует opt-in path_probe).
+
 Проверено на каждом коммите: ruff clean, self-check 29 вкладок, полный offline
 pytest зелёный (exit 0; 1 известный Starlette/httpx warning). Итоговый масштаб
-набора: 2851 passed (рост с 2603 включает базовые E1–E10 и эти четыре increment-2
-пункта). Локальные коммиты, без push. Все E1–E10 (контракты + increment-2)
-закрыты.
+набора: 2861 passed (рост с 2603 включает базовые E1–E10, четыре increment-2
+пункта и E5-2 findings-fold). Локальные коммиты, без push. Все E1–E10 (контракты
++ increment-2) закрыты.
