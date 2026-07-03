@@ -2649,13 +2649,16 @@ class CollectionRunner:
                 f'инфраструктуры: <b>{e(str(summary.get("clusters", 0)))}</b>'
                 f'{related_html}</p>')
         clusters = gdata.get('shared_infra') or []
+        # A CDN-edge cluster is a shared-edge artefact, not a real single point of
+        # exposure — tag it so a reader does not over-weight it (it is excluded
+        # from the exposure metric but kept visible here). Kept as a local (not an
+        # inline f-string literal) so the f-string expression carries no backslash
+        # — that syntax only parses on Python 3.12+, and we support 3.11.
+        cdn_tag = ' <span style="color:#888;">(CDN edge)</span>'
         rows = ''.join(
             f'<tr><td style="padding:1px 12px 1px 0;">{e(str(r.get("type", "")))}: '
             f'<b>{e(str(r.get("node", "")))}</b>'
-            # A CDN-edge cluster is a shared-edge artefact, not a real single point of
-            # exposure — tag it so a reader does not over-weight it (it is excluded
-            # from the exposure metric but kept visible here).
-            f'{" <span style=\"color:#888;\">(CDN edge)</span>" if r.get("cdn") else ""}</td>'
+            f'{cdn_tag if r.get("cdn") else ""}</td>'
             f'<td style="color:#e64a19;font-weight:bold;">{e(str(r.get("count", 0)))} '
             f'актив.</td>'
             f'<td style="color:#666;">{e(", ".join(map(str, r.get("members", [])[:6])))}'

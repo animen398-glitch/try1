@@ -25,7 +25,11 @@ from urllib.parse import urlparse
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    import uvicorn
+    # uvicorn is a *serve-time* dependency (only start_server needs it); it is
+    # imported lazily there, NOT here, so the app + FastAPI TestClient stay usable
+    # whenever fastapi itself is installed. Coupling _FASTAPI_OK to uvicorn made
+    # the whole console silently degrade to a stub when only uvicorn was missing
+    # (e.g. CI installs fastapi but not uvicorn), turning every request into a 500.
     from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import (
@@ -2649,6 +2653,12 @@ def start_server(host: Optional[str] = None, port: int = 5000,
     if not _FASTAPI_OK:
         print('[web] fastapi/uvicorn not installed.')
         print('[web] Run: pip install fastapi "uvicorn[standard]"')
+        return
+    try:
+        import uvicorn   # serve-time only — lazy so app/TestClient need just fastapi
+    except ImportError:
+        print('[web] uvicorn not installed — cannot serve.')
+        print('[web] Run: pip install "uvicorn[standard]"')
         return
     global _AUTH_TOKEN, _THROTTLE
     host, _AUTH_TOKEN = resolve_web_console(host)
