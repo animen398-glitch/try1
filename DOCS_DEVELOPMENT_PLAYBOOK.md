@@ -328,8 +328,11 @@ project)` is a thin report-based read over the saved `browser_accuracy` phase �
 `{status, reason, base_url, static, rendered, delta, summary}`; degrades to
 `status='Not run'` when the opt-in phase did not run. Exposed at
 `GET /browser-accuracy?project=…` (a **distinct** route from `/accuracy`, which is
-detection confidence per entity). Tests: `test_web_intelligence.py` (+4 — delta
-surfaced, absent-phase Not-run, no-project empty, live TestClient endpoint).
+detection confidence per entity), plus a dashboard **"Browser Accuracy"** button +
+`showBrowserAccuracy()` JS (mirrors `showAccuracy()`: status/reason when not run,
+else static/rendered/added/gain% + a few added assets per category). Tests:
+`test_web_intelligence.py` (+5 — delta surfaced, absent-phase Not-run, no-project
+empty, live TestClient endpoint, dashboard exposes the button).
 
 ---
 

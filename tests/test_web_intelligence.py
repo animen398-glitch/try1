@@ -279,6 +279,12 @@ def test_browser_accuracy_view_no_project_is_empty():
     assert d['status'] == 'Not run' and d['delta'] == {}
 
 
+def test_dashboard_exposes_browser_accuracy():
+    html = wa._DASHBOARD
+    assert 'showBrowserAccuracy()' in html and '/browser-accuracy' in html
+    assert '>Browser Accuracy<' in html
+
+
 def test_browser_accuracy_endpoint_with_testclient(tmp_path, monkeypatch):
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")

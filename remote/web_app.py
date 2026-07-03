@@ -1384,6 +1384,7 @@ margin-right:5px;vertical-align:middle}
       <button class="btn sec" onclick="showAttackPaths()">Attack Paths</button>
       <button class="btn sec" onclick="showRemediation()">Remediation</button>
       <button class="btn sec" onclick="showAccuracy()">Scan Accuracy</button>
+      <button class="btn sec" onclick="showBrowserAccuracy()">Browser Accuracy</button>
       <button class="btn sec" onclick="showTechnologyRisk()">Technology Risk</button>
       <button class="btn sec" onclick="showOsintCatalog()">OSINT Catalog</button>
     </div>
@@ -1874,6 +1875,26 @@ async function showAccuracy(){
           +(i.label||''),'info');
     });
   }catch(ex){log('Accuracy failed: '+ex.message,'er');}
+}
+
+async function showBrowserAccuracy(){
+  try{
+    const o=await fetch('/overview'); const od=await o.json();
+    const proj=(od.rows&&od.rows[0])?od.rows[0].slug:null;
+    if(!proj){log('Browser accuracy: no projects','data'); return;}
+    const r=await fetch('/browser-accuracy?project='+encodeURIComponent(proj));
+    const d=await r.json(); const s=d.summary||{};
+    if(d.status!=='Success'){
+      log('Browser accuracy ['+proj+']: '+(d.status||'Not run')
+          +(d.reason?' ('+d.reason+')':''),'data'); return;}
+    log('Browser accuracy ['+proj+']: static '+(s.static_total||0)+' · rendered '
+        +(s.rendered_total||0)+' · +'+(s.added_total||0)+' added ('
+        +(s.gain_pct||0)+'% gain)','data');
+    const added=(d.delta&&d.delta.added)||{};
+    Object.keys(added).forEach(k=>{
+      (added[k]||[]).slice(0,5).forEach(v=>log('  +['+k+'] '+v,'info'));
+    });
+  }catch(ex){log('Browser accuracy failed: '+ex.message,'er');}
 }
 
 async function showTechnologyRisk(){

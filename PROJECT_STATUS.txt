@@ -6,7 +6,7 @@
   валидация формата секретов (C2); тесты ~504)
   Дополнено: 2026-06-14 — эпик ASM 2.0 (F1–F6) + пост-эпик (asn_intel,
   report_export, углубление detection).
-  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2 + E5-2 findings-fold + E4-2 web parity): 2865 passed.
+  Актуальные тесты (2026-07-03, после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2 + E5-2 findings-fold + E4-2 web parity + dashboard button): 2866 passed.
   (Детальный лог трека E1–E10 — DOCS_DEVELOPMENT_PLAYBOOK.md, его единственный SoT.)
   Сводка новых модулей — в конце файла; авторитетный статус — CLAUDE.md §12.
 
@@ -6124,10 +6124,13 @@ offline pytest; SQLite/дефолтное поведение байт-идент
     GET /browser-accuracy?project=… — ОТДЕЛЬНЫЙ маршрут от /accuracy (это
     detection-confidence по сущностям, другой концепт). Read-only, без нового
     стора/состояния; прочие поверхности (чекбокс, monitor, HTML report-card) уже
-    были. Тесты: test_web_intelligence.py (+4).
+    были. Дополнено dashboard-кнопкой «Browser Accuracy» (`showBrowserAccuracy()`,
+    зеркало `showAccuracy`; статус/причина когда не запускалась, иначе
+    static/rendered/added/gain% + несколько added-ассетов по категориям). Тесты:
+    test_web_intelligence.py (+5, вкл. dashboard-exposure).
 
 Проверено на каждом коммите: ruff clean, self-check 29 вкладок, полный offline
 pytest зелёный (exit 0; 1 известный Starlette/httpx warning). Итоговый масштаб
-набора: 2865 passed (рост с 2603 включает базовые E1–E10, четыре increment-2
-пункта, E5-2 findings-fold и E4-2 web parity). Локальные коммиты, без push. Все
-E1–E10 (контракты + increment-2) закрыты.
+набора: 2866 passed (рост с 2603 включает базовые E1–E10, четыре increment-2
+пункта, E5-2 findings-fold и E4-2 web parity + dashboard button). Локальные
+коммиты, без push. Все E1–E10 (контракты + increment-2) закрыты.
