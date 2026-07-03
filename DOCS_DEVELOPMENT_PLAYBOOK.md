@@ -179,6 +179,54 @@ dependent, so kept out of this offline-tested core).
 
 ---
 
+### Stage 18 — E7 increment 2: dialect ops + a real PostgresBackend — `[DONE]`
+
+**Goal:** finish the E7 backend seam — move the remaining dialect-specific SQL
+(parameter placeholder, schema version, column introspection, upsert) behind the
+backend and add a `PostgresBackend` — with **byte-identical SQLite behaviour**.
+
+**Delivered:**
+- `utils/db_backend.py`:
+  - `DatabaseBackend` gains four dialect ops: `get_schema_version` /
+    `set_schema_version`, `table_columns`, `build_upsert(table, columns, *,
+    replace, key_columns)`. `SQLiteBackend` implements them reproducing the
+    store's original inline SQL exactly (`PRAGMA user_version` / `PRAGMA
+    table_info` / `INSERT [OR REPLACE] INTO … VALUES (?,…)`).
+  - `PostgresBackend` — the full dialect: `%s` placeholders, `ON CONFLICT`
+    upserts (explicit conflict key, default `id`; all-key → `DO NOTHING`),
+    `information_schema.columns` introspection, and a `_asa_schema_version`
+    metadata table (Postgres has no `PRAGMA user_version`). `connect()` opens a
+    real connection through a **lazily-imported** driver (`psycopg` v3 or
+    `psycopg2`) and wraps it in `_DBAPIConnectionAdapter`, which gives a DB-API
+    2.0 connection the `execute` / `executescript` shortcut + txn lifecycle the
+    store calls. The driver import is injectable (`connect_fn`) for offline tests;
+    absent a driver, `connect()` raises a clear `RuntimeError` only when used.
+  - `resolve_backend('postgres://…')` now returns a `PostgresBackend` (was a
+    `NotImplementedError`).
+- `utils/sqlite_store.py` — the base store routes its generic ops through the
+  backend: `_apply_migrations` / `schema_version` → `get/set_schema_version`;
+  `_columns` → `table_columns`; `_insert_rows` → `build_upsert`. `_columns` /
+  `_insert_rows` became instance methods (only ever called via `self.`);
+  `_add_column` stays a static SQLite migration helper (migrations are inherently
+  dialect-specific). Every store inherits the routing unchanged.
+- `tests/test_db_backend.py` (+9, one rewritten) — SQLite `build_upsert` matches
+  the legacy SQL; schema-version/`table_columns` round-trip; Postgres upsert
+  (`ON CONFLICT` update / explicit key / `DO NOTHING`) + `%s`; the connection
+  adapter delegates execute/commit/close to a fake DB-API driver;
+  `information_schema` introspection; the missing-driver error; `resolve_backend`
+  now returns a `PostgresBackend`.
+
+**Backward-compatibility:** SQLite output is byte-for-byte the old SQL (upsert
+string, PRAGMA calls) — verified by every store suite + the full offline run. The
+transaction lifecycle in `_connect` is untouched. Postgres is opt-in via DSN with
+a soft-optional driver; nothing new is bundled.
+
+**Remaining for full multi-store Postgres (documented, not this increment):** each
+store's `SCHEMA` DDL + bespoke SQL made dialect-aware, and per-store conflict
+keys. The dialect layer they build on now exists.
+
+---
+
 ### Stage 17 — E5 increment 2: context-aware path-probe phase — `[DONE]`
 
 **Goal:** execute the E5 wordlist plan (Stage 10) — a small, ROE-budgeted,
@@ -733,8 +781,11 @@ accuracy layer).
   — **DONE** (Stage 16).
 - ~~E5-2 — opt-in scope-gated, throttled probe phase that executes a plan~~ —
   **DONE** (Stage 17).
-- E7-2 — Postgres dialect ops (placeholder / `user_version` / `table_info` /
-  upsert) + a real `PostgresBackend`.
+- ~~E7-2 — Postgres dialect ops + a real `PostgresBackend`~~ — **DONE** (Stage 18).
+
+**All E1–E10 increment-2 depth items are now landed.** Remaining Postgres depth
+(per-store DDL/SQL dialect-awareness + conflict keys) is documented in Stage 18
+as a larger, separate track — not one of the roadmap's E-increments.
 - ~~E8-2 — `JobStore`/`NodeStore` + a dispatcher~~ — **DONE** (Stage 13).
 
 Pick any; each is a small, low-risk follow-up on an existing contract.

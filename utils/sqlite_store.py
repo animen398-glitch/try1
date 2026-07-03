@@ -144,19 +144,20 @@ class SQLiteStore:
     def _apply_migrations(self, conn: sqlite3.Connection) -> None:
         """Привести БД к ``SCHEMA_VERSION``, выполнив недостающие миграции по
         порядку, затем проставить версию. Никогда не понижает версию."""
-        current = int(conn.execute('PRAGMA user_version').fetchone()[0])
+        current = self._backend.get_schema_version(conn)
         if current >= self.SCHEMA_VERSION:
             return  # уже актуальна или новее — не трогаем (forward-only)
         for target in sorted(self.MIGRATIONS):
             if current < target <= self.SCHEMA_VERSION:
                 self.MIGRATIONS[target](conn)
-        # ``PRAGMA`` не принимает плейсхолдеры; SCHEMA_VERSION приведён к int.
-        conn.execute(f'PRAGMA user_version = {int(self.SCHEMA_VERSION)}')
+        # Версия схемы — через диалект backend (E7): SQLite = PRAGMA user_version,
+        # Postgres = метаданная таблица. Байт-идентично для SQLite.
+        self._backend.set_schema_version(conn, self.SCHEMA_VERSION)
 
     def schema_version(self) -> int:
         """Текущая версия схемы на диске (для диагностики/тестов)."""
         with self._connect() as conn:
-            return int(conn.execute('PRAGMA user_version').fetchone()[0])
+            return self._backend.get_schema_version(conn)
 
     @staticmethod
     def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> bool:
@@ -207,26 +208,26 @@ class SQLiteStore:
                 f'{type(self).__name__} does not declare PROJECT_EXPORT')
         return self.PROJECT_EXPORT
 
-    @staticmethod
-    def _columns(conn: sqlite3.Connection, table: str) -> set:
-        return {r[1] for r in conn.execute(f'PRAGMA table_info({table})').fetchall()}
+    def _columns(self, conn: sqlite3.Connection, table: str) -> set:
+        # Via the backend dialect (E7): SQLite = PRAGMA table_info,
+        # Postgres = information_schema. Byte-identical set for SQLite.
+        return self._backend.table_columns(conn, table)
 
-    @staticmethod
-    def _insert_rows(conn: sqlite3.Connection, table: str, rows, *,
+    def _insert_rows(self, conn: sqlite3.Connection, table: str, rows, *,
                      allowed: set, replace: bool = True) -> int:
         """Insert raw row dicts verbatim. Column names are whitelisted against
         the live table schema (``allowed``) so an untrusted import bundle can
         never inject SQL via crafted keys. Table name comes from a trusted class
-        attr (PROJECT_EXPORT), never user input."""
-        verb = 'INSERT OR REPLACE' if replace else 'INSERT'
+        attr (PROJECT_EXPORT), never user input. The insert/replace SQL is built
+        by the backend dialect (E7) — byte-identical to the old inline SQL on
+        SQLite."""
         n = 0
         for r in rows:
             cols = [c for c in r.keys() if c in allowed]
             if not cols:
                 continue
-            ph = ','.join('?' * len(cols))
             conn.execute(
-                f'{verb} INTO {table} ({",".join(cols)}) VALUES ({ph})',
+                self._backend.build_upsert(table, cols, replace=replace),
                 [r[c] for c in cols])
             n += 1
         return n
