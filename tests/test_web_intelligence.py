@@ -229,6 +229,70 @@ def test_accuracy_endpoint_with_testclient(tmp_path, monkeypatch):
     assert r.json()['summary']['entities'] >= 1
 
 
+# ── Browser-backed Accuracy web parity (E4-2) ─────────────────────────────────
+
+def _seed_browser_accuracy_project(base, *, with_phase=True):
+    """A project whose latest report optionally carries a browser_accuracy phase
+    (a rendered-DOM delta), so the web view has something to surface."""
+    import json
+
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://acme.com')
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    phases = {'recon': {'status': 'Success', 'data': {}}}
+    if with_phase:
+        phases['browser_accuracy'] = {'status': 'Success', 'data': {
+            'base_url': 'https://acme.com',
+            'static': {'links': ['https://acme.com/a']},
+            'rendered': {'links': ['https://acme.com/a', 'https://acme.com/b']},
+            'delta': {'added': {'links': ['https://acme.com/b']},
+                      'summary': {'static_total': 1, 'rendered_total': 2,
+                                  'added_total': 1, 'gain_pct': 100.0}}}}
+    report = {'scan_id': sid, 'phases': phases}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    return 'acme.com'
+
+
+def test_browser_accuracy_view_returns_delta(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_browser_accuracy_project(str(tmp_path))
+    d = wa._browser_accuracy_view(slug)
+    assert 'error' not in d
+    assert d['status'] == 'Success'
+    assert d['base_url'] == 'https://acme.com'
+    assert d['summary']['added_total'] == 1
+    assert d['summary']['gain_pct'] == 100.0
+    assert 'https://acme.com/b' in d['delta']['added']['links']
+
+
+def test_browser_accuracy_view_absent_phase_is_not_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_browser_accuracy_project(str(tmp_path), with_phase=False)
+    d = wa._browser_accuracy_view(slug)
+    assert d['status'] == 'Not run' and d['summary'] == {}
+
+
+def test_browser_accuracy_view_no_project_is_empty():
+    d = wa._browser_accuracy_view(None)
+    assert d['status'] == 'Not run' and d['delta'] == {}
+
+
+def test_browser_accuracy_endpoint_with_testclient(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    slug = _seed_browser_accuracy_project(str(tmp_path))
+    client = TestClient(wa.app)
+    r = client.get('/browser-accuracy', params={'project': slug})
+    assert r.status_code == 200
+    assert r.json()['summary']['added_total'] == 1
+
+
 # ── Technology Risk web parity (EPIC 15) ──────────────────────────────────────
 
 def _seed_tech_risk_project(base):

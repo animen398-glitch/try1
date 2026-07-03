@@ -707,6 +707,42 @@ def _accuracy_view(project: Optional[str] = None) -> dict:
         return {'by_type': {}, 'items': [], 'summary': {}, 'error': str(e)}
 
 
+def _browser_accuracy_view(project: Optional[str] = None) -> dict:
+    """Browser-backed accuracy delta (E4-2) for a project's latest scan.
+
+    Report-based read over the saved report.json's ``browser_accuracy`` phase:
+    how many assets a headless render found beyond static parsing (an accuracy
+    measure, not a finding). Empty/degraded when the opt-in phase did not run.
+    Distinct from ``/accuracy`` (detection confidence per entity)."""
+    empty = {'status': 'Not run', 'reason': '', 'base_url': '',
+             'static': {}, 'rendered': {}, 'delta': {}, 'summary': {}}
+    if not project:
+        return empty
+    try:
+        proj = ProjectStore(str(_REPORT_BASE)).get(project)
+        if proj is None:
+            return {**empty, 'error': f'project not found: {project}'}
+        latest = proj.latest_scan()
+        sid = latest.get('id') if isinstance(latest, dict) else None
+        report = proj.load_scan_report(sid) if sid else None
+        phase = ((report or {}).get('phases') or {}).get('browser_accuracy')
+        if not isinstance(phase, dict):
+            return empty
+        data = phase.get('data') or {}
+        delta = data.get('delta') or {}
+        return {
+            'status': phase.get('status', 'Not run'),
+            'reason': phase.get('reason', ''),
+            'base_url': data.get('base_url', ''),
+            'static': data.get('static', {}),
+            'rendered': data.get('rendered', {}),
+            'delta': delta,
+            'summary': delta.get('summary', {}),
+        }
+    except Exception as e:  # noqa: BLE001 — degrade to an empty view
+        return {**empty, 'error': str(e)}
+
+
 def _osint_catalog_view(project: Optional[str] = None) -> dict:
     """OSINT workflow coverage for one project's latest scan (EXT-OSINT F3).
 
@@ -2518,6 +2554,10 @@ if _FASTAPI_OK:
     @app.get('/accuracy')
     async def accuracy(project: Optional[str] = None):
         return JSONResponse(_accuracy_view(project))
+
+    @app.get('/browser-accuracy')
+    async def browser_accuracy(project: Optional[str] = None):
+        return JSONResponse(_browser_accuracy_view(project))
 
     @app.get('/technology-risk')
     async def technology_risk(project: Optional[str] = None):

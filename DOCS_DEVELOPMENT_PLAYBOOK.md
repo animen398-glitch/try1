@@ -323,7 +323,13 @@ and folds that into the report and the E2 Coverage Gate.
 scope-guarded active traffic; soft-degrades to a skip without Playwright; an
 accuracy aid, never an evasion/bypass tool.
 
-**Deferred:** none material — E4 is now contract + accuracy core + wired phase.
+**Follow-up — web console parity (DONE):** `remote/web_app._browser_accuracy_view(
+project)` is a thin report-based read over the saved `browser_accuracy` phase →
+`{status, reason, base_url, static, rendered, delta, summary}`; degrades to
+`status='Not run'` when the opt-in phase did not run. Exposed at
+`GET /browser-accuracy?project=…` (a **distinct** route from `/accuracy`, which is
+detection confidence per entity). Tests: `test_web_intelligence.py` (+4 — delta
+surfaced, absent-phase Not-run, no-project empty, live TestClient endpoint).
 
 ---
 
