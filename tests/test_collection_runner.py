@@ -1424,3 +1424,72 @@ def test_execution_gate_reads_settings(monkeypatch):
     r._ip_resolver = lambda host: "8.8.8.8"
     with pytest.raises(ExecutionNotAuthorized):
         r._enforce_execution_profile("https://example.com")
+
+
+# --- E4 increment 2: browser-backed accuracy phase --------------------------
+
+def test_default_collection_has_browser_accuracy_off():
+    assert CollectionRunner().browser_accuracy is False
+
+
+def test_phase_browser_accuracy_measures_delta(tmp_path):
+    # Injected static + render seams keep it fully offline; the rendered DOM
+    # carries an extra link the static side never had → a measured gain.
+    r = CollectionRunner(browser_accuracy=True)
+    r._accuracy_static_fetch = lambda u: '<a href="https://x.com/a">a</a>'
+    r._accuracy_render_fn = lambda u: (
+        '<a href="https://x.com/a">a</a><a href="https://x.com/b">b</a>')
+    phase = r._phase_browser_accuracy("https://x.com", tmp_path)
+
+    assert phase["status"] == "Success"
+    delta = phase["data"]["delta"]
+    assert "https://x.com/b" in delta["added"]["links"]
+    assert delta["summary"]["added_total"] >= 1
+    assert (tmp_path / "accuracy" / "browser_accuracy.json").exists()
+
+
+def test_phase_browser_accuracy_skips_without_playwright(tmp_path, monkeypatch):
+    import core.browser_accuracy as ba
+    monkeypatch.setattr(ba, "render_available", lambda: False)
+    r = CollectionRunner(browser_accuracy=True)  # no injected render_fn
+    phase = r._phase_browser_accuracy("https://x.com", tmp_path)
+    assert phase["status"] == "Skipped"
+    assert "playwright" in phase["reason"].lower()
+
+
+def test_phase_browser_accuracy_reports_render_error(tmp_path):
+    def boom(_u):
+        raise RuntimeError("render exploded")
+
+    r = CollectionRunner(browser_accuracy=True)
+    r._accuracy_render_fn = boom
+    phase = r._phase_browser_accuracy("https://x.com", tmp_path)
+    assert phase["status"] == "Error"
+    assert "render exploded" in phase["error"]
+
+
+def test_browser_accuracy_skip_folds_into_coverage():
+    # A skipped accuracy phase (Playwright absent) surfaces in the E2 Coverage
+    # Gate as an unavailable capability, not a silent gap.
+    from core.coverage import coverage_from_scan_report
+    report = {"phases": {"browser_accuracy": {
+        "status": "Skipped", "reason": "playwright not installed"}}}
+    cov = coverage_from_scan_report(report)
+    item = next(i for i in cov["items"] if i["phase"] == "browser_accuracy")
+    assert item["status"] == "skipped"
+    assert item["reason"] == "missing_dependency"
+
+
+def test_render_html_browser_accuracy_card(tmp_path):
+    r = CollectionRunner()
+    report = {
+        "url": "https://x", "domain": "x", "started_at": "", "finished_at": "",
+        "project_dir": "",
+        "phases": {"browser_accuracy": {"status": "Success", "data": {
+            "delta": {"summary": {"static_total": 3, "rendered_total": 5,
+                                  "added_total": 2, "gain_pct": 66.7}}}}},
+    }
+    html_out = r._render_html(report)
+    assert "Browser Accuracy" in html_out
+    assert "66.7" in html_out
+    assert "<script" not in html_out.lower()

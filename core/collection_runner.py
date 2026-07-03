@@ -18,6 +18,7 @@ import html
 import json
 import socket
 import threading
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -68,9 +69,11 @@ from core.subdomain_scanner import SubdomainScanner
 from core.site_map import render_html as render_site_map
 from core.tech_fingerprint import render_html as render_technologies
 from core.vuln_scanner import VulnScanner
+from core.browser_accuracy import build_browser_accuracy, capture_rendered_html
 from utils.atomic_io import atomic_write_json
+from utils.browser_utils import SessionBuilder
 from utils.host_throttle import HostThrottle, rate_per_sec
-from utils.http_retry import set_host_throttle
+from utils.http_retry import decompress, set_host_throttle, urlopen_retry
 
 
 ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
@@ -89,6 +92,7 @@ ACTIVE_SCOPE_GUARDED_PHASES: tuple[str, ...] = (
     'bbot',
     'katana',
     'screenshot',
+    'browser_accuracy',
     'nuclei',
 )
 
@@ -100,7 +104,7 @@ _PHASE_ORDER: tuple[str, ...] = (
     'recon', 'api', 'capture', 'clone', 'cookies', 'vulns', 'nuclei',
     'security', 'subdomains', 'certificate', 'openapi', 'historical', 'dns',
     'emails', 'employees', 'ct', 'asn_intel', 'passive_osint', 'osv', 'bbot',
-    'documents', 'iac', 'katana', 'screenshot', 'analyzers',
+    'documents', 'iac', 'katana', 'screenshot', 'browser_accuracy', 'analyzers',
 )
 
 
@@ -131,7 +135,7 @@ class CollectionRunner:
                  bbot: bool = False, documents: bool = False,
                  iac: bool = False, iac_path: Optional[str] = None,
                  threat_feed: bool = False, threat_epss_bulk: bool = False,
-                 passive_osint: bool = False,
+                 passive_osint: bool = False, browser_accuracy: bool = False,
                  execution_enforce: Optional[bool] = None,
                  execution_profile: Optional[Dict] = None,
                  scan_concurrency: Optional[int] = None):
@@ -223,6 +227,20 @@ class CollectionRunner:
         # promoted to authoritative findings). Off by default; degrades to a skip
         # when offline. Not scope-gated (metadata about an IP, like threat_feed).
         self.passive_osint = passive_osint
+        # Opt-in Browser-Backed Accuracy Mode (Roadmap E4 increment 2) — render the
+        # target in a headless browser and measure the asset-graph gap against
+        # static parsing (links/forms/subresource hosts a JS app only materializes
+        # after render). Heavy + Playwright-dependent, so off by default; degrades
+        # to a Skipped phase (→ E2 coverage 'missing_dependency') when Playwright is
+        # absent. Scope-guarded (it navigates the target). Accuracy aid, never a
+        # bypass — a faithful render of an in-scope page.
+        self.browser_accuracy = browser_accuracy
+        # Injectable seams so the phase is offline-testable: a render function
+        # (passed through to core.browser_accuracy.capture_rendered_html) and a
+        # static-HTML fetcher. None → production paths (Playwright / a plain GET
+        # over the shared HTTP seam).
+        self._accuracy_render_fn: Optional[Callable[[str], str]] = None
+        self._accuracy_static_fetch: Optional[Callable[[str], str]] = None
         # Opt-in Authorized Network Execution Profile enforcement (Roadmap E3
         # increment 2). When enabled with a configured profile, the run resolves
         # the target IP pre-flight and refuses (ExecutionNotAuthorized) unless the
@@ -268,11 +286,14 @@ class CollectionRunner:
                   threat_feed: Optional[bool] = None,
                   threat_epss_bulk: Optional[bool] = None,
                   passive_osint: Optional[bool] = None,
+                  browser_accuracy: Optional[bool] = None,
                   execution_enforce: Optional[bool] = None,
                   execution_profile: Optional[Dict] = None,
                   scan_concurrency: Optional[int] = None):
         if profile:
             self.profile = profile
+        if browser_accuracy is not None:
+            self.browser_accuracy = browser_accuracy
         if execution_enforce is not None:
             self.execution_enforce = execution_enforce
         if execution_profile is not None:
@@ -599,6 +620,13 @@ class CollectionRunner:
             tasks.append(Task('screenshot', guarded(
                 'screenshot', lambda: self._phase_screenshot(url, scan_dir, report)),
                 deps=('capture',)))
+        if self.browser_accuracy:
+            # Scope-guarded: it navigates the target (render + a static GET).
+            # Independent of other phases (fetches its own static HTML + renders),
+            # so it carries no deps and only writes its own report['phases'] entry.
+            tasks.append(Task('browser_accuracy', guarded(
+                'browser_accuracy',
+                lambda: self._phase_browser_accuracy(url, scan_dir))))
         return tasks
 
     def _fold_into_vulns(self, report: Dict, added: List[Dict]) -> None:
@@ -2892,6 +2920,53 @@ class CollectionRunner:
         else:
             self._log(f'  AI-резюме пропущено ({result.get("status")})')
 
+    def _fetch_static_html(self, url: str) -> str:
+        """Fetch the raw (un-rendered) HTML of ``url`` over the shared HTTP seam.
+
+        Mirrors the recon engine's fetch (profile UA + retry + decompress + the
+        scan-scoped host throttle) so the 'static' side of the accuracy delta is
+        exactly what a static parser would have seen. Returns '' on failure."""
+        try:
+            headers = SessionBuilder(self.profile).get_headers()
+            req = urllib.request.Request(url, headers=headers)
+            raw, resp_headers = urlopen_retry(req, 20)
+            return decompress(raw, resp_headers).decode('utf-8', errors='ignore')
+        except Exception:  # noqa: BLE001 — best-effort; an empty static side is safe
+            return ''
+
+    def _phase_browser_accuracy(self, url: str, project_dir: Path) -> Dict:
+        """Render the target and measure the asset-graph gap vs static parsing
+        (Roadmap E4 increment 2). Skips (→ E2 coverage 'missing_dependency') when
+        no headless browser is available; never fatal. The delta folds into the
+        report card and, via coverage_from_scan_report, into the Coverage Gate."""
+        self._log('[+] Точность (браузерный рендер)…')
+        render = capture_rendered_html(url, render_fn=self._accuracy_render_fn)
+        status = render.get('status')
+        if status == 'unavailable':
+            reason = render.get('reason', 'playwright not installed')
+            self._log(f'  Точность — пропущено ({reason})')
+            return {'status': 'Skipped', 'reason': reason}
+        if status != 'rendered':
+            err = render.get('error', 'render failed')
+            self._log(f'  Точность — ошибка рендера: {err}')
+            return {'status': 'Error', 'error': err}
+        fetch = self._accuracy_static_fetch or self._fetch_static_html
+        static_html = fetch(url) or ''
+        try:
+            accuracy = build_browser_accuracy(
+                static_html=static_html, rendered_html=render.get('html', ''),
+                base_url=url)
+        except Exception as e:  # noqa: BLE001 — pure builder, but stay non-fatal
+            self._log(f'  Точность — ошибка анализа: {e}')
+            return {'status': 'Error', 'error': str(e)}
+        out = project_dir / 'accuracy'
+        out.mkdir(exist_ok=True)
+        atomic_write_json(out / 'browser_accuracy.json', accuracy)
+        summ = accuracy['delta']['summary']
+        self._log(f"  Точность: +{summ['added_total']} ассет(ов) "
+                  f"рендер выявил ({summ['gain_pct']}% к статике)")
+        return {'status': 'Success', 'data': accuracy}
+
     def _phase_screenshot(self, url: str, project_dir: Path,
                           report: Dict) -> Dict:
         self._log('[8/8] Screenshot…')
@@ -3021,6 +3096,24 @@ class CollectionRunner:
                 f'unverified CPE associations (intel only, not findings).</p>')
             body_parts.append(card('Passive OSINT (Shodan InternetDB)',
                                    posint_body, posint_phase.get('status', '—')))
+
+        # Browser accuracy (E4, opt-in) — how many assets a headless render found
+        # beyond static parsing (links/forms/subresource hosts a JS app only
+        # materializes after render). An accuracy measure, not a finding.
+        acc_phase = phases.get('browser_accuracy')
+        if isinstance(acc_phase, dict) and acc_phase.get('status') == 'Success':
+            asum = ((acc_phase.get('data') or {}).get('delta') or {}).get('summary') or {}
+            acc_body = (
+                f'<p style="font-size:13px;margin:4px 0;">'
+                f'Статикой: {e(str(asum.get("static_total", 0)))} · '
+                f'Рендером: {e(str(asum.get("rendered_total", 0)))} · '
+                f'<b>Доп. рендером: {e(str(asum.get("added_total", 0)))}</b> · '
+                f'Прирост: {e(str(asum.get("gain_pct", 0)))}%</p>'
+                f'<p style="font-size:11px;color:#888;margin:0;">'
+                f'Headless-рендер парсит ассеты, которые SPA материализует только '
+                f'после JS — мера точности, не находка (без обхода/маскировки).</p>')
+            body_parts.append(card('Browser Accuracy (rendered DOM)', acc_body,
+                                   acc_phase.get('status', '—')))
 
         # Exploitability (KEV/EPSS, opt-in) — how many of this scan's CVEs are
         # known-exploited or high-EPSS (drives priority, not the risk verdict).

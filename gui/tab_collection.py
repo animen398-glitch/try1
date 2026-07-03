@@ -93,6 +93,16 @@ class FinalReportTabMixin:
                 "&& python -m playwright install chromium")
         opt_row.addWidget(self.collect_screenshot)
 
+        # Opt-in Browser-Backed Accuracy Mode (E4) — headless render measures the
+        # asset-graph gap vs static parsing. Playwright-gated, like screenshots.
+        self.collect_browser_accuracy = QCheckBox("Точность рендера (Playwright)")
+        if not has_playwright():
+            self.collect_browser_accuracy.setEnabled(False)
+            self.collect_browser_accuracy.setToolTip(
+                "Требуется Playwright: pip install playwright "
+                "&& python -m playwright install chromium")
+        opt_row.addWidget(self.collect_browser_accuracy)
+
         # Opt-in external nuclei scan — gated on the binary being on PATH.
         self.collect_nuclei = QCheckBox("Nuclei (внешний сканер)")
         if not has_nuclei():
@@ -370,6 +380,7 @@ class FinalReportTabMixin:
             'cookies': self.collect_cookies.text().strip() or None,
             'capture_delay': self.settings.get('request_delay', 500) / 1000.0,
             'screenshots': self.collect_screenshot.isChecked(),
+            'browser_accuracy': self.collect_browser_accuracy.isChecked(),
             'nuclei': self.collect_nuclei.isChecked(),
             'katana': self.collect_katana.isChecked(),
             'llm': self.collect_llm.isChecked(),

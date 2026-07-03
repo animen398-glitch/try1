@@ -179,6 +179,49 @@ dependent, so kept out of this offline-tested core).
 
 ---
 
+### Stage 16 — E4 increment 2: browser-backed accuracy collection phase — `[DONE]`
+
+**Goal:** turn the E4 accuracy layer (Stage 12) into an opt-in Full-Collection
+phase that renders the target, measures the asset-graph gap vs static parsing,
+and folds that into the report and the E2 Coverage Gate.
+
+**Delivered:**
+- `core/collection_runner.py`:
+  - `CollectionRunner(browser_accuracy=False)` + matching `configure(...)` param;
+    off by default (heavy + Playwright-dependent). Injectable seams
+    `self._accuracy_render_fn` / `self._accuracy_static_fetch` keep the phase
+    offline-testable.
+  - `_fetch_static_html(url)` — the 'static' side over the shared HTTP seam
+    (profile UA + `urlopen_retry` + `decompress` + the scan-scoped host throttle),
+    so the delta compares apples to apples.
+  - `_phase_browser_accuracy(url, project_dir)` — renders via
+    `browser_accuracy.capture_rendered_html`, fetches the static HTML, and builds
+    `build_browser_accuracy`. **Skips** with a Playwright reason (→ E2 coverage
+    `missing_dependency`) when no browser is available; **Error** on a render
+    failure; **Success** writes `accuracy/browser_accuracy.json` and returns the
+    delta. Never fatal.
+  - Wired into the scan DAG as `guarded('browser_accuracy', …)` — **scope-guarded**
+    because it navigates the target (render + a static GET); registered in
+    `ACTIVE_SCOPE_GUARDED_PHASES` and `_PHASE_ORDER` (canonical order preserved).
+  - Report card "Browser Accuracy (rendered DOM)" in `_render_html`
+    (static/rendered/added/gain%); the Coverage Gate fold is automatic
+    (`coverage_from_scan_report` reads the phase status generically).
+- `core/monitor.py` — `_build_run_fn` maps `browser_accuracy` (monitor parity).
+- `gui/tab_collection.py` — a Playwright-gated "Точность рендера" checkbox + the
+  `browser_accuracy` option key (reused by Full Collection and monitor-enable).
+- Tests: `tests/test_collection_runner.py` (+6) — off by default, measured delta
+  via injected seams, Playwright-absent skip, render-error, the skip→coverage
+  `missing_dependency` fold, and the report card. Existing `test_browser_accuracy`
+  (the pure E4 core) is unchanged.
+
+**Guardrails:** opt-in + off by default (no behaviour change for existing runs);
+scope-guarded active traffic; soft-degrades to a skip without Playwright; an
+accuracy aid, never an evasion/bypass tool.
+
+**Deferred:** none material — E4 is now contract + accuracy core + wired phase.
+
+---
+
 ### Stage 15 — E3 increment 2: scan-time execution-profile IP gate — `[DONE]`
 
 **Goal:** turn the E3 contract into an enforced pre-flight — refuse a Full
@@ -640,7 +683,8 @@ accuracy layer).
 
 **Remaining work is depth (increment 2s), all offline and self-contained:**
 - ~~E3-2 — scan-time `ip_authorized` enforcement seam~~ — **DONE** (Stage 15).
-- E4-2 — opt-in render phase folding the accuracy delta into report / coverage.
+- ~~E4-2 — opt-in render phase folding the accuracy delta into report / coverage~~
+  — **DONE** (Stage 16).
 - E5-2 — opt-in scope-gated, throttled probe phase that executes a plan.
 - E7-2 — Postgres dialect ops (placeholder / `user_version` / `table_info` /
   upsert) + a real `PostgresBackend`.
