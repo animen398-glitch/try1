@@ -1199,6 +1199,9 @@ def _fake_bbot(monkeypatch, *, available=True, data=None):
         def set_progress_callback(self, cb):
             pass
 
+        def set_cancel_event(self, ev):
+            pass
+
         def available(self):
             return available
 

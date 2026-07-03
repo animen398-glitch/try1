@@ -1768,6 +1768,7 @@ class CollectionRunner:
             from core.bbot_adapter import BBOTRunner
             runner = BBOTRunner()
             runner.set_progress_callback(self.progress_callback)
+            runner.set_cancel_event(self._cancel)   # Stop kills the child promptly
             if not runner.available():
                 self._log('  BBOT — пропущено (бинарь не найден на PATH)')
                 return {'status': 'Unavailable', 'reason': 'bbot not installed'}
@@ -1832,6 +1833,7 @@ class CollectionRunner:
             try:
                 from core.document_providers.lift_adapter import LiftRunner
                 lift = LiftRunner()
+                lift.set_cancel_event(self._cancel)   # Stop kills the child promptly
                 if lift.available():
                     for p in candidates:
                         ext = Path(p).suffix.lower()
@@ -2908,6 +2910,7 @@ class CollectionRunner:
         try:
             runner = KatanaRunner()
             runner.set_progress_callback(self._log)
+            runner.set_cancel_event(self._cancel)   # Stop kills the child promptly
             data = runner.crawl(url)
             if data.get('status') == 'Success':
                 return {'status': 'Success', 'data': data}
@@ -2937,6 +2940,7 @@ class CollectionRunner:
             return 0
         runner = NucleiRunner()
         runner.set_progress_callback(self._log)
+        runner.set_cancel_event(self._cancel)   # Stop kills the child promptly
         data = runner.scan(url)
         extra = data.get('findings', [])
         findings.extend(extra)

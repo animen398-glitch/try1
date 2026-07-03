@@ -425,8 +425,9 @@ class SubdomainScanner:
             from core.external_tools import AmassRunner
             if not AmassRunner.available():
                 return []
-            return AmassRunner(timeout=self._amass_timeout).enumerate(
-                domain).get('subdomains', [])
+            runner = AmassRunner(timeout=self._amass_timeout)
+            runner.set_cancel_event(self._cancel)   # Stop kills the child promptly
+            return runner.enumerate(domain).get('subdomains', [])
         except Exception:
             return []
 
@@ -440,8 +441,9 @@ class SubdomainScanner:
             from core.external_tools import SubfinderRunner
             if not SubfinderRunner.available():
                 return []
-            return SubfinderRunner(timeout=self._subfinder_timeout).enumerate(
-                domain).get('subdomains', [])
+            runner = SubfinderRunner(timeout=self._subfinder_timeout)
+            runner.set_cancel_event(self._cancel)   # Stop kills the child promptly
+            return runner.enumerate(domain).get('subdomains', [])
         except Exception:
             return []
 
@@ -458,8 +460,9 @@ class SubdomainScanner:
             from core.external_tools import HttpxRunner
             if not HttpxRunner.available():
                 return
-            data = HttpxRunner(timeout=self._httpx_timeout).probe(
-                list(found.keys()))
+            runner = HttpxRunner(timeout=self._httpx_timeout)
+            runner.set_cancel_event(self._cancel)   # Stop kills the child promptly
+            data = runner.probe(list(found.keys()))
             for rec in data.get('results', []):
                 entry = found.get(rec.get('host', ''))
                 if entry is None:
