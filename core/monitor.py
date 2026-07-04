@@ -365,6 +365,10 @@ def run_project(project, run_fn: Callable[[str], Dict],
             project, slug, alert_config, emit,
             collect=alerts.collect_kev_alerts, notify=alerts.notify_kev,
             kind='kev')
+        result['acceptance_alerts'] = _dispatch_finding_based_alerts(
+            project, slug, alert_config, emit,
+            collect=alerts.collect_acceptance_alerts,
+            notify=alerts.notify_acceptance, kind='acceptance')
 
     last_status = 'ok' if result['status'] == 'Success' else 'failed'
     _advance_schedule(project, new_id, now, status=last_status)

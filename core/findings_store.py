@@ -48,7 +48,8 @@ SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
                'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED', 'ISSUE_CREATED',
-               'REMEDIATION', 'ASSIGNED', 'COMMENT', 'ACCEPTED')
+               'REMEDIATION', 'ASSIGNED', 'COMMENT', 'ACCEPTED',
+               'ACCEPTANCE_EXPIRED_ALERTED')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -419,6 +420,7 @@ class FindingsStore(SQLiteStore):
                  'active': r['active'] or 0} for r in rows]
 
     def _record_oneshot(self, finding_ids: List[str], event_type: str, *,
+                        reset_event: str = 'REOPENED',
                         scan_id: Optional[str] = None,
                         now: Optional[str] = None) -> List[str]:
         """Stamp each finding with a one-shot ``event_type`` marker and return the
@@ -426,9 +428,10 @@ class FindingsStore(SQLiteStore):
         trigger has no Scan Diff representation (SLA breach, audit-only secret) and
         so need a persisted "already fired this episode" flag without a second
         table. A marker is treated as *already fired* only when it is newer than the
-        finding's latest ``REOPENED`` event, so a fixed finding that reappears
-        (which restarts the SLA clock / re-exposes a secret) is eligible to fire
-        again on its next occurrence."""
+        finding's latest ``reset_event`` (``REOPENED`` by default — a fixed finding
+        that reappears restarts the SLA clock / re-exposes a secret; the acceptance
+        channel resets on a fresh ``ACCEPTED``), so it is eligible to fire again on
+        its next occurrence."""
         ids = list(dict.fromkeys(str(i) for i in (finding_ids or []) if i))
         if not ids:
             return []
@@ -443,7 +446,7 @@ class FindingsStore(SQLiteStore):
                     f' GROUP BY finding_id', (et, *ids)).fetchall()
                 return {r['fid']: r['at'] for r in rows}
 
-            marker_at, reopen_at = latest(event_type), latest('REOPENED')
+            marker_at, reopen_at = latest(event_type), latest(reset_event)
             for fid in ids:
                 marked = marker_at.get(fid)
                 reopened = reopen_at.get(fid)
@@ -471,6 +474,44 @@ class FindingsStore(SQLiteStore):
         """
         return self._record_oneshot(breached_ids, 'SLA_BREACH',
                                      scan_id=scan_id, now=now)
+
+    def record_acceptance_expiry_alerts(self, project: str, items: List[Dict], *,
+                                        now: Optional[str] = None) -> List[str]:
+        """Mark expired risk acceptances as alerted *once per acceptance episode*
+        and return the newly-marked finding ids.
+
+        Acceptance expiry is time-triggered (an accepted risk lapses when its
+        until-date passes), so it needs a one-shot guard like SLA — but keyed on the
+        acceptance's until-date, not a timestamp: the marker note stores the until it
+        alerted for, so re-accepting with a *new* until re-arms the alert while a
+        still-expired unchanged acceptance stays quiet (deterministic, no reliance on
+        same-tick event ordering). ``items`` are ``{finding_id, until}`` pairs for the
+        currently-expired acceptances (from ``risk_acceptances``)."""
+        now = now or _now()
+        new: List[str] = []
+        with self._connect() as conn:
+            for item in items or []:
+                fid = str(item.get('finding_id') or '')
+                if not fid:
+                    continue
+                until = str(item.get('until') or '')
+                row = conn.execute(
+                    "SELECT note FROM finding_events WHERE finding_id = ? AND type ="
+                    " 'ACCEPTANCE_EXPIRED_ALERTED' ORDER BY id DESC LIMIT 1",
+                    (fid,)).fetchone()
+                prev_until = None
+                if row and row['note']:
+                    try:
+                        prev_until = (json.loads(row['note']) or {}).get('until')
+                    except (ValueError, TypeError):
+                        prev_until = None
+                if prev_until == until:
+                    continue                 # already alerted for this episode
+                self._log_event(conn, fid, 'ACCEPTANCE_EXPIRED_ALERTED',
+                                note=json.dumps({'until': until}, ensure_ascii=False),
+                                at=now)
+                new.append(fid)
+        return new
 
     def record_secret_alerts(self, project: str, finding_ids: List[str], *,
                              scan_id: Optional[str] = None,

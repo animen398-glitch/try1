@@ -607,3 +607,33 @@ def test_scheduler_start_stop_is_clean():
         assert sched.running() is True
         sched.stop()
         assert sched.running() is False
+
+
+def test_run_project_fires_acceptance_expiry_alert_once(tmp_path, monkeypatch):
+    # A finding whose risk acceptance has lapsed fires an alert on the run that
+    # first observes the expiry (time-triggered, diff-independent) — then not again.
+    from core import alerts
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+    monkeypatch.setattr(alerts, '_http_post', lambda *a, **k: 200)
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    project.set_monitor(monitor.make_schedule('daily', now=datetime(2026, 6, 13)))
+    store = FindingsStore()
+    fid = store.upsert(project.slug, {
+        'id': fingerprint('vuln', 'https', 'https://x.com/'),
+        'category': 'vuln', 'rule_id': 'https', 'title': 'Plain HTTP',
+        'severity': 'high', 'evidence': None})['finding']['id']
+    store.accept_risk(fid, until='2000-01-01')      # already lapsed
+    alert_config = {'enabled': True, 'telegram': {'token': 't', 'chat_id': 'c'}}
+
+    run1 = _fake_run_fn(project, [('20260613_010000', ['/a'])])
+    out1 = monitor.run_project(project, run1, now=datetime(2026, 6, 13, 10, 0),
+                               alert_config=alert_config)
+    assert out1['acceptance_alerts'] and out1['acceptance_alerts']['alerts'] == 1
+    assert out1['acceptance_alerts']['sent'] == 1
+
+    run2 = _fake_run_fn(project, [('20260614_010000', ['/a'])])
+    out2 = monitor.run_project(project, run2, now=datetime(2026, 6, 14, 10, 0),
+                               alert_config=alert_config)
+    assert out2['acceptance_alerts'] is None        # already alerted → nothing new

@@ -504,3 +504,43 @@ def test_failed_channel_marks_journal_failed(monkeypatch):
     alerts.notify(cfg, 'x.com', _diff(
         secrets={'added': ['k'], 'removed': [], 'changed': []}))
     assert _alert_ops()[0]['status'] == 'failed'
+
+
+def test_collect_acceptance_alerts_one_shot_and_reset():
+    """The acceptance-expiry channel fires once per lapsed acceptance (one-shot via
+    the store) and re-fires after a fresh acceptance lapses again."""
+    from core.finding_fingerprint import fingerprint
+    from core.findings_store import FindingsStore
+
+    s = FindingsStore()
+    f = {'id': fingerprint('vuln', 'r', 'https://x.com/'), 'category': 'vuln',
+         'rule_id': 'r', 'title': 'Accepted vuln', 'severity': 'high',
+         'evidence': None}
+    fid = s.upsert('proj', f)['finding']['id']
+
+    # No acceptance yet → nothing.
+    assert alerts.collect_acceptance_alerts(s, 'proj') == []
+
+    # Accept with a past until-date → expired → fires once.
+    s.accept_risk(fid, until='2000-01-01')
+    first = alerts.collect_acceptance_alerts(s, 'proj')
+    assert len(first) == 1
+    assert first[0]['type'] == 'acceptance_expired'
+    assert first[0]['severity'] == 'medium'
+    assert 'Accepted vuln' in first[0]['title']
+
+    # Second run: already alerted for this episode → nothing new (one-shot).
+    assert alerts.collect_acceptance_alerts(s, 'proj') == []
+
+    # Re-accept (a fresh ACCEPTED) that also lapses → re-alerts (reset on ACCEPTED).
+    s.accept_risk(fid, until='2000-06-01')
+    assert len(alerts.collect_acceptance_alerts(s, 'proj')) == 1
+
+
+def test_notify_acceptance_honors_disabled_and_types(monkeypatch):
+    ev = [{'type': 'acceptance_expired', 'title': '[high] X истекло',
+           'severity': 'medium'}]
+    assert alerts.notify_acceptance(None, 'x.com', ev)['reason'] == 'disabled'
+    # filtered out when the type isn't wanted
+    cfg = {'enabled': True, 'types': ['sla_breach'], 'channels': {}}
+    assert alerts.notify_acceptance(cfg, 'x.com', ev)['alerts'] == 0

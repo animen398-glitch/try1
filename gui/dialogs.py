@@ -45,6 +45,7 @@ _ALERT_TYPE_LABELS = {
     'attack_surface_drift': 'Дрейф: attack surface ↑',
     'exposure_drift': 'Дрейф: экспозиция ↑',
     'criticality_drift': 'Дрейф: критичные активы ↑',
+    'acceptance_expired': 'Принятие риска истекло',
 }
 
 

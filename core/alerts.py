@@ -77,7 +77,7 @@ ALERT_TYPES = ('new_secret', 'new_secret_generic', 'new_subdomain', 'takeover',
                'security_header_removed', 'sla_breach', 'new_finding', 'new_kev',
                'dns_email_auth_weakened', 'new_attack_path',
                'attack_path_escalated', 'attack_surface_drift',
-               'exposure_drift', 'criticality_drift')
+               'exposure_drift', 'criticality_drift', 'acceptance_expired')
 
 
 # ── pure: derive alert events from a Scan Diff ────────────────────────────────
@@ -469,6 +469,47 @@ def collect_kev_alerts(store, project: str) -> List[Dict]:
     fresh = [by_id[i] for i in new_ids if i in by_id]
     return [{'type': e['type'], 'title': e['title'], 'severity': e['severity']}
             for e in threat_intel.kev_events(fresh)]
+
+
+def collect_acceptance_alerts(store, project: str, *, now=None) -> List[Dict]:
+    """New expired-risk-acceptance alert events for a project (one-shot, deduped
+    via ``store``).
+
+    Acceptance expiry is time-triggered (an accepted risk lapses when its
+    until-date passes), so it never appears in a Scan Diff — it is detected here
+    from the persisted acceptances: the ones whose derived state is ``expired``,
+    narrowed to those not yet alerted for their current acceptance episode
+    (``FindingsStore.record_acceptance_expiry_alerts`` logs a one-shot marker that
+    resets on a fresh ``ACCEPTED``, so re-accepting then lapsing again re-alerts).
+    Returns lean ``{type:'acceptance_expired', title, severity}`` dicts — empty when
+    nothing newly lapsed. Pure of network; ``store`` is injected so tests use a temp
+    DB."""
+    from core.timeline import acceptance_events
+    today = now.date().isoformat() if now is not None else None
+    rows = store.risk_acceptances(project, today=today)
+    expired = [r for r in rows
+               if isinstance(r.get('acceptance'), dict)
+               and r['acceptance'].get('expired')]
+    if not expired:
+        return []
+    now_iso = now.isoformat(timespec='seconds') if now is not None else None
+    new_ids = set(store.record_acceptance_expiry_alerts(
+        project, [{'finding_id': r['finding_id'],
+                   'until': r['acceptance'].get('until')} for r in expired],
+        now=now_iso))
+    fresh = [r for r in expired if r['finding_id'] in new_ids]
+    return [{'type': e['type'], 'title': e['title'], 'severity': e['severity']}
+            for e in acceptance_events(fresh)]
+
+
+def notify_acceptance(config: Optional[Dict], slug: str,
+                      acceptance_alerts: List[Dict]) -> Dict:
+    """Dispatch already-collected expired-acceptance alerts (time-triggered channel).
+
+    ``acceptance_alerts`` come from :func:`collect_acceptance_alerts` (already deduped
+    to NEW expiries). Acceptance expiry has no Scan Diff representation, so this is
+    its only alert path."""
+    return _notify_collected(config, slug, acceptance_alerts, 'acceptance')
 
 
 def _notify_collected(config: Optional[Dict], slug: str,
