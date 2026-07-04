@@ -14,7 +14,7 @@ mirroring the Findings/Dashboard tabs. Status labels live in core.asset_store.
 
 from qtpy.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
-    QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QLineEdit, QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.asset_adapter import ASSET_TYPES
@@ -72,6 +72,15 @@ class AssetsTabMixin:
         self.assets_status_filter.currentIndexChanged.connect(
             self._apply_assets_filter)
         ctrl.addWidget(self.assets_status_filter)
+
+        ctrl.addWidget(QLabel("Поиск:"))
+        self.assets_search = QLineEdit()
+        self.assets_search.setPlaceholderText("текст в значении / метке")
+        self.assets_search.setClearButtonEnabled(True)
+        self.assets_search.setMaximumWidth(200)
+        self.assets_search.returnPressed.connect(self._apply_assets_filter)
+        self.assets_search.textChanged.connect(self._on_assets_search_changed)
+        ctrl.addWidget(self.assets_search)
 
         ctrl.addStretch()
         self.assets_status = QLabel("Активных: 0 / 0")
@@ -199,6 +208,11 @@ class AssetsTabMixin:
 
     # ── filter / populate ─────────────────────────────────────────────────────
 
+    def _on_assets_search_changed(self, text: str):
+        # Re-filter immediately when the box is cleared; otherwise wait for Enter.
+        if not text.strip():
+            self._apply_assets_filter()
+
     def _apply_assets_filter(self, *args):
         if self._assets_table_loading:
             self._assets_filter_pending = True
@@ -208,16 +222,19 @@ class AssetsTabMixin:
         project = self.assets_project.currentData()
         atype = self.assets_type_filter.currentData()
         status = self.assets_status_filter.currentData()
+        query = self.assets_search.text().strip() or None
         self._run_async(
-            lambda p=project, t=atype, s=status: self._query_assets_table(p, t, s),
+            lambda p=project, t=atype, s=status, q=query:
+                self._query_assets_table(p, t, s, q),
             self._on_assets_table_loaded,
         )
 
     @staticmethod
-    def _query_assets_table(project, atype, status) -> dict:
+    def _query_assets_table(project, atype, status, query=None) -> dict:
         try:
             store = AssetStore()
-            rows = store.list_assets(project=project, type=atype, status=status)
+            rows = store.list_assets(project=project, type=atype, status=status,
+                                     query=query)
             summary = store.summary(project)
             # F-K3: correlate the project's active findings with its assets so the
             # detail panel can show each asset's findings. Uses the *unfiltered*

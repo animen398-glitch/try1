@@ -586,14 +586,15 @@ def _finding_triage(finding_id: str) -> dict:
 # write endpoint — parity with the read-only Assets tab.
 
 def _assets_list(project: Optional[str] = None, type: Optional[str] = None,
-                 status: Optional[str] = None) -> dict:
-    """Assets (optionally filtered) + the project list + a status summary."""
+                 status: Optional[str] = None, query: Optional[str] = None) -> dict:
+    """Assets (optionally filtered) + the project list + a status summary.
+    ``query`` is a case-insensitive substring over value / label."""
     try:
         from core.asset_store import AssetStore
         store = AssetStore()
         return {'projects': store.projects(),
                 'assets': store.list_assets(project=project, type=type,
-                                            status=status),
+                                            status=status, query=query),
                 'summary': store.summary(project)}
     except Exception as e:
         return {'projects': [], 'assets': [], 'summary': {}, 'error': str(e)}
@@ -2384,8 +2385,9 @@ if _FASTAPI_OK:
     @app.get('/assets')
     async def assets(project: Optional[str] = None,
                      type: Optional[str] = None,
-                     status: Optional[str] = None):
-        return JSONResponse(_assets_list(project, type, status))
+                     status: Optional[str] = None,
+                     q: Optional[str] = None):
+        return JSONResponse(_assets_list(project, type, status, q))
 
     @app.get('/overview')
     async def overview():

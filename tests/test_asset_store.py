@@ -168,3 +168,17 @@ def test_project_events_enriched_and_scoped(tmp_path):
     assert evs[0]['value'] == 'api.x.com'
     # Strictly scoped to the project.
     assert all(e['value'] == 'api.x.com' for e in evs)
+
+
+def test_list_assets_query_matches_value_and_label(tmp_path):
+    s = _store(tmp_path)
+    s.sync('p', 's1', [Asset('subdomain', 'api.shop.com', label='API Gateway'),
+                       Asset('ip', '10.0.0.5', label='DB host')])
+    # value substring, case-insensitive
+    assert [a['value'] for a in s.list_assets('p', query='api')] == ['api.shop.com']
+    assert [a['value'] for a in s.list_assets('p', query='10.0')] == ['10.0.0.5']
+    # label substring
+    assert [a['value'] for a in s.list_assets('p', query='gateway')] == ['api.shop.com']
+    # no match → empty; blank → all
+    assert s.list_assets('p', query='zzz') == []
+    assert len(s.list_assets('p', query='  ')) == 2

@@ -421,6 +421,23 @@ def test_e2e_overview_assign_company_by_click(qapp, tmp_path):
 
 # ── Assets: the load → select → detail read chain (row-selection activation) ─────
 
+def test_e2e_assets_keyword_search_filters_table(qapp):
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    AssetStore().sync('p1', 's1', [Asset('subdomain', 'api.x.com'),
+                                   Asset('ip', '10.0.0.5')])
+    w = AssetsE2EHost()
+    w._refresh_assets()
+    assert w.assets_table.rowCount() == 2
+    w.assets_search.setText('api')
+    w._apply_assets_filter()                     # sync: re-query with the search text
+    vals = [w.assets_table.item(r, 1).text()
+            for r in range(w.assets_table.rowCount())]
+    assert vals == ['api.x.com']                 # value column filtered to the match
+    w.assets_search.clear()
+    assert w.assets_table.rowCount() == 2
+
+
 def test_e2e_assets_load_and_select_shows_detail(qapp):
     from core.asset_adapter import Asset
     from core.asset_store import AssetStore

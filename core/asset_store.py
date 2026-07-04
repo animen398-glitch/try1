@@ -239,15 +239,18 @@ class AssetStore(SQLiteStore):
 
     def list_assets(self, project: Optional[str] = None,
                     type: Optional[str] = None,
-                    status: Optional[str] = None) -> List[Dict]:
-        """Assets, newest-updated first, optionally filtered by project/type/status."""
+                    status: Optional[str] = None,
+                    query: Optional[str] = None) -> List[Dict]:
+        """Assets, newest-updated first, optionally filtered by project/type/status.
+        ``query`` is a case-insensitive substring matched across value / label."""
         with self._connect() as conn:
             return self._list_assets(conn, project=project, type=type,
-                                     status=status)
+                                     status=status, query=query)
 
     def _list_assets(self, conn, project: Optional[str] = None,
                      type: Optional[str] = None,
-                     status: Optional[str] = None) -> List[Dict]:
+                     status: Optional[str] = None,
+                     query: Optional[str] = None) -> List[Dict]:
         """``list_assets`` body over an existing connection (see :meth:`_upsert`)."""
         clauses, params = [], []
         if project is not None:
@@ -256,6 +259,11 @@ class AssetStore(SQLiteStore):
             clauses.append('type = ?'); params.append(type)
         if status is not None:
             clauses.append('status = ?'); params.append(status)
+        q = (query or '').strip()
+        if q:
+            like = f'%{q.lower()}%'
+            clauses.append('(LOWER(value) LIKE ? OR LOWER(label) LIKE ?)')
+            params += [like, like]
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         rows = conn.execute(
             f'SELECT * FROM assets{where} ORDER BY updated_at DESC',

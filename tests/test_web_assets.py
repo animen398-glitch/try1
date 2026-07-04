@@ -63,3 +63,10 @@ def test_assets_endpoint_with_testclient():
 
     r = client.get('/assets', params={'project': 'p1', 'type': 'subdomain'})
     assert [a['value'] for a in r.json()['assets']] == ['api.x.com']
+
+
+def test_assets_list_query_filter():
+    _seed()
+    d = wa._assets_list(project='p1', query='api')
+    assert {a['value'] for a in d['assets']} == {'api.x.com'}
+    assert wa._assets_list(query='nomatch')['assets'] == []
