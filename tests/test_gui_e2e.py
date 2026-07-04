@@ -10,7 +10,8 @@ Qt); the stores are isolated per test by the conftest fixtures.
 
 from core.findings_store import FindingsStore
 from tests.gui_test_helpers import (
-    EngagementsE2EHost, FindingsE2EHost, MissionsE2EHost,
+    AuditRunsE2EHost, EngagementsE2EHost, FindingsE2EHost, MissionsE2EHost,
+    RemediationE2EHost,
 )
 
 
@@ -154,3 +155,59 @@ def test_e2e_engagement_advance_status_by_click(qapp):
     assert w.btn_engagement_advance.isEnabled()
     w.btn_engagement_advance.click()                   # → _do_advance_engagement → store
     assert EngagementStore().list_engagements('shop.io')[0]['status'] == 'authorized'
+
+
+# ── Remediation: seed tasks + edit a task by real button clicks ──────────────────
+
+def _seed_rem_findings(project='shop.io', n=2):
+    fs = FindingsStore()
+    ids = []
+    for i in range(n):
+        fid = fs.upsert(project, {'id': f'rp{i}', 'category': 'vuln',
+                                  'rule_id': f'r{i}', 'title': f'V{i}',
+                                  'severity': 'high'})['finding']['id']
+        ids.append(fid)
+    return fs, ids
+
+
+def test_e2e_remediation_seed_by_click(qapp):
+    fs, ids = _seed_rem_findings()
+    w = RemediationE2EHost()
+    w._refresh_remediation()                    # sync: projects → table inline
+    assert w.rem_project.currentData() == 'shop.io'
+    assert w.btn_rem_seed.isEnabled()
+    w.btn_rem_seed.click()                       # → _seed_remediation → store
+    # top-priority findings now have tracked remediation tasks
+    assert any(fs.get_remediation(i) for i in ids)
+
+
+def test_e2e_remediation_edit_task_by_click(qapp):
+    from core.remediation import set_task
+    fs, ids = _seed_rem_findings(n=1)
+    set_task(fs, ids[0], status='open')
+    w = RemediationE2EHost()
+    w._refresh_remediation()
+    assert w.rem_table.rowCount() >= 1
+    w.rem_table.selectRow(0)                     # fills edit row, enables apply
+    assert w.btn_rem_apply.isEnabled()
+    w.rem_edit_status.setCurrentIndex(w.rem_edit_status.findData('done'))
+    w.rem_edit_owner.setText('dana')
+    w.btn_rem_apply.click()                      # → _apply_remediation_edit → store
+    task = fs.get_remediation(ids[0])
+    assert task['status'] == 'done' and task['owner'] == 'dana'
+
+
+# ── Audit Runs: run a client-safe audit by click → persisted to the store ────────
+
+def test_e2e_audit_run_by_click(qapp):
+    from core.audit_store import AuditRunStore
+    fs = FindingsStore()
+    fs.upsert('shop.io', {'id': 'ap1', 'category': 'vuln', 'rule_id': 'r',
+                          'title': 't', 'severity': 'high'})
+    w = AuditRunsE2EHost()
+    w._refresh_audit_projects()                  # sync: project combo populated
+    assert w.audit_project.currentData() == 'shop.io'
+    assert w.btn_audit_start.isEnabled()
+    # default ROE is passive-only with no active checks — offline, no target traffic
+    w.btn_audit_start.click()                    # → _query_audit_run → AuditRunStore
+    assert AuditRunStore().list_runs('shop.io')

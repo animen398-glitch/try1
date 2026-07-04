@@ -16,6 +16,7 @@ from gui.tab_findings import FindingsTabMixin
 from gui.tab_iac import IacTabMixin
 from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_overview import OverviewTabMixin
+from gui.tab_remediation import RemediationTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_audit_runs import AuditRunsTabMixin
@@ -162,6 +163,16 @@ class IacHost(_BaseHost, IacTabMixin, DashboardTabMixin):
         self._build_iac_tab()
 
 
+class RemediationHost(_BaseHost, RemediationTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._rem_loading = False
+        self._rem_loaded = False
+        self._rem_table_loading = False
+        self._rem_filter_pending = False
+        self._build_remediation_tab()
+
+
 class AuditRunsHost(_BaseHost, AuditRunsTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
@@ -192,3 +203,11 @@ class MissionsE2EHost(_SyncRunMixin, MissionsHost):
 
 class EngagementsE2EHost(_SyncRunMixin, EngagementsHost):
     """EngagementsHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class RemediationE2EHost(_SyncRunMixin, RemediationHost):
+    """RemediationHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class AuditRunsE2EHost(_SyncRunMixin, AuditRunsHost):
+    """AuditRunsHost whose _run_async runs inline (for click-driven e2e tests)."""
