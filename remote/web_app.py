@@ -2315,6 +2315,13 @@ if _FASTAPI_OK:
     async def findings_acceptances(project: str, include_expired: bool = True):
         return JSONResponse(_findings_acceptances(project, include_expired))
 
+    @app.get('/findings/acceptances.csv')
+    async def findings_acceptances_csv_route(project: str):
+        from core.report_export import risk_acceptances_csv
+        out = _findings_acceptances(project)
+        return Response(risk_acceptances_csv(out.get('acceptances', [])),
+                        media_type='text/csv; charset=utf-8')
+
     @app.post('/findings/{finding_id}/accept')
     async def finding_accept(finding_id: str, body: AcceptRequest):
         out = _finding_accept(finding_id, body.reason, body.approver, body.until)

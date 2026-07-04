@@ -60,6 +60,13 @@ _TIMELINE_COLUMNS: Sequence[Tuple[str, str]] = (
     ('section', 'Section'), ('type', 'Event'), ('title', 'Detail'),
 )
 
+_ACCEPTANCES_COLUMNS: Sequence[Tuple[str, str]] = (
+    ('finding_id', 'Finding ID'), ('project', 'Project'), ('title', 'Finding'),
+    ('severity', 'Severity'), ('finding_status', 'Status'),
+    ('reason', 'Reason'), ('approver', 'Approver'), ('until', 'Until'),
+    ('expired', 'Expired'), ('updated_at', 'Accepted At'),
+)
+
 _TOOL_RUNS_COLUMNS: Sequence[Tuple[str, str]] = (
     ('at', 'When'), ('tool', 'Tool'), ('findings', 'Findings'),
     ('assets', 'Assets'), ('scan_id', 'Scan ID'),
@@ -401,6 +408,29 @@ def engagements_csv(overview) -> str:
     its status + linked counts."""
     rows = overview.get('engagements') if isinstance(overview, dict) else overview
     return _rows_to_csv(rows, _ENGAGEMENTS_COLUMNS)
+
+
+def risk_acceptances_csv(acceptances) -> str:
+    """CSV of a project's risk acceptances (the client/audit deliverable). Accepts
+    either the ``{'acceptances': [...]}`` dict or a bare ``FindingsStore.
+    risk_acceptances`` row list — one line per accepted finding with reason/
+    approver/until/expired. Flattens the nested ``acceptance`` state onto the row."""
+    rows = acceptances.get('acceptances') if isinstance(acceptances, dict) \
+        else acceptances
+    flat = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        acc = r.get('acceptance') if isinstance(r.get('acceptance'), dict) else {}
+        flat.append({
+            'finding_id': r.get('finding_id'), 'project': r.get('project'),
+            'title': r.get('title'), 'severity': r.get('severity'),
+            'finding_status': r.get('finding_status'),
+            'reason': acc.get('reason'), 'approver': acc.get('approver'),
+            'until': acc.get('until'), 'expired': acc.get('expired'),
+            'updated_at': r.get('updated_at'),
+        })
+    return _rows_to_csv(flat, _ACCEPTANCES_COLUMNS)
 
 
 # ── SARIF 2.1.0 (EPIC 16 F1) ────────────────────────────────────────────────────

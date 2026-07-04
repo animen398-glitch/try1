@@ -296,3 +296,19 @@ def test_finding_acceptance_endpoints_with_testclient():
 
     assert client.post('/findings/ghost/accept',
                        json={'until': '2099-01-01'}).status_code == 404
+
+
+def test_findings_acceptances_csv_endpoint():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    _seed()
+    fid = scoped_id('p1', 'f-a')
+    wa._finding_accept(fid, reason='low', approver='ciso', until='2099-01-01')
+    client = TestClient(wa.app)
+    r = client.get('/findings/acceptances.csv', params={'project': 'p1'})
+    assert r.status_code == 200
+    assert r.headers['content-type'].startswith('text/csv')
+    assert 'Finding ID' in r.text and 'ciso' in r.text

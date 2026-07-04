@@ -308,3 +308,18 @@ def test_export_findings_sarif_empty_is_noop(qapp):
     w._findings_records = []
     w._export_findings_sarif()
     assert 'Нечего экспортировать' in w.findings_status.text()
+
+
+def test_write_acceptances_csv_exports_project(qapp, tmp_path):
+    from core.findings_adapter import Finding
+    s = FindingsStore()
+    fid = s.upsert('shop.io', Finding(category='vuln', rule_id='r', title='V',
+                                      severity='high',
+                                      location='https://shop.io/a').to_store(),
+                   scan_id='s1')['finding']['id']
+    s.accept_risk(fid, reason='low', approver='ciso', until='2099-01-01')
+    out = tmp_path / 'acc.csv'
+    res = FindingsTabMixin._write_acceptances_csv('shop.io', str(out))
+    assert res.get('ok') and res['count'] == 1
+    text = out.read_text(encoding='utf-8-sig')
+    assert 'Finding ID' in text and 'ciso' in text and 'low' in text

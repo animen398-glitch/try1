@@ -76,6 +76,11 @@ class FindingsTabMixin:
         btn_export.setToolTip("Сохранить текущий (отфильтрованный) список находок в CSV.")
         btn_export.clicked.connect(self._export_findings_csv)
         ctrl.addWidget(btn_export)
+        btn_export_acc = StyledButton("Export acceptances", style='secondary')
+        btn_export_acc.setToolTip(
+            "Экспортировать принятия риска проекта (reason/approver/until/expired) в CSV.")
+        btn_export_acc.clicked.connect(self._export_acceptances_csv)
+        ctrl.addWidget(btn_export_acc)
         btn_sarif = StyledButton("Export SARIF", style='secondary')
         btn_sarif.setToolTip(
             "Сохранить находки в SARIF 2.1.0 (GitHub code scanning / CI / IDE).")
@@ -219,6 +224,41 @@ class FindingsTabMixin:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить CSV: {e}")
             return
         self.findings_status.setText(f"Экспортировано находок: {len(rows)}")
+
+    def _export_acceptances_csv(self):
+        """Save the project's risk acceptances (client/audit deliverable) to CSV.
+        The store read runs off the GUI thread; the file dialog stays on it."""
+        from datetime import datetime
+        project = self.findings_project.currentData()
+        label = project or 'all'
+        default = f"acceptances_{label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export acceptances CSV", default, "CSV Files (*.csv)")
+        if not path:
+            return
+        self._set_busy(True)
+        self._run_async(lambda p=project, pa=path: self._write_acceptances_csv(p, pa),
+                        self._on_acceptances_exported)
+
+    @staticmethod
+    def _write_acceptances_csv(project, path) -> dict:
+        try:
+            from core.findings_store import FindingsStore
+            from core.report_export import risk_acceptances_csv
+            rows = FindingsStore().risk_acceptances(project)
+            with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write(risk_acceptances_csv(rows))
+            return {'ok': True, 'count': len(rows)}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    def _on_acceptances_exported(self, result: dict):
+        self._set_busy(False)
+        if result.get('error'):
+            self.findings_status.setText(f"Ошибка экспорта: {result['error']}")
+            return
+        self.findings_status.setText(
+            f"Экспортировано принятий риска: {result.get('count', 0)}")
 
     def _export_findings_sarif(self):
         """Save the currently loaded (filtered) findings to a SARIF 2.1.0 file."""

@@ -618,3 +618,25 @@ def test_portfolio_csv_empty():
 
 def rx_idx(header):
     return [h for _, h in rx._FINDINGS_COLUMNS].index(header)
+
+
+# ── risk_acceptances_csv ────────────────────────────────────────────────────────
+
+def test_risk_acceptances_csv_flattens_acceptance_state():
+    rows = [{
+        'finding_id': 'f1', 'project': 'shop.com', 'title': 'Weak CSP',
+        'severity': 'high', 'finding_status': 'OPEN', 'updated_at': '2026-01-01',
+        'acceptance': {'accepted': True, 'expired': True, 'reason': 'low impact',
+                       'approver': 'ciso', 'until': '2026-06-01'}}]
+    table = _parse(rx.risk_acceptances_csv({'acceptances': rows}))
+    assert table[0] == ['Finding ID', 'Project', 'Finding', 'Severity', 'Status',
+                        'Reason', 'Approver', 'Until', 'Expired', 'Accepted At']
+    assert table[1] == ['f1', 'shop.com', 'Weak CSP', 'high', 'OPEN',
+                        'low impact', 'ciso', '2026-06-01', 'True', '2026-01-01']
+
+
+def test_risk_acceptances_csv_accepts_bare_list_and_empty():
+    assert _parse(rx.risk_acceptances_csv([]))[0][0] == 'Finding ID'
+    table = _parse(rx.risk_acceptances_csv(
+        [{'finding_id': 'f2', 'acceptance': {'approver': 'a'}}]))
+    assert table[1][0] == 'f2' and table[1][6] == 'a'      # approver column
