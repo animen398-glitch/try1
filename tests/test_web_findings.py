@@ -312,3 +312,10 @@ def test_findings_acceptances_csv_endpoint():
     assert r.status_code == 200
     assert r.headers['content-type'].startswith('text/csv')
     assert 'Finding ID' in r.text and 'ciso' in r.text
+
+
+def test_findings_list_query_filter():
+    _seed()
+    d = wa._findings_list(project='p1', query='cookie')
+    assert {f['title'] for f in d['findings']} == {'Insecure cookie'}
+    assert wa._findings_list(query='nomatch')['findings'] == []

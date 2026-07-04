@@ -610,3 +610,25 @@ def test_projects_active_count_excludes_current_acceptance(tmp_path):
     # once expired it counts again
     row2 = next(r for r in s.projects(today='2100-01-01') if r['project'] == 'p')
     assert row2['active'] == 2
+
+
+# ── keyword search (list_findings query=) ───────────────────────────────────────
+
+def test_list_findings_query_matches_title_rule_category(tmp_path):
+    s = _store(tmp_path)
+    s.upsert('p', _finding(title='Weak Content-Security-Policy', rule_id='csp',
+                           category='header', location='https://x/a'), scan_id='s1')
+    s.upsert('p', _finding(title='Insecure cookie', rule_id='cookie_flags',
+                           category='cookie', location='https://x/b'), scan_id='s1')
+    # title substring, case-insensitive
+    assert [f['title'] for f in s.list_findings('p', query='security')] == \
+        ['Weak Content-Security-Policy']
+    # rule_id substring
+    assert [f['title'] for f in s.list_findings('p', query='cookie_fl')] == \
+        ['Insecure cookie']
+    # category substring
+    assert [f['title'] for f in s.list_findings('p', query='header')] == \
+        ['Weak Content-Security-Policy']
+    # no match → empty; blank query → all
+    assert s.list_findings('p', query='zzz') == []
+    assert len(s.list_findings('p', query='   ')) == 2

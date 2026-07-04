@@ -69,6 +69,16 @@ class FindingsTabMixin:
             self._apply_findings_filter)
         ctrl.addWidget(self.findings_severity_filter)
 
+        ctrl.addWidget(QLabel("Поиск:"))
+        self.findings_search = QLineEdit()
+        self.findings_search.setPlaceholderText("текст в заголовке / rule / категории")
+        self.findings_search.setClearButtonEnabled(True)
+        self.findings_search.setMaximumWidth(220)
+        # Search on Enter (and when the clear button empties it) — not per keystroke.
+        self.findings_search.returnPressed.connect(self._apply_findings_filter)
+        self.findings_search.textChanged.connect(self._on_search_text_changed)
+        ctrl.addWidget(self.findings_search)
+
         ctrl.addStretch()
         self.findings_status = QLabel("Активных: 0 / 0")
         ctrl.addWidget(self.findings_status)
@@ -324,6 +334,11 @@ class FindingsTabMixin:
 
     # ── filter / populate ─────────────────────────────────────────────────────
 
+    def _on_search_text_changed(self, text: str):
+        # Re-filter immediately when the box is cleared; otherwise wait for Enter.
+        if not text.strip():
+            self._apply_findings_filter()
+
     def _apply_findings_filter(self, *args):
         if self._findings_table_loading:
             self._findings_filter_pending = True
@@ -333,19 +348,21 @@ class FindingsTabMixin:
         project = self.findings_project.currentData()
         status = self.findings_status_filter.currentData()
         severity = self.findings_severity_filter.currentData()
+        query = self.findings_search.text().strip() or None
         self._run_async(
-            lambda p=project, s=status, v=severity: self._query_findings_table(p, s, v),
+            lambda p=project, s=status, v=severity, q=query:
+                self._query_findings_table(p, s, v, q),
             self._on_findings_table_loaded,
         )
 
     @staticmethod
-    def _query_findings_table(project, status, severity) -> dict:
+    def _query_findings_table(project, status, severity, query=None) -> dict:
         try:
             from core import threat_intel
             from core.findings_sla import annotate as annotate_sla
             store = FindingsStore()
             rows = store.list_findings(project=project, status=status,
-                                       severity=severity)
+                                       severity=severity, query=query)
             # KEV/EPSS threat block from the offline cache first (cold cache =
             # no-op), so the detail badge shows it and the SLA clock below is
             # tightened for known-exploited findings — consistent with the report.

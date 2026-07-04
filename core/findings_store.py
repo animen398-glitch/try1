@@ -358,15 +358,18 @@ class FindingsStore(SQLiteStore):
 
     def list_findings(self, project: Optional[str] = None,
                       status: Optional[str] = None,
-                      severity: Optional[str] = None) -> List[Dict]:
-        """Findings, newest-updated first, optionally filtered."""
+                      severity: Optional[str] = None,
+                      query: Optional[str] = None) -> List[Dict]:
+        """Findings, newest-updated first, optionally filtered. ``query`` is a
+        case-insensitive substring matched across title / rule_id / category."""
         with self._connect() as conn:
             return self._list_findings(conn, project=project, status=status,
-                                       severity=severity)
+                                       severity=severity, query=query)
 
     def _list_findings(self, conn, project: Optional[str] = None,
                        status: Optional[str] = None,
-                       severity: Optional[str] = None) -> List[Dict]:
+                       severity: Optional[str] = None,
+                       query: Optional[str] = None) -> List[Dict]:
         """``list_findings`` body over an existing connection (see :meth:`_upsert`)."""
         clauses, params = [], []
         if project is not None:
@@ -375,6 +378,12 @@ class FindingsStore(SQLiteStore):
             clauses.append('status = ?'); params.append(status)
         if severity is not None:
             clauses.append('severity = ?'); params.append(severity)
+        q = (query or '').strip()
+        if q:
+            like = f'%{q.lower()}%'
+            clauses.append('(LOWER(title) LIKE ? OR LOWER(rule_id) LIKE ?'
+                           ' OR LOWER(category) LIKE ?)')
+            params += [like, like, like]
         where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
         rows = conn.execute(
             f'SELECT * FROM findings{where} ORDER BY updated_at DESC',

@@ -104,6 +104,25 @@ def test_e2e_findings_accept_risk_by_click(qapp):
     assert fs.risk_acceptance_state(fid)['accepted'] is False
 
 
+def test_e2e_findings_keyword_search_filters_table(qapp):
+    fs = FindingsStore()
+    fs.upsert('shop.io', {'id': 'fs1', 'category': 'header', 'rule_id': 'csp',
+                          'title': 'Weak CSP', 'severity': 'high'})
+    fs.upsert('shop.io', {'id': 'fs2', 'category': 'cookie', 'rule_id': 'sess',
+                          'title': 'Insecure cookie', 'severity': 'low'})
+    w = FindingsE2EHost()
+    w._refresh_findings()
+    assert w.findings_table.rowCount() == 2
+    w.findings_search.setText('cookie')
+    w._apply_findings_filter()                   # sync: re-query with the search text
+    rows = [w.findings_table.item(r, 2).text()
+            for r in range(w.findings_table.rowCount())]
+    assert rows == ['Insecure cookie']           # title column filtered to the match
+    # clearing the box restores the full list
+    w.findings_search.clear()
+    assert w.findings_table.rowCount() == 2
+
+
 def test_e2e_findings_assign_button_disabled_without_selection(qapp):
     _seed_finding()
     w = FindingsE2EHost()

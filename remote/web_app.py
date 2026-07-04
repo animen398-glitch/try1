@@ -400,15 +400,16 @@ def _registry_data(limit: int = 50) -> dict:
 # endpoints stay thin and these are unit-testable without FastAPI.
 
 def _findings_list(project: Optional[str] = None, status: Optional[str] = None,
-                   severity: Optional[str] = None) -> dict:
-    """Findings (optionally filtered) + the project list + a status summary."""
+                   severity: Optional[str] = None, query: Optional[str] = None) -> dict:
+    """Findings (optionally filtered) + the project list + a status summary.
+    ``query`` is a case-insensitive substring over title / rule_id / category."""
     try:
         from core import threat_intel
         from core.finding_knowledge import annotate as annotate_knowledge
         from core.findings_sla import annotate as annotate_sla
         store = FindingsStore()
         findings = store.list_findings(project=project, status=status,
-                                       severity=severity)
+                                       severity=severity, query=query)
         # KEV/EPSS threat block first (offline; cold cache = no-op), so the SLA
         # clock below is tightened for known-exploited findings — consistent with
         # the GUI/report.
@@ -2277,8 +2278,9 @@ if _FASTAPI_OK:
     @app.get('/findings')
     async def findings(project: Optional[str] = None,
                        status: Optional[str] = None,
-                       severity: Optional[str] = None):
-        return JSONResponse(_findings_list(project, status, severity))
+                       severity: Optional[str] = None,
+                       q: Optional[str] = None):
+        return JSONResponse(_findings_list(project, status, severity, q))
 
     @app.get('/findings.sarif')
     async def findings_sarif_route(project: Optional[str] = None):
