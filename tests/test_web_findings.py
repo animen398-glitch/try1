@@ -245,3 +245,54 @@ def test_findings_bulk_endpoints_with_testclient():
     # a bad status is a 400, not a 404-through-{finding_id}
     r400 = client.post('/findings/bulk/status', json={'ids': ids, 'status': 'NOPE'})
     assert r400.status_code == 400
+
+
+# ── risk acceptance (v1 overlay) ────────────────────────────────────────────────
+
+def test_finding_accept_and_state_helper():
+    s = _seed()
+    fid = scoped_id('p1', 'f-a')
+    out = wa._finding_accept(fid, reason='low', approver='ciso', until='2099-01-01')
+    assert out['status'] == 'ok' and out['acceptance']['accepted'] is True
+    st = wa._finding_acceptance(fid)
+    assert st['acceptance']['accepted'] and not st['acceptance']['expired']
+    assert s.get(fid)['status'] == 'OPEN'          # overlay leaves status untouched
+
+
+def test_finding_accept_unknown_finding():
+    _seed()
+    assert 'not found' in wa._finding_accept('ghost', until='2099-01-01')['error']
+
+
+def test_findings_acceptances_list_helper():
+    _seed()
+    wa._finding_accept(scoped_id('p1', 'f-a'), until='2099-01-01')
+    out = wa._findings_acceptances('p1')
+    assert [a['finding_id'] for a in out['acceptances']] == [scoped_id('p1', 'f-a')]
+
+
+def test_finding_acceptance_endpoints_with_testclient():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    _seed()
+    client = TestClient(wa.app)
+    fid = scoped_id('p1', 'f-a')
+
+    r = client.post(f'/findings/{fid}/accept',
+                    json={'reason': 'ok', 'until': '2099-01-01'})
+    assert r.status_code == 200 and r.json()['acceptance']['accepted']
+
+    # literal 'acceptances' is not shadowed by {finding_id}
+    lst = client.get('/findings/acceptances', params={'project': 'p1'})
+    assert lst.status_code == 200
+    assert lst.json()['acceptances'][0]['finding_id'] == fid
+
+    rc = client.post(f'/findings/{fid}/accept/clear')
+    assert rc.status_code == 200
+    assert client.get(f'/findings/{fid}/acceptance').json()['acceptance']['accepted'] is False
+
+    assert client.post('/findings/ghost/accept',
+                       json={'until': '2099-01-01'}).status_code == 404

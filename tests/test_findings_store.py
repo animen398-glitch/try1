@@ -515,3 +515,59 @@ def test_bulk_assign_empty_clears(tmp_path):
     s.bulk_assign(ids, 'bob')
     s.bulk_assign(ids, '')                              # '' unassigns
     assert all(s.get_assignee(i) == '' for i in ids)
+
+
+# ── risk acceptance (v1 overlay: accept / expire / revoke) ──────────────────────
+
+def test_accept_risk_and_state(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    fid = s.upsert('p', f, scan_id='s1')['finding']['id']
+    s.accept_risk(fid, reason='low impact', approver='ciso', until='2099-01-01')
+    st = s.risk_acceptance_state(fid, today='2026-07-04')
+    assert st['accepted'] and not st['expired']
+    assert st['reason'] == 'low impact' and st['approver'] == 'ciso'
+    # status/risk are untouched by the overlay
+    assert s.get(fid)['status'] == 'OPEN'
+
+
+def test_acceptance_expires_by_until_date(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    fid = s.upsert('p', f, scan_id='s1')['finding']['id']
+    s.accept_risk(fid, until='2026-01-01')
+    assert s.risk_acceptance_state(fid, today='2026-07-04')['expired'] is True
+    assert s.risk_acceptance_state(fid, today='2025-12-01')['expired'] is False
+
+
+def test_clear_risk_acceptance(tmp_path):
+    s = _store(tmp_path)
+    f = _finding()
+    fid = s.upsert('p', f, scan_id='s1')['finding']['id']
+    s.accept_risk(fid, until='2099-01-01')
+    s.clear_risk_acceptance(fid)                       # latest event wins
+    assert s.risk_acceptance_state(fid)['accepted'] is False
+
+
+def test_risk_acceptances_lists_current_and_filters_expired(tmp_path):
+    s = _store(tmp_path)
+    a = s.upsert('p', _finding(rule_id='a', location='https://x/a'),
+                 scan_id='s1')['finding']['id']
+    b = s.upsert('p', _finding(rule_id='b', location='https://x/b'),
+                 scan_id='s1')['finding']['id']
+    c = s.upsert('p', _finding(rule_id='c', location='https://x/c'),
+                 scan_id='s1')['finding']['id']
+    s.accept_risk(a, until='2099-01-01')               # active
+    s.accept_risk(b, until='2026-01-01')               # expired
+    s.accept_risk(c, until='2099-01-01')
+    s.clear_risk_acceptance(c)                          # revoked → excluded
+    allrows = s.risk_acceptances('p', today='2026-07-04')
+    assert {r['finding_id'] for r in allrows} == {a, b}
+    active_only = s.risk_acceptances('p', today='2026-07-04', include_expired=False)
+    assert {r['finding_id'] for r in active_only} == {a}
+
+
+def test_accept_risk_unknown_finding_raises(tmp_path):
+    s = _store(tmp_path)
+    with pytest.raises(KeyError):
+        s.accept_risk('ghost', until='2099-01-01')

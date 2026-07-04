@@ -507,6 +507,51 @@ def _findings_bulk_assign(ids, assignee: Optional[str] = None) -> dict:
         return {'error': str(e)}
 
 
+def _finding_accept(finding_id: str, reason: str = '', approver: str = '',
+                    until: str = '') -> dict:
+    """Record a time-boxed risk acceptance for one finding. Returns the stored
+    acceptance payload, or an ``{'error': ...}`` for an unknown finding."""
+    try:
+        payload = FindingsStore().accept_risk(finding_id, reason=reason,
+                                              approver=approver, until=until)
+        return {'status': 'ok', 'finding_id': finding_id, 'acceptance': payload}
+    except KeyError:
+        return {'error': f'finding not found: {finding_id}'}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
+def _finding_clear_acceptance(finding_id: str) -> dict:
+    """Revoke one finding's risk acceptance. Returns ``{'status': 'ok'}`` or an
+    ``{'error': ...}`` for an unknown finding."""
+    try:
+        FindingsStore().clear_risk_acceptance(finding_id)
+        return {'status': 'ok', 'finding_id': finding_id}
+    except KeyError:
+        return {'error': f'finding not found: {finding_id}'}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
+def _finding_acceptance(finding_id: str) -> dict:
+    """Current (derive-on-read) risk-acceptance state for one finding."""
+    try:
+        return {'finding_id': finding_id,
+                'acceptance': FindingsStore().risk_acceptance_state(finding_id)}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
+def _findings_acceptances(project: str, include_expired: bool = True) -> dict:
+    """All currently-accepted findings in a project (with expired flags)."""
+    try:
+        return {'project': project,
+                'acceptances': FindingsStore().risk_acceptances(
+                    project, include_expired=include_expired)}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
 def _finding_comment(finding_id: str, text: str,
                      author: Optional[str] = None) -> dict:
     """Append a triage comment to one finding (event-sourced). Returns the stored
@@ -2224,6 +2269,11 @@ if _FASTAPI_OK:
         ids: List[str]
         assignee: str = ''
 
+    class AcceptRequest(BaseModel):
+        reason: str = ''
+        approver: str = ''
+        until: str = ''                   # 'YYYY-MM-DD' expiry, empty = open-ended
+
     @app.get('/findings')
     async def findings(project: Optional[str] = None,
                        status: Optional[str] = None,
@@ -2259,6 +2309,34 @@ if _FASTAPI_OK:
         await _push(f'[findings] bulk assign → {out["assignee"] or "—"} '
                     f'({len(out["updated"])} updated)', 'ok')
         return out
+
+    # Literal 'acceptances' registered before the {finding_id} routes.
+    @app.get('/findings/acceptances')
+    async def findings_acceptances(project: str, include_expired: bool = True):
+        return JSONResponse(_findings_acceptances(project, include_expired))
+
+    @app.post('/findings/{finding_id}/accept')
+    async def finding_accept(finding_id: str, body: AcceptRequest):
+        out = _finding_accept(finding_id, body.reason, body.approver, body.until)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[findings] {finding_id[:8]} risk accepted'
+                    f'{" until " + body.until if body.until else ""}', 'ok')
+        return out
+
+    @app.post('/findings/{finding_id}/accept/clear')
+    async def finding_accept_clear(finding_id: str):
+        out = _finding_clear_acceptance(finding_id)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        await _push(f'[findings] {finding_id[:8]} acceptance revoked', 'ok')
+        return out
+
+    @app.get('/findings/{finding_id}/acceptance')
+    async def finding_acceptance(finding_id: str):
+        return JSONResponse(_finding_acceptance(finding_id))
 
     @app.post('/findings/{finding_id}/status')
     async def findings_set_status(finding_id: str, body: StatusRequest):

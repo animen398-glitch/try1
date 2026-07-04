@@ -89,6 +89,21 @@ def test_e2e_findings_bulk_assign_by_click(qapp):
     assert all(fs.get_assignee(i) == 'team-x' for i in ids)
 
 
+def test_e2e_findings_accept_risk_by_click(qapp):
+    fs, fid = _seed_finding()
+    w = _findings_host_on_row()
+    w.findings_accept_reason.setText('low impact')
+    w.findings_accept_approver.setText('ciso')
+    w.findings_accept_until.setText('2099-01-01')
+    assert w.btn_findings_accept.isEnabled()
+    w.btn_findings_accept.click()                # → _write_finding_accept → store
+    st = fs.risk_acceptance_state(fid, today='2026-07-04')
+    assert st['accepted'] and not st['expired'] and st['approver'] == 'ciso'
+    # revoke by click
+    w.btn_findings_accept_clear.click()          # → _write_finding_accept_clear
+    assert fs.risk_acceptance_state(fid)['accepted'] is False
+
+
 def test_e2e_findings_assign_button_disabled_without_selection(qapp):
     _seed_finding()
     w = FindingsE2EHost()

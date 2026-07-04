@@ -48,7 +48,7 @@ SUPPRESSED_STATUSES = frozenset({'IGNORED', 'FALSE_POSITIVE'})
 
 EVENT_TYPES = ('CREATED', 'SEEN', 'STATUS_CHANGED', 'REOPENED', 'RESOLVED_AUTO',
                'SLA_BREACH', 'SECRET_ALERTED', 'FINDING_ALERTED', 'ISSUE_CREATED',
-               'REMEDIATION', 'ASSIGNED', 'COMMENT')
+               'REMEDIATION', 'ASSIGNED', 'COMMENT', 'ACCEPTED')
 
 # Display labels (RU) for statuses — single source shared by the GUI Findings
 # tab and the report card, so the two never drift.
@@ -628,6 +628,108 @@ class FindingsStore(SQLiteStore):
                 'finding_status': r['status'], 'updated_at': r['at'], 'task': task,
             }
         return list(latest.values())
+
+    # ── risk acceptance (v1) — event-sourced over finding_events ───────────────
+    # A time-boxed operator acceptance of a finding's risk (reason / approver /
+    # until-date). Like remediation this is an overlay: the latest ACCEPTED event
+    # is the current state and it does NOT change the finding's status or risk
+    # score (that integration is a deliberate follow-up). Its value is the
+    # *expiry* — the derived state flags an acceptance whose until-date has passed
+    # so it can be re-reviewed instead of silently suppressing risk forever.
+
+    def accept_risk(self, finding_id, *, reason: str = '', approver: str = '',
+                    until: str = '', now: Optional[str] = None) -> Dict:
+        """Record a risk acceptance for a finding (an ``ACCEPTED`` event). ``until``
+        is a ``YYYY-MM-DD`` expiry (empty = open-ended). Latest event wins (see
+        :meth:`get_risk_acceptance`); history stays in ``finding_events`` (no second
+        table). Raises ``KeyError`` for an unknown finding."""
+        payload = {'accepted': True, 'reason': str(reason or '').strip(),
+                   'approver': str(approver or '').strip(),
+                   'until': str(until or '').strip()}
+        with self._connect() as conn:
+            if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                            (str(finding_id),)).fetchone() is None:
+                raise KeyError(finding_id)
+            self._log_event(conn, str(finding_id), 'ACCEPTED',
+                            note=json.dumps(payload, ensure_ascii=False),
+                            at=now or _now())
+        return payload
+
+    def clear_risk_acceptance(self, finding_id, *,
+                              now: Optional[str] = None) -> None:
+        """Revoke a finding's risk acceptance (an ``ACCEPTED`` event marked
+        not-accepted). Raises ``KeyError`` for an unknown finding."""
+        with self._connect() as conn:
+            if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                            (str(finding_id),)).fetchone() is None:
+                raise KeyError(finding_id)
+            self._log_event(conn, str(finding_id), 'ACCEPTED',
+                            note=json.dumps({'accepted': False}, ensure_ascii=False),
+                            at=now or _now())
+
+    def get_risk_acceptance(self, finding_id) -> Optional[Dict]:
+        """The latest ``ACCEPTED`` payload for a finding, or ``None`` if never set."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT note FROM finding_events WHERE finding_id = ?"
+                " AND type = 'ACCEPTED' ORDER BY id DESC LIMIT 1",
+                (str(finding_id),)).fetchone()
+        if row is None or not row['note']:
+            return None
+        try:
+            return json.loads(row['note'])
+        except (ValueError, TypeError):
+            return None
+
+    @staticmethod
+    def _acceptance_state(payload, today: str) -> Dict:
+        """Derive ``{accepted, expired, reason, approver, until}`` from a payload
+        (``expired`` is True only for an accepted finding whose until-date passed)."""
+        p = payload if isinstance(payload, dict) else {}
+        accepted = bool(p.get('accepted'))
+        until = str(p.get('until') or '')
+        expired = bool(accepted and until and until < today)
+        return {'accepted': accepted, 'expired': expired,
+                'reason': p.get('reason', ''), 'approver': p.get('approver', ''),
+                'until': until}
+
+    def risk_acceptance_state(self, finding_id, *,
+                              today: Optional[str] = None) -> Dict:
+        """Current acceptance state for a finding (derive-on-read). ``today`` is a
+        ``YYYY-MM-DD`` (defaults to now). Never accepted / revoked →
+        ``{accepted: False, expired: False, ...}``."""
+        today = today or _now()[:10]
+        return self._acceptance_state(self.get_risk_acceptance(finding_id), today)
+
+    def risk_acceptances(self, project: str, *, today: Optional[str] = None,
+                         include_expired: bool = True) -> List[Dict]:
+        """Every finding in ``project`` with a *current* risk acceptance (latest
+        event accepted), carrying the derived state + the finding's title/severity/
+        category/status. Mirrors :meth:`remediations`; ``include_expired=False``
+        drops ones whose until-date has passed."""
+        today = today or _now()[:10]
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT e.finding_id, e.note, e.at, f.title, f.severity, f.category,"
+                " f.status FROM finding_events e JOIN findings f"
+                " ON f.id = e.finding_id WHERE f.project = ? AND e.type ="
+                " 'ACCEPTED' ORDER BY e.id", (project,)).fetchall()
+        latest: Dict[str, Dict] = {}
+        for r in rows:
+            try:
+                payload = json.loads(r['note']) if r['note'] else {}
+            except (ValueError, TypeError):
+                payload = {}
+            latest[r['finding_id']] = {
+                'finding_id': r['finding_id'], 'title': r['title'],
+                'severity': r['severity'], 'category': r['category'],
+                'finding_status': r['status'], 'updated_at': r['at'],
+                'acceptance': self._acceptance_state(payload, today),
+            }
+        out = [v for v in latest.values() if v['acceptance']['accepted']]
+        if not include_expired:
+            out = [v for v in out if not v['acceptance']['expired']]
+        return out
 
     # ── triage: assignment + comments (event-sourced over finding_events) ──────
 

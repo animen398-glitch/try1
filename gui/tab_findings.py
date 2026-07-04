@@ -150,6 +150,33 @@ class FindingsTabMixin:
         triage_grp.setLayout(triage_row)
         layout.addWidget(triage_grp)
 
+        # ── risk acceptance (v1): time-boxed accept of the selected finding ──
+        accept_grp = SectionGroupBox("Принятие риска (с истечением)")
+        accept_row = QHBoxLayout()
+        accept_row.addWidget(QLabel("Причина:"))
+        self.findings_accept_reason = QLineEdit()
+        self.findings_accept_reason.setPlaceholderText("почему риск принят")
+        accept_row.addWidget(self.findings_accept_reason, stretch=1)
+        accept_row.addWidget(QLabel("Кем:"))
+        self.findings_accept_approver = QLineEdit()
+        self.findings_accept_approver.setMaximumWidth(120)
+        accept_row.addWidget(self.findings_accept_approver)
+        accept_row.addWidget(QLabel("До:"))
+        self.findings_accept_until = QLineEdit()
+        self.findings_accept_until.setPlaceholderText("YYYY-MM-DD")
+        self.findings_accept_until.setMaximumWidth(110)
+        accept_row.addWidget(self.findings_accept_until)
+        self.btn_findings_accept = StyledButton("Принять риск", style='secondary')
+        self.btn_findings_accept.setEnabled(False)
+        self.btn_findings_accept.clicked.connect(self._apply_finding_accept)
+        accept_row.addWidget(self.btn_findings_accept)
+        self.btn_findings_accept_clear = StyledButton("Снять", style='secondary')
+        self.btn_findings_accept_clear.setEnabled(False)
+        self.btn_findings_accept_clear.clicked.connect(self._clear_finding_accept)
+        accept_row.addWidget(self.btn_findings_accept_clear)
+        accept_grp.setLayout(accept_row)
+        layout.addWidget(accept_grp)
+
         # ── detail / history panel ──────────────────────────────────────────
         detail_grp = SectionGroupBox("Детали и история выбранной находки")
         detail_layout = QVBoxLayout()
@@ -369,6 +396,8 @@ class FindingsTabMixin:
         self.btn_findings_apply.setEnabled(enabled)
         self.btn_findings_assign.setEnabled(enabled)
         self.btn_findings_comment.setEnabled(enabled)
+        self.btn_findings_accept.setEnabled(enabled)
+        self.btn_findings_accept_clear.setEnabled(enabled)
 
     # ── selection / detail ────────────────────────────────────────────────────
 
@@ -416,7 +445,8 @@ class FindingsTabMixin:
             store = FindingsStore()
             return {'id': finding_id, 'events': store.events(finding_id),
                     'assignee': store.get_assignee(finding_id),
-                    'comments': store.comments(finding_id)}
+                    'comments': store.comments(finding_id),
+                    'acceptance': store.risk_acceptance_state(finding_id)}
         except Exception as e:  # noqa: BLE001
             return {'id': finding_id, 'error': str(e)}
 
@@ -427,12 +457,18 @@ class FindingsTabMixin:
             return
         # Prefill the assignee field with the current value (empty = unassigned).
         self.findings_assignee.setText(result.get('assignee') or '')
+        acc = result.get('acceptance') or {}
+        # Prefill the acceptance fields so an edit starts from the current state.
+        self.findings_accept_reason.setText(acc.get('reason') or '')
+        self.findings_accept_approver.setText(acc.get('approver') or '')
+        self.findings_accept_until.setText(acc.get('until') or '')
         self._show_finding_detail(rec, result.get('events'),
                                   assignee=result.get('assignee') or '',
-                                  comments=result.get('comments') or [])
+                                  comments=result.get('comments') or [],
+                                  acceptance=acc)
 
     def _show_finding_detail(self, rec: dict, events=None, *, assignee='',
-                             comments=None):
+                             comments=None, acceptance=None):
         lines = [
             f"Заголовок:  {rec.get('title', '')}",
             f"Категория:  {rec.get('category', '')}   "
@@ -443,6 +479,12 @@ class FindingsTabMixin:
             f"Исполнитель: {assignee or '—'}",
             f"Обнаружено: {rec.get('first_seen_at', '')} → {rec.get('last_seen_at', '')}",
         ]
+        acc = acceptance or {}
+        if acc.get('accepted'):
+            until = acc.get('until') or 'бессрочно'
+            note = ' ⚠ ИСТЕКЛО' if acc.get('expired') else ''
+            who = acc.get('approver') or '—'
+            lines.append(f"Принятие риска: до {until} (кем: {who}){note}")
         # KEV/EPSS exploitability badge — the strongest "fix now" signal, shown
         # before SLA because it is what tightened the deadline (single wording via
         # threat_intel.threat_label). Absent for un-enriched / non-CVE findings.
@@ -614,3 +656,49 @@ class FindingsTabMixin:
         self.findings_status.setText(result.get('msg') or "Готово")
         # Refresh the detail + triage state of the still-selected finding.
         self._on_finding_row_selected()
+
+    # ── risk acceptance (v1): accept / revoke the selected finding ──────────────
+
+    def _apply_finding_accept(self):
+        rec = self._selected_finding()
+        fid = rec.get('id')
+        if not fid:
+            return
+        reason = self.findings_accept_reason.text().strip()
+        approver = self.findings_accept_approver.text().strip()
+        until = self.findings_accept_until.text().strip()
+        self._set_triage_enabled(False)
+        self._set_busy(True)
+        self._run_async(
+            lambda f=fid, r=reason, a=approver, u=until:
+                self._write_finding_accept(f, r, a, u),
+            self._on_triage_written)
+
+    @staticmethod
+    def _write_finding_accept(finding_id: str, reason: str, approver: str,
+                              until: str) -> dict:
+        try:
+            FindingsStore().accept_risk(finding_id, reason=reason,
+                                        approver=approver, until=until)
+            return {'ok': True, 'msg': (f"риск принят до {until}" if until
+                                        else "риск принят (бессрочно)")}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    def _clear_finding_accept(self):
+        rec = self._selected_finding()
+        fid = rec.get('id')
+        if not fid:
+            return
+        self._set_triage_enabled(False)
+        self._set_busy(True)
+        self._run_async(lambda f=fid: self._write_finding_accept_clear(f),
+                        self._on_triage_written)
+
+    @staticmethod
+    def _write_finding_accept_clear(finding_id: str) -> dict:
+        try:
+            FindingsStore().clear_risk_acceptance(finding_id)
+            return {'ok': True, 'msg': "принятие риска снято"}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
