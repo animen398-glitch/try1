@@ -250,9 +250,9 @@ class OverviewTabMixin:
             "Выберите проект в таблице, укажите/выберите компанию и нажмите "
             "«Назначить». Пустое поле снимает принадлежность.")
         assign_row.addWidget(self.overview_assign_company)
-        btn_assign = StyledButton("Назначить", style='secondary')
-        btn_assign.clicked.connect(self._assign_company)
-        assign_row.addWidget(btn_assign)
+        self.btn_assign = StyledButton("Назначить", style='secondary')
+        self.btn_assign.clicked.connect(self._assign_company)
+        assign_row.addWidget(self.btn_assign)
         assign_row.addStretch()
         table_v.addLayout(assign_row)
         table_grp.setLayout(table_v)

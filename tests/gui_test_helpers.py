@@ -211,3 +211,11 @@ class RemediationE2EHost(_SyncRunMixin, RemediationHost):
 
 class AuditRunsE2EHost(_SyncRunMixin, AuditRunsHost):
     """AuditRunsHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class OverviewE2EHost(_SyncRunMixin, OverviewHost):
+    """OverviewHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class AssetsE2EHost(_SyncRunMixin, AssetsHost):
+    """AssetsHost whose _run_async runs inline (for click-driven e2e tests)."""

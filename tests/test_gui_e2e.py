@@ -10,8 +10,8 @@ Qt); the stores are isolated per test by the conftest fixtures.
 
 from core.findings_store import FindingsStore
 from tests.gui_test_helpers import (
-    AuditRunsE2EHost, EngagementsE2EHost, FindingsE2EHost, MissionsE2EHost,
-    RemediationE2EHost,
+    AssetsE2EHost, AuditRunsE2EHost, EngagementsE2EHost, FindingsE2EHost,
+    MissionsE2EHost, OverviewE2EHost, RemediationE2EHost,
 )
 
 
@@ -211,3 +211,48 @@ def test_e2e_audit_run_by_click(qapp):
     # default ROE is passive-only with no active checks — offline, no target traffic
     w.btn_audit_start.click()                    # → _query_audit_run → AuditRunStore
     assert AuditRunStore().list_runs('shop.io')
+
+
+# ── Overview: assign a company to a project by real button click ─────────────────
+
+def _seed_overview_project(base, slug_url='https://x.com'):
+    import json
+
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create(slug_url)
+    sid = '20260101_000000'
+    scan_dir = project.start_scan(sid)
+    report = {'scan_id': sid, 'finished_at': sid, 'warnings': [],
+              'executive_summary': {'risk_level': 'Low', 'risk_score': 10,
+                                    'risk_100': 10, 'metrics': {'risk_100': 10}}}
+    (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+    project.record_scan(scan_dir, report)
+    return project
+
+
+def test_e2e_overview_assign_company_by_click(qapp, tmp_path):
+    from core.company import CompanyRegistry
+    from core.project import ProjectStore
+    _seed_overview_project(str(tmp_path))
+    w = OverviewE2EHost()
+    w.settings = {'output_dir': str(tmp_path)}   # _overview_base() reads this
+    w._refresh_overview()                         # sync: portfolio → table
+    assert w.overview_table.rowCount() >= 1
+    w.overview_table.selectRow(0)                 # _selected_overview_slug() → 'x.com'
+    w.overview_assign_company.setEditText('Acme')
+    w.btn_assign.click()                          # → _do_assign → registry + project
+    assert any(c['name'] == 'Acme' for c in CompanyRegistry().list())
+    assert ProjectStore(str(tmp_path)).get('x.com').get_company()   # slug now set
+
+
+# ── Assets: the load → select → detail read chain (row-selection activation) ─────
+
+def test_e2e_assets_load_and_select_shows_detail(qapp):
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    AssetStore().sync('p1', 's1', [Asset('subdomain', 'api.x.com')])
+    w = AssetsE2EHost()
+    w._refresh_assets()                           # sync: projects → filter → table
+    assert w.assets_table.rowCount() >= 1
+    w.assets_table.selectRow(0)                   # itemSelectionChanged → detail
+    assert 'api.x.com' in w.assets_detail.toPlainText()
