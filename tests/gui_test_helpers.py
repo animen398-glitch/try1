@@ -219,3 +219,11 @@ class OverviewE2EHost(_SyncRunMixin, OverviewHost):
 
 class AssetsE2EHost(_SyncRunMixin, AssetsHost):
     """AssetsHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class CriticalityE2EHost(_SyncRunMixin, CriticalityHost):
+    """CriticalityHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class IacE2EHost(_SyncRunMixin, IacHost):
+    """IacHost whose _run_async runs inline (for click-driven e2e tests)."""

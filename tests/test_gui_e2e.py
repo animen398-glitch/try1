@@ -10,8 +10,9 @@ Qt); the stores are isolated per test by the conftest fixtures.
 
 from core.findings_store import FindingsStore
 from tests.gui_test_helpers import (
-    AssetsE2EHost, AuditRunsE2EHost, EngagementsE2EHost, FindingsE2EHost,
-    MissionsE2EHost, OverviewE2EHost, RemediationE2EHost,
+    AssetsE2EHost, AuditRunsE2EHost, CriticalityE2EHost, EngagementsE2EHost,
+    FindingsE2EHost, IacE2EHost, MissionsE2EHost, OverviewE2EHost,
+    RemediationE2EHost,
 )
 
 
@@ -256,3 +257,40 @@ def test_e2e_assets_load_and_select_shows_detail(qapp):
     assert w.assets_table.rowCount() >= 1
     w.assets_table.selectRow(0)                   # itemSelectionChanged → detail
     assert 'api.x.com' in w.assets_detail.toPlainText()
+
+
+# ── Criticality: set the project business context by real button click ───────────
+
+def test_e2e_criticality_set_business_default_by_click(qapp, tmp_path):
+    from core.asset_adapter import Asset
+    from core.asset_store import AssetStore
+    from core.business_context import show_business_context
+    from core.project import ProjectStore
+    AssetStore().sync('x.com', 's1', [Asset('subdomain', 'api.x.com')])
+    w = CriticalityE2EHost()
+    w.settings = {'output_dir': str(tmp_path)}    # _crit_base() reads this
+    w._refresh_criticality()                       # sync: projects → combo
+    assert w.crit_project.currentData() == 'x.com'
+    w.biz_default_crit.setCurrentIndex(w.biz_default_crit.findData('high'))
+    w.biz_default_sens.setCurrentIndex(w.biz_default_sens.findData('confidential'))
+    w.biz_apply.click()                            # → _write_business → metadata.json
+    ctx = show_business_context(
+        ProjectStore(str(tmp_path)), 'x.com')['business_context']
+    assert ctx['default']['criticality'] == 'high'
+    assert ctx['default']['data_sensitivity'] == 'confidential'
+
+
+# ── IaC: scan a local path by click → findings table populates ───────────────────
+
+def test_e2e_iac_scan_by_click(qapp, tmp_path):
+    dockerfile = tmp_path / 'Dockerfile'
+    dockerfile.write_text(
+        'FROM node:latest\nADD https://example.com/x.tar.gz /tmp/\n',
+        encoding='utf-8')
+    w = IacE2EHost()
+    w.iac_path.setText(str(dockerfile))
+    assert w.btn_iac_scan.isEnabled()
+    w.btn_iac_scan.click()                         # → _query_iac_scan → scan_path
+    # unpinned FROM + remote ADD are both flagged → the findings table has rows
+    assert w.iac_findings.rowCount() >= 1
+    assert w.btn_iac_export.isEnabled()            # export enabled once results exist
