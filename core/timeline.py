@@ -94,6 +94,7 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
                  audit_runs: Optional[List[Dict]] = None,
                  audit_events: Optional[List[Dict]] = None,
                  kev_events: Optional[List[Dict]] = None,
+                 acceptance_events: Optional[List[Dict]] = None,
                  missions: Optional[List[Dict]] = None,
                  mission_runs: Optional[List[Dict]] = None,
                  tool_runs: Optional[List[Dict]] = None,
@@ -182,6 +183,10 @@ def build_events(scans: List[Tuple[str, Optional[Dict]]],
     for ke in kev_events or []:
         if isinstance(ke, dict):
             events.append(ke)
+
+    for ae in acceptance_events or []:
+        if isinstance(ae, dict):
+            events.append(ae)
 
     for run in audit_runs or []:
         if not isinstance(run, dict):
@@ -375,6 +380,33 @@ def _derive_tool_runs(finding_events: Optional[List[Dict]],
                   key=lambda r: (str(r.get('at') or ''), str(r['scan_id'])))
 
 
+def acceptance_events(acceptances: Optional[List[Dict]]) -> List[Dict]:
+    """Timeline-shaped events for findings whose risk acceptance has expired
+    (derive-on-read like ``findings_sla.sla_events`` / ``threat_intel.kev_events``).
+
+    ``acceptances`` is ``FindingsStore.risk_acceptances(...)`` rows (each carrying a
+    derived ``acceptance`` state); only the expired ones become events, dated at
+    the ``until`` date (when the acceptance lapsed). Shape matches
+    ``build_events`` rows: ``{scan_id: None, at, type: 'acceptance_expired', title,
+    severity, section: 'findings'}``. Severity is fixed ``medium`` — a lapsed
+    acceptance means a previously-accepted risk is uncovered again and needs
+    re-review. De-dup/ordering are handled by the builder."""
+    out: List[Dict] = []
+    for a in acceptances or []:
+        if not isinstance(a, dict):
+            continue
+        acc = a.get('acceptance') if isinstance(a.get('acceptance'), dict) else {}
+        if not acc.get('expired'):
+            continue
+        sev = str(a.get('severity') or 'info').strip().lower() or 'info'
+        title = (f"[{sev}] {a.get('title') or ''} — принятие риска истекло "
+                 f"(до {acc.get('until') or '—'})").strip()
+        out.append({'scan_id': None, 'at': acc.get('until') or a.get('updated_at'),
+                    'type': 'acceptance_expired', 'title': title,
+                    'severity': 'medium', 'section': 'findings'})
+    return out
+
+
 def build_timeline(project) -> Dict:
     """Derive a project's full timeline (series + events) on read.
 
@@ -389,6 +421,7 @@ def build_timeline(project) -> Dict:
     finding_events: List[Dict] = []
     sla_evts: List[Dict] = []
     kev_evts: List[Dict] = []
+    acceptance_evts: List[Dict] = []
     try:
         store = FindingsStore()
         finding_events = store.project_events(project.slug)
@@ -400,6 +433,8 @@ def build_timeline(project) -> Dict:
         sla_evts = findings_sla.sla_events(
             active, reopened=store.reopen_dates(project.slug))
         kev_evts = threat_intel.kev_events(active)
+        # Expired risk acceptances re-surface as change-feed events (v1 loop close).
+        acceptance_evts = acceptance_events(store.risk_acceptances(project.slug))
     except Exception:   # noqa: BLE001 — timeline must render even if findings fail
         finding_events, sla_evts, kev_evts = finding_events, sla_evts, kev_evts
     try:
@@ -481,6 +516,7 @@ def build_timeline(project) -> Dict:
             audit_runs,
             audit_events,
             kev_evts,
+            acceptance_events=acceptance_evts,
             missions=missions,
             mission_runs=mission_runs,
             tool_runs=tool_runs,

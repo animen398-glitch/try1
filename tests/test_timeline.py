@@ -592,3 +592,49 @@ def test_build_timeline_emits_new_kev_event(tmp_path):
     assert len(kevs) == 1
     assert kevs[0]['severity'] == 'high'
     assert 'Log4Shell' in kevs[0]['title'] and 'KEV' in kevs[0]['title']
+
+
+# ── risk acceptance expiry events (v1 loop close) ───────────────────────────────
+
+def test_acceptance_events_shapes_only_expired():
+    rows = [
+        {'finding_id': 'f1', 'title': 'Old accept', 'severity': 'high',
+         'updated_at': '2026-01-01', 'acceptance': {
+             'accepted': True, 'expired': True, 'until': '2026-06-01'}},
+        {'finding_id': 'f2', 'title': 'Still valid', 'severity': 'low',
+         'updated_at': '2026-01-01', 'acceptance': {
+             'accepted': True, 'expired': False, 'until': '2099-01-01'}},
+    ]
+    evs = timeline.acceptance_events(rows)
+    assert len(evs) == 1
+    ev = evs[0]
+    assert ev['type'] == 'acceptance_expired' and ev['section'] == 'findings'
+    assert ev['at'] == '2026-06-01' and ev['severity'] == 'medium'
+    assert 'истекло' in ev['title']
+
+
+def test_acceptance_events_merged_into_feed():
+    aevts = [{'scan_id': None, 'at': '2026-05-01', 'type': 'acceptance_expired',
+              'title': '[high] X — принятие риска истекло (до 2026-05-01)',
+              'severity': 'medium', 'section': 'findings'}]
+    fevents = [{'type': 'CREATED', 'scan_id': 's1', 'at': '2026-01-01',
+                'title': 'X', 'severity': 'high'}]
+    types = [e['type'] for e in
+             timeline.build_events([], fevents, acceptance_events=aevts)]
+    assert types == ['new_finding', 'acceptance_expired']   # chronological by 'at'
+
+
+def test_build_timeline_surfaces_expired_acceptance(tmp_path):
+    from core.findings_adapter import Finding
+    from core.findings_store import FindingsStore
+    from core.project import ProjectStore
+
+    project = ProjectStore(tmp_path).get_or_create('https://x.com')
+    store = FindingsStore()
+    fid = store.upsert(project.slug, Finding(
+        category='vuln', rule_id='r', title='Accepted vuln', severity='high',
+        location='https://x.com/a').to_store(), scan_id='s1')['finding']['id']
+    store.accept_risk(fid, until='2000-01-01')          # already-past → expired
+
+    tl = timeline.build_timeline(project)
+    assert any(e['type'] == 'acceptance_expired' for e in tl['events'])
