@@ -38,7 +38,7 @@ from core import portfolio as pf
 from core.project import ProjectStore
 from core.timeline import build_series
 from gui import theme
-from gui.ui_components import SectionGroupBox, StyledButton
+from gui.ui_components import ResultsDisplay, SectionGroupBox, StyledButton
 
 
 class OverviewTabMixin:
@@ -257,6 +257,34 @@ class OverviewTabMixin:
         table_v.addLayout(assign_row)
         table_grp.setLayout(table_v)
         layout.addWidget(table_grp, stretch=2)
+
+        # Compare two projects side by side (A vs B). Reuses the loaded portfolio
+        # rows — no extra I/O until "Сравнить" is pressed (derive-on-read).
+        compare_grp = SectionGroupBox("Сравнение проектов (A vs B)")
+        compare_v = QVBoxLayout()
+        compare_row = QHBoxLayout()
+        compare_row.addWidget(QLabel("Проект A:"))
+        self.overview_compare_a = QComboBox()
+        self.overview_compare_a.setMinimumWidth(180)
+        compare_row.addWidget(self.overview_compare_a)
+        compare_row.addWidget(QLabel("Проект B:"))
+        self.overview_compare_b = QComboBox()
+        self.overview_compare_b.setMinimumWidth(180)
+        compare_row.addWidget(self.overview_compare_b)
+        self.btn_overview_compare = StyledButton("Сравнить", style='secondary')
+        self.btn_overview_compare.setToolTip(
+            "Сравнить риск, поверхность и находки двух проектов бок о бок.")
+        self.btn_overview_compare.clicked.connect(self._compare_projects)
+        compare_row.addWidget(self.btn_overview_compare)
+        compare_row.addStretch()
+        compare_v.addLayout(compare_row)
+        self.overview_compare_result = ResultsDisplay()
+        self.overview_compare_result.setMaximumHeight(220)
+        self.overview_compare_result.setPlaceholderText(
+            "Выберите два проекта и нажмите «Сравнить».")
+        compare_v.addWidget(self.overview_compare_result)
+        compare_grp.setLayout(compare_v)
+        layout.addWidget(compare_grp)
 
         # Exposure heatmap.
         heat_grp = SectionGroupBox("Карта рисков (проекты × категории)")
@@ -734,6 +762,78 @@ class OverviewTabMixin:
             self.overview_trend_project.setCurrentIndex(idx)
         self.overview_trend_project.blockSignals(False)
         self._apply_overview_trend()
+        self._populate_compare_combos(rows)
+
+    def _populate_compare_combos(self, rows: list):
+        """Fill the A/B compare selectors from the loaded portfolio slugs,
+        defaulting B to the second project so a first click compares the two
+        worst-risk projects."""
+        slugs = [row.get('slug') for row in rows if row.get('slug')]
+        for combo, default_idx in ((self.overview_compare_a, 0),
+                                   (self.overview_compare_b, 1)):
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for slug in slugs:
+                combo.addItem(slug, slug)
+            idx = combo.findData(current)
+            combo.setCurrentIndex(idx if idx >= 0 else min(default_idx, len(slugs) - 1))
+            combo.blockSignals(False)
+
+    def _compare_projects(self):
+        slug_a = self.overview_compare_a.currentData()
+        slug_b = self.overview_compare_b.currentData()
+        if not slug_a or not slug_b:
+            self.overview_compare_result.setPlainText("Нет проектов для сравнения")
+            return
+        if slug_a == slug_b:
+            self.overview_compare_result.setPlainText(
+                "Выберите два разных проекта")
+            return
+        base = self._overview_base()
+        self._set_busy(True)
+        self._run_async(lambda b=base, a=slug_a, x=slug_b: self._query_compare(b, a, x),
+                        self._on_compare_done)
+
+    @staticmethod
+    def _query_compare(base: str, slug_a: str, slug_b: str) -> dict:
+        try:
+            from core.project_compare import load_project_compare
+            return load_project_compare(base, slug_a, slug_b)
+        except Exception as e:  # noqa: BLE001 — surface as data, never crash UI
+            return {'error': str(e)}
+
+    def _on_compare_done(self, result: dict):
+        self._set_busy(False)
+        self.overview_compare_result.setPlainText(self._render_compare(result))
+
+    @staticmethod
+    def _render_compare(data: dict) -> str:
+        """A monospace side-by-side view of a project_compare result (pure)."""
+        if not isinstance(data, dict) or data.get('error'):
+            return f"Ошибка сравнения: {(data or {}).get('error', 'нет данных')}"
+        a, b = data.get('a') or {}, data.get('b') or {}
+        sa, sb = a.get('slug', 'A'), b.get('slug', 'B')
+
+        def _cell(v):
+            return '—' if v is None else str(v)
+
+        lines = [f"Сравнение:  {sa}   vs   {sb}"]
+        s = data.get('summary') or {}
+        lines.append(
+            f"Хуже по метрикам:  {sa} — {s.get('a_worse', 0)}, "
+            f"{sb} — {s.get('b_worse', 0)}, ничья — {s.get('tie', 0)}")
+        lines.append("")
+        lines.append(f"{'Метрика':<22}{sa[:14]:<16}{sb[:14]:<16}{'Δ':<8}Хуже")
+        worse_label = {'a': sa, 'b': sb, 'tie': '=', None: '—'}
+        for m in data.get('metrics') or []:
+            delta = m.get('delta')
+            delta_text = '—' if delta is None else f"{delta:+g}"
+            lines.append(
+                f"{str(m.get('label', '')):<22}"
+                f"{_cell(m.get('a')):<16}{_cell(m.get('b')):<16}"
+                f"{delta_text:<8}{worse_label.get(m.get('worse'), '—')}")
+        return "\n".join(lines)
 
     def _on_overview_row_selected(self):
         rows = self.overview_table.selectionModel().selectedRows()

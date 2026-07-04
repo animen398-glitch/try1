@@ -412,3 +412,54 @@ def test_on_bundle_imported_variants(qapp):
     assert 'x.com' in w.overview_status.text() and 'Импортирован' in w.overview_status.text()
     w._on_bundle_imported({'slug': 'y.com', 'skipped': True, 'reason': 'project exists'})
     assert 'Пропущено' in w.overview_status.text()
+
+
+# ── project compare (A vs B) ────────────────────────────────────────────────────
+
+def test_render_compare_side_by_side(qapp):
+    data = {'a': {'slug': 'low.com'}, 'b': {'slug': 'high.com'},
+            'summary': {'a_worse': 0, 'b_worse': 2, 'tie': 1},
+            'metrics': [
+                {'label': 'Risk level', 'a': 'Low', 'b': 'High',
+                 'delta': None, 'worse': 'b'},
+                {'label': 'Risk score', 'a': 15, 'b': 65, 'delta': 50, 'worse': 'b'},
+                {'label': 'Medium severity', 'a': 1, 'b': 1, 'delta': 0,
+                 'worse': 'tie'}]}
+    text = OverviewTabMixin._render_compare(data)
+    assert 'low.com' in text and 'high.com' in text
+    assert 'Risk score' in text and '+50' in text
+    assert 'high.com — 2' in text                     # summary worse-count line
+
+
+def test_render_compare_error(qapp):
+    text = OverviewTabMixin._render_compare({'error': 'project not found: ghost'})
+    assert 'Ошибка' in text and 'ghost' in text
+
+
+def test_query_compare_over_workspace(qapp, tmp_path):
+    _seed_project(tmp_path, 'https://low.com', scores=(15,))
+    _seed_project(tmp_path, 'https://high.com', scores=(65,))
+    out = OverviewTabMixin._query_compare(str(tmp_path), 'low.com', 'high.com')
+    rs = {m['key']: m for m in out['metrics']}['risk_score']
+    assert rs['a'] == 15 and rs['b'] == 65 and rs['worse'] == 'b'
+
+
+def test_populate_compare_combos_from_rows(qapp):
+    w = _window(qapp)
+    w._populate_compare_combos([{'slug': 'a.com'}, {'slug': 'b.com'}])
+    assert w.overview_compare_a.currentData() == 'a.com'    # A defaults to first
+    assert w.overview_compare_b.currentData() == 'b.com'    # B defaults to second
+
+
+def test_e2e_overview_compare_by_click(qapp, tmp_path):
+    from tests.gui_test_helpers import OverviewE2EHost
+    _seed_project(tmp_path, 'https://low.com', scores=(15,))
+    _seed_project(tmp_path, 'https://high.com', scores=(65,))
+    w = OverviewE2EHost()
+    w.settings = {'output_dir': str(tmp_path)}
+    w._refresh_overview()                              # populates the compare combos
+    w.overview_compare_a.setCurrentIndex(w.overview_compare_a.findData('low.com'))
+    w.overview_compare_b.setCurrentIndex(w.overview_compare_b.findData('high.com'))
+    w.btn_overview_compare.click()                     # → _query_compare → render
+    assert 'low.com' in w.overview_compare_result.toPlainText()
+    assert 'Risk score' in w.overview_compare_result.toPlainText()
