@@ -32,15 +32,51 @@ def _target(report: Dict[str, Any]) -> str:
 
 
 def _extract_source_map_finder(report: Dict[str, Any]) -> Dict[str, Any]:
-    """``{url, urls}`` from ``recon.data.source_maps`` (captured ``.map`` URLs)."""
-    recon = _phase_data(report, 'recon')
+    """``{url, urls}`` of captured ``.map`` URLs, merged from **both** phases that
+    capture source maps: the recon phase (``recon.data.source_maps``) and the
+    security-audit phase (``security.data.source_maps``, which the SecurityAuditor
+    finds in served JS). Deduplicated, recon order first — so a scan that ran only
+    the security audit still bridges its source maps."""
     urls: List[str] = []
-    for m in recon.get('source_maps') or []:
-        if isinstance(m, dict) and m.get('url'):
-            urls.append(str(m['url']))
+    seen: set = set()
+    for phase in ('recon', 'security'):
+        for m in _phase_data(report, phase).get('source_maps') or []:
+            if isinstance(m, dict) and m.get('url'):
+                url = str(m['url'])
+                if url not in seen:
+                    seen.add(url)
+                    urls.append(url)
     if not urls:
         return {}
     return {'url': _target(report), 'urls': urls}
+
+
+# A truthful ``__schema`` marker: the scan already *confirmed* introspection was
+# reachable on the endpoint (it stores only a boolean flag, not the raw response),
+# so we hand the parser the introspection-response shape it expects. Non-empty so
+# ``tool_parsers._introspection_enabled`` reads it as enabled.
+_SCHEMA_MARKER = {'__schema': {'queryType': {'name': 'Query'}}}
+
+
+def _extract_graphql_introspector(report: Dict[str, Any]) -> Dict[str, Any]:
+    """``{url, introspection}`` from ``security.data.graphql`` (the SecurityAuditor's
+    GraphQL endpoint scan). Each captured endpoint carries a confirmed
+    ``introspection`` *flag*; when set, the schema was reachable, so the first such
+    endpoint is bridged with the ``__schema``-bearing response the parser expects.
+    If GraphQL is reachable but introspection is off, the endpoint is still bridged
+    with no schema (a tool-run then completes with zero findings, as a live
+    introspection-off run would). Absent when no GraphQL endpoint was found."""
+    graphql = _phase_data(report, 'security').get('graphql')
+    endpoints = [g for g in (graphql or [])
+                 if isinstance(g, dict) and g.get('graphql')]
+    if not endpoints:
+        return {}
+    for g in endpoints:
+        if g.get('introspection'):
+            loc = str(g.get('url') or _target(report))
+            return {'url': loc, 'introspection': dict(_SCHEMA_MARKER)}
+    loc = str(endpoints[0].get('url') or _target(report))
+    return {'url': loc, 'introspection': {}}
 
 
 def _extract_safe_active_prober(report: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,6 +130,7 @@ EXTRACTORS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     'safe_active_prober': _extract_safe_active_prober,
     'header_audit': _extract_header_audit,
     'cookie_audit': _extract_cookie_audit,
+    'graphql_introspector': _extract_graphql_introspector,
 }
 
 

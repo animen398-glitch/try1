@@ -55,6 +55,71 @@ def test_unknown_or_unbridged_tool_yields_empty():
     assert te.evidence_from_report(_report(), '') == {}
 
 
+# ── graphql_introspector extractor + merged source-map fidelity ──────────────────
+
+def _report_graphql(introspection=True):
+    return {
+        'url': 'https://shop.io',
+        'phases': {
+            'security': {'status': 'Success', 'data': {
+                'source_maps': [
+                    {'url': 'https://shop.io/served.js.map', 'has_content': True}],
+                'graphql': [
+                    {'url': 'https://shop.io/graphql', 'graphql': True,
+                     'introspection': introspection},
+                    {'no_graphql_flag': 1},              # ignored (graphql falsy)
+                ],
+            }},
+        },
+    }
+
+
+def test_graphql_evidence_when_introspection_on():
+    ev = te.evidence_from_report(_report_graphql(True), 'graphql_introspector')
+    assert ev['url'] == 'https://shop.io/graphql'
+    assert ev['introspection'].get('__schema')          # __schema-bearing response
+
+
+def test_graphql_evidence_when_introspection_off():
+    ev = te.evidence_from_report(_report_graphql(False), 'graphql_introspector')
+    # reachable endpoint still bridged, but with no schema → parser flags nothing
+    assert ev['url'] == 'https://shop.io/graphql'
+    assert ev['introspection'] == {}
+
+
+def test_graphql_absent_without_endpoints():
+    assert te.evidence_from_report({'phases': {'security': {'data': {}}}},
+                                   'graphql_introspector') == {}
+    assert te.evidence_from_report(_report(), 'graphql_introspector') == {}
+
+
+def test_graphql_round_trip_through_parser():
+    on = te.evidence_from_report(_report_graphql(True), 'graphql_introspector')
+    assert parse_tool_output('graphql_introspector', on)['findings']
+    off = te.evidence_from_report(_report_graphql(False), 'graphql_introspector')
+    assert parse_tool_output('graphql_introspector', off)['findings'] == []
+
+
+def test_source_map_merges_security_phase():
+    # a scan that captured source maps only in the security-audit phase still bridges
+    ev = te.evidence_from_report(_report_graphql(), 'source_map_finder')
+    assert ev['urls'] == ['https://shop.io/served.js.map']
+
+
+def test_source_map_merges_both_phases_deduped():
+    rep = _report()
+    rep['phases']['security'] = {'data': {'source_maps': [
+        {'url': 'https://shop.io/app.js.map'},           # dup of recon → deduped
+        {'url': 'https://shop.io/served.js.map'}]}}       # new → appended
+    ev = te.evidence_from_report(rep, 'source_map_finder')
+    assert ev['urls'] == ['https://shop.io/app.js.map', 'https://shop.io/vendor.js.map',
+                          'https://shop.io/served.js.map']
+
+
+def test_available_tools_includes_graphql_when_present():
+    assert 'graphql_introspector' in te.available_tools(_report_graphql())
+
+
 def test_available_tools_lists_only_bridgeable():
     assert te.available_tools(_report()) == ['safe_active_prober',
                                              'source_map_finder']
