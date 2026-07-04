@@ -456,7 +456,6 @@ class FindingsStore(SQLiteStore):
         return result
 
     def _record_oneshot(self, finding_ids: List[str], event_type: str, *,
-                        reset_event: str = 'REOPENED',
                         scan_id: Optional[str] = None,
                         now: Optional[str] = None) -> List[str]:
         """Stamp each finding with a one-shot ``event_type`` marker and return the
@@ -464,10 +463,9 @@ class FindingsStore(SQLiteStore):
         trigger has no Scan Diff representation (SLA breach, audit-only secret) and
         so need a persisted "already fired this episode" flag without a second
         table. A marker is treated as *already fired* only when it is newer than the
-        finding's latest ``reset_event`` (``REOPENED`` by default — a fixed finding
-        that reappears restarts the SLA clock / re-exposes a secret; the acceptance
-        channel resets on a fresh ``ACCEPTED``), so it is eligible to fire again on
-        its next occurrence."""
+        finding's latest ``REOPENED`` event, so a fixed finding that reappears
+        (which restarts the SLA clock / re-exposes a secret) is eligible to fire
+        again on its next occurrence."""
         ids = list(dict.fromkeys(str(i) for i in (finding_ids or []) if i))
         if not ids:
             return []
@@ -482,7 +480,7 @@ class FindingsStore(SQLiteStore):
                     f' GROUP BY finding_id', (et, *ids)).fetchall()
                 return {r['fid']: r['at'] for r in rows}
 
-            marker_at, reopen_at = latest(event_type), latest(reset_event)
+            marker_at, reopen_at = latest(event_type), latest('REOPENED')
             for fid in ids:
                 marked = marker_at.get(fid)
                 reopened = reopen_at.get(fid)
