@@ -10,9 +10,9 @@ Qt); the stores are isolated per test by the conftest fixtures.
 
 from core.findings_store import FindingsStore
 from tests.gui_test_helpers import (
-    AssetsE2EHost, AuditRunsE2EHost, CriticalityE2EHost, EngagementsE2EHost,
-    FindingsE2EHost, IacE2EHost, MissionsE2EHost, OverviewE2EHost,
-    RemediationE2EHost, TimelineE2EHost,
+    AcceptancesE2EHost, AssetsE2EHost, AuditRunsE2EHost, CriticalityE2EHost,
+    EngagementsE2EHost, FindingsE2EHost, IacE2EHost, MissionsE2EHost,
+    OverviewE2EHost, RemediationE2EHost, TimelineE2EHost,
 )
 
 
@@ -87,6 +87,19 @@ def test_e2e_findings_bulk_assign_by_click(qapp):
     w.findings_assignee.setText('team-x')
     w.btn_findings_assign.click()               # → _write_finding_bulk_assign → store
     assert all(fs.get_assignee(i) == 'team-x' for i in ids)
+
+
+def test_e2e_acceptances_revoke_by_click(qapp):
+    fs, fid = _seed_finding()
+    fs.accept_risk(fid, reason='ok', approver='ciso', until='2099-01-01')
+    w = AcceptancesE2EHost()
+    w._refresh_acceptances()                     # sync: projects → accepted rows
+    assert w.acc_table.rowCount() == 1
+    w.acc_table.selectRow(0)                      # enables revoke
+    assert w.btn_acc_revoke.isEnabled()
+    w.btn_acc_revoke.click()                      # → _write_acc_revoke → store
+    assert fs.risk_acceptance_state(fid)['accepted'] is False
+    assert w.acc_table.rowCount() == 0            # row drops off after reload
 
 
 def test_e2e_findings_bulk_accept_by_click(qapp):

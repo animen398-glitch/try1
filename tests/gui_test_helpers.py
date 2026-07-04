@@ -17,6 +17,7 @@ from gui.tab_iac import IacTabMixin
 from gui.tab_osint_catalog import OsintCatalogTabMixin
 from gui.tab_overview import OverviewTabMixin
 from gui.tab_remediation import RemediationTabMixin
+from gui.tab_acceptances import AcceptancesTabMixin
 from gui.tab_technology_risk import TechnologyRiskTabMixin
 from gui.tab_timeline import TimelineTabMixin
 from gui.tab_audit_runs import AuditRunsTabMixin
@@ -173,6 +174,16 @@ class RemediationHost(_BaseHost, RemediationTabMixin, DashboardTabMixin):
         self._build_remediation_tab()
 
 
+class AcceptancesHost(_BaseHost, AcceptancesTabMixin, DashboardTabMixin):
+    def __init__(self):
+        super().__init__()
+        self._acc_loading = False
+        self._acc_loaded = False
+        self._acc_table_loading = False
+        self._acc_filter_pending = False
+        self._build_acceptances_tab()
+
+
 class AuditRunsHost(_BaseHost, AuditRunsTabMixin, DashboardTabMixin):
     def __init__(self):
         super().__init__()
@@ -207,6 +218,10 @@ class EngagementsE2EHost(_SyncRunMixin, EngagementsHost):
 
 class RemediationE2EHost(_SyncRunMixin, RemediationHost):
     """RemediationHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class AcceptancesE2EHost(_SyncRunMixin, AcceptancesHost):
+    """AcceptancesHost whose _run_async runs inline (for click-driven e2e tests)."""
 
 
 class AuditRunsE2EHost(_SyncRunMixin, AuditRunsHost):
