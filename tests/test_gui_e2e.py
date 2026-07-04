@@ -95,6 +95,51 @@ def test_e2e_missions_run_tool_by_click(qapp):
     assert FindingsStore().list_findings('shop.io')
 
 
+def test_e2e_missions_create_by_click(qapp):
+    from core.mission_store import MissionStore
+    w = MissionsE2EHost()
+    w._refresh_mission_projects()
+    w.mission_create_project.setText('shop.io')
+    w.mission_create_objective.setText('authorized review')
+    w.mission_create_domains.setText('shop.io')
+    w.mission_create_actions['headers_check'].setChecked(True)
+    w.btn_mission_create.click()                 # → _do_create_mission → MissionStore
+    missions = MissionStore().list_missions('shop.io')
+    assert len(missions) == 1
+    assert missions[0]['status'] == 'draft'
+
+
+def test_e2e_missions_advance_status_by_click(qapp):
+    from core.mission_store import MissionStore
+    saved = _seed_mission()
+    w = MissionsE2EHost()
+    w._refresh_mission_projects()
+    w.mission_table.selectRow(0)
+    idx = w.mission_advance_status.findData('ready')
+    assert idx >= 0                              # draft→ready offered
+    w.mission_advance_status.setCurrentIndex(idx)
+    assert w.btn_mission_advance.isEnabled()
+    w.btn_mission_advance.click()                # → _do_advance_mission → store
+    assert MissionStore().get_mission(saved['id'])['status'] == 'ready'
+
+
+def test_e2e_missions_run_by_click(qapp):
+    from core.mission_store import MissionStore
+    from core.pentest_mission import advance_mission_status
+    saved = _seed_mission()
+    store = MissionStore()
+    store.save_mission(                          # a mission runs only from 'ready'
+        advance_mission_status(store.get_mission(saved['id'])['payload'], 'ready'))
+    w = MissionsE2EHost()
+    w._refresh_mission_projects()
+    w.mission_table.selectRow(0)
+    assert w.btn_mission_run.isEnabled()         # ready → run enabled
+    w.btn_mission_run.click()                    # → _do_run_mission → run_mission
+    updated = MissionStore().get_mission(saved['id'])
+    assert updated['status'] == 'completed'
+    assert updated['payload']['linked_audit_run_ids']   # audit run linked
+
+
 def test_e2e_missions_fill_evidence_from_scan_by_click(qapp, tmp_path, monkeypatch):
     import json
 
@@ -156,6 +201,20 @@ def test_e2e_engagement_advance_status_by_click(qapp):
     assert w.btn_engagement_advance.isEnabled()
     w.btn_engagement_advance.click()                   # → _do_advance_engagement → store
     assert EngagementStore().list_engagements('shop.io')[0]['status'] == 'authorized'
+
+
+def test_e2e_engagement_run_retest_by_click(qapp):
+    from core.engagement_store import EngagementStore
+    from core.retest_run_store import RetestRunStore
+    w = EngagementsE2EHost()
+    _fill_engagement_create(w)
+    w.btn_engagement_create.click()                    # create + auto-refresh
+    assert w.engagement_table.rowCount() >= 1
+    w.engagement_table.selectRow(0)                    # enables retest for the engagement
+    assert w.btn_engagement_run_retest.isEnabled()
+    w.btn_engagement_run_retest.click()                # → run_retest → RetestRunStore
+    eid = EngagementStore().list_engagements('shop.io')[0]['id']
+    assert RetestRunStore().list_retest_runs(engagement_id=eid)
 
 
 # ── Remediation: seed tasks + edit a task by real button clicks ──────────────────
