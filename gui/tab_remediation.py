@@ -22,7 +22,9 @@ from qtpy.QtWidgets import (
 
 from core.remediation import REMEDIATION_STATUSES, STATUS_LABELS
 from gui import theme
-from gui.ui_components import FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton
+from gui.ui_components import (
+    FlowLayout, ResultsDisplay, SectionGroupBox, StyledButton, TablePaginator,
+)
 
 
 class RemediationTabMixin:
@@ -86,6 +88,12 @@ class RemediationTabMixin:
         header.setSectionResizeMode(2, QHeaderView.Stretch)   # finding title fills
         self.rem_table.itemSelectionChanged.connect(self._on_rem_row_selected)
         layout.addWidget(self.rem_table, stretch=1)
+        # Page a large task list so populating the widget never freezes the UI;
+        # the full list is kept for selection (mirrors the Findings tab).
+        self._rem_paginator = TablePaginator(
+            self.rem_table, self._render_rem_row,
+            on_page_changed=self._on_rem_page_changed)
+        layout.addWidget(self._rem_paginator.widget)
 
         # ── edit row (acts on the selected task) ────────────────────────────
         edit_grp = SectionGroupBox("Изменить выбранную задачу")
@@ -223,30 +231,35 @@ class RemediationTabMixin:
         for key, label in self.rem_rollup.items():
             label.setText(str(summary.get(key, 0)))
 
+    @staticmethod
+    def _render_rem_row(table, r: int, rec: dict):
+        task = rec.get('task') or {}
+        severity = str(rec.get('severity', '')).lower()
+        values = [
+            rec.get('status_label', task.get('status', '')),
+            severity,
+            rec.get('title', ''),
+            task.get('owner', ''),
+            task.get('due', ''),
+        ]
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            if col == 1:
+                color = theme.severity_color(severity)
+                if color:
+                    item.setForeground(QColor(color))
+            elif col == 4 and rec.get('overdue'):
+                item.setForeground(QColor(theme.severity_color('critical')))
+            table.setItem(r, col, item)
+
     def _populate_rem_table(self, tasks: list):
-        self._rem_records = tasks
-        self.rem_table.setRowCount(0)
-        for rec in tasks:
-            task = rec.get('task') or {}
-            r = self.rem_table.rowCount()
-            self.rem_table.insertRow(r)
-            severity = str(rec.get('severity', '')).lower()
-            values = [
-                rec.get('status_label', task.get('status', '')),
-                severity,
-                rec.get('title', ''),
-                task.get('owner', ''),
-                task.get('due', ''),
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(str(val))
-                if col == 1:
-                    color = theme.severity_color(severity)
-                    if color:
-                        item.setForeground(QColor(color))
-                elif col == 4 and rec.get('overdue'):
-                    item.setForeground(QColor(theme.severity_color('critical')))
-                self.rem_table.setItem(r, col, item)
+        self._rem_records = tasks          # full list — selection
+        self._rem_paginator.set_rows(tasks)
+        self.rem_detail.clear()
+        self.btn_rem_apply.setEnabled(False)
+
+    def _on_rem_page_changed(self):
+        # A new page carries no selection; clear the stale detail/edit state.
         self.rem_detail.clear()
         self.btn_rem_apply.setEnabled(False)
 
@@ -256,10 +269,9 @@ class RemediationTabMixin:
         sel = self.rem_table.selectionModel().selectedRows()
         if not sel:
             return {}
-        idx = sel[0].row()
-        if not (0 <= idx < len(self._rem_records)):
-            return {}
-        return self._rem_records[idx]
+        # The table shows only the current page — map the row to the full-list
+        # record via the paginator.
+        return self._rem_paginator.record_at(sel[0].row()) or {}
 
     def _on_rem_row_selected(self):
         rec = self._selected_rem()

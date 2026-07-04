@@ -124,6 +124,24 @@ def test_selection_presets_edit_and_enables_apply(qapp):
     assert w.rem_edit_due.text() == '2026-08-01'
 
 
+def test_large_task_list_is_paginated(qapp):
+    w = _window(qapp)
+    tasks = [{
+        'finding_id': f'f{i}', 'title': f'V{i}', 'severity': 'high',
+        'category': 'vuln', 'updated_at': 't', 'status_label': 'Открыто',
+        'task': {'status': 'open', 'owner': f'o{i}', 'due': ''}, 'overdue': False,
+    } for i in range(250)]
+    w._populate_rem_table(tasks)
+    # Only a window is rendered into the widget; the full list is retained.
+    assert w.rem_table.rowCount() == 200
+    assert len(w._rem_paginator.all_rows()) == 250
+    # Selecting a row on page 2 maps to the correct full-list record.
+    w._rem_paginator.go_to(1)
+    assert w.rem_table.rowCount() == 50
+    w.rem_table.selectRow(3)                 # page 2, row 3 → full index 203
+    assert w._selected_rem()['finding_id'] == 'f203'
+
+
 def test_write_rem_task_persists(qapp):
     s, ids = _seed_findings('shop.com', 1)
     set_task(s, ids[0], status='open')
