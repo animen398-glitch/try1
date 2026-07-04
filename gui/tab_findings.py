@@ -91,7 +91,9 @@ class FindingsTabMixin:
         self.findings_table.setHorizontalHeaderLabels(self.FINDINGS_COLUMNS)
         self.findings_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.findings_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.findings_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        # Extended selection so several findings can be triaged in one action
+        # (bulk status / assign); a single-row selection behaves exactly as before.
+        self.findings_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.findings_table.verticalHeader().setVisible(False)
         self.findings_table.setAlternatingRowColors(True)
         header = self.findings_table.horizontalHeader()
@@ -378,12 +380,25 @@ class FindingsTabMixin:
         # shows only the current page).
         return self._findings_paginator.record_at(sel[0].row()) or {}
 
+    def _selected_findings(self) -> list:
+        """All selected findings' records (current page), for bulk triage."""
+        recs = []
+        for idx in self.findings_table.selectionModel().selectedRows():
+            rec = self._findings_paginator.record_at(idx.row())
+            if rec:
+                recs.append(rec)
+        return recs
+
     def _on_finding_row_selected(self):
         rec = self._selected_finding()
         if not rec:
             self._set_triage_enabled(False)
             return
         self._set_triage_enabled(True)
+        n_sel = len(self.findings_table.selectionModel().selectedRows())
+        if n_sel > 1:
+            # Multi-select: status/assign act on all; detail shows the first.
+            self.findings_status.setText(f"Выбрано находок: {n_sel} (массовый триаж)")
         # Preselect the current status in the change combo.
         i = self.findings_new_status.findData(rec.get('status'))
         if i >= 0:
@@ -490,24 +505,36 @@ class FindingsTabMixin:
     # ── status change (write) ──────────────────────────────────────────────────
 
     def _apply_finding_status(self):
-        rec = self._selected_finding()
-        fid = rec.get('id')
-        if not fid:
+        ids = [r.get('id') for r in self._selected_findings() if r.get('id')]
+        if not ids:
             return
         new_status = self.findings_new_status.currentData()
         note = self.findings_note.text().strip() or None
         self.btn_findings_apply.setEnabled(False)
         self._set_busy(True)
-        self._run_async(
-            lambda f=fid, s=new_status, n=note: self._write_finding_status(f, s, n),
-            self._on_finding_status_written,
-        )
+        if len(ids) > 1:               # bulk over every selected finding
+            self._run_async(
+                lambda i=ids, s=new_status, n=note: self._write_finding_bulk_status(i, s, n),
+                self._on_finding_status_written)
+        else:
+            self._run_async(
+                lambda f=ids[0], s=new_status, n=note: self._write_finding_status(f, s, n),
+                self._on_finding_status_written)
 
     @staticmethod
     def _write_finding_status(finding_id: str, status: str, note) -> dict:
         try:
             FindingsStore().set_status(finding_id, status, note=note, source='user')
             return {'ok': True}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    @staticmethod
+    def _write_finding_bulk_status(ids, status: str, note) -> dict:
+        try:
+            out = FindingsStore().bulk_set_status(ids, status, note=note,
+                                                  source='user')
+            return {'ok': True, **out}
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}
 
@@ -523,15 +550,18 @@ class FindingsTabMixin:
     # ── triage: assignment + comment (write) ────────────────────────────────────
 
     def _apply_finding_assign(self):
-        rec = self._selected_finding()
-        fid = rec.get('id')
-        if not fid:
+        ids = [r.get('id') for r in self._selected_findings() if r.get('id')]
+        if not ids:
             return
         who = self.findings_assignee.text().strip()
         self._set_triage_enabled(False)
         self._set_busy(True)
-        self._run_async(lambda f=fid, w=who: self._write_finding_assign(f, w),
-                        self._on_triage_written)
+        if len(ids) > 1:               # bulk over every selected finding
+            self._run_async(lambda i=ids, w=who: self._write_finding_bulk_assign(i, w),
+                            self._on_triage_written)
+        else:
+            self._run_async(lambda f=ids[0], w=who: self._write_finding_assign(f, w),
+                            self._on_triage_written)
 
     @staticmethod
     def _write_finding_assign(finding_id: str, assignee: str) -> dict:
@@ -539,6 +569,16 @@ class FindingsTabMixin:
             FindingsStore().assign(finding_id, assignee)
             return {'ok': True, 'msg': (f"назначено: {assignee}" if assignee
                                         else "назначение снято")}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    @staticmethod
+    def _write_finding_bulk_assign(ids, assignee: str) -> dict:
+        try:
+            out = FindingsStore().bulk_assign(ids, assignee)
+            n = len(out['updated'])
+            return {'ok': True, 'msg': (f"назначено ({n}): {assignee}" if assignee
+                                        else f"назначение снято ({n})")}
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}
 

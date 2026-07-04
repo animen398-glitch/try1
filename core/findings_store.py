@@ -237,6 +237,58 @@ class FindingsStore(SQLiteStore):
                               (finding_id,)).fetchone()
         return self._row_to_dict(stored)
 
+    def bulk_set_status(self, finding_ids, status: str, *,
+                        note: Optional[str] = None, source: str = 'user',
+                        now: Optional[str] = None) -> Dict:
+        """Change many findings' status in one transaction (manual triage).
+
+        Returns ``{updated, unchanged, missing}`` id lists — ``updated`` for the
+        ones whose status actually changed (each logs a STATUS_CHANGED event),
+        ``unchanged`` for ones already at ``status``, ``missing`` for unknown ids.
+        Unknown status → ValueError. Sibling of :meth:`set_status` for the GUI /
+        web bulk-triage surfaces; no second table."""
+        if status not in STATUSES:
+            raise ValueError(f'unknown status: {status!r} (expected {STATUSES})')
+        now = now or _now()
+        updated: List[str] = []
+        unchanged: List[str] = []
+        missing: List[str] = []
+        with self._connect() as conn:
+            for fid in finding_ids or []:
+                fid = str(fid)
+                row = conn.execute('SELECT status FROM findings WHERE id = ?',
+                                   (fid,)).fetchone()
+                if row is None:
+                    missing.append(fid)
+                elif row['status'] == status:
+                    unchanged.append(fid)
+                else:
+                    self._set_status(conn, fid, status, note=note,
+                                     source=source, now=now)
+                    updated.append(fid)
+        return {'updated': updated, 'unchanged': unchanged, 'missing': missing}
+
+    def bulk_assign(self, finding_ids, assignee, *,
+                    now: Optional[str] = None) -> Dict:
+        """Assign (or, with ``''``, clear) many findings in one transaction.
+
+        Returns ``{assignee, updated, missing}`` — ``updated`` ids each get an
+        ASSIGNED event; ``missing`` are unknown ids. Sibling of :meth:`assign`."""
+        clean = str(assignee or '').strip()
+        now = now or _now()
+        updated: List[str] = []
+        missing: List[str] = []
+        with self._connect() as conn:
+            for fid in finding_ids or []:
+                fid = str(fid)
+                if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                                (fid,)).fetchone() is None:
+                    missing.append(fid)
+                else:
+                    self._log_event(conn, fid, 'ASSIGNED', note=clean, at=now)
+                    updated.append(fid)
+        return {'assignee': clean, 'updated': updated, 'missing': missing}
+
     # ── lifecycle orchestration ───────────────────────────────────────────────
 
     def sync(self, project: str, scan_id: Optional[str], findings: List[Dict], *,

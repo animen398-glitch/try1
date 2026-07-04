@@ -59,6 +59,36 @@ def test_e2e_findings_status_change_by_click(qapp):
     assert fs.get(fid)['status'] == 'FIXED'
 
 
+def test_e2e_findings_bulk_status_by_click(qapp):
+    fs = FindingsStore()
+    ids = [fs.upsert('shop.io', {'id': f'fb{i}', 'category': 'vuln',
+                                 'rule_id': f'r{i}', 'title': f't{i}',
+                                 'severity': 'high'})['finding']['id']
+           for i in range(3)]
+    w = FindingsE2EHost()
+    w._refresh_findings()
+    assert w.findings_table.rowCount() >= 3
+    w.findings_table.selectAll()                # multi-select every visible finding
+    w.findings_new_status.setCurrentIndex(w.findings_new_status.findData('FIXED'))
+    assert w.btn_findings_apply.isEnabled()
+    w.btn_findings_apply.click()                # → _write_finding_bulk_status → store
+    assert all(fs.get(i)['status'] == 'FIXED' for i in ids)
+
+
+def test_e2e_findings_bulk_assign_by_click(qapp):
+    fs = FindingsStore()
+    ids = [fs.upsert('shop.io', {'id': f'fc{i}', 'category': 'vuln',
+                                 'rule_id': f'r{i}', 'title': f't{i}',
+                                 'severity': 'high'})['finding']['id']
+           for i in range(3)]
+    w = FindingsE2EHost()
+    w._refresh_findings()
+    w.findings_table.selectAll()
+    w.findings_assignee.setText('team-x')
+    w.btn_findings_assign.click()               # → _write_finding_bulk_assign → store
+    assert all(fs.get_assignee(i) == 'team-x' for i in ids)
+
+
 def test_e2e_findings_assign_button_disabled_without_selection(qapp):
     _seed_finding()
     w = FindingsE2EHost()

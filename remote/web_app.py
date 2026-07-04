@@ -19,7 +19,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -480,6 +480,30 @@ def _finding_assign(finding_id: str, assignee: Optional[str] = None) -> dict:
     except KeyError:
         return {'error': f'finding not found: {finding_id}'}
     except Exception as e:
+        return {'error': str(e)}
+
+
+def _findings_bulk_status(ids, status: str, note: Optional[str] = None) -> dict:
+    """Change many findings' triage status in one call (user-sourced). Returns
+    ``{updated, unchanged, missing}`` id lists, or ``{'error': ...}`` for an
+    unknown status."""
+    if status not in STATUSES:
+        return {'error': f'unknown status: {status} (expected {list(STATUSES)})'}
+    try:
+        out = FindingsStore().bulk_set_status(list(ids or []), status,
+                                              note=note, source='user')
+        return {'status': 'ok', **out}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
+def _findings_bulk_assign(ids, assignee: Optional[str] = None) -> dict:
+    """Assign (or, with an empty value, unassign) many findings in one call.
+    Returns ``{assignee, updated, missing}``, or ``{'error': ...}``."""
+    try:
+        out = FindingsStore().bulk_assign(list(ids or []), assignee or '')
+        return {'status': 'ok', **out}
+    except Exception as e:  # noqa: BLE001
         return {'error': str(e)}
 
 
@@ -2191,6 +2215,15 @@ if _FASTAPI_OK:
         text: str
         author: Optional[str] = None
 
+    class BulkStatusRequest(BaseModel):
+        ids: List[str]
+        status: str
+        note: Optional[str] = None
+
+    class BulkAssignRequest(BaseModel):
+        ids: List[str]
+        assignee: str = ''
+
     @app.get('/findings')
     async def findings(project: Optional[str] = None,
                        status: Optional[str] = None,
@@ -2206,6 +2239,26 @@ if _FASTAPI_OK:
     async def report_md_route(project: Optional[str] = None):
         return Response(_report_markdown_view(project),
                         media_type='text/markdown; charset=utf-8')
+
+    # Bulk routes are registered before the per-id ones so the literal path
+    # segment "bulk" is never captured as a {finding_id}.
+    @app.post('/findings/bulk/status')
+    async def findings_bulk_status(body: BulkStatusRequest):
+        out = _findings_bulk_status(body.ids, body.status, body.note)
+        if 'error' in out:
+            return JSONResponse(out, status_code=400)
+        await _push(f'[findings] bulk → {body.status} '
+                    f'({len(out["updated"])} updated)', 'ok')
+        return out
+
+    @app.post('/findings/bulk/assign')
+    async def findings_bulk_assign(body: BulkAssignRequest):
+        out = _findings_bulk_assign(body.ids, body.assignee)
+        if 'error' in out:
+            return JSONResponse(out, status_code=400)
+        await _push(f'[findings] bulk assign → {out["assignee"] or "—"} '
+                    f'({len(out["updated"])} updated)', 'ok')
+        return out
 
     @app.post('/findings/{finding_id}/status')
     async def findings_set_status(finding_id: str, body: StatusRequest):

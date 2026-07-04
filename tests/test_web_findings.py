@@ -195,3 +195,53 @@ def test_findings_sarif_endpoint_with_testclient():
     doc = json.loads(r.text)
     assert doc['version'] == '2.1.0'
     assert {res['ruleId'] for res in doc['runs'][0]['results']} == {'csp', 'sess'}
+
+
+# ── bulk triage (multi-finding status / assign) ─────────────────────────────────
+
+def test_findings_bulk_status_helper():
+    s = _seed()
+    ids = [scoped_id('p1', 'f-a'), scoped_id('p1', 'f-b')]
+    out = wa._findings_bulk_status(ids + ['ghost'], 'FIXED')
+    assert out['status'] == 'ok'
+    assert set(out['updated']) == set(ids)
+    assert out['missing'] == ['ghost']
+    assert all(s.get(i)['status'] == 'FIXED' for i in ids)
+
+
+def test_findings_bulk_status_unknown_status():
+    _seed()
+    out = wa._findings_bulk_status([scoped_id('p1', 'f-a')], 'BOGUS')
+    assert 'unknown status' in out['error']
+
+
+def test_findings_bulk_assign_helper():
+    s = _seed()
+    ids = [scoped_id('p1', 'f-a'), scoped_id('p2', 'f-c')]
+    out = wa._findings_bulk_assign(ids, 'alice')
+    assert out['assignee'] == 'alice'
+    assert set(out['updated']) == set(ids)
+    assert all(s.get_assignee(i) == 'alice' for i in ids)
+
+
+def test_findings_bulk_endpoints_with_testclient():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    _seed()
+    client = TestClient(wa.app)
+    ids = [scoped_id('p1', 'f-a'), scoped_id('p1', 'f-b')]
+
+    # the literal 'bulk' path is not captured as a {finding_id}
+    r = client.post('/findings/bulk/status', json={'ids': ids, 'status': 'FIXED'})
+    assert r.status_code == 200
+    assert set(r.json()['updated']) == set(ids)
+
+    ra = client.post('/findings/bulk/assign', json={'ids': ids, 'assignee': 'bob'})
+    assert ra.status_code == 200 and ra.json()['assignee'] == 'bob'
+
+    # a bad status is a 400, not a 404-through-{finding_id}
+    r400 = client.post('/findings/bulk/status', json={'ids': ids, 'status': 'NOPE'})
+    assert r400.status_code == 400

@@ -467,3 +467,51 @@ def test_comment_empty_or_unknown_raises(tmp_path):
         s.add_comment(_sid('p', f), '   ')
     with pytest.raises(KeyError):
         s.add_comment('ghost', 'hi')
+
+
+# ── bulk triage (multi-finding status / assign) ─────────────────────────────────
+
+def _seed_three(s, project='p'):
+    ids = []
+    for i in range(3):
+        f = _finding(rule_id=f'r{i}', location=f'https://x.com/{i}')
+        ids.append(s.upsert(project, f, scan_id='s1')['finding']['id'])
+    return ids
+
+
+def test_bulk_set_status_partitions_updated_unchanged_missing(tmp_path):
+    s = _store(tmp_path)
+    ids = _seed_three(s)
+    s.set_status(ids[2], 'FIXED')                      # already FIXED → unchanged
+    out = s.bulk_set_status(ids + ['ghost'], 'FIXED')
+    assert set(out['updated']) == {ids[0], ids[1]}
+    assert out['unchanged'] == [ids[2]]
+    assert out['missing'] == ['ghost']
+    # every real finding is now FIXED, each change logged a STATUS_CHANGED event
+    assert all(s.get(i)['status'] == 'FIXED' for i in ids)
+    assert any(e['type'] == 'STATUS_CHANGED' for e in s.events(ids[0]))
+
+
+def test_bulk_set_status_unknown_status_raises(tmp_path):
+    s = _store(tmp_path)
+    ids = _seed_three(s)
+    with pytest.raises(ValueError):
+        s.bulk_set_status(ids, 'NOPE')
+
+
+def test_bulk_assign_sets_and_reports_missing(tmp_path):
+    s = _store(tmp_path)
+    ids = _seed_three(s)
+    out = s.bulk_assign(ids + ['ghost'], 'alice')
+    assert out['assignee'] == 'alice'
+    assert set(out['updated']) == set(ids)
+    assert out['missing'] == ['ghost']
+    assert all(s.get_assignee(i) == 'alice' for i in ids)
+
+
+def test_bulk_assign_empty_clears(tmp_path):
+    s = _store(tmp_path)
+    ids = _seed_three(s)
+    s.bulk_assign(ids, 'bob')
+    s.bulk_assign(ids, '')                              # '' unassigns
+    assert all(s.get_assignee(i) == '' for i in ids)
