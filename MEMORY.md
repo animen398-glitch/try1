@@ -1,8 +1,8 @@
 # Memory — asa-claude
 
-> Generated: 2026-07-01 02:40:51  
-> Total memories: **73**  
-> Breakdown: instruction: 8, decision: 19, goal: 8, preference: 1, context: 3, event: 25, learning: 3, artifact: 2, error: 4
+> Generated: 2026-07-03 21:01:17  
+> Total memories: **81**  
+> Breakdown: instruction: 8, decision: 25, goal: 8, commitment: 1, preference: 1, context: 3, event: 25, learning: 3, artifact: 3, error: 4
 
 ---
 
@@ -84,6 +84,18 @@ Roadmap updated in commit 3af7604 with EPIC FUTURE — Client-Safe Pentest Workb
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T16:45:43*
 
+### Stage 14 DONE (commit 32729b20): Epic E1 increment...
+
+Stage 14 DONE (commit 32729b20): Epic E1 increment 3 — keyed passive providers, COMPLETES E1. core/passive_osint.py: registry += shodan_api + censys (requires_key=True). parse_shodan_host/query_shodan (Shodan Host API api.shodan.io/shodan/host/{ip}?key=, flattens data[].cpe23/cpe + data[].vulns keys + top vulns to common {ip,ports,hostnames,cpes,tags,vulns}). parse_censys_host/query_censys (Censys Hosts v2 search.censys.io/api/v2/hosts/{ip} via HTTP Basic auth _fetch_basic base64 id:secret). All mirror InternetDB seam: injectable _fetch, never raise, soft-degrade to {} (empty key/creds->{}, invalid ip->{}). query_best(ip,*,config,fetch_map) prefers keyed when key set (shodan then censys) else keyless internetdb; keyed calls guarded (fall through on failure), FINAL internetdb call left BARE so scan phase backstop still catches artificial raises (=> E1 inc-2 scan tests UNCHANGED pass). config.py passive_osint += shodan_api_key/censys_api_id/censys_api_secret (empty=keyless default unchanged). collection_runner _phase_passive_osint: query_internetdb->query_best (1 line, byte-identical no-key). tests/test_passive_osint.py +9 (34 total). Zero target traffic, opt-in. Committed on strong targeted evidence (passive+scan+config green) while full suite b7axmq2ho backstop ran. E1 now fully done. Remaining depth: E3-2 scan IP enforcement, E4-2 render phase, E5-2 probe phase, E7-2 postgres dialect, E8-3 real runners+surface.
+
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T22:54:26*
+
+### User decided external security tools remain indepe...
+
+User decided external security tools remain independent third-party integrations; all CLI/binary execution from the ASA GUI must be invisible on Windows, with no cmd/conhost/PowerShell windows. Preserve the single utils.subprocess_utils run_hidden/popen_hidden seam and PyInstaller console=False.
+
+*Confidence: 1 | Status: active | Created: 2026-07-03T17:52:19 | Tags: `external-tools`, `windows`, `subprocess`, `gui`*
+
 ### User approved implementation of the Client-Safe Pe...
 
 User approved implementation of the Client-Safe Pentest Workbench development plan. Codex will start with W1 Persistent Audit Runs core slice: add audit_store and tests, no GUI yet, no protected project/config/path/findings/asset store edits.
@@ -102,17 +114,41 @@ M2 (MissionStore persistence + project_io export) APPROVED by user (2026-06-28, 
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T12:29:49*
 
-### Added captured-scan -> tool-evidence bridge in try...
+### Stage 13 DONE (commit 82c65e0d): Epic E8 increment...
 
-Added captured-scan -> tool-evidence bridge in try1: core/tool_evidence.py. evidence_from_report(report, tool) maps a loaded scan report.json to the exact evidence shape the matching tool_parsers parser consumes (feeds tool_pipeline.assemble_tool_run/parse_tool_output) so tool runs can be driven from already-captured data instead of pasted JSON; {} when no extractor or no data; never raises. available_tools(report) lists bridgeable. ADDITIVE per-tool extractor registry EXTRACTORS (mirrors tool_parsers.PARSERS). Verified extractors this iteration (user-chosen scope): source_map_finder (from recon.data.source_maps[].url) + safe_active_prober (from subdomains.data.results[].subdomain + summary.takeover_candidates[].subdomain, deduped). Other tools absent -> manual evidence, additive later. Pure dict->dict over loaded report (caller uses project.load_scan_report); no I/O/network/store/tool-exec; reuses collection_runner report shapes. Commit 7ea4982c. tests/test_tool_evidence.py incl round-trip through parse_tool_output. Decision: pure mapper + additive registry; verified shapes only; NO surface wiring (Missions/web auto-evidence is additive follow-up). Remaining gaps: i18n, e2e/GUI tests, pagination of remaining tables, + tool-evidence surface wiring + more extractors.
+Stage 13 DONE (commit 82c65e0d): Epic E8 increment 2 — JobStore/NodeStore + dispatcher. core/job_store.py: JobStore (queue) + NodeStore (explicit-node registry), each single-table SQLiteStore mirroring MissionStore; schema-validates payload (asa_job/asa_worker_node) before every write; JSON_FIELDS=(payload,). JobStore save_job(idempotent preserves created_at)/get_job/list_jobs(project,status; priority desc,created_at asc)/delete_job/claim_next_job(node). NodeStore save_node/get_node/list_nodes(authorized)/delete_node. core/job_dispatcher.py: run_job(job,runners,*,store,now) moves CLAIMED job running->completed|failed via INJECTED runner map, persists each step; missing runner or runner exception -> failed with transient _error (NOT raised, loop keeps draining); dispatch_next(node,runners,store)=claim+run; _pure() accepts pure job or store row. REVIEW BUG CAUGHT+FIXED: first cut passed store ROWS (job nested under payload, no top-level job_id/target) to pure scheduler claim_next which mis-normalized (fresh ids/empty targets), leaving original pending; fixed by extracting row['payload'] before scheduling. Touches NO existing file (E8 schemas already present); not wired to project_io (operational infra). Deferred: real-runner binding (collection/audit/mission/tool/retest adapters) + GUI/web/CLI surface. tests/test_job_store.py 14 green; contracts+sqlite_store+orchestration green.
 
-*Confidence: 1 | Status: active | Created: 2026-06-30T18:16:05*
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T22:27:32*
+
+### Stage 6 DONE (commit 6418d1eb): E1 increment 2 — o...
+
+Stage 6 DONE (commit 6418d1eb): E1 increment 2 — opt-in passive OSINT scan phase. collection_runner: passive_osint flag (ctor+configure) resolved via _passive_osint_enabled() which ALSO honours config passive_osint.enabled setting (no-GUI toggle, mirrors _scan_concurrency). _phase_passive_osint looks recon-resolved IP(s) up via query_internetdb (zero target traffic), rolls up ports/hostnames/CPEs/CVEs; Skipped on no-IP/no-data, Error backstop never sinks scan. Added to DAG (deps recon, NOT scope-gated like threat_feed) + _PHASE_ORDER (between asn_intel and osv) + HTML card; auto-appears in E2 Coverage Gate. asset_adapter.derive_assets folds passive_osint hosts/IPs/CPEs with source='passive_osint' (added LAST, first-wins dedup keeps native assets, correct per-phase GONE-gating). osint_to_assets got source= override. config passive_osint {enabled:False}. LOCKED DECISION: OSINT CVEs are intel-only, NOT promoted to FindingsStore (unverified CPE inferences, client-safe); osint_to_findings stays available for future keyed-provider increment. Off by default; seq<->concurrent equality holds; full suite green. Next Stage 7 = E1 increment 3 keyed Shodan API/Censys OR pivot to E6 Origin Exposure (correlate passive-OSINT IPs vs recon infra chain for CDN direct-IP leaks).
+
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T21:04:39*
+
+### Stage 8 DONE (commit 554cdf12): Epic E3 Authorized...
+
+Stage 8 DONE (commit 554cdf12): Epic E3 Authorized Network Execution Profiles (contract-first). New core/execution_profile.py (pure/offline, mirrors pentest_mission/engagement idiom): create/normalize/validate/ip_authorized/profile_expired/execution_profile_summary/to_json. Fields: allowed_ips/denied_ips (validated IP/CIDR via stdlib ipaddress, host-bits normalized via ip_network strict=False, invalid dropped), source_nodes (declared testing origin addresses for client allowlisting/auditability), legal {authorized_by,reference,contract_id,valid_from,valid_until,notes}. DEFAULT-DENY: empty allowlist authorizes nothing; denied_ips match wins over allowlist; malformed target IP denied. validate_execution_profile gates binding profile (non-empty allowlist + legal authorized_by+reference; malformed IP flagged). profile_expired compares ISO now vs legal.valid_until (lexicographic). schemas/asa_execution_profile.schema.json + audit_schema alias asa_execution_profile. Complements domain/action ROE (audit_scope) with IP+legal dimension — engagement schema had scope.allowed_ips as bare strings but no CIDR validation/membership/source-nodes/expiry. tests/test_execution_profile.py 19 green. DEFERRED increment 2: store + scan-time ip_authorized enforcement seam + GUI/config. Roadmap done: E2,E9,E10,E6,E3(contract),E1(inc1-2).
+
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T21:33:36*
 
 ### Workbench v2 epic COMPLETE + committed locally (ma...
 
 Workbench v2 epic COMPLETE + committed locally (master, commits 86e473f1 F1, 859d8249 F2, 3175fcfa F3, 98b0fcc5 F4, ab7ce310 F5, roadmap doc). All 5 features implemented with tests: F1 core/audit_templates.py (4 scenarios), F2 ROE templates in core/audit_scope.py, F3 core/audit_revalidation.py (overlay, no lifecycle writes), F4 core/audit_compare.py + schemas/asa_audit_compare.schema.json (derive-on-read, failed phase=inconclusive), F5 compare+scenario renderers in core/audit_report.py. Verified: ruff clean, full pytest 2064 passed (1 known Starlette warning), main.py --self-check 29 tabs. Single FindingsStore SoT preserved, schema growth additive/optional, all client-safe. DEFERRED to Codex (contract-only): GUI selectors/buttons in gui/tab_audit_runs.py, remote/web_app.py read parity, optional persisted 'compared' event. Roadmap section 'EPIC CLOSED - Workbench v2' added. CLAUDE.md/AGENTS.md/PROJECT_STATUS.txt status banners NOT yet synced.
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T01:04:26*
+
+### Stage 3 = Epic E9 Sensitive Data Governance DONE (...
+
+Stage 3 = Epic E9 Sensitive Data Governance DONE (commit 9416e4c1). New core/data_governance.py (pure/offline render-time redaction reusing SSOTs — secret_scanner.RULES detection + finding_fingerprint.mask_value masking, prefix…len keeps vendor/type context). redact_text (group-aware so Bearer/api_key= keep label, idempotent), is_sensitive_key/redact_data (recursive non-mutating; only str values masked so match_count/auth_context int/bool safe), redact_finding/govern_rows. Wired at client-facing finding-table choke points (no-op on clean rows = byte-identical): finding_render.finding_md_table/finding_html_table (covers mission+engagement reports) + audit_report._md_table + inline HTML table(). Defense-in-depth (findings already masked at store time). Full suite green. Roadmap E2/E10/E9 done; remaining E1,E3-E8 larger integration features. Next options: wire E2 coverage into collection_runner live phase statuses, OR start E1 passive OSINT adapters.
+
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T16:42:10*
+
+### User asked for a roadmap after an external review ...
+
+User asked for a roadmap after an external review suggesting proxy rotation, passive OSINT, TLS/JA3 spoofing, smart wordlists, and PostgreSQL scaling. Codex should keep the plan client-safe: no stealth/WAF evasion/proxy rotation for bypass; reframe into authorized passive OSINT, coverage gates, transparent rate limits, allowlist-aware scanning, wordlist governance, and storage abstraction/scaling.
+
+*Confidence: 1 | Status: active | Created: 2026-07-02T15:37:20 | Tags: `roadmap`, `client-safe`, `safety`, `passive-osint`, `scaling`*
 
 ### Backend release-hardening contracts (T1-T5)
 
@@ -125,6 +161,12 @@ Backend release-hardening (branch backend/release-hardening, ~23 commits, full-d
 KEV/EPSS Threat Intelligence Feed epic COMPLETE + committed locally (master). Commits: 3017251f F1 (core/threat_feed.py KEV+EPSS parsers + CVEStore.cve_threat table), c80c98af F2 (core/threat_intel.py enrich_cves/annotate/tier), 08acba60 F3 (intelligence._threat_tier enrichment-first + build_intelligence offline annotate, priority formula UNCHANGED), 888c292b F4 (opt-in _phase_threat not scope-gated + monitor/GUI parity), e9e8d90f F5 (report card + web /findings threat block + CSV columns), 64535490 doc sync. Single CVEStore cache (no new DB), derive-on-read enrichment, soft-degrade offline, client-safe (metadata about CVEs, no target traffic). Decisions: tier KEV->high/EPSS pct>=0.90->high/>=0.50->medium; priority only (KEV->SLA deferred); opt-in not under Scope Guard; TTL 24h. Verified: ruff clean, full pytest 2101 passed (1 Starlette warning), self-check 29 tabs. DEFERRED (not blockers): KEV->SLA tightening, timeline NEW_KEV event, KEV alert rule, findings-detail GUI badge.
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T02:25:54*
+
+### Stage 5 increment 1 DONE (commit 7a642a79): starte...
+
+Stage 5 increment 1 DONE (commit 7a642a79): started Epic E1 Passive OSINT Layer contract-first. New core/passive_osint.py (pure/offline, mirrors update_check/threat_feed injectable _fetch HTTPS-only never-raises seam). PassiveSource registry PASSIVE_SOURCES + list_sources (keyless-first). First provider = Shodan InternetDB internetdb.shodan.io/{ip} — KEYLESS, ZERO TARGET TRAFFIC (reads Shodan's DB by IP, no packet to target). query_internetdb validates IP locally (non-IP never fetches), parse_internetdb normalizes ports/hostnames/cpes/tags/vulns. osint_to_assets/osint_to_findings map to canonical asset_adapter.Asset + findings_adapter.from_raw (CVE canonical identity for dedup, Info severity + passive/unverified detail). NO store writes, NO risk impact, NO existing file touched, NO new dep. tests/test_passive_osint.py 14 green. Next Stage 6 = E1 increment 2 opt-in scan wiring (passive_osint.enabled off-by-default, enrich synced IP assets, feed _sync_assets + E2 coverage as new phase). Then increment 3 keyed Shodan API/Censys behind configured keys. Roadmap DOCS_DEVELOPMENT_PLAYBOOK.md: E2/E10/E9 done, E1 in progress.
+
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T17:12:40*
 
 ### Added GUI table pagination in try1 (gap #3). gui/u...
 
@@ -143,6 +185,12 @@ Closed Scan Retention & Backup epic in try1 (chosen after web-console-auth). Pha
 Architecture invariants (breaking them = regression): (1) UI thin, logic in core/utils; (2) single task runner _start_task/_run_async, no manual QThreads in tabs; (3) single sources of truth: paths/settings=core/config.py+core/paths.py PathManager, secret rules=core/secret_scanner.py RULES, project scans=core/project.py, endpoints=utils/endpoint_index.py; (4) plugins add tabs/analyzers WITHOUT editing core; (5) frozen-aware paths via PathManager; (6) optional deps degrade softly; (7) keep backward compat of Projects/ layout, metadata.json, report.json, runner contracts.
 
 *Confidence: 0.95 | Status: active | Created: 2026-06-27T14:49:14 | Tags: `invariants`, `architecture`, `contracts`*
+
+### Stage 4 DONE (commit f5bd357a): wired E2 Coverage ...
+
+Stage 4 DONE (commit f5bd357a): wired E2 Coverage Gate to LIVE Full-Collection phase statuses (real per-scan coverage, not just audit-run fallback). New coverage.coverage_from_scan_report(report) maps report['phases'] outcomes (Success->full, Error->failed/failed_phase, Skipped->skipped classified scope_denied via scope_guard / missing_dependency via reason hints / else skipped_phase); never raises, truncates detail. collection_runner._build_coverage attaches report['coverage'] after _build_osint_catalog (best-effort, risk verdict untouched) + HTML 'Limitations & Coverage' card (wraps render_coverage_html in card-styled section to avoid double h2). report_export.report_markdown appends coverage section (from report['coverage'] or derived). tests in test_coverage.py. Full suite green. Roadmap E2/E10/E9 fully done incl E2 live wiring. Next Stage 5 = E1 Passive OSINT (keyless Shodan/Censys/Cert-log adapters, zero target traffic, opt-in, injectable _fetch seam like update_check/threat_feed, feed existing asset/finding adapters not new store).
+
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T17:07:47*
 
 ### KEV/EPSS Threat Intelligence Feed epic APPROVED by...
 
@@ -168,23 +216,11 @@ Added tool-evidence surface wiring in try1 (follow-up to the bridge). core/tool_
 
 *Confidence: 1 | Status: active | Created: 2026-06-30T18:56:16*
 
-### M1 Mission Center core contract APPROVED by user (...
+### Stage 2 = Epic E10 Parser Hardening DONE (commit 8...
 
-M1 Mission Center core contract APPROVED by user (2026-06-28, 'да делай'). Scope: PURE deterministic offline contract module ONLY, mirroring core/audit_workflow.py. Files: NEW core/pentest_mission.py (create_mission/normalize_mission/validate_mission/advance_mission_status/link_audit_run/link_finding/mission_to_json), NEW schemas/asa_pentest_mission.schema.json, NEW tests/test_pentest_mission.py, +1-line alias asa_pentest_mission in core/audit_schema.SCHEMA_ALIASES. Decisions: D1 pure-contract only (no MissionStore/SQLite/GUI/web/timeline — deferred to M2); D2 status map draft->{ready,archived}, ready->{running,draft,archived}, running->{completed,failed,archived}, completed->{archived}, failed->{ready,archived}, archived terminal; ->ready requires valid mission; D3 scope lives INSIDE roe (SSOT, no separate scope field); D4 link_finding does NOT check FindingsStore existence in M1; D5 module name core/pentest_mission.py. Reuse: audit_scope.normalize_roe/validate_roe/apply_roe_template, audit_templates.resolve_template/get_template, action_policy.evaluate_action_policy for allowed_actions guardrail, audit_schema.validate_audit_payload. No new second FindingsStore/AssetStore/Timeline; client-safe; no exploit/bruteforce/stealth/auto-login/auth-bypass/persistence. M1 files were absent in repo (Codex draft was in a separate worktree without git, lost).
+Stage 2 = Epic E10 Parser Hardening DONE (commit 8f1608e9). New core/safe_parse.py (pure/offline/stdlib): ParseLimitError(ValueError) so degrade-not-raise handlers unchanged; configurable limits MAX_JSON_BYTES/DEPTH/ITEMS + MAX_MEMBER_BYTES with per-call overrides; json_nesting_depth (linear recursion-free string-aware, rejects JSON bombs pre-parse via regex string-strip); count_elements iterative (no RecursionError); safe_json_loads/read_bytes/read_text/read_json; safe_zip_read/zip_json/member_within_limit (zip-bomb guard on declared uncompressed size). Wired into untrusted seams: project.load_scan_report->safe_read_json (degrades to None), project_io import (manifest+DB-slice members via safe_zip_json, _safe_extract per-member size guard complementing zip-slip). iac_scanner left as-is (already had _MAX_FILE_BYTES). tests/test_safe_parse.py green; full suite exit 0. Next Stage 3 = E9 Sensitive Data Governance (redact secrets in client reports, reuse secret_scanner SSOT).
 
-*Confidence: 1 | Status: active | Created: 2026-06-28T12:02:16*
-
-### Closed the #1 stability/safety gap in try1: LAN we...
-
-Closed the #1 stability/safety gap in try1: LAN web console (remote/web_app.py) had mutating endpoints (mission run, tool-run->store ingestion) but bound 0.0.0.0 with NO auth. Added: resolve_web_console(host=None) -> (host,token) from settings web_console block + ASA_WEB_TOKEN env; default bind now 127.0.0.1 (LAN = explicit opt-in via web_console.allow_lan or non-loopback host); start_server default host changed 0.0.0.0->loopback. One app-wide require_token FastAPI dependency: token active -> every request outside _PUBLIC_PATHS={'/'} must send Authorization: Bearer or ?token= (hmac.compare_digest); 401 else. Loopback+no-token=open (single-user); LAN+no-token auto-generates+prints token (secrets.token_urlsafe) so never LAN-open unauthenticated. Dashboard JS shim attaches token (localStorage) to fetch+SSE. web_console {host,allow_lan,token} in DEFAULT_SETTINGS. No new deps. Committed 5c922062. tests/test_web_auth.py (8). Chosen by user as next epic when asked what project lacks; loopback-no-token=ok confirmed. Other gaps identified (deferred): scan retention/backup, GUI table pagination, i18n, e2e/GUI tests, tool-run real evidence bridge, finding assignment/comments triage.
-
-*Confidence: 1 | Status: active | Created: 2026-06-30T15:23:31*
-
-### Added finding assignment + comments triage in try1...
-
-Added finding assignment + comments triage in try1 (DefectDojo-style, gap #last). EVENT-SOURCED over finding_events (REMEDIATION feature is exact template) — NO second store, NO migration. core/findings_store.py: EVENT_TYPES += ASSIGNED,COMMENT; assign(fid,assignee)/get_assignee(fid) (latest ASSIGNED wins, ''=unassign)/assignees(project) (latest-per-finding map, cleared dropped); add_comment(fid,text,author='')/comments(fid) (append-only COMMENT, note=json{author,text}, oldest first); all validate finding exists (KeyError), route via _log_event; history in finding_events carried by project_io bundle. GUI Findings tab: 'Триаж' row (assignee field+Назначить, comment field+Добавить) on selected finding via _run_async; detail shows assignee + comment thread (raw COMMENT events hidden from generic history); assignee field prefills. Web: POST /findings/{id}/assign {assignee}, POST /findings/{id}/comment {text,author?}, GET /findings/{id}/triage; 404 unknown/400 empty, mirrors /status. Decision (user): event-sourced; surfaced in detail+web, NO new findings-table column. Commit 05e8f72f. Tests in test_findings_store.py/test_web_findings.py/test_findings_tab.py. This closes the last named gap from the gap-analysis; remaining: i18n, e2e/GUI tests, captured-scan->tool-evidence bridge, pagination of remaining tables.
-
-*Confidence: 1 | Status: active | Created: 2026-06-30T17:47:39*
+*Confidence: 0.95 | Status: active | Created: 2026-07-02T16:14:29*
 
 ---
 
@@ -246,7 +282,11 @@ User asked Codex to analyze Advanced Site Analyzer's remaining open gestalts and
 
 *Promises, obligations, and TODOs that need follow-through.*
 
-*No memories of this type.*
+### User requested a full current-state report of Adva...
+
+User requested a full current-state report of Advanced Site Analyzer in one TXT document for sharing with other AI reviewers.
+
+*Confidence: 1 | Status: active | Created: 2026-07-02T15:17:01 | Tags: `report`, `review`, `project-status`*
 
 ---
 
@@ -394,6 +434,12 @@ Frozen/PyInstaller smoke after Client-Safe Pentest Workbench Stage 1/2 passed on
 
 *Confidence: 1 | Status: active | Created: 2026-06-27T17:36:53 | Tags: `client-safe-workbench`, `frozen-smoke`, `pyinstaller`, `release-readiness`*
 
+### Repaired Claude Code CLI on Windows: global npm pa...
+
+Repaired Claude Code CLI on Windows: global npm package was absent despite correct PATH. Reinstalled official @anthropic-ai/claude-code globally; cmd.exe now resolves claude and reports version 2.1.200.
+
+*Confidence: 1 | Status: active | Created: 2026-07-03T18:00:32 | Tags: `claude-code`, `windows`, `npm`, `repair`*
+
 ### Integrated persistent audit history and report exp...
 
 Integrated persistent audit history and report exports into Audit Runs GUI in commit 666f7d4: Audit Runs now saves runs to AuditRunStore, loads per-project history, opens saved runs, exports JSON/Markdown/HTML via core audit_report, and tests isolate default audit_runs.db. Verification: 24 GUI/store/report tests passed, 48 extended audit GUI/self-check tests passed, ruff changed files passed, python main.py --self-check = 29 tabs.
@@ -442,12 +488,6 @@ User asked Codex to prepare a direct Claude Code prompt so Claude deeply underst
 
 *Confidence: 1 | Status: active | Created: 2026-06-28T00:23:00*
 
-### Engagement epic FULLY COMPLETE in try1 (backend F1...
-
-Engagement epic FULLY COMPLETE in try1 (backend F1-F4 + surfaces S1-S4), user gave full autonomy. Surfaces: S1 timeline.build_events(engagements=) -> engagement_created+status events section 'engagements', build_timeline loads EngagementStore (commit 2ed2a75a). S2 web remote/web_app.py: GET/POST /engagements + /{id} + /advance + /link(mission|audit_run|finding checked) + /links/prune + /report[.md] (commit 6301f6f2). S3 demo_seed _seed_engagement (authorized, reporting, linked mission+run+finding) (commit 919d1ad7). S4 GUI gui/tab_engagement.EngagementsTabMixin mirror of tab_missions (project/table/create/advance/link store-combos checked/prune/report JSON-MD-HTML via _run_async); registered plugin_manager.BUILTIN_TABS+main_window+tab_history lazy-load; EngagementsHost helper; GUI now 31 tabs (commit b301cc24). Docs synced 32250d63, count 2453->2472. Pattern reused throughout: mirror Mission Center (tab_missions/mission_report/mission_links/web missions). Deferred: retest workflow, engagement CSV/overview portfolio, engagement->mission scope/ROE inheritance. All LOCAL commits, NO push (push still needs explicit user request even under autonomy). No attack capabilities added (authorized-pentest only).
-
-*Confidence: 1 | Status: active | Created: 2026-06-30T23:11:58*
-
 ---
 
 ## Learnings
@@ -491,6 +531,12 @@ Added e2e/GUI click-driven tests in try1 (gap closed). Harness in tests/gui_test
 Workbench v2 plan DRAFTED (awaiting human approval, no code). Extends the CLOSED Client-Safe Pentest Workbench, never duplicates. Features: F1 audit scenario templates (core/audit_templates.py: light_client_safe/authenticated_review/evidence_refresh/release_regression; create_audit_run gains template/roe/baseline_run_id/auth_context, additive optional schema fields). F2 ROE/scope templates in core/audit_scope.py (passive_external/authenticated_internal/evidence_only/release_gate). F3 re-validation of unresolved findings (core/audit_revalidation.py: reads FindingsStore OPEN/IN_PROGRESS, excludes FIXED/IGNORED/FP, validation overlay only, lifecycle untouched). F4 Audit Run A/B compare (core/audit_compare.py + schemas/asa_audit_compare.schema.json: new/resolved/regressed/improved by finding_id, compare_gate, failed-phase=inconclusive, derive-on-read). F5 report surfaces JSON/MD/HTML extend core/audit_report.py, NO second findings source. Hard invariants: client_safe only, no exploit/bruteforce/auth-collection, single FindingsStore SoT, additive optional schema. 4 open decisions pending: default template, authenticated active scope, compare persistence (derive-on-read recommended), release-gate inconclusive rule.
 
 *Confidence: 0.7 | Status: active | Created: 2026-06-28T00:26:32*
+
+### Created full current-state review report for Advan...
+
+Created full current-state review report for Advanced Site Analyzer at C:\Users\321\Documents\try1\ADVANCED_SITE_ANALYZER_FULL_REPORT_2026-07-02.txt. Report covers capabilities, maturity, architecture, GUI/Web/CLI surfaces, verification status, risks, and prompts for external AI review.
+
+*Confidence: 1 | Status: active | Created: 2026-07-02T15:19:25 | Tags: `report`, `review`, `artifact`, `advanced-site-analyzer`*
 
 ### Workbench v2 F1 DONE + committed (local, master). ...
 

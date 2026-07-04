@@ -6,6 +6,9 @@ __pycache__/
 # Test / tooling caches
 .pytest_cache/
 .pytest-tmp/
+# Windows pytest teardown-quirk leftovers (project-rollback temp trees)
+.pytest-project-rollback-*/
+.pytest-full-project-rollback-*/
 
 # PyInstaller build artefacts
 build/
