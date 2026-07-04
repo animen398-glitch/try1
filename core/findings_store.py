@@ -381,8 +381,16 @@ class FindingsStore(SQLiteStore):
             params).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
-    def active_findings(self, project: Optional[str] = None) -> List[Dict]:
-        """Findings that still count toward risk (status not in INACTIVE)."""
+    def active_findings(self, project: Optional[str] = None, *,
+                        include_accepted: bool = False,
+                        today: Optional[str] = None) -> List[Dict]:
+        """Findings that still count toward risk: status not in INACTIVE and — unless
+        ``include_accepted`` — not under a current (non-expired) risk acceptance.
+
+        The acceptance exclusion is derive-on-read (Option A): an accepted risk is
+        held off the active view until its until-date passes, then it re-counts
+        automatically. ``include_accepted=True`` returns the full non-inactive set
+        (for surfaces that must still show accepted findings)."""
         placeholders = ','.join('?' * len(INACTIVE_STATUSES))
         params: List = list(INACTIVE_STATUSES)
         proj = ''
@@ -392,7 +400,12 @@ class FindingsStore(SQLiteStore):
             rows = conn.execute(
                 f'SELECT * FROM findings WHERE status NOT IN ({placeholders})'
                 f'{proj} ORDER BY updated_at DESC', params).fetchall()
-        return [self._row_to_dict(r) for r in rows]
+        out = [self._row_to_dict(r) for r in rows]
+        if not include_accepted:
+            suppressed = self.suppressed_acceptance_ids(project, today=today)
+            if suppressed:
+                out = [f for f in out if f['id'] not in suppressed]
+        return out
 
     def events(self, finding_id: str) -> List[Dict]:
         """Audit trail for one finding, oldest first."""
@@ -402,8 +415,11 @@ class FindingsStore(SQLiteStore):
                 (finding_id,)).fetchall()
         return [dict(r) for r in rows]
 
-    def projects(self) -> List[Dict]:
-        """Distinct projects that have findings, with total/active counts.
+    def projects(self, *, today: Optional[str] = None) -> List[Dict]:
+        """Distinct projects that have findings, with total/active counts. ``active``
+        excludes both inactive statuses and findings under a current (non-expired)
+        risk acceptance (Option A, derive-on-read — consistent with
+        :meth:`active_findings`).
 
         The findings DB is the source of truth for the Findings view's project
         selector (independent of the Projects/ tree), so a project keeps showing
@@ -416,8 +432,19 @@ class FindingsStore(SQLiteStore):
                 ' MAX(updated_at) updated_at'
                 ' FROM findings GROUP BY project ORDER BY updated_at DESC',
                 tuple(INACTIVE_STATUSES)).fetchall()
-        return [{'project': r['project'], 'total': r['total'],
-                 'active': r['active'] or 0} for r in rows]
+        result = [{'project': r['project'], 'total': r['total'],
+                   'active': r['active'] or 0} for r in rows]
+        # Drop currently-accepted (non-expired) findings from the active count so it
+        # matches active_findings; an accepted finding must still be non-inactive to
+        # have been counted, so only those are subtracted.
+        supp: Dict[str, int] = {}
+        for a in self.risk_acceptances(today=today):
+            if (not a['acceptance']['expired']
+                    and a['finding_status'] not in INACTIVE_STATUSES):
+                supp[a['project']] = supp.get(a['project'], 0) + 1
+        for row in result:
+            row['active'] = max(0, row['active'] - supp.get(row['project'], 0))
+        return result
 
     def _record_oneshot(self, finding_ids: List[str], event_type: str, *,
                         reset_event: str = 'REOPENED',
@@ -742,19 +769,25 @@ class FindingsStore(SQLiteStore):
         today = today or _now()[:10]
         return self._acceptance_state(self.get_risk_acceptance(finding_id), today)
 
-    def risk_acceptances(self, project: str, *, today: Optional[str] = None,
+    def risk_acceptances(self, project: Optional[str] = None, *,
+                         today: Optional[str] = None,
                          include_expired: bool = True) -> List[Dict]:
-        """Every finding in ``project`` with a *current* risk acceptance (latest
-        event accepted), carrying the derived state + the finding's title/severity/
-        category/status. Mirrors :meth:`remediations`; ``include_expired=False``
-        drops ones whose until-date has passed."""
+        """Every finding with a *current* risk acceptance (latest event accepted),
+        carrying the derived state + the finding's project/title/severity/category/
+        status. ``project=None`` spans all projects. Mirrors :meth:`remediations`;
+        ``include_expired=False`` drops ones whose until-date has passed."""
         today = today or _now()[:10]
+        where = "e.type = 'ACCEPTED'"
+        params: List = []
+        if project is not None:
+            where = 'f.project = ? AND ' + where
+            params.append(project)
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT e.finding_id, e.note, e.at, f.title, f.severity, f.category,"
-                " f.status FROM finding_events e JOIN findings f"
-                " ON f.id = e.finding_id WHERE f.project = ? AND e.type ="
-                " 'ACCEPTED' ORDER BY e.id", (project,)).fetchall()
+                f" f.status, f.project FROM finding_events e JOIN findings f"
+                f" ON f.id = e.finding_id WHERE {where} ORDER BY e.id",
+                params).fetchall()
         latest: Dict[str, Dict] = {}
         for r in rows:
             try:
@@ -762,15 +795,26 @@ class FindingsStore(SQLiteStore):
             except (ValueError, TypeError):
                 payload = {}
             latest[r['finding_id']] = {
-                'finding_id': r['finding_id'], 'title': r['title'],
-                'severity': r['severity'], 'category': r['category'],
-                'finding_status': r['status'], 'updated_at': r['at'],
+                'finding_id': r['finding_id'], 'project': r['project'],
+                'title': r['title'], 'severity': r['severity'],
+                'category': r['category'], 'finding_status': r['status'],
+                'updated_at': r['at'],
                 'acceptance': self._acceptance_state(payload, today),
             }
         out = [v for v in latest.values() if v['acceptance']['accepted']]
         if not include_expired:
             out = [v for v in out if not v['acceptance']['expired']]
         return out
+
+    def suppressed_acceptance_ids(self, project: Optional[str] = None, *,
+                                  today: Optional[str] = None) -> set:
+        """Ids of findings whose risk is *currently accepted* (accepted and not yet
+        expired) — the set excluded from the active-risk view. Derive-on-read: an
+        acceptance drops out of this set the moment its until-date passes, with no
+        status change or reopen job (that is the whole point of Option A)."""
+        return {r['finding_id']
+                for r in self.risk_acceptances(project, today=today)
+                if not r['acceptance']['expired']}
 
     # ── triage: assignment + comments (event-sourced over finding_events) ──────
 

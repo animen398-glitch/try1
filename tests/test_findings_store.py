@@ -571,3 +571,42 @@ def test_accept_risk_unknown_finding_raises(tmp_path):
     s = _store(tmp_path)
     with pytest.raises(KeyError):
         s.accept_risk('ghost', until='2099-01-01')
+
+
+# ── risk acceptance → active-risk integration (Option A, derive-on-read) ─────────
+
+def test_active_findings_excludes_current_acceptance(tmp_path):
+    s = _store(tmp_path)
+    a = s.upsert('p', _finding(rule_id='a', location='https://x/a'),
+                 scan_id='s1')['finding']['id']
+    b = s.upsert('p', _finding(rule_id='b', location='https://x/b'),
+                 scan_id='s1')['finding']['id']
+    s.accept_risk(a, until='2099-01-01')                 # current acceptance
+    active = {f['id'] for f in s.active_findings('p', today='2026-07-04')}
+    assert active == {b}                                 # a is held off the risk view
+    # include_accepted returns the full non-inactive set
+    allactive = {f['id'] for f in s.active_findings('p', include_accepted=True)}
+    assert allactive == {a, b}
+
+
+def test_active_findings_reincludes_when_acceptance_expires(tmp_path):
+    s = _store(tmp_path)
+    a = s.upsert('p', _finding(rule_id='a', location='https://x/a'),
+                 scan_id='s1')['finding']['id']
+    s.accept_risk(a, until='2026-06-01')                 # lapses before 'today'
+    assert {f['id'] for f in s.active_findings('p', today='2026-07-04')} == {a}
+
+
+def test_projects_active_count_excludes_current_acceptance(tmp_path):
+    s = _store(tmp_path)
+    a = s.upsert('p', _finding(rule_id='a', location='https://x/a'),
+                 scan_id='s1')['finding']['id']
+    s.upsert('p', _finding(rule_id='b', location='https://x/b'), scan_id='s1')
+    row = next(r for r in s.projects(today='2026-07-04') if r['project'] == 'p')
+    assert row['total'] == 2 and row['active'] == 2
+    s.accept_risk(a, until='2099-01-01')
+    row = next(r for r in s.projects(today='2026-07-04') if r['project'] == 'p')
+    assert row['total'] == 2 and row['active'] == 1      # accepted drops from active
+    # once expired it counts again
+    row2 = next(r for r in s.projects(today='2100-01-01') if r['project'] == 'p')
+    assert row2['active'] == 2
