@@ -543,6 +543,18 @@ def _overview_summary(base: Optional[str] = None) -> dict:
         return {'rows': [], 'totals': {}, 'error': str(e)}
 
 
+def _project_compare(slug_a: str, slug_b: str,
+                     base: Optional[str] = None) -> dict:
+    """Side-by-side comparison of two projects (read-only, derive-on-read)."""
+    try:
+        from core.project_compare import load_project_compare
+        return load_project_compare(base or str(_REPORT_BASE), slug_a, slug_b)
+    except ValueError as e:                    # unknown project slug → 404 upstream
+        return {'error': str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
 # ── Company / Workspace tier (F-C4, web parity) ─────────────────────────────────
 # Read roll-up over core.company (the same aggregates the GUI Overview tab shows)
 # plus a single user-sourced write (assign a project to a company), mirroring the
@@ -2238,6 +2250,14 @@ if _FASTAPI_OK:
     @app.get('/overview')
     async def overview():
         return JSONResponse(_overview_summary())
+
+    @app.get('/projects/compare')
+    async def projects_compare(a: str, b: str):
+        out = _project_compare(a, b)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        return JSONResponse(out)
 
     # ── Company / Workspace tier (F-C4) ──────────────────────────────────
     class CompanyRequest(BaseModel):
