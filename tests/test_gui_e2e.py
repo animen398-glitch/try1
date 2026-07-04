@@ -89,6 +89,22 @@ def test_e2e_findings_bulk_assign_by_click(qapp):
     assert all(fs.get_assignee(i) == 'team-x' for i in ids)
 
 
+def test_e2e_findings_bulk_accept_by_click(qapp):
+    fs = FindingsStore()
+    ids = [fs.upsert('shop.io', {'id': f'fk{i}', 'category': 'vuln',
+                                 'rule_id': f'r{i}', 'title': f't{i}',
+                                 'severity': 'low'})['finding']['id']
+           for i in range(3)]
+    w = FindingsE2EHost()
+    w._refresh_findings()
+    w.findings_table.selectAll()                 # multi-select every visible finding
+    w.findings_accept_until.setText('2099-01-01')
+    w.findings_accept_reason.setText('batch accept')
+    w.btn_findings_accept.click()                # → _write_finding_bulk_accept → store
+    assert all(fs.risk_acceptance_state(i, today='2026-07-04')['accepted']
+               for i in ids)
+
+
 def test_e2e_findings_accept_risk_by_click(qapp):
     fs, fid = _seed_finding()
     w = _findings_host_on_row()

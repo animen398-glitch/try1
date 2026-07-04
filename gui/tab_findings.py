@@ -717,19 +717,24 @@ class FindingsTabMixin:
     # ── risk acceptance (v1): accept / revoke the selected finding ──────────────
 
     def _apply_finding_accept(self):
-        rec = self._selected_finding()
-        fid = rec.get('id')
-        if not fid:
+        ids = [r.get('id') for r in self._selected_findings() if r.get('id')]
+        if not ids:
             return
         reason = self.findings_accept_reason.text().strip()
         approver = self.findings_accept_approver.text().strip()
         until = self.findings_accept_until.text().strip()
         self._set_triage_enabled(False)
         self._set_busy(True)
-        self._run_async(
-            lambda f=fid, r=reason, a=approver, u=until:
-                self._write_finding_accept(f, r, a, u),
-            self._on_triage_written)
+        if len(ids) > 1:               # bulk-accept every selected finding
+            self._run_async(
+                lambda i=ids, r=reason, a=approver, u=until:
+                    self._write_finding_bulk_accept(i, r, a, u),
+                self._on_triage_written)
+        else:
+            self._run_async(
+                lambda f=ids[0], r=reason, a=approver, u=until:
+                    self._write_finding_accept(f, r, a, u),
+                self._on_triage_written)
 
     @staticmethod
     def _write_finding_accept(finding_id: str, reason: str, approver: str,
@@ -742,20 +747,43 @@ class FindingsTabMixin:
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}
 
+    @staticmethod
+    def _write_finding_bulk_accept(ids, reason: str, approver: str,
+                                   until: str) -> dict:
+        try:
+            out = FindingsStore().bulk_accept_risk(ids, reason=reason,
+                                                   approver=approver, until=until)
+            n = len(out['updated'])
+            return {'ok': True, 'msg': (f"риск принят ({n})"
+                                        + (f" до {until}" if until else ""))}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
     def _clear_finding_accept(self):
-        rec = self._selected_finding()
-        fid = rec.get('id')
-        if not fid:
+        ids = [r.get('id') for r in self._selected_findings() if r.get('id')]
+        if not ids:
             return
         self._set_triage_enabled(False)
         self._set_busy(True)
-        self._run_async(lambda f=fid: self._write_finding_accept_clear(f),
-                        self._on_triage_written)
+        if len(ids) > 1:
+            self._run_async(lambda i=ids: self._write_finding_bulk_accept_clear(i),
+                            self._on_triage_written)
+        else:
+            self._run_async(lambda f=ids[0]: self._write_finding_accept_clear(f),
+                            self._on_triage_written)
 
     @staticmethod
     def _write_finding_accept_clear(finding_id: str) -> dict:
         try:
             FindingsStore().clear_risk_acceptance(finding_id)
             return {'ok': True, 'msg': "принятие риска снято"}
+        except Exception as e:  # noqa: BLE001
+            return {'error': str(e)}
+
+    @staticmethod
+    def _write_finding_bulk_accept_clear(ids) -> dict:
+        try:
+            out = FindingsStore().bulk_clear_risk_acceptance(ids)
+            return {'ok': True, 'msg': f"принятие риска снято ({len(out['updated'])})"}
         except Exception as e:  # noqa: BLE001
             return {'error': str(e)}

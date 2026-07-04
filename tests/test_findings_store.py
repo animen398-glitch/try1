@@ -632,3 +632,18 @@ def test_list_findings_query_matches_title_rule_category(tmp_path):
     # no match → empty; blank query → all
     assert s.list_findings('p', query='zzz') == []
     assert len(s.list_findings('p', query='   ')) == 2
+
+
+def test_bulk_accept_and_clear_risk(tmp_path):
+    s = _store(tmp_path)
+    ids = _seed_three(s)
+    out = s.bulk_accept_risk(ids + ['ghost'], reason='batch', approver='ciso',
+                             until='2099-01-01')
+    assert set(out['updated']) == set(ids) and out['missing'] == ['ghost']
+    for i in ids:
+        st = s.risk_acceptance_state(i, today='2026-07-04')
+        assert st['accepted'] and st['reason'] == 'batch'
+    # bulk revoke
+    cl = s.bulk_clear_risk_acceptance(ids)
+    assert set(cl['updated']) == set(ids)
+    assert all(not s.risk_acceptance_state(i)['accepted'] for i in ids)

@@ -319,3 +319,21 @@ def test_findings_list_query_filter():
     d = wa._findings_list(project='p1', query='cookie')
     assert {f['title'] for f in d['findings']} == {'Insecure cookie'}
     assert wa._findings_list(query='nomatch')['findings'] == []
+
+
+def test_findings_bulk_accept_endpoint():
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    s = _seed()
+    client = TestClient(wa.app)
+    ids = [scoped_id('p1', 'f-a'), scoped_id('p1', 'f-b')]
+    r = client.post('/findings/bulk/accept',
+                    json={'ids': ids, 'reason': 'batch', 'until': '2099-01-01'})
+    assert r.status_code == 200 and set(r.json()['updated']) == set(ids)
+    assert all(s.risk_acceptance_state(i, today='2026-07-04')['accepted'] for i in ids)
+    rc = client.post('/findings/bulk/accept', json={'ids': ids, 'clear': True})
+    assert rc.status_code == 200
+    assert all(not s.risk_acceptance_state(i)['accepted'] for i in ids)

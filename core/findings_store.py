@@ -744,6 +744,48 @@ class FindingsStore(SQLiteStore):
                             note=json.dumps({'accepted': False}, ensure_ascii=False),
                             at=now or _now())
 
+    def bulk_accept_risk(self, finding_ids, *, reason: str = '', approver: str = '',
+                         until: str = '', now: Optional[str] = None) -> Dict:
+        """Accept the risk of many findings in one transaction (same reason/approver/
+        until for all). Returns ``{updated, missing}`` id lists. Sibling of
+        :meth:`accept_risk` for the GUI/web bulk surfaces."""
+        payload = {'accepted': True, 'reason': str(reason or '').strip(),
+                   'approver': str(approver or '').strip(),
+                   'until': str(until or '').strip()}
+        note = json.dumps(payload, ensure_ascii=False)
+        now = now or _now()
+        updated: List[str] = []
+        missing: List[str] = []
+        with self._connect() as conn:
+            for fid in finding_ids or []:
+                fid = str(fid)
+                if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                                (fid,)).fetchone() is None:
+                    missing.append(fid)
+                else:
+                    self._log_event(conn, fid, 'ACCEPTED', note=note, at=now)
+                    updated.append(fid)
+        return {'updated': updated, 'missing': missing}
+
+    def bulk_clear_risk_acceptance(self, finding_ids, *,
+                                   now: Optional[str] = None) -> Dict:
+        """Revoke many findings' risk acceptance in one transaction. Returns
+        ``{updated, missing}`` id lists. Sibling of :meth:`clear_risk_acceptance`."""
+        note = json.dumps({'accepted': False}, ensure_ascii=False)
+        now = now or _now()
+        updated: List[str] = []
+        missing: List[str] = []
+        with self._connect() as conn:
+            for fid in finding_ids or []:
+                fid = str(fid)
+                if conn.execute('SELECT 1 FROM findings WHERE id = ?',
+                                (fid,)).fetchone() is None:
+                    missing.append(fid)
+                else:
+                    self._log_event(conn, fid, 'ACCEPTED', note=note, at=now)
+                    updated.append(fid)
+        return {'updated': updated, 'missing': missing}
+
     def get_risk_acceptance(self, finding_id) -> Optional[Dict]:
         """The latest ``ACCEPTED`` payload for a finding, or ``None`` if never set."""
         with self._connect() as conn:

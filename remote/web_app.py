@@ -508,6 +508,20 @@ def _findings_bulk_assign(ids, assignee: Optional[str] = None) -> dict:
         return {'error': str(e)}
 
 
+def _findings_bulk_accept(ids, reason: str = '', approver: str = '',
+                          until: str = '', clear: bool = False) -> dict:
+    """Accept (or, with ``clear``, revoke) the risk of many findings in one call.
+    Returns ``{updated, missing}``, or ``{'error': ...}``."""
+    try:
+        store = FindingsStore()
+        out = (store.bulk_clear_risk_acceptance(list(ids or [])) if clear
+               else store.bulk_accept_risk(list(ids or []), reason=reason,
+                                           approver=approver, until=until))
+        return {'status': 'ok', **out}
+    except Exception as e:  # noqa: BLE001
+        return {'error': str(e)}
+
+
 def _finding_accept(finding_id: str, reason: str = '', approver: str = '',
                     until: str = '') -> dict:
     """Record a time-boxed risk acceptance for one finding. Returns the stored
@@ -2276,6 +2290,13 @@ if _FASTAPI_OK:
         approver: str = ''
         until: str = ''                   # 'YYYY-MM-DD' expiry, empty = open-ended
 
+    class BulkAcceptRequest(BaseModel):
+        ids: List[str]
+        reason: str = ''
+        approver: str = ''
+        until: str = ''
+        clear: bool = False               # true → revoke the acceptance instead
+
     @app.get('/findings')
     async def findings(project: Optional[str] = None,
                        status: Optional[str] = None,
@@ -2311,6 +2332,16 @@ if _FASTAPI_OK:
             return JSONResponse(out, status_code=400)
         await _push(f'[findings] bulk assign → {out["assignee"] or "—"} '
                     f'({len(out["updated"])} updated)', 'ok')
+        return out
+
+    @app.post('/findings/bulk/accept')
+    async def findings_bulk_accept(body: BulkAcceptRequest):
+        out = _findings_bulk_accept(body.ids, body.reason, body.approver,
+                                    body.until, body.clear)
+        if 'error' in out:
+            return JSONResponse(out, status_code=400)
+        verb = 'revoked' if body.clear else 'accepted'
+        await _push(f'[findings] bulk risk {verb} ({len(out["updated"])})', 'ok')
         return out
 
     # Literal 'acceptances' registered before the {finding_id} routes.
