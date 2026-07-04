@@ -2397,6 +2397,25 @@ if _FASTAPI_OK:
             return JSONResponse(out, status_code=code)
         return JSONResponse(out)
 
+    @app.get('/projects/compare.csv')
+    async def projects_compare_csv(a: str, b: str):
+        out = _project_compare(a, b)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        from core.project_compare import render_csv
+        return Response(render_csv(out), media_type='text/csv; charset=utf-8')
+
+    @app.get('/projects/compare.md')
+    async def projects_compare_md(a: str, b: str):
+        out = _project_compare(a, b)
+        if 'error' in out:
+            code = 404 if 'not found' in out['error'] else 400
+            return JSONResponse(out, status_code=code)
+        from core.project_compare import render_markdown
+        return Response(render_markdown(out),
+                        media_type='text/markdown; charset=utf-8')
+
     # ── Company / Workspace tier (F-C4) ──────────────────────────────────
     class CompanyRequest(BaseModel):
         name: Optional[str] = None        # empty/absent → unassign

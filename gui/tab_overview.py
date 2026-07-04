@@ -276,6 +276,16 @@ class OverviewTabMixin:
             "Сравнить риск, поверхность и находки двух проектов бок о бок.")
         self.btn_overview_compare.clicked.connect(self._compare_projects)
         compare_row.addWidget(self.btn_overview_compare)
+        self.btn_overview_compare_csv = StyledButton("CSV", style='secondary')
+        self.btn_overview_compare_csv.setEnabled(False)
+        self.btn_overview_compare_csv.clicked.connect(
+            lambda: self._export_compare('csv'))
+        compare_row.addWidget(self.btn_overview_compare_csv)
+        self.btn_overview_compare_md = StyledButton("MD", style='secondary')
+        self.btn_overview_compare_md.setEnabled(False)
+        self.btn_overview_compare_md.clicked.connect(
+            lambda: self._export_compare('md'))
+        compare_row.addWidget(self.btn_overview_compare_md)
         compare_row.addStretch()
         compare_v.addLayout(compare_row)
         self.overview_compare_result = ResultsDisplay()
@@ -806,6 +816,36 @@ class OverviewTabMixin:
     def _on_compare_done(self, result: dict):
         self._set_busy(False)
         self.overview_compare_result.setPlainText(self._render_compare(result))
+        # Keep the raw comparison so it can be exported; enable export on success.
+        ok = isinstance(result, dict) and not result.get('error') and result.get('metrics')
+        self._compare_last = result if ok else None
+        self.btn_overview_compare_csv.setEnabled(bool(ok))
+        self.btn_overview_compare_md.setEnabled(bool(ok))
+
+    def _export_compare(self, fmt: str):
+        """Save the last comparison as a shareable CSV/Markdown deliverable."""
+        from datetime import datetime
+
+        from core.project_compare import render_csv, render_markdown
+        data = getattr(self, '_compare_last', None)
+        if not data:
+            return
+        a = (data.get('a') or {}).get('slug', 'a')
+        b = (data.get('b') or {}).get('slug', 'b')
+        ext, render, flt = (('csv', render_csv, 'CSV Files (*.csv)') if fmt == 'csv'
+                            else ('md', render_markdown, 'Markdown (*.md)'))
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export comparison", f"compare_{a}_vs_{b}_{stamp}.{ext}", flt)
+        if not path:
+            return
+        try:
+            with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write(render(data))
+        except Exception as e:  # noqa: BLE001
+            self.overview_status.setText(f"Ошибка экспорта: {e}")
+            return
+        self.overview_status.setText(f"Сравнение экспортировано: {path}")
 
     @staticmethod
     def _render_compare(data: dict) -> str:
@@ -816,7 +856,11 @@ class OverviewTabMixin:
         sa, sb = a.get('slug', 'A'), b.get('slug', 'B')
 
         def _cell(v):
-            return '—' if v is None else str(v)
+            if v is None:
+                return '—'
+            if isinstance(v, float) and v.is_integer():  # 20.0 → 20
+                return str(int(v))
+            return str(v)
 
         lines = [f"Сравнение:  {sa}   vs   {sb}"]
         s = data.get('summary') or {}

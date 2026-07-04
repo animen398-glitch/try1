@@ -123,3 +123,27 @@ def test_load_project_compare_over_workspace(tmp_path):
     rs = {m['key']: m for m in out['metrics']}['risk_score']
     assert rs['a'] == 15 and rs['b'] == 65
     assert rs['worse'] == 'b'
+
+
+# ── CSV / Markdown renderers (shareable deliverable) ────────────────────────────
+
+def _comparison():
+    return pc.compare_projects(_rows(), 'a.com', 'b.com')
+
+
+def test_render_csv_header_and_rows():
+    import csv as _csv
+    import io as _io
+    text = pc.render_csv(_comparison())
+    table = list(_csv.reader(_io.StringIO(text)))
+    assert table[0] == ['Metric', 'a.com', 'b.com', 'Delta', 'Worse']
+    rs = next(r for r in table if r[0] == 'Risk score')
+    assert rs[1] == '20' and rs[2] == '70' and rs[3] == '+50' and rs[4] == 'b.com'
+
+
+def test_render_markdown_has_title_summary_and_table():
+    md = pc.render_markdown(_comparison())
+    assert md.startswith('# Project comparison: a.com vs b.com')
+    assert 'Worse metrics:' in md
+    assert '| Metric | a.com | b.com | Δ | Worse |' in md
+    assert '| Risk score | 20 | 70 | +50 | b.com |' in md

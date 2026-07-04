@@ -15,6 +15,8 @@ the numbers ``portfolio.build_portfolio`` already folded from each project's
 ``metadata.json`` + the findings store.
 """
 
+import csv
+import io
 from typing import Dict, List
 
 from core.executive_summary import RISK_ORDER
@@ -122,6 +124,70 @@ def compare_projects(rows: List[Dict], slug_a: str, slug_b: str) -> Dict:
 
     return {'a': _header(row_a), 'b': _header(row_b),
             'metrics': metrics, 'summary': summary}
+
+
+def _num_str(value) -> str:
+    """Render a metric value, showing an integral float as a plain int (the values
+    come through ``_num`` as floats, so 20.0 should read as 20)."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def _cell(value) -> str:
+    """Display a metric value, unknown → em dash."""
+    return '—' if value is None else _num_str(value)
+
+
+def _delta_text(delta) -> str:
+    return '—' if delta is None else f'{delta:+g}'
+
+
+def _worse_labels(comparison: Dict) -> Dict:
+    sa = (comparison.get('a') or {}).get('slug', 'A')
+    sb = (comparison.get('b') or {}).get('slug', 'B')
+    return {'a': sa, 'b': sb, 'tie': 'tie', None: '—'}
+
+
+def render_csv(comparison: Dict) -> str:
+    """CSV of a comparison: header ``Metric, <A>, <B>, Delta, Worse`` (the A/B column
+    names are the project slugs) + one row per metric. Pure, well-formed via ``csv``."""
+    a = comparison.get('a') or {}
+    b = comparison.get('b') or {}
+    sa, sb = a.get('slug', 'A'), b.get('slug', 'B')
+    worse = {'a': sa, 'b': sb, 'tie': 'tie', None: ''}
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(['Metric', sa, sb, 'Delta', 'Worse'])
+    for m in comparison.get('metrics') or []:
+        writer.writerow([m.get('label', ''),
+                         '' if m.get('a') is None else _num_str(m.get('a')),
+                         '' if m.get('b') is None else _num_str(m.get('b')),
+                         _delta_text(m.get('delta')),
+                         worse.get(m.get('worse'), '')])
+    return buf.getvalue()
+
+
+def render_markdown(comparison: Dict) -> str:
+    """Markdown of a comparison: a title, the summary tally, and a metrics table.
+    Pure and deterministic (a shareable A-vs-B deliverable)."""
+    a = comparison.get('a') or {}
+    b = comparison.get('b') or {}
+    sa, sb = a.get('slug', 'A'), b.get('slug', 'B')
+    worse = _worse_labels(comparison)
+    s = comparison.get('summary') or {}
+    lines = [
+        f'# Project comparison: {sa} vs {sb}', '',
+        f'- Worse metrics: {sa} — {s.get("a_worse", 0)}, '
+        f'{sb} — {s.get("b_worse", 0)}, tie — {s.get("tie", 0)}', '',
+        f'| Metric | {sa} | {sb} | Δ | Worse |',
+        '| --- | --- | --- | --- | --- |',
+    ]
+    for m in comparison.get('metrics') or []:
+        lines.append(
+            f"| {m.get('label', '')} | {_cell(m.get('a'))} | {_cell(m.get('b'))} "
+            f"| {_delta_text(m.get('delta'))} | {worse.get(m.get('worse'), '—')} |")
+    return '\n'.join(lines) + '\n'
 
 
 def load_project_compare(base: str, slug_a: str, slug_b: str) -> Dict:

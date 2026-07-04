@@ -463,3 +463,24 @@ def test_e2e_overview_compare_by_click(qapp, tmp_path):
     w.btn_overview_compare.click()                     # → _query_compare → render
     assert 'low.com' in w.overview_compare_result.toPlainText()
     assert 'Risk score' in w.overview_compare_result.toPlainText()
+
+
+def test_e2e_overview_compare_export_by_click(qapp, tmp_path, monkeypatch):
+    import gui.tab_overview as ov
+    from tests.gui_test_helpers import OverviewE2EHost
+    _seed_project(tmp_path, 'https://low.com', scores=(15,))
+    _seed_project(tmp_path, 'https://high.com', scores=(65,))
+    w = OverviewE2EHost()
+    w.settings = {'output_dir': str(tmp_path)}
+    w._refresh_overview()
+    w.overview_compare_a.setCurrentIndex(w.overview_compare_a.findData('low.com'))
+    w.overview_compare_b.setCurrentIndex(w.overview_compare_b.findData('high.com'))
+    w.btn_overview_compare.click()
+    # export buttons enable once a comparison exists
+    assert w.btn_overview_compare_csv.isEnabled()
+    out = tmp_path / 'cmp.csv'
+    monkeypatch.setattr(ov.QFileDialog, 'getSaveFileName',
+                        staticmethod(lambda *a, **k: (str(out), 'CSV Files (*.csv)')))
+    w.btn_overview_compare_csv.click()           # → _export_compare('csv') → file
+    text = out.read_text(encoding='utf-8-sig')
+    assert 'Metric,low.com,high.com' in text and 'Risk score' in text

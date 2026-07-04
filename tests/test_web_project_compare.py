@@ -68,3 +68,27 @@ def test_project_compare_endpoint(tmp_path, monkeypatch):
     # unknown project → 404
     r404 = client.get('/projects/compare', params={'a': 'low.com', 'b': 'ghost.com'})
     assert r404.status_code == 404
+
+
+def test_project_compare_csv_and_md_endpoints(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
+    if not wa._FASTAPI_OK:
+        pytest.skip("fastapi not importable in web_app")
+    from fastapi.testclient import TestClient
+    _seed(tmp_path)
+    monkeypatch.setattr(wa, '_REPORT_BASE', tmp_path)
+    client = TestClient(wa.app)
+
+    rc = client.get('/projects/compare.csv', params={'a': 'low.com', 'b': 'high.com'})
+    assert rc.status_code == 200 and rc.headers['content-type'].startswith('text/csv')
+    assert 'Metric,low.com,high.com,Delta,Worse' in rc.text
+
+    rm = client.get('/projects/compare.md', params={'a': 'low.com', 'b': 'high.com'})
+    assert rm.status_code == 200
+    assert rm.headers['content-type'].startswith('text/markdown')
+    assert '# Project comparison: low.com vs high.com' in rm.text
+
+    # unknown project still 404 on the export routes
+    assert client.get('/projects/compare.csv',
+                      params={'a': 'low.com', 'b': 'ghost'}).status_code == 404
