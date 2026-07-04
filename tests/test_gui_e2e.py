@@ -12,7 +12,7 @@ from core.findings_store import FindingsStore
 from tests.gui_test_helpers import (
     AssetsE2EHost, AuditRunsE2EHost, CriticalityE2EHost, EngagementsE2EHost,
     FindingsE2EHost, IacE2EHost, MissionsE2EHost, OverviewE2EHost,
-    RemediationE2EHost,
+    RemediationE2EHost, TimelineE2EHost,
 )
 
 
@@ -403,3 +403,42 @@ def test_e2e_iac_scan_by_click(qapp, tmp_path):
     # unpinned FROM + remote ADD are both flagged → the findings table has rows
     assert w.iac_findings.rowCount() >= 1
     assert w.btn_iac_export.isEnabled()            # export enabled once results exist
+
+
+# ── Timeline: the full load chain populates the change feed (read chain) ─────────
+
+def _seed_timeline_project(base):
+    """Two recorded scans (risk rising) + persisted findings, so build_timeline
+    yields both series points and events."""
+    import json
+
+    from core.collection_runner import CollectionRunner
+    from core.project import ProjectStore
+    project = ProjectStore(base).get_or_create('https://x.com')
+    runner = CollectionRunner()
+    for sid, risk in (('20260101_000000', 10), ('20260102_000000', 60)):
+        scan_dir = project.start_scan(sid)
+        report = {
+            'scan_id': sid, 'finished_at': sid,
+            'executive_summary': {'risk_level': 'High' if risk == 60 else 'Low',
+                                  'risk_score': risk, 'risk_100': risk,
+                                  'metrics': {'risk_100': risk}},
+            'phases': {'recon': {'status': 'Success', 'data': {}},
+                       'vulns': {'status': 'Success', 'findings': [
+                           {'title': 'Weak Content-Security-Policy',
+                            'severity': 'Medium'}]}},
+        }
+        runner._sync_findings(report, project, sid)
+        (scan_dir / 'report.json').write_text(json.dumps(report), encoding='utf-8')
+        project.record_scan(scan_dir, report)
+
+
+def test_e2e_timeline_load_populates_feed(qapp, tmp_path):
+    w = TimelineE2EHost()
+    w.settings = {'output_dir': str(tmp_path)}     # _timeline_base() reads this
+    _seed_timeline_project(str(tmp_path))
+    w._refresh_timeline()                          # sync: projects → build_timeline → feed
+    assert w.timeline_project.currentData() == 'x.com'
+    # the full query→callback→paginator→widget chain populated the change feed
+    assert w.timeline_events.rowCount() >= 1
+    assert w._timeline_events_data                 # full list kept for CSV export

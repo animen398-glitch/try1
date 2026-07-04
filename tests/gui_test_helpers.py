@@ -227,3 +227,7 @@ class CriticalityE2EHost(_SyncRunMixin, CriticalityHost):
 
 class IacE2EHost(_SyncRunMixin, IacHost):
     """IacHost whose _run_async runs inline (for click-driven e2e tests)."""
+
+
+class TimelineE2EHost(_SyncRunMixin, TimelineHost):
+    """TimelineHost whose _run_async runs inline (for click-driven e2e tests)."""
