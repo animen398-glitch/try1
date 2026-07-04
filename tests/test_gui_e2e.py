@@ -140,6 +140,56 @@ def test_e2e_missions_run_by_click(qapp):
     assert updated['payload']['linked_audit_run_ids']   # audit run linked
 
 
+def _mission_row(w, mission_id):
+    """Row index of the mission whose id cell (last column) matches, or -1."""
+    id_col = len(w.MISSION_COLUMNS) - 1
+    for r in range(w.mission_table.rowCount()):
+        item = w.mission_table.item(r, id_col)
+        if item and item.text() == mission_id:
+            return r
+    return -1
+
+
+def test_e2e_missions_link_run_by_click(qapp):
+    from core import mission_runner
+    from core.mission_store import MissionStore
+    from core.pentest_mission import advance_mission_status, create_mission
+    store = MissionStore()
+    # produce a real audit run for the project by executing a ready mission
+    src = _seed_mission()
+    store.save_mission(
+        advance_mission_status(store.get_mission(src['id'])['payload'], 'ready'))
+    run_id = mission_runner.run_mission(store.get_mission(src['id'])['payload'])['run_id']
+    # a separate target mission to link the run onto
+    target = store.save_mission(
+        create_mission('shop.io', 'link target', allowed_actions=['headers_check']))
+    w = MissionsE2EHost()
+    w._refresh_mission_projects()
+    row = _mission_row(w, target['id'])
+    assert row >= 0
+    w.mission_table.selectRow(row)
+    idx = w.mission_link_run.findData(run_id)     # run offered in the link combo
+    assert idx >= 0
+    w.mission_link_run.setCurrentIndex(idx)
+    assert w.btn_mission_link_run.isEnabled()
+    w.btn_mission_link_run.click()                # → _do_link_run → store
+    linked = MissionStore().get_mission(target['id'])['payload']['linked_audit_run_ids']
+    assert run_id in linked
+
+
+def test_e2e_missions_schedule_by_click(qapp):
+    from core.mission_store import MissionStore
+    saved = _seed_mission()
+    w = MissionsE2EHost()
+    w._refresh_mission_projects()
+    w.mission_table.selectRow(0)
+    w.mission_schedule_interval.setCurrentText('daily')
+    assert w.btn_mission_schedule.isEnabled()
+    w.btn_mission_schedule.click()                # → _do_schedule_mission → set schedule
+    sched = MissionStore().get_schedule(saved['id'])
+    assert sched['interval'] == 'daily' and sched['enabled']
+
+
 def test_e2e_missions_fill_evidence_from_scan_by_click(qapp, tmp_path, monkeypatch):
     import json
 
