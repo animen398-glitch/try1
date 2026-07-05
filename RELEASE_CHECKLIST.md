@@ -31,8 +31,11 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 - ⚠ **Project LICENSE undecided.** No top-level `LICENSE` file exists — pick the
   distribution license (proprietary vs. open). No longer GPL-constrained now that
   Fluent-Widgets is omitted; any license (incl. proprietary) is available.
-- ◻ Bundle full license texts (LGPL-3.0, GPL-3.0, Apache-2.0, MIT, BSD-3-Clause)
-  in the distributed build, next to `THIRD_PARTY_NOTICES.md`.
+- ✅ Full license texts bundled — `licenses/` holds the shipped components'
+  texts (LGPL-3.0 + GPL-3.0 for PySide6/Qt, Apache-2.0 + NOTICE for requests,
+  MIT for qtpy/beautifulsoup4, BSD-3-Clause for lxml), copied verbatim from the
+  installed distributions; `build.spec` ships `licenses/` + `THIRD_PARTY_NOTICES.md`
+  in the `.exe`. See `licenses/README.md`.
 
 ## C. Changelog & versioning
 

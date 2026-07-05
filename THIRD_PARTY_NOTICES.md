@@ -75,5 +75,7 @@ separately by the operator.
    `LICENSE` file. The distribution license (proprietary vs. open) must be
    chosen; if GPL components are bundled, that choice is constrained by §4.1.
 
-Bundle the applicable full license texts (LGPL-3.0, GPL-3.0, Apache-2.0, MIT,
-BSD-3-Clause) alongside this notice in any distributed build.
+The applicable full license texts (LGPL-3.0, GPL-3.0, Apache-2.0, MIT,
+BSD-3-Clause) are bundled in `licenses/` and shipped with the build alongside
+this notice (`build.spec` copies both into the `.exe`). See `licenses/README.md`
+for the component → license-text mapping.
