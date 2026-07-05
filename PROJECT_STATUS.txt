@@ -6235,3 +6235,52 @@ side-nav) + build.spec opt-in ASA_BUNDLE_FLUENT=1 (иначе excludes); CHANGEL
 Проверено: ruff clean; полный offline pytest — exit 0, 2999 passed (254 файла;
 1 существующий Starlette/httpx warning); self-check 30 вкладок. Локальные коммиты
 (178ea93e, 2a0f8baf, bae5dff1 + doc-sync), без push.
+
+================================================================================
+2026-07-05 — RELEASE 2.0.0 (срезан локально, тег v2.0.0, без push)
+================================================================================
+Срезан мажорный релиз 2.0.0. Мажорная версия — потому что с 1.0.0 удалено
+медиа-скачивание (video/image, yt-dlp/ffmpeg), т.е. по SemVer это ломающее
+изменение состава фич.
+
+Версия:
+- core/config.APP_VERSION: 1.0.0 -> 2.0.0 (единый источник версии; читают
+  crash_reporter, project_io (app_version в bundle-манифесте), update_check).
+- Локальный аннотированный тег v2.0.0 на commit 53849732 (git describe = v2.0.0).
+  НЕ запушен — push/удалёнку/публикацию делает человек (git-политика §5.1).
+
+CHANGELOG:
+- Секция [Unreleased] перенесена под "## [2.0.0] — 2026-07-05" и покрывает весь
+  post-1.0.0 объём: Workbench v1/v2, Mission Center, Engagements, Retest runs,
+  offline tool-слой, KEV/EPSS threat intel, арка Risk Acceptance, findings/asset
+  search, bulk-триаж, Compare Projects, Authorized Enterprise Recon E1–E10,
+  reliability (crash reporter / web auth / rate-limit / retention+backup),
+  GUI (attack-path graph, пагинация, first-run/health, e2e-слой); Removed:
+  медиа-скачивание. Сверху оставлена свежая пустая [Unreleased].
+
+Лицензирование (release-checklist B):
+- THIRD_PARTY_NOTICES.md — инвентарь зависимостей+лицензий из installed metadata.
+- GPL-free сборка по умолчанию: qfluentwidgets (GPL-3.0) не бандлится
+  (gui/_fluent.py soft-degrade + build.spec opt-in ASA_BUNDLE_FLUENT=1).
+- licenses/ — полные тексты shipped-компонентов (LGPL-3.0 + GPL-3.0 для
+  PySide6/Qt, Apache-2.0 + NOTICE для requests, MIT для qtpy/bs4, BSD-3-Clause
+  для lxml; verbatim из установленных дистрибутивов) + маппинг в licenses/
+  README.md; build.spec бандлит licenses/ и THIRD_PARTY_NOTICES.md в .exe.
+
+Валидация релиза:
+- Полный offline pytest — exit 0, 2999 passed (254 файла; 1 Starlette/httpx warn).
+- Demo-pilot (demo_seed.py, изолированный ASA_DATA_ROOT): 11/11 стадий —
+  project→scan→assets/findings→triage→risk acceptance(+expiry/filter)→attack
+  path→remediation→mission run→engagement report→retest→mission report→GUI
+  read-chain (30 вкладок). Дефектов продукта не выявлено.
+- ruff clean; self-check 30 вкладок. Версия-связанные сьюты (update_check /
+  project_io / crash_reporter) зелёные.
+
+Release-checklist: A (verification) / B (licensing) / C (changelog+count) /
+E (demo pilot) — ЗАКРЫТЫ. Открыто (на стороне пользователя / билд-машины):
+D — frozen PyInstaller smoke (проверить 30 вкладок, GPL-free, licenses/ в .exe),
+installer + подпись; выбор LICENSE проекта; публикация (push commit + тег v2.0.0).
+
+Коммиты релизной серии (локально, без push): 178ea93e (expired-only filter),
+2a0f8baf (checklist+notices), bae5dff1 (GPL-free build), b97393b2 (changelog+
+count), 9139b406 (pilot), b33513ff (license texts), 53849732 (release 2.0.0).
