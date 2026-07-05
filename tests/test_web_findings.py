@@ -271,6 +271,18 @@ def test_findings_acceptances_list_helper():
     assert [a['finding_id'] for a in out['acceptances']] == [scoped_id('p1', 'f-a')]
 
 
+def test_findings_acceptances_expired_only_helper():
+    _seed()
+    active = scoped_id('p1', 'f-a')
+    lapsed = scoped_id('p1', 'f-b')
+    wa._finding_accept(active, until='2099-01-01')
+    wa._finding_accept(lapsed, until='2000-01-01')          # already expired
+    both = {a['finding_id'] for a in wa._findings_acceptances('p1')['acceptances']}
+    assert both == {active, lapsed}
+    out = wa._findings_acceptances('p1', expired_only=True)
+    assert [a['finding_id'] for a in out['acceptances']] == [lapsed]
+
+
 def test_finding_acceptance_endpoints_with_testclient():
     pytest.importorskip("fastapi")
     pytest.importorskip("httpx")

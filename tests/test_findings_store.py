@@ -565,6 +565,9 @@ def test_risk_acceptances_lists_current_and_filters_expired(tmp_path):
     assert {r['finding_id'] for r in allrows} == {a, b}
     active_only = s.risk_acceptances('p', today='2026-07-04', include_expired=False)
     assert {r['finding_id'] for r in active_only} == {a}
+    # expired_only is the re-review queue: only lapsed acceptances survive.
+    expired_only = s.risk_acceptances('p', today='2026-07-04', expired_only=True)
+    assert {r['finding_id'] for r in expired_only} == {b}
 
 
 def test_accept_risk_unknown_finding_raises(tmp_path):

@@ -820,11 +820,14 @@ class FindingsStore(SQLiteStore):
 
     def risk_acceptances(self, project: Optional[str] = None, *,
                          today: Optional[str] = None,
-                         include_expired: bool = True) -> List[Dict]:
+                         include_expired: bool = True,
+                         expired_only: bool = False) -> List[Dict]:
         """Every finding with a *current* risk acceptance (latest event accepted),
         carrying the derived state + the finding's project/title/severity/category/
         status. ``project=None`` spans all projects. Mirrors :meth:`remediations`;
-        ``include_expired=False`` drops ones whose until-date has passed."""
+        ``include_expired=False`` drops ones whose until-date has passed;
+        ``expired_only=True`` keeps *only* the lapsed ones (the re-review queue) and
+        implies ``include_expired``."""
         today = today or _now()[:10]
         where = "e.type = 'ACCEPTED'"
         params: List = []
@@ -851,6 +854,8 @@ class FindingsStore(SQLiteStore):
                 'acceptance': self._acceptance_state(payload, today),
             }
         out = [v for v in latest.values() if v['acceptance']['accepted']]
+        if expired_only:
+            return [v for v in out if v['acceptance']['expired']]
         if not include_expired:
             out = [v for v in out if not v['acceptance']['expired']]
         return out

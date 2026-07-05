@@ -68,6 +68,29 @@ def test_table_load_populates_rows_and_rollup(qapp):
     assert 'истекли: 1' in w.acc_status.text()
 
 
+def test_expired_only_filter_narrows_table_but_not_rollup(qapp):
+    w = AcceptancesHost()
+    w._on_acc_table_loaded({'project': 'shop.com', 'rows': [
+        {'finding_id': 'f1', 'title': 'V0', 'severity': 'high', 'category': 'vuln',
+         'finding_status': 'OPEN', 'updated_at': 't',
+         'acceptance': {'accepted': True, 'expired': False, 'reason': 'r',
+                        'approver': 'bob', 'until': '2099-01-01'}},
+        {'finding_id': 'f2', 'title': 'V1', 'severity': 'low', 'category': 'vuln',
+         'finding_status': 'OPEN', 'updated_at': 't',
+         'acceptance': {'accepted': True, 'expired': True, 'reason': 'r',
+                        'approver': 'bob', 'until': '2000-01-01'}},
+    ]})
+    assert w.acc_table.rowCount() == 2                      # both shown by default
+    w.acc_expired_only.setChecked(True)                    # → only the lapsed one
+    assert w.acc_table.rowCount() == 1
+    assert [r['finding_id'] for r in w._acc_records] == ['f2']
+    # rollup still reflects the whole set, not the filtered view
+    assert w.acc_rollup['total'].text() == '2'
+    assert w.acc_rollup['expired'].text() == '1'
+    w.acc_expired_only.setChecked(False)
+    assert w.acc_table.rowCount() == 2
+
+
 def test_selection_enables_revoke_and_shows_detail(qapp):
     w = AcceptancesHost()
     w._populate_acc_table([{

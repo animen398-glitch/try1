@@ -18,8 +18,9 @@ from datetime import datetime
 
 from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
-    QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
-    QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
+    QHeaderView, QLabel, QMessageBox, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from gui import theme
@@ -51,6 +52,13 @@ class AcceptancesTabMixin:
         self.acc_project.setMinimumWidth(220)
         self.acc_project.currentIndexChanged.connect(self._apply_acc_filter)
         ctrl.addWidget(self.acc_project)
+
+        self.acc_expired_only = QCheckBox("Только истёкшие")
+        self.acc_expired_only.setToolTip(
+            "Показать только принятия риска, срок которых истёк — их нужно "
+            "перепроверить. Счётчики выше остаются по всему проекту.")
+        self.acc_expired_only.toggled.connect(self._apply_acc_view)
+        ctrl.addWidget(self.acc_expired_only)
 
         ctrl.addStretch()
         self.acc_status = QLabel("Принято: 0")
@@ -114,7 +122,8 @@ class AcceptancesTabMixin:
         detail_grp.setLayout(detail_layout)
         layout.addWidget(detail_grp)
 
-        self._acc_records: list = []
+        self._acc_all: list = []          # full loaded set (rollup + view filter)
+        self._acc_records: list = []      # currently displayed subset (table + CSV)
         self._acceptances_widget = w
         return w
 
@@ -196,11 +205,13 @@ class AcceptancesTabMixin:
             self._apply_acc_filter()
             return
         if result.get('error'):
+            self._acc_all = []
             self._populate_acc_rollup({})
             self._populate_acc_table([])
             self.acc_status.setText(f"Ошибка загрузки: {result['error']}")
             return
         rows = result.get('rows') or []
+        self._acc_all = rows
         expired = sum(1 for r in rows
                       if (r.get('acceptance') or {}).get('expired'))
         summary = {'total': len(rows), 'active': len(rows) - expired,
@@ -208,7 +219,15 @@ class AcceptancesTabMixin:
         self.acc_status.setText(
             f"Принято: {summary['total']}  ·  действуют: {summary['active']}"
             f"  ·  истекли: {summary['expired']}")
-        self._populate_acc_rollup(summary)
+        self._populate_acc_rollup(summary)   # rollup always spans the full set
+        self._apply_acc_view()               # table honours the expired-only filter
+
+    def _apply_acc_view(self):
+        """Render the table from the full set, narrowed by the expired-only
+        checkbox. Rollup counters are left untouched (they span the whole set)."""
+        rows = self._acc_all
+        if getattr(self, 'acc_expired_only', None) and self.acc_expired_only.isChecked():
+            rows = [r for r in rows if (r.get('acceptance') or {}).get('expired')]
         self._populate_acc_table(rows)
 
     # ── populate ──────────────────────────────────────────────────────────────

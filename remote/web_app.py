@@ -557,12 +557,15 @@ def _finding_acceptance(finding_id: str) -> dict:
         return {'error': str(e)}
 
 
-def _findings_acceptances(project: str, include_expired: bool = True) -> dict:
-    """All currently-accepted findings in a project (with expired flags)."""
+def _findings_acceptances(project: str, include_expired: bool = True,
+                          expired_only: bool = False) -> dict:
+    """All currently-accepted findings in a project (with expired flags).
+    ``expired_only`` narrows the list to lapsed acceptances (the re-review queue)."""
     try:
         return {'project': project,
                 'acceptances': FindingsStore().risk_acceptances(
-                    project, include_expired=include_expired)}
+                    project, include_expired=include_expired,
+                    expired_only=expired_only)}
     except Exception as e:  # noqa: BLE001
         return {'error': str(e)}
 
@@ -2346,13 +2349,16 @@ if _FASTAPI_OK:
 
     # Literal 'acceptances' registered before the {finding_id} routes.
     @app.get('/findings/acceptances')
-    async def findings_acceptances(project: str, include_expired: bool = True):
-        return JSONResponse(_findings_acceptances(project, include_expired))
+    async def findings_acceptances(project: str, include_expired: bool = True,
+                                   expired_only: bool = False):
+        return JSONResponse(
+            _findings_acceptances(project, include_expired, expired_only))
 
     @app.get('/findings/acceptances.csv')
-    async def findings_acceptances_csv_route(project: str):
+    async def findings_acceptances_csv_route(project: str,
+                                             expired_only: bool = False):
         from core.report_export import risk_acceptances_csv
-        out = _findings_acceptances(project)
+        out = _findings_acceptances(project, expired_only=expired_only)
         return Response(risk_acceptances_csv(out.get('acceptances', [])),
                         media_type='text/csv; charset=utf-8')
 
