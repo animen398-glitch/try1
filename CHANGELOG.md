@@ -9,7 +9,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Large post-1.0.0 body of work (all local, unreleased). Grouped by theme;
+## [2.0.0] — 2026-07-05
+
+Major release. The product became a local ASM / CSM + client-safe pentest
+workbench (managed findings, assets, business risk, attack paths, remediation,
+monitoring, missions, engagements, evidence, reporting) and dropped media
+downloading — a removed feature, hence the major version bump. Grouped by theme;
 authorized/client-safe, evidence-first, offline-by-default throughout.
 
 ### Added

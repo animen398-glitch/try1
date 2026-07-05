@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Single source of truth for the application version (semver). Surfaced in the
 # SARIF tool.driver, CI gate, "About" dialog and future update checks.
-APP_VERSION = '1.0.0'
+APP_VERSION = '2.0.0'
 
 # Writable user data (settings, targets, DBs, live-test output) and read-only
 # bundled resources (plugins) resolve through the process-default PathManager,

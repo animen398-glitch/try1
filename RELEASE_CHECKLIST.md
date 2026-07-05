@@ -1,7 +1,8 @@
 # Release Checklist — Advanced Site Analyzer
 
-Target version: **1.0.0** (`core/config.APP_VERSION`). Local-only workflow:
-commits happen locally; publishing/signing/distribution is done by a human.
+Target version: **2.0.0** (`core/config.APP_VERSION`) — cut 2026-07-05 (local
+tag `v2.0.0`). Local-only workflow: commits and the tag are local; publishing /
+signing / distribution is done by a human.
 
 Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a blocker).
 
@@ -43,9 +44,9 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
   work (workbench, missions, engagements, retest, tool layer, KEV/EPSS, risk
   acceptance, search, compare, enterprise recon, reliability, GPL-free build;
   media downloading under Removed).
-- ⚠ Decide the release version + bump `APP_VERSION`, then move `[Unreleased]`
-  under it with a date. Note: media downloading was **removed** since 1.0.0, so
-  SemVer argues for a major bump — maintainer's call.
+- ✅ Version cut to **2.0.0** — `APP_VERSION` bumped, `CHANGELOG` `[Unreleased]`
+  moved under `[2.0.0] — 2026-07-05`, local tag `v2.0.0`. Major bump because media
+  downloading was removed since 1.0.0.
 
 ## D. Packaging & clean-machine acceptance
 
