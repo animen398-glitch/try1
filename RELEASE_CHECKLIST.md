@@ -29,9 +29,10 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
   `gui/_fluent.py` soft-degrades to a text-only side-nav (native `QMainWindow`
   shell is unaffected). Internal builds holding a commercial license can still
   bundle it with `ASA_BUNDLE_FLUENT=1`.
-- ⚠ **Project LICENSE undecided.** No top-level `LICENSE` file exists — pick the
-  distribution license (proprietary vs. open). No longer GPL-constrained now that
-  Fluent-Widgets is omitted; any license (incl. proprietary) is available.
+- ✅ **Project LICENSE chosen: proprietary (all rights reserved).** Top-level
+  `LICENSE` added (authorized-use only; carves out third-party OSS which keeps
+  its own licenses); shipped in the `.exe` via `build.spec`; referenced from the
+  README and `THIRD_PARTY_NOTICES.md`.
 - ✅ Full license texts bundled — `licenses/` holds the shipped components'
   texts (LGPL-3.0 + GPL-3.0 for PySide6/Qt, Apache-2.0 + NOTICE for requests,
   MIT for qtpy/beautifulsoup4, BSD-3-Clause for lxml), copied verbatim from the
@@ -82,5 +83,6 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 1. ✅ **Release channel** — public distribution (strict compliance path).
 2. ✅ **Fluent-Widgets / GPL** — omit from the default build (GPL-free); the app
    soft-degrades. `ASA_BUNDLE_FLUENT=1` re-enables it for licensed internal builds.
-3. ⚠ **Project license** — still open: pick proprietary or an open license
-   (unconstrained now). Needed before a public ship.
+3. ✅ **Project license** — proprietary (all rights reserved; authorized-use
+   only). Top-level `LICENSE`; applies to ASA's own code, third-party OSS keeps
+   its own terms.

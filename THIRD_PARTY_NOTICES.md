@@ -71,9 +71,11 @@ separately by the operator.
    replaceable shared objects (the default one-dir layout satisfies this better
    than a fully static one-file), and include this notice + the LGPL text.
 
-3. **Project's own license is undecided.** The repository has no top-level
-   `LICENSE` file. The distribution license (proprietary vs. open) must be
-   chosen; if GPL components are bundled, that choice is constrained by §4.1.
+3. **Project's own license — RESOLVED: proprietary.** The project's own code
+   ships under the proprietary `LICENSE` (all rights reserved; authorized-use
+   only). It applies only to Advanced Site Analyzer's own code; the third-party
+   components above keep their own licenses (this notice + `licenses/`). The
+   GPL-free build (§4.1) keeps the proprietary choice unconstrained.
 
 The applicable full license texts (LGPL-3.0, GPL-3.0, Apache-2.0, MIT,
 BSD-3-Clause) are bundled in `licenses/` and shipped with the build alongside

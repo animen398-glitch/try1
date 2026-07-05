@@ -1,0 +1,47 @@
+Advanced Site Analyzer — Proprietary License
+Copyright (c) 2026 the Advanced Site Analyzer authors. All rights reserved.
+
+1. Ownership
+   This software, including its source code, documentation, and associated
+   materials (the "Software"), is proprietary and confidential. All right,
+   title, and interest in and to the Software remain with the copyright holder.
+
+2. No license granted by default
+   No permission is granted to use, copy, reproduce, modify, adapt, publish,
+   distribute, sublicense, sell, or create derivative works of the Software,
+   in whole or in part, except under a separate written agreement with the
+   copyright holder. Absent such an agreement, no rights are granted and all
+   rights are reserved.
+
+3. Authorized use only
+   The Software is intended solely for AUTHORIZED security testing, research,
+   and education. Any permitted use (under a separate agreement) must be against
+   assets the user owns or is explicitly authorized in writing to assess. Use of
+   the Software to access, scan, or attack systems without authorization is
+   strictly prohibited and is the sole responsibility of the user.
+
+4. Third-party components
+   The Software incorporates third-party open-source components that remain
+   licensed under their own terms — NOT this license. Those terms and the full
+   license texts are provided in THIRD_PARTY_NOTICES.md and the licenses/
+   directory, and they govern those components. Nothing in this license limits,
+   supersedes, or relicenses any third-party component; nothing in those
+   third-party licenses grants any rights to the Software's own code beyond what
+   this license allows.
+
+5. No trademark rights
+   This license does not grant any right to use the names, logos, or trademarks
+   of the copyright holder.
+
+6. Disclaimer of warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+7. Limitation of liability
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+   FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+   IN THE SOFTWARE.
+
+For licensing inquiries, contact the copyright holder.

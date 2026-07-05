@@ -33,8 +33,10 @@ a = Analysis(
         # resource_root/plugins (== _MEIPASS/plugins when frozen). Bundle the dir
         # or the frozen .exe loses them (e.g. the Scrapy tab) — see PluginManager.
         ('plugins', 'plugins'),
-        # Licensing artifacts shipped with the public build (LGPL/Apache/MIT/BSD
-        # full texts + dependency inventory). See licenses/README.md.
+        # Licensing artifacts shipped with the public build: the project's own
+        # LICENSE (proprietary) + third-party OSS full texts / inventory. See
+        # licenses/README.md.
+        ('LICENSE', '.'),
         ('licenses', 'licenses'),
         ('THIRD_PARTY_NOTICES.md', '.'),
     ] + _fluent_datas,
