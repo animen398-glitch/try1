@@ -22,11 +22,15 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 
 - ✅ Third-party dependency + license inventory — `THIRD_PARTY_NOTICES.md`
   (generated from installed metadata 2026-07-05).
-- ⚠ **PySide6-Fluent-Widgets is GPL-3.0.** Choose per release channel: omit it
-  (app soft-degrades to `QTabWidget`), buy the commercial license, or ship the
-  whole build under a GPL-compatible license. See `THIRD_PARTY_NOTICES.md` §4.1.
+- ✅ **PySide6-Fluent-Widgets (GPL-3.0) — resolved: OMITTED from the default
+  build.** Decision (2026-07-05): public distribution, ship GPL-free. `build.spec`
+  no longer bundles qfluentwidgets and excludes it from the graph by default;
+  `gui/_fluent.py` soft-degrades to a text-only side-nav (native `QMainWindow`
+  shell is unaffected). Internal builds holding a commercial license can still
+  bundle it with `ASA_BUNDLE_FLUENT=1`.
 - ⚠ **Project LICENSE undecided.** No top-level `LICENSE` file exists — pick the
-  distribution license (proprietary vs. open); constrained by the GPL decision.
+  distribution license (proprietary vs. open). No longer GPL-constrained now that
+  Fluent-Widgets is omitted; any license (incl. proprietary) is available.
 - ◻ Bundle full license texts (LGPL-3.0, GPL-3.0, Apache-2.0, MIT, BSD-3-Clause)
   in the distributed build, next to `THIRD_PARTY_NOTICES.md`.
 
@@ -44,8 +48,10 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
   machine with no dev toolchain present.
 - ◻ Confirm `ASA_DATA_ROOT` override works in the frozen build (data/config
   under one directory).
-- ◻ Confirm optional deps degrade gracefully when absent (no Playwright/fastapi/
-  scrapy/Fluent-Widgets → feature disabled with a hint, app still runs).
+- ✅ Fluent-Widgets absence degrades gracefully — GUI builds all 30 tabs without
+  qfluentwidgets (`tests/test_fluent_optional.py`, subprocess self-check).
+- ◻ Confirm remaining optional deps degrade gracefully when absent (no Playwright/
+  fastapi/scrapy → feature disabled with a hint, app still runs).
 - ⏭ Installer + code signing (nice-to-have; done by a human at packaging time).
 
 ## E. End-to-end authorized demo (pilot)
@@ -58,9 +64,10 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 
 ---
 
-## Open decisions for the maintainer
+## Decisions
 
-1. **Fluent-Widgets / GPL** — omit, license commercially, or GPL the build?
-2. **Project license** — proprietary or open (which)?
-3. **Release channel** — internal/authorized use vs. public distribution
-   (changes how strict B/D must be).
+1. ✅ **Release channel** — public distribution (strict compliance path).
+2. ✅ **Fluent-Widgets / GPL** — omit from the default build (GPL-free); the app
+   soft-degrades. `ASA_BUNDLE_FLUENT=1` re-enables it for licensed internal builds.
+3. ⚠ **Project license** — still open: pick proprietary or an open license
+   (unconstrained now). Needed before a public ship.

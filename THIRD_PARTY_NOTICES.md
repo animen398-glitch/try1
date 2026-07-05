@@ -57,12 +57,13 @@ separately by the operator.
 
 ## 4. Distribution gates — action required before shipping
 
-1. **PySide6-Fluent-Widgets is GPL-3.0.** If it is bundled into a distributed
-   `.exe`, the combined distributed work must comply with GPL-3.0 (offer of
-   source, GPL-compatible licensing of the whole) — **or** a commercial license
-   must be obtained from the author (PyQt-Fluent-Widgets/PySide6-Fluent-Widgets
-   offers one), **or** it must be omitted from the shipped build (the app
-   soft-degrades to a plain `QTabWidget`). Decide per release channel.
+1. **PySide6-Fluent-Widgets is GPL-3.0 — RESOLVED: omitted from the default
+   build.** The public build ships GPL-free: `build.spec` does not bundle
+   qfluentwidgets and excludes it from the graph, and `gui/_fluent.py`
+   soft-degrades to a text-only side-navigation (the native `QMainWindow` shell
+   is unaffected). Internal builds that hold the author's commercial license may
+   re-enable bundling with `ASA_BUNDLE_FLUENT=1`; that variant must then comply
+   with that license (and is **not** the GPL-free artifact described here).
 
 2. **LGPL components (PySide6, fpdf2 if shipped).** LGPL-3.0 requires that the
    end user be able to relink/replace the LGPL library. For a PyInstaller

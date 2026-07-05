@@ -9,7 +9,22 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **qfluentwidgets is now optional (GPL-free default build).** PySide6-Fluent-
+  Widgets is GPL-3.0, so the public build no longer bundles it: `build.spec`
+  excludes it by default (`ASA_BUNDLE_FLUENT=1` re-enables bundling for internal
+  builds holding a commercial license), and `gui/_fluent.py` soft-degrades to a
+  text-only side-navigation when it is absent. The native `QMainWindow` shell is
+  unaffected — the full GUI (all tabs) stays usable. See `THIRD_PARTY_NOTICES.md`
+  and `RELEASE_CHECKLIST.md`.
+
 ### Added
+- **Release artifacts.** `RELEASE_CHECKLIST.md` (verification / licensing /
+  packaging / pilot) and `THIRD_PARTY_NOTICES.md` (dependency + license inventory
+  from installed metadata).
+- **Risk-acceptance review.** Consolidated *Risk Acceptances* tab (accepted
+  findings with reason/approver/until + an expired flag; revoke / CSV export) and
+  an "expired-only" review filter across core, web, and GUI.
 - **Portable / demo workspace.** `ASA_DATA_ROOT` env-override в `PathManager`
   уводит все БД, configs, settings и workspaces под один каталог (поверх
   source- и frozen-дефолтов; явный `data_root=` всё ещё выше). `demo_seed.py`

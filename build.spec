@@ -6,9 +6,22 @@ import os
 
 from PyInstaller.utils.hooks import collect_all
 
-# qfluentwidgets (variant B Fluent navigation) ships its own qss / fonts / SVG
-# icons as package data — bundle them or the frozen GUI can't theme/render.
-_fluent_datas, _fluent_bins, _fluent_hidden = collect_all('qfluentwidgets')
+# qfluentwidgets (variant B Fluent navigation) is GPL-3.0 and is NOT bundled in
+# the default (public) build — see THIRD_PARTY_NOTICES.md / RELEASE_CHECKLIST.md.
+# The GUI soft-degrades to a text-only side-nav without it (gui/_fluent.py). To
+# ship the Fluent look in an internal build that holds a commercial license, set
+# ASA_BUNDLE_FLUENT=1 before building; the collect is guarded so a missing
+# package never breaks the build.
+_bundle_fluent = os.environ.get('ASA_BUNDLE_FLUENT') == '1'
+_fluent_datas, _fluent_bins, _fluent_hidden = [], [], []
+if _bundle_fluent:
+    try:
+        _fluent_datas, _fluent_bins, _fluent_hidden = collect_all('qfluentwidgets')
+    except Exception as _e:  # noqa: BLE001 — absent package must not fail the build
+        print(f'[build.spec] ASA_BUNDLE_FLUENT=1 but qfluentwidgets unavailable: {_e}')
+# GPL-free by default: keep qfluentwidgets out of the graph even if it happens to
+# be installed on the build machine (the GUI soft-degrades without it).
+_fluent_excludes = [] if _bundle_fluent else ['qfluentwidgets']
 
 a = Analysis(
     ['main.py'],
@@ -61,7 +74,7 @@ a = Analysis(
         'PySide6.QtSql', 'PySide6.QtTest', 'PySide6.QtDesigner',
         'PySide6.QtUiTools', 'PySide6.QtHelp', 'PySide6.QtHttpServer',
         'PySide6.QtNetworkAuth', 'PySide6.QtTextToSpeech',
-    ],
+    ] + _fluent_excludes,
     noarchive=False,
 )
 
