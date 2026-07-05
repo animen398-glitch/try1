@@ -58,11 +58,18 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 
 ## E. End-to-end authorized demo (pilot)
 
-- ◻ Run the full operator flow on `demo_seed.py` data:
-  project → scan → assets/findings → triage → **risk acceptance** → attack path
-  → remediation → mission/engagement → report → retest.
-- ◻ File and fix **only** defects surfaced by this pilot before adding anything
-  new. No new scanners for count's sake.
+- ✅ Ran the full operator flow on `demo_seed.py` data (2026-07-05):
+  project → scan → assets/findings → triage (assign/comment/status) →
+  **risk acceptance** (accept + expiry + expired-only filter) → attack path →
+  remediation → mission run (offline audit run → completed) → engagement report
+  → retest run (→ completed) → mission report → GUI read-chain (30 tabs). **11/11
+  stages passed; no product defects surfaced.** (Only harness/env issues found:
+  `load_scan_report` is a `Project` method, store rows key by `id` with the
+  canonical dict under `payload`, and the GUI's `QT_API=pyside6` pin is required
+  to avoid a cross-binding `RenderHints` enum mismatch — all correct app
+  behaviour.)
+- ✅ No defects to fix from this pilot. (Re-run the pilot on a **fresh** seed —
+  it mutates the workspace, so a second run on the same data double-counts.)
 
 ---
 
