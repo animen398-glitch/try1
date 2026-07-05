@@ -6206,3 +6206,32 @@ console=False) собран, frozen self-check 29 вкладок; безопас
 seam — nuclei v3.9.0 / katana / amass v5.1.1 / subfinder v2.14.0 / httpx / bbot
 v2.8.4, rc=0, ни одного консольного окна; rar/winrar — SKIPPED (не установлены).
 Локальные коммиты (c1d1603b, dff008c), без push.
+
+================================================================================
+2026-07-04 → 07-05 — Workflow polish + Release-checklist старт (сводно)
+================================================================================
+Полный пофичный лог этого периода — в CLAUDE.md §12 (раздел «Последние важные
+изменения»); ниже — сводка для синхронизации журнала и счётчика тестов.
+
+DEV_PLAN WS1–WS6 закрыты: удалено медиа-скачивание (video/image, yt-dlp/ffmpeg;
+31 → 29 вкладок); local-first crash-reporter; auth + safe-bind + rate-limiting
+web-консоли; конкурентный DAG-движок Full Collection (байт-идентичный результат);
+Slack alert-канал; нативные пассивные источники субдоменов (Cert Spotter,
+urlscan) + современные secret-паттерны; opt-in update-check + friendly errors +
+observability.
+
+Затем набор management/workflow-фич поверх acceptance/findings-слоя: Compare
+Projects (A-vs-B) + CSV/MD экспорт; keyword-search по findings и assets; bulk
+risk acceptance; полная арка Risk Acceptance (accept-with-expiry → timeline →
+alert → исключение из active-risk → CSV → вкладка Risk Acceptances → фильтр
+«только истёкшие»); пагинация Remediation.
+
+Release-checklist старт: RELEASE_CHECKLIST.md + THIRD_PARTY_NOTICES.md (инвентарь
+лицензий из installed metadata); qfluentwidgets (GPL-3.0) сделан опциональным для
+GPL-free сборки по умолчанию — gui/_fluent.py soft-degrade (HAS_FLUENT, текстовый
+side-nav) + build.spec opt-in ASA_BUNDLE_FLUENT=1 (иначе excludes); CHANGELOG
+[Unreleased] сверен со всем post-1.0.0 объёмом работ.
+
+Проверено: ruff clean; полный offline pytest — exit 0, 2999 passed (254 файла;
+1 существующий Starlette/httpx warning); self-check 30 вкладок. Локальные коммиты
+(178ea93e, 2a0f8baf, bae5dff1 + doc-sync), без push.

@@ -15,8 +15,8 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 - ◻ Frozen smoke — build with `pyinstaller build.spec --clean --noconfirm`,
   then run the frozen `--self-check` and confirm 30 tabs + no console windows
   (`console=False`). *Run on the packaging machine.*
-- ◻ Reconcile the exact test count in `PROJECT_REPORT.md` / `PROJECT_STATUS.txt`
-  with the final run at the release commit.
+- ✅ Test count synced to **2999** (254 files, exit 0) in `PROJECT_REPORT.md`,
+  `PROJECT_STATUS.txt`, `CLAUDE.md` / `AGENTS.md` (re-confirm at the release commit).
 
 ## B. Licensing & legal hygiene
 
@@ -36,11 +36,13 @@ Legend: ✅ done · ◻ open · ⚠ needs a decision · ⏭ deferred (not a bloc
 
 ## C. Changelog & versioning
 
-- ◻ Reconcile `CHANGELOG.md` `[Unreleased]` with everything shipped since 1.0.0
-  (findings search, acceptance arc, missions/engagements, retest runs, tool
-  layer, Windows CLI hardening, enterprise recon, …) and move it under the
-  release version + date.
-- ◻ Confirm `APP_VERSION` matches the tag; bump if this is a new release.
+- ✅ `CHANGELOG.md` `[Unreleased]` reconciled with the whole post-1.0.0 body of
+  work (workbench, missions, engagements, retest, tool layer, KEV/EPSS, risk
+  acceptance, search, compare, enterprise recon, reliability, GPL-free build;
+  media downloading under Removed).
+- ⚠ Decide the release version + bump `APP_VERSION`, then move `[Unreleased]`
+  under it with a date. Note: media downloading was **removed** since 1.0.0, so
+  SemVer argues for a major bump — maintainer's call.
 
 ## D. Packaging & clean-machine acceptance
 

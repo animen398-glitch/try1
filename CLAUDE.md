@@ -203,7 +203,7 @@ gui/                    # ТОНКИЙ UI-слой (mixin-паттерн)
 remote/web_app.py       # FastAPI LAN-консоль (паритет с GUI через реестр JOBS)
 plugins/                # внешние вкладки-плагины (контракт в plugins/README.md)
 plugins/analyzers/      # analyzer-плагины: run(results)->findings (вливаются в risk score)
-tests/                  # pytest-набор (~2905 тестов, offline/headless)
+tests/                  # pytest-набор (~2999 тестов, offline/headless)
 build.spec              # PyInstaller
 ```
 
@@ -657,7 +657,7 @@ Dashboard и Reporting, риски и точки интеграции описа
 - Backend polish (F-SR1): SSOT для SQLite timestamp/severity/OSINT target parse, robustness-hardening malformed inputs. Коммит: `abca7ee`.
 
 **Тестовый ориентир:**
-- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-07-03 (после Authorized Enterprise Recon E1–E10 + increment-2 depth E3-2/E4-2/E5-2/E7-2 + E5-2 findings-fold + E4-2 web parity + dashboard button + Windows CLI Process Hardening) — 2905 offline/headless теста (зелёные, 1 Starlette/httpx warning); GUI — 29 вкладок.
+- `PROJECT_REPORT.md` указывает актуальный масштаб набора; на 2026-07-05 (после DEV_PLAN WS1–WS6, acceptance-арки, compare-projects, findings/asset search, release-checklist старта + GPL-free build) — **2999** offline/headless теста (254 файла, зелёные, 1 Starlette/httpx warning); GUI — **30** вкладок.
 - Перед релизной пометкой обязательно прогонять `pytest` и, если менялся GUI/frozen-контур, self-check окна/PyInstaller smoke.
 - На Windows при полном pytest возможны temp/cache teardown quirks; для чистой проверки удобно использовать уникальный `--basetemp` и `-p no:cacheprovider`.
 
